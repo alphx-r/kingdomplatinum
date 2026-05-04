@@ -110,6 +110,11 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .adm-player-acc.open .adm-player-acc-arrow{transform:rotate(180deg)}
 .adm-player-acc-body{display:none;border-top:1.5px solid var(--border)}
 .adm-player-acc.open .adm-player-acc-body{display:block}
+/* ADM PK GRID */
+.pk-adm-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;transition:all .2s;text-align:center}
+.pk-adm-card:hover{border-color:var(--brand-mid);transform:translateY(-2px);box-shadow:0 4px 12px rgba(37,99,168,.12)}
+.pk-adm-card img{width:56px;height:56px;object-fit:contain}
+.pk-adm-card-name{font-family:var(--font-title);font-size:10px;color:var(--text);line-height:1.3}
 /* ADM */
 .adm-login-wrap{max-width:380px;margin:40px auto}
 .adm-login-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:32px 28px}
@@ -469,10 +474,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
               <div class="field"><label>Bioma</label><select id="imp-bioma"></select></div>
               <div class="field"><label>Raridade</label>
                 <select id="imp-raridade">
-                  <option value="comum">Comum (61–100)</option>
-                  <option value="incomum">Incomum (21–60)</option>
-                  <option value="raro">Raro (8–20)</option>
-                  <option value="rarissimo">Raríssimo (1–7)</option>
+                  <option value="comum">Comum (52–100)</option>
+                  <option value="incomum">Incomum (14–51)</option>
+                  <option value="raro">Raro (3–13)</option>
+                  <option value="rarissimo">Raríssimo (1–2)</option>
                 </select>
               </div>
             </div>
@@ -495,10 +500,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
               <div class="field"><label>Habilidade 2</label><input type="text" id="pk-habilidade2" placeholder="Ex: Lightning Rod"/></div>
               <div class="field"><label>Raridade</label>
                 <select id="pk-raridade">
-                  <option value="comum">Comum (61–100)</option>
-                  <option value="incomum">Incomum (21–60)</option>
-                  <option value="raro">Raro (8–20)</option>
-                  <option value="rarissimo">Raríssimo (1–7)</option>
+                  <option value="comum">Comum (52–100)</option>
+                  <option value="incomum">Incomum (14–51)</option>
+                  <option value="raro">Raro (3–13)</option>
+                  <option value="rarissimo">Raríssimo (1–2)</option>
                 </select>
               </div>
               <div class="field"><label>Gênero</label>
@@ -546,14 +551,14 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
             <button class="btn btn-primary btn-sm" onclick="adicionarPokemon()">+ Adicionar Pokémon</button>
             <div class="fb fb-ok" id="pk-fb">✓ Pokémon adicionado!</div>
           </div>
-          <div id="pk-filtro-wrap" class="field" style="max-width:240px;margin-bottom:16px;display:none">
-            <label>Filtrar por bioma</label>
-            <select id="pk-filtro" onchange="renderTbodyPokemons()"></select>
+          <div id="pk-filtro-wrap" style="margin-bottom:16px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Filtrar por bioma</div>
+            <div id="pk-filtro-btns" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
-          <div class="adm-table-wrap"><table class="adm-table">
-            <thead><tr><th>Pokémon</th><th>Bioma</th><th>Raridade</th><th>Tipos</th><th>Gênero</th><th>Ações</th></tr></thead>
-            <tbody id="tbody-pokemons"></tbody>
-          </table></div>
+          <div id="pk-grid-wrap" style="display:none">
+            <div id="pk-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px"></div>
+          </div>
+          <div id="pk-grid-empty" style="display:none;color:var(--muted);font-size:13px;padding:16px 0">Nenhum Pokémon neste bioma.</div>
         </div>
 
         <!-- ADMINS -->
@@ -684,7 +689,71 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   </div>
 </div>
 
-<!-- MODAL EDITAR PERSONAGEM -->
+<!-- MODAL EDITAR POKÉMON -->
+<div class="modal-overlay" id="modal-pk-overlay" onclick="fecharModalPk()" style="display:none"></div>
+<div class="modal-box" id="modal-pk-box" style="display:none;max-width:420px">
+  <button class="modal-close" onclick="fecharModalPk()">✕</button>
+  <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:16px">✏️ Editar Pokémon</div>
+  <input type="hidden" id="modal-pk-id"/>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+    <div id="modal-pk-sprite-preview" style="width:72px;height:72px;border-radius:50%;background:var(--surface2);border:2px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0" onclick="document.getElementById('modal-pk-sprite-file').click()" title="Clique para trocar sprite">
+    </div>
+    <div style="flex:1;font-size:11px;color:var(--muted)">Clique na imagem para trocar o sprite</div>
+  </div>
+  <input type="file" id="modal-pk-sprite-file" accept="image/*" style="display:none" onchange="previewModalPkSprite(this)"/>
+  <div class="g2">
+    <div class="field"><label>Nome</label><input type="text" id="modal-pk-nome"/></div>
+    <div class="field"><label>Bioma</label><select id="modal-pk-bioma"></select></div>
+    <div class="field"><label>Raridade</label>
+      <select id="modal-pk-raridade">
+        <option value="comum">Comum (52–100)</option>
+        <option value="incomum">Incomum (14–51)</option>
+        <option value="raro">Raro (3–13)</option>
+        <option value="rarissimo">Raríssimo (1–2)</option>
+      </select>
+    </div>
+    <div class="field"><label>Gênero</label>
+      <select id="modal-pk-genero">
+        <option value="aleatorio">Aleatório</option>
+        <option value="1d2">1d2</option>
+        <option value="macho">100% Macho</option>
+        <option value="femea">100% Fêmea</option>
+        <option value="genderless">Sem gênero</option>
+      </select>
+    </div>
+    <div class="field"><label>Habilidade 1</label><input type="text" id="modal-pk-hab1"/></div>
+    <div class="field"><label>Habilidade 2</label><input type="text" id="modal-pk-hab2"/></div>
+  </div>
+  <div class="field" style="margin-top:4px">
+    <label>Tipos</label>
+    <div class="tipos-wrap" id="modal-pk-tipos-wrap">
+      <span class="tipo-tag" data-tipo="fire" onclick="toggleTipo(this)">🔥 Fire</span>
+      <span class="tipo-tag" data-tipo="water" onclick="toggleTipo(this)">💧 Water</span>
+      <span class="tipo-tag" data-tipo="grass" onclick="toggleTipo(this)">🌿 Grass</span>
+      <span class="tipo-tag" data-tipo="electric" onclick="toggleTipo(this)">⚡ Electric</span>
+      <span class="tipo-tag" data-tipo="normal" onclick="toggleTipo(this)">⬜ Normal</span>
+      <span class="tipo-tag" data-tipo="psychic" onclick="toggleTipo(this)">🔮 Psychic</span>
+      <span class="tipo-tag" data-tipo="steel" onclick="toggleTipo(this)">⚙️ Steel</span>
+      <span class="tipo-tag" data-tipo="fairy" onclick="toggleTipo(this)">🌸 Fairy</span>
+      <span class="tipo-tag" data-tipo="ghost" onclick="toggleTipo(this)">👻 Ghost</span>
+      <span class="tipo-tag" data-tipo="dragon" onclick="toggleTipo(this)">🐉 Dragon</span>
+      <span class="tipo-tag" data-tipo="ice" onclick="toggleTipo(this)">❄️ Ice</span>
+      <span class="tipo-tag" data-tipo="fighting" onclick="toggleTipo(this)">🥊 Fighting</span>
+      <span class="tipo-tag" data-tipo="rock" onclick="toggleTipo(this)">🪨 Rock</span>
+      <span class="tipo-tag" data-tipo="ground" onclick="toggleTipo(this)">🌍 Ground</span>
+      <span class="tipo-tag" data-tipo="poison" onclick="toggleTipo(this)">☠️ Poison</span>
+      <span class="tipo-tag" data-tipo="bug" onclick="toggleTipo(this)">🐛 Bug</span>
+      <span class="tipo-tag" data-tipo="dark" onclick="toggleTipo(this)">🌑 Dark</span>
+      <span class="tipo-tag" data-tipo="flying" onclick="toggleTipo(this)">🦅 Flying</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <button class="btn btn-primary btn-sm" style="flex:1" onclick="salvarEdicaoPokemon()">💾 Salvar</button>
+    <button class="btn btn-danger btn-sm" onclick="removerPokemonModal()">🗑 Remover</button>
+  </div>
+  <div class="fb fb-ok" id="modal-pk-fb">✓ Salvo!</div>
+</div>
+
 <div class="modal-overlay" id="modal-personagem" style="display:none">
   <div class="modal-box">
     <button class="modal-close" onclick="fecharModal()">✕</button>
@@ -960,7 +1029,7 @@ function admTab(sec,el){
   if(el)el.classList.add('active');
   if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();}
   if(sec==='biomas')renderTbodyBiomas();
-  if(sec==='pokemons'){syncBiomaSelects();document.getElementById('pk-filtro-wrap').style.display='';renderTbodyPokemons();}
+  if(sec==='pokemons'){syncBiomaSelects();}
   if(sec==='admins')renderTbodyAdmins();
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
@@ -1219,12 +1288,17 @@ function syncBiomaSelect(){
 }
 function syncBiomaSelects(){
   const pks=document.getElementById('pk-bioma');
-  const flt=document.getElementById('pk-filtro');
   const imp=document.getElementById('imp-bioma');
+  const mpk=document.getElementById('modal-pk-bioma');
   const opts=biomas.map(b=>`<option>${b.nome}</option>`).join('');
   if(pks)pks.innerHTML=opts;
   if(imp)imp.innerHTML=opts;
-  if(flt)flt.innerHTML='<option value="">Todos</option>'+opts;
+  if(mpk)mpk.innerHTML=opts;
+  // botões de filtro estilo dados
+  const btns=document.getElementById('pk-filtro-btns');
+  if(btns){
+    btns.innerHTML=biomas.map(b=>`<button class="dice-side-btn" onclick="setPkFiltro('${b.nome}',this)">${b.nome}</button>`).join('');
+  }
 }
 
 // ══════════════════════════════════════
@@ -1270,42 +1344,91 @@ async function removerPokemon(id){
   pokemonDB=pokemonDB.filter(p=>p.id!==id);
   renderTbodyPokemons();renderTbodyBiomas();
 }
-async function editarNomePokemon(id){
-  const p=pokemonDB.find(x=>String(x.id)===String(id));
-  if(!p)return;
-  const novo=prompt(`Novo nome para "${p.nome}":`,p.nome);
-  if(!novo||novo.trim()===p.nome)return;
-  const novoNome=novo.trim();
-  await dbPatch('pokemons',`id=eq.${id}`,{nome:novoNome});
-  p.nome=novoNome;
+function abrirModalPk(id){
+  const p=pokemonDB.find(x=>x.id===id);if(!p)return;
+  document.getElementById('modal-pk-id').value=id;
+  document.getElementById('modal-pk-nome').value=p.nome;
+  document.getElementById('modal-pk-hab1').value=p.habilidade||'';
+  document.getElementById('modal-pk-hab2').value=p.habilidade2||'';
+  document.getElementById('modal-pk-raridade').value=p.raridade;
+  document.getElementById('modal-pk-genero').value=p.genero||'aleatorio';
+  // bioma
+  const bsel=document.getElementById('modal-pk-bioma');
+  bsel.innerHTML=biomas.map(b=>`<option${b.nome===p.bioma?' selected':''}>${b.nome}</option>`).join('');
+  // sprite
+  const prev=document.getElementById('modal-pk-sprite-preview');
+  prev.innerHTML=`<img src="${p.sprite||FALLBACK_SPRITE}" style="width:72px;height:72px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>`;
+  delete prev.dataset.b64;
+  // tipos
+  document.querySelectorAll('#modal-pk-tipos-wrap .tipo-tag').forEach(t=>{
+    t.classList.toggle('sel',(p.tipos||[]).includes(t.dataset.tipo));
+  });
+  document.getElementById('modal-pk-fb').style.display='none';
+  document.getElementById('modal-pk-overlay').style.display='block';
+  document.getElementById('modal-pk-box').style.display='block';
+}
+function fecharModalPk(){
+  document.getElementById('modal-pk-overlay').style.display='none';
+  document.getElementById('modal-pk-box').style.display='none';
+}
+function previewModalPkSprite(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const prev=document.getElementById('modal-pk-sprite-preview');
+    prev.innerHTML=`<img src="${e.target.result}" style="width:72px;height:72px;object-fit:contain"/>`;
+    prev.dataset.b64=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function salvarEdicaoPokemon(){
+  const id=document.getElementById('modal-pk-id').value;
+  const p=pokemonDB.find(x=>x.id===id);if(!p)return;
+  const nome=document.getElementById('modal-pk-nome').value.trim();
+  const bioma=document.getElementById('modal-pk-bioma').value;
+  const raridade=document.getElementById('modal-pk-raridade').value;
+  const genero=document.getElementById('modal-pk-genero').value;
+  const habilidade=document.getElementById('modal-pk-hab1').value.trim();
+  const habilidade2=document.getElementById('modal-pk-hab2').value.trim();
+  const tipos=[...document.querySelectorAll('#modal-pk-tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
+  const prev=document.getElementById('modal-pk-sprite-preview');
+  const sprite=prev.dataset.b64||p.sprite;
+  if(!nome){alert('Preencha o nome.');return;}
+  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite});
+  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite});
+  fb('modal-pk-fb');
+  renderTbodyPokemons();renderTbodyBiomas();
+}
+async function removerPokemonModal(){
+  const id=document.getElementById('modal-pk-id').value;
+  if(!confirm('Remover este Pokémon?'))return;
+  await dbDel('pokemons',`id=eq.${id}`);
+  pokemonDB=pokemonDB.filter(p=>p.id!==id);
+  fecharModalPk();
+  renderTbodyPokemons();renderTbodyBiomas();
+}
+let pkFiltroAtivo='';
+function setPkFiltro(bioma, btn){
+  pkFiltroAtivo=bioma;
+  document.querySelectorAll('#pk-filtro-btns .dice-side-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
   renderTbodyPokemons();
 }
 function renderTbodyPokemons(){
-  const filtro=document.getElementById('pk-filtro')?.value||'';
-  const lista=(filtro?pokemonDB.filter(p=>p.bioma===filtro):pokemonDB)
-    .slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
-  document.getElementById('tbody-pokemons').innerHTML=lista.length===0
-    ?'<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Nenhum Pokémon encontrado.</td></tr>'
-    :lista.map(p=>{
-      const habs=[p.habilidade,p.habilidade2].filter(Boolean);
-      const habStr=habs.length>0?habs.join(' / '):'—';
-      return`<tr>
-        <td style="display:flex;align-items:center;gap:8px">
-          <div style="width:40px;height:40px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
-            <img src="${p.sprite||FALLBACK_SPRITE}" style="width:40px;height:40px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
-          </div>
-          <strong>${p.nome}</strong>
-        </td>
-        <td>${p.bioma}</td>
-        <td><span class="poke-rarity ${rcls[p.raridade]}">${rlbl[p.raridade]}</span></td>
-        <td>${(p.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</td>
-        <td style="font-size:12px;color:var(--muted)">${glbl[p.genero]||p.genero}</td>
-        <td style="white-space:nowrap">
-          <button class="btn btn-xs" style="background:var(--surface2);border:1.5px solid var(--border);padding:3px 8px;font-size:11px" onclick="editarNomePokemon('${p.id}')">✏️ Nome</button>
-          <button class="btn btn-danger btn-xs" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick="removerPokemon('${p.id}')">Remover</button>
-        </td>
-      </tr>`;
-    }).join('');
+  const grid=document.getElementById('pk-grid');
+  const wrap=document.getElementById('pk-grid-wrap');
+  const empty=document.getElementById('pk-grid-empty');
+  if(!grid)return;
+  if(!pkFiltroAtivo){wrap.style.display='none';empty.style.display='none';return;}
+  const lista=pokemonDB.filter(p=>p.bioma===pkFiltroAtivo).slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  if(lista.length===0){wrap.style.display='none';empty.style.display='block';return;}
+  wrap.style.display='block';empty.style.display='none';
+  grid.innerHTML=lista.map(p=>`
+    <div class="pk-adm-card" onclick="abrirModalPk('${p.id}')">
+      <img src="${p.sprite||FALLBACK_SPRITE}" onerror="this.src='${FALLBACK_SPRITE}'"/>
+      <div class="pk-adm-card-name">${p.nome}</div>
+      <span class="poke-rarity ${rcls[p.raridade]}" style="font-size:9px;padding:1px 6px">${rlbl[p.raridade]}</span>
+    </div>`).join('');
 }
 
 // IMPORTADOR
