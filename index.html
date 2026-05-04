@@ -555,10 +555,13 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Filtrar por bioma</div>
             <div id="pk-filtro-btns" style="display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
-          <div id="pk-grid-wrap" style="display:none">
-            <div id="pk-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px"></div>
-          </div>
           <div id="pk-grid-empty" style="display:none;color:var(--muted);font-size:13px;padding:16px 0">Nenhum Pokémon neste bioma.</div>
+          <div id="pk-grid-wrap" style="display:none">
+            <div class="adm-table-wrap"><table class="adm-table">
+              <thead><tr><th>Pokémon</th><th>Raridade</th><th>Tipos</th><th>Gênero</th><th>Habilidades</th></tr></thead>
+              <tbody id="tbody-pokemons"></tbody>
+            </table></div>
+          </div>
         </div>
 
         <!-- ADMINS -->
@@ -1415,20 +1418,29 @@ function setPkFiltro(bioma, btn){
   renderTbodyPokemons();
 }
 function renderTbodyPokemons(){
-  const grid=document.getElementById('pk-grid');
   const wrap=document.getElementById('pk-grid-wrap');
   const empty=document.getElementById('pk-grid-empty');
-  if(!grid)return;
+  const tbody=document.getElementById('tbody-pokemons');
+  if(!tbody)return;
   if(!pkFiltroAtivo){wrap.style.display='none';empty.style.display='none';return;}
   const lista=pokemonDB.filter(p=>p.bioma===pkFiltroAtivo).slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   if(lista.length===0){wrap.style.display='none';empty.style.display='block';return;}
   wrap.style.display='block';empty.style.display='none';
-  grid.innerHTML=lista.map(p=>`
-    <div class="pk-adm-card" onclick="abrirModalPk('${p.id}')">
-      <img src="${p.sprite||FALLBACK_SPRITE}" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <div class="pk-adm-card-name">${p.nome}</div>
-      <span class="poke-rarity ${rcls[p.raridade]}" style="font-size:9px;padding:1px 6px">${rlbl[p.raridade]}</span>
-    </div>`).join('');
+  tbody.innerHTML=lista.map(p=>{
+    const habs=[p.habilidade,p.habilidade2].filter(Boolean);
+    return`<tr>
+      <td style="display:flex;align-items:center;gap:8px">
+        <div onclick="abrirModalPk('${p.id}')" title="Clique para editar" style="width:40px;height:40px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
+          <img src="${p.sprite||FALLBACK_SPRITE}" style="width:40px;height:40px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
+        </div>
+        <strong>${p.nome}</strong>
+      </td>
+      <td><span class="poke-rarity ${rcls[p.raridade]}">${rlbl[p.raridade]}</span></td>
+      <td>${(p.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</td>
+      <td style="font-size:12px;color:var(--muted)">${glbl[p.genero]||p.genero}</td>
+      <td style="font-size:12px;color:var(--muted)">${habs.join(' / ')||'—'}</td>
+    </tr>`;
+  }).join('');
 }
 
 // IMPORTADOR
