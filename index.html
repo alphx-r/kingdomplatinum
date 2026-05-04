@@ -924,6 +924,7 @@ async function carregarAba(page){
         dbGet('pokemons'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
+      console.log('personagens carregados:', personagens.map(p=>({nome:p.nome,ficha_url:p.ficha_url})));
       biomas=_biomas; pokemonDB=_pokemons;
       syncBiomaSelect();
       renderTbodyPersonagens(); renderTbodyPlayers();
@@ -1209,7 +1210,9 @@ async function salvarEdicaoPersonagem(){
     const res=await dbPost('players',{nome:novoPlayer});
     if(res&&res[0])players.push(res[0]);
   }
-  await dbPatch('personagens',`id=eq.${id}`,{player:novoPlayer,nome:novoNome,photoplayer:novoPhotoplayer||null,cor:novaCor,img:novaImg,ficha_url:novaFicha});
+  const patchRes=await dbPatch('personagens',`id=eq.${id}`,{player:novoPlayer,nome:novoNome,photoplayer:novoPhotoplayer||null,cor:novaCor,img:novaImg,ficha_url:novaFicha});
+  console.log('PATCH personagens result:', patchRes);
+  console.log('ficha_url enviado:', novaFicha);
   p.player=novoPlayer;p.nome=novoNome;p.photoplayer=novoPhotoplayer||null;p.cor=novaCor;p.img=novaImg;p.ficha_url=novaFicha;
   fecharModal();
   renderTbodyPersonagens();renderTbodyPlayers();renderFichario();renderPersonagensDatalist();
@@ -1563,12 +1566,13 @@ function renderFichario(){
   container.innerHTML=playersOrdenados.map(playerNome=>{
     const chars=grupos[playerNome].slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
     const cards=chars.map(p=>`
-      <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}">
+      <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}"
+        ${p.ficha_url?`onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}> 
         <div class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
           ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
             :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
         </div>
-        <div class="ficha-name">${p.nome}</div>
+        <div class="ficha-name">${p.nome}${p.ficha_url?` <span style="font-size:10px;color:var(--brand-mid)" title="Ficha disponível">🔗</span>`:''}</div>
         ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
         <div class="ficha-pontos-box"><span class="ficha-pontos-lbl">Pontos</span><span class="ficha-pontos-val">${p.pontos||0}</span></div>
       </div>`).join('');
