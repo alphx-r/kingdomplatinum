@@ -154,6 +154,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .modal-box{background:var(--surface);border-radius:var(--r);padding:28px;width:100%;max-width:440px;box-shadow:0 8px 40px rgba(0,0,0,.2);position:relative}
 .modal-title{font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:18px}
 .modal-close{position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1}
+/* MODAL FICHA */
+.modal-ficha-box{background:var(--surface);border-radius:var(--r);width:95vw;max-width:860px;height:90vh;box-shadow:0 8px 40px rgba(0,0,0,.2);position:relative;display:flex;flex-direction:column;overflow:hidden}
+.modal-ficha-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1.5px solid var(--border);flex-shrink:0}
+.modal-ficha-title{font-family:var(--font-title);font-size:14px;color:var(--brand);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 80px)}
+.modal-ficha-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.modal-ficha-iframe{flex:1;width:100%;border:none;background:var(--surface2)}
 /* HISTÓRICO */
 .hist-entry{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
 .hist-header{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
@@ -757,6 +763,20 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div class="fb fb-ok" id="modal-pk-fb">✓ Salvo!</div>
   </div>
 </div>
+<!-- MODAL FICHA -->
+<div class="modal-overlay" id="modal-ficha-overlay" onclick="fecharModalFicha()" style="display:none">
+  <div class="modal-ficha-box" onclick="event.stopPropagation()">
+    <div class="modal-ficha-header">
+      <div class="modal-ficha-title" id="modal-ficha-title">Ficha</div>
+      <div class="modal-ficha-actions">
+        <a id="modal-ficha-extlink" href="#" target="_blank" class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);font-size:11px;padding:4px 10px;text-decoration:none;color:var(--text)">↗ Abrir</a>
+        <button class="modal-close" style="position:static;font-size:18px" onclick="fecharModalFicha()">✕</button>
+      </div>
+    </div>
+    <iframe id="modal-ficha-iframe" class="modal-ficha-iframe" src="" allowfullscreen></iframe>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-personagem" style="display:none">
   <div class="modal-box">
     <button class="modal-close" onclick="fecharModal()">✕</button>
@@ -1179,6 +1199,27 @@ function abrirModalPersonagem(id){
   document.getElementById('modal-personagem').style.display='flex';
 }
 function fecharModal(){document.getElementById('modal-personagem').style.display='none';}
+
+function toEmbedUrl(url){
+  if(!url)return '';
+  // já é embed
+  if(url.includes('/pub?embedded=true')||url.includes('/pub?embed=true'))return url;
+  // google docs: /edit → /pub?embedded=true
+  if(url.includes('docs.google.com'))
+    return url.replace(/\/(edit|preview|view)(.*)?$/, '/pub?embedded=true');
+  return url;
+}
+function abrirModalFicha(nome,url){
+  const embed=toEmbedUrl(url);
+  document.getElementById('modal-ficha-title').textContent='📄 '+nome;
+  document.getElementById('modal-ficha-iframe').src=embed;
+  document.getElementById('modal-ficha-extlink').href=url;
+  document.getElementById('modal-ficha-overlay').style.display='flex';
+}
+function fecharModalFicha(){
+  document.getElementById('modal-ficha-overlay').style.display='none';
+  document.getElementById('modal-ficha-iframe').src='';
+}
 function modalPreviewImg(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
@@ -1564,12 +1605,12 @@ function renderFichario(){
     const chars=grupos[playerNome].slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
     const cards=chars.map(p=>`
       <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}"
-        ${p.ficha_url?`onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}> 
+        ${p.ficha_url?`onclick="abrirModalFicha('${p.nome.replace(/'/g,"\\'")}','${p.ficha_url}')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}>
         <div class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
           ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
             :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
         </div>
-        <div class="ficha-name">${p.nome}${p.ficha_url?` <span style="font-size:10px;color:var(--brand-mid)" title="Ficha disponível">🔗</span>`:''}</div>
+        <div class="ficha-name">${p.nome}</div>
         ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
         <div class="ficha-pontos-box"><span class="ficha-pontos-lbl">Pontos</span><span class="ficha-pontos-val">${p.pontos||0}</span></div>
       </div>`).join('');
