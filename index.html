@@ -1701,29 +1701,30 @@ function renderPersonagensDatalist(){
 // ══════════════════════════════════════
 // ROLADOR
 // ══════════════════════════════════════
-function rollRarity(){const r=Math.ceil(Math.random()*100);if(r<=2)return 'rarissimo';if(r<=13)return 'raro';if(r<=51)return 'incomum';return 'comum';}
 function rollGender(g){if(g==='macho')return{s:'♂',c:'#3a80e0'};if(g==='femea')return{s:'♀',c:'#e04090'};if(g==='genderless')return{s:'—',c:'#888'};return Math.random()<.5?{s:'♂',c:'#3a80e0'}:{s:'♀',c:'#e04090'};}
 
 function spriteHtml(pk){
   const src=pk.sprite||FALLBACK_SPRITE;
   return`<img src="${src}" alt="${pk.nome}" style="width:108px;height:108px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>`;
 }
-function buildCardData(){
-  const bioma=document.getElementById('bioma').value;
-  const rarity=rollRarity();
-  // comum e incomum nunca revelam o Pokémon específico
-  if(rarity==='comum'||rarity==='incomum'){
+
+// Sorteia um Pokémon de um pool evitando IDs já usados nessa rodada.
+// Retorna o card data. Se pool vazio ou todos usados, reseta os usados daquela raridade.
+function pickFromPool(pool, usedIds, rarity){
+  if(!pool||pool.length===0){
     const gender=rollGender('1d2');
     return{nome:'???',tipos:['normal'],emoji:'❓',sprite:null,habilidade:'???',rarity,genderS:gender.s,genderC:gender.c};
   }
-  // raro e raríssimo revelam normalmente
-  const pool=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===rarity);
-  const p=pool.length>0
-    ? pool[Math.floor(Math.random()*pool.length)]
-    : {nome:'???',emoji:'❓',tipos:['normal'],habilidade:'???',raridade:rarity,genero:'1d2',sprite:null};
+  // filtra os ainda não usados nessa raridade
+  let available=pool.filter(p=>!usedIds.has(p.id));
+  // se todos já foram usados, reseta (ciclo)
+  if(available.length===0){ usedIds.clear(); available=[...pool]; }
+  const p=available[Math.floor(Math.random()*available.length)];
+  usedIds.add(p.id);
   const gender=rollGender(p.genero);
   return{nome:p.nome,tipos:p.tipos||[],emoji:p.emoji||'❓',sprite:p.sprite||null,habilidade:p.habilidade,rarity,genderS:gender.s,genderC:gender.c};
 }
+
 function buildCardHtml(pk,delay){
   const pills=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('');
   return`<div class="poke-card" style="animation-delay:${delay}s">
@@ -1738,6 +1739,7 @@ function buildCardHtml(pk,delay){
     </div>
   </div>`;
 }
+
 async function rolarEncontro(){
   const personagem=document.getElementById('personagem').value.trim();
   if(!personagem){
@@ -1748,12 +1750,29 @@ async function rolarEncontro(){
   const adicionais=Math.max(0,parseInt(document.getElementById('n-adicionais').value)||0);
   const total=3+adicionais;
   const bioma=document.getElementById('bioma').value;
+
+  // Monta os pools por raridade para este bioma
+  const raridades=['comum','incomum','raro','rarissimo'];
+  const pools={};
+  const usedIds={};
+  for(const r of raridades){
+    pools[r]=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r);
+    usedIds[r]=new Set();
+  }
+
+  // Gera exatamente `total` cards, um de cada raridade em ciclo, sem repetir
+  const pokes=[];
+  for(let i=0;i<total;i++){
+    const rarity=raridades[i % raridades.length];
+    const pk=pickFromPool(pools[rarity],usedIds[rarity],rarity);
+    pokes.push(pk);
+  }
+
   const section=document.getElementById('results-section');
   section.innerHTML='';
-  const pokes=[];
   const grid=document.createElement('div');
   grid.className='results-grid';
-  for(let i=0;i<total;i++){const pk=buildCardData();pokes.push(pk);grid.innerHTML+=buildCardHtml(pk,i*0.08);}
+  pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
   section.appendChild(grid);
   await salvarNoHistorico(bioma,personagem,pokes);
 }
