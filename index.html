@@ -801,13 +801,10 @@ const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 
 async function sb(path, opts={}){
-  // usa token da sessão Auth se disponível, senão anon key
-  const session = supabaseClient?.auth ? (await supabaseClient.auth.getSession()).data.session : null;
-  const token = session?.access_token || SUPA_KEY;
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
     headers:{
       'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${SUPA_KEY}`,
       'Content-Type': 'application/json',
       'Prefer': opts.prefer || 'return=representation',
       ...opts.headers
@@ -1161,7 +1158,11 @@ async function adicionarAdmin(){
   // Salva direto na tabela admins (sem Supabase Auth)
   const res=await dbPost('admins',{email, senha, permissoes:perms});
   if(res&&res[0]){admins.push(res[0]);fb('adm-fb-ok');}
-  else{errEl.textContent='Erro ao salvar admin. Tente novamente.';errEl.style.display='block';}
+  else{
+    const msg=Array.isArray(res)&&res.message ? res.message : (res?.message||'Verifique as permissões da tabela admins no Supabase (RLS).');
+    errEl.textContent='Erro: '+msg;
+    errEl.style.display='block';
+  }
 
   document.getElementById('adm-new-email').value='';document.getElementById('adm-new-senha').value='';
   document.querySelectorAll('#adm-new-perms input[type=checkbox]').forEach(c=>{
