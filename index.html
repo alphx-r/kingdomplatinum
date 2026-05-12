@@ -860,18 +860,9 @@ async function init(){
   loading(true);
   try{
     // Sessão + estilo em paralelo — sempre necessários
-    const [estilo, session] = await Promise.all([
-      carregarEstiloSalvo(),
-      supabaseClient.auth.getSession().then(r=>r.data.session),
-    ]);
+    const estilo = await carregarEstiloSalvo();
     aplicarVars(estilo);
-
-    if(session){
-      admLogado={email:session.user.email};
-      document.getElementById('adm-login-wrap').style.display='none';
-      document.getElementById('adm-painel').style.display='block';
-      document.getElementById('adm-user-label').textContent=session.user.email;
-    }
+    // Sem sessão persistente — login manual pela tabela admins
 
     // Detecta aba inicial pelo hash (ex: #adm) ou pathname legado
     const validPages = ['roller','fichario','bioma','dados','adm'];
@@ -881,8 +872,8 @@ async function init(){
       ? hashPage
       : validPages.includes(pathPage) ? pathPage : 'roller';
 
-    // Se a aba é ADM e não há sessão, mostra login ADM sem erro
-    if(hash === 'adm' && !session){
+    // Se a aba é ADM e não há login, mostra login ADM sem erro
+    if(hash === 'adm' && !admLogado){
       navegarPara('adm', true);
       loading(false);
       return;
@@ -1091,19 +1082,20 @@ async function fazerLogin(){
   const senha=document.getElementById('login-senha').value;
   const errEl=document.getElementById('login-erro');
   errEl.style.display='none';
-  const {data,error}=await supabaseClient.auth.signInWithPassword({email,password:senha});
-  if(error||!data.session){errEl.style.display='block';return;}
-  admLogado={email:data.user.email};
+  // Autenticação direta pela tabela admins (sem Supabase Auth)
+  const lista=await dbGet('admins','select=*');
+  const match=lista.find(a=>a.email===email&&a.senha===senha);
+  if(!match){errEl.style.display='block';return;}
+  admLogado={email:match.email};
+  admins=lista;
   document.getElementById('adm-login-wrap').style.display='none';
   document.getElementById('adm-painel').style.display='block';
-  document.getElementById('adm-user-label').textContent=data.user.email;
-  // carrega dados do ADM agora que está logado
+  document.getElementById('adm-user-label').textContent=match.email;
   loaded.adm=false;
   await carregarAba('adm');
   aplicarPermissoesSidebar();
 }
 async function fazerLogout(){
-  await supabaseClient.auth.signOut();
   admLogado=null;
   document.getElementById('adm-login-wrap').style.display='block';
   document.getElementById('adm-painel').style.display='none';
@@ -1158,19 +1150,10 @@ async function adicionarAdmin(){
   if(admins.find(a=>a.email===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
   const perms=[...document.querySelectorAll('#adm-new-perms input[type=checkbox]:checked')].map(c=>c.dataset.perm);
 
-  // 1. Cria o usuário no Supabase Auth
-  const {data:authData, error:authError} = await supabaseClient.auth.signUp({email, password:senha});
-  if(authError){
-    errEl.textContent='Erro ao criar login: '+authError.message;
-    errEl.style.display='block';
-    return;
-  }
-
-  // 2. Salva na tabela admins
-  const authId = authData?.user?.id || null;
-  const res=await dbPost('admins',{email, senha, permissoes:perms, auth_id:authId});
+  // Salva direto na tabela admins (sem Supabase Auth)
+  const res=await dbPost('admins',{email, senha, permissoes:perms});
   if(res&&res[0]){admins.push(res[0]);fb('adm-fb-ok');}
-  else{errEl.textContent='Usuário criado no login, mas falhou ao salvar permissões.';errEl.style.display='block';}
+  else{errEl.textContent='Erro ao salvar admin. Tente novamente.';errEl.style.display='block';}
 
   document.getElementById('adm-new-email').value='';document.getElementById('adm-new-senha').value='';
   document.querySelectorAll('#adm-new-perms input[type=checkbox]').forEach(c=>{
