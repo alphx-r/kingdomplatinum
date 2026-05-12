@@ -190,6 +190,26 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .pk-tab-btn.active{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(26,58,92,.18)}
 .pk-tab-panel{display:none}
 .pk-tab-panel.active{display:block}
+/* ROLAGENS */
+.rol-personagem-acc{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;transition:box-shadow .2s}
+.rol-personagem-acc:hover{box-shadow:0 2px 10px rgba(26,58,92,.08)}
+.rol-personagem-header{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;user-select:none;transition:background .15s}
+.rol-personagem-header:hover{background:var(--surface2)}
+.rol-personagem-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;border:2px solid var(--border)}
+.rol-personagem-avatar img{width:38px;height:38px;object-fit:cover;border-radius:50%}
+.rol-personagem-info{flex:1;min-width:0}
+.rol-personagem-nome{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.3px}
+.rol-personagem-meta{font-size:11px;color:var(--muted);margin-top:1px}
+.rol-personagem-arrow{font-size:11px;color:var(--muted);transition:transform .25s;flex-shrink:0}
+.rol-personagem-acc.open .rol-personagem-arrow{transform:rotate(180deg)}
+.rol-personagem-body{display:none;border-top:1.5px solid var(--border);background:var(--surface2)}
+.rol-personagem-acc.open .rol-personagem-body{display:block}
+.rol-entry{border-bottom:1px solid var(--border);padding:12px 18px}
+.rol-entry:last-child{border-bottom:none}
+.rol-entry-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.rol-entry-bioma{font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;background:var(--brand-light);padding:2px 8px;border-radius:5px}
+.rol-entry-hora{font-size:11px;color:var(--muted)}
+.rol-pokes-wrap{display:flex;flex-wrap:wrap;gap:8px}
 .bioma-raridade-section{margin-bottom:8px;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden}
 .bioma-raridade-title{font-size:13px;font-weight:700;color:var(--text);padding:12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;background:var(--surface);user-select:none;transition:background .15s}
 .bioma-raridade-title:hover{background:var(--surface2)}
@@ -270,6 +290,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <button class="nav-link" onclick="goTo('bioma',this)">Bioma</button>
     <button class="nav-link" onclick="goTo('dados',this)">Dados</button>
     <button class="nav-link" onclick="goTo('fichario',this)">Fichário</button>
+    <button class="nav-link" onclick="goTo('rolagens',this)">Rolagens</button>
   </div>
   <button class="nav-login" id="btn-adm" onclick="goToAdm()">ADM</button>
 </nav>
@@ -305,7 +326,26 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   </div>
 </div>
 
-<!-- ROLADOR DE DADOS -->
+<!-- ROLAGENS POR PERSONAGEM -->
+<div class="page" id="page-rolagens">
+  <div class="roller-header">
+    <h2>Rolagens por Personagem</h2>
+    <p>Histórico completo separado por personagem</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+    <input type="text" id="rolagens-busca" placeholder="Filtrar por personagem..." oninput="filtrarRolagens()"
+      style="padding:9px 16px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;width:240px;color:var(--text);transition:border .2s"/>
+    <select id="rolagens-bioma-sel" onchange="filtrarRolagens()"
+      style="padding:9px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+      <option value="">— Todos os biomas —</option>
+    </select>
+    <button class="btn btn-sm" style="background:var(--surface);border:1.5px solid var(--border);color:var(--muted)" onclick="expandirTodasRolagens()">↕ Expandir tudo</button>
+    <span id="rolagens-total" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
+  </div>
+  <div id="rolagens-container">
+    <div style="color:var(--muted);font-size:14px;padding:20px">Carregando rolagens...</div>
+  </div>
+</div>
 <div class="page" id="page-dados">
   <div class="dice-roller-wrap">
     <div class="dice-header">
@@ -925,7 +965,7 @@ function fb(id,ms=2500){const el=document.getElementById(id);if(!el)return;el.st
 // ══════════════════════════════════════
 // LAZY LOADING STATE
 // ══════════════════════════════════════
-const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false};
+const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false};
 
 async function init(){
   loading(true);
@@ -933,7 +973,7 @@ async function init(){
     const estilo = await carregarEstiloSalvo();
     aplicarVars(estilo);
 
-    const validPages = ['roller','fichario','bioma','dados','adm'];
+    const validPages = ['roller','fichario','bioma','dados','adm','rolagens'];
     const pathPage = location.pathname.replace(/^\//, '') || 'roller';
     let hash = validPages.includes(pathPage) ? pathPage : 'roller';
 
@@ -988,6 +1028,18 @@ async function carregarAba(page){
     else if(page==='dados'){
       // dados não precisa de Supabase — só renderiza
     }
+    else if(page==='rolagens'){
+      const [_hist,_personagens,_biomas] = await Promise.all([
+        dbGet('historico','order=criado_em.desc&limit=1000'),
+        loaded.fichario ? Promise.resolve(personagens) : dbGet('personagens'),
+        loaded.roller   ? Promise.resolve(biomas)     : dbGet('biomas'),
+      ]);
+      historico=_hist||[];
+      if(!loaded.fichario){ personagens=_personagens||[]; }
+      if(!loaded.roller){ biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); }
+      syncRolagensBiomaSelect();
+      renderRolagens();
+    }
     else if(page==='adm'){
       if(!admLogado){ return; }
       const [_admins,_players,_personagens,_biomas,_pokemons] = await Promise.all([
@@ -1032,6 +1084,7 @@ function navegarPara(page, replace=false){
     }
   }
   if(page==='bioma') renderBiomaPage();
+  if(page==='rolagens') renderRolagens();
   const path = page==='roller' ? '/' : '/'+page;
   if(replace) history.replaceState(null,'', path);
   else history.pushState(null,'', path);
@@ -2019,6 +2072,103 @@ async function rolarEncontro(){
 }
 
 // ══════════════════════════════════════
+// ROLAGENS POR PERSONAGEM
+// ══════════════════════════════════════
+function syncRolagensBiomaSelect(){
+  const sel=document.getElementById('rolagens-bioma-sel');
+  if(!sel)return;
+  const val=sel.value;
+  sel.innerHTML='<option value="">— Todos os biomas —</option>'+
+    biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('');
+  sel.value=val;
+}
+function filtrarRolagens(){ renderRolagens(); }
+function expandirTodasRolagens(){
+  const accs=document.querySelectorAll('.rol-personagem-acc');
+  const algumFechado=[...accs].some(a=>!a.classList.contains('open'));
+  accs.forEach(a=>{ if(algumFechado) a.classList.add('open'); else a.classList.remove('open'); });
+}
+function renderRolagens(){
+  const container=document.getElementById('rolagens-container');
+  if(!container)return;
+  const busca=(document.getElementById('rolagens-busca')?.value||'').toLowerCase().trim();
+  const biomaFiltro=document.getElementById('rolagens-bioma-sel')?.value||'';
+
+  // filtra rolagens
+  let lista=historico.slice();
+  if(biomaFiltro) lista=lista.filter(e=>e.bioma===biomaFiltro);
+
+  // agrupa por personagem
+  const grupos={};
+  lista.forEach(e=>{
+    const key=e.personagem||'Desconhecido';
+    if(!grupos[key]) grupos[key]=[];
+    grupos[key].push(e);
+  });
+
+  // filtra por busca de nome
+  let chaves=Object.keys(grupos).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(busca) chaves=chaves.filter(k=>k.toLowerCase().includes(busca));
+
+  document.getElementById('rolagens-total').textContent=
+    `${chaves.length} personagem${chaves.length!==1?'s':', '}· ${lista.length} rolagem${lista.length!==1?'s':''}`;
+
+  if(chaves.length===0){
+    container.innerHTML='<div style="color:var(--muted);font-size:14px;padding:20px 0">Nenhuma rolagem encontrada.</div>';
+    return;
+  }
+
+  container.innerHTML=chaves.map(nome=>{
+    const p=personagens.find(x=>x.nome===nome);
+    const cor=p?.cor||'var(--brand)';
+    const img=p?.img||null;
+    const player=p?.player||'';
+    const rolls=grupos[nome]; // já ordenados desc por hora do server
+    const totalPokes=rolls.reduce((s,e)=>s+(e.pokes||[]).length,0);
+
+    const avatarHtml=img
+      ?`<img src="${img}" style="width:38px;height:38px;object-fit:cover;border-radius:50%"/>`
+      :`<img src="${FALLBACK_AVATAR}" style="width:30px;height:30px;object-fit:contain;image-rendering:pixelated"/>`;
+
+    const entries=rolls.map(e=>{
+      const pokes=Array.isArray(e.pokes)?e.pokes:[];
+      const pokesHtml=pokes.map(pk=>`
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-width:90px;max-width:110px">
+          <div style="width:52px;height:52px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden">
+            <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:52px;height:52px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
+          </div>
+          <div style="font-size:10px;font-weight:700;font-family:var(--font-title);color:var(--text);text-align:center;line-height:1.2">
+            ${pk.nome} <span style="color:${pk.genderC||'#888'}">${pk.genderS||''}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:2px">
+            ${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}
+          </div>
+          <span class="poke-rarity ${rcls[pk.rarity]||'rc'}" style="font-size:9px;padding:1px 6px">${rlbl[pk.rarity]||''}</span>
+        </div>`).join('');
+      return`<div class="rol-entry">
+        <div class="rol-entry-header">
+          <span class="rol-entry-bioma">📍 ${e.bioma||'?'}</span>
+          <span class="rol-entry-hora">${e.hora||''} · ${e.data||''}</span>
+        </div>
+        <div class="rol-pokes-wrap">${pokesHtml}</div>
+      </div>`;
+    }).join('');
+
+    return`<div class="rol-personagem-acc" id="rol-acc-${nome.replace(/\W/g,'_')}">
+      <div class="rol-personagem-header" onclick="this.closest('.rol-personagem-acc').classList.toggle('open')">
+        <div class="rol-personagem-avatar" style="border-color:${cor};background:${cor}22">${avatarHtml}</div>
+        <div class="rol-personagem-info">
+          <div class="rol-personagem-nome">${nome}</div>
+          <div class="rol-personagem-meta">${player?`<span style="font-weight:700;color:${cor}">${player}</span> · `:''}${rolls.length} rolagem${rolls.length!==1?'s':''} · ${totalPokes} Pokémon</div>
+        </div>
+        <span class="rol-personagem-arrow">▼</span>
+      </div>
+      <div class="rol-personagem-body">${entries}</div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════
 // HISTÓRICO
 // ══════════════════════════════════════
 async function salvarNoHistorico(bioma,personagem,pokes){
@@ -2030,6 +2180,7 @@ async function salvarNoHistorico(bioma,personagem,pokes){
   if(res&&res[0])historico.unshift(res[0]);
   histPagina=0;
   renderHistorico();
+  if(loaded.rolagens) renderRolagens();
 }
 function mudarPaginaHist(dir){
   const totalPags=Math.ceil(historico.length/HIST_POR_PAG);
