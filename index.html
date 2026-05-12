@@ -1157,10 +1157,22 @@ async function adicionarAdmin(){
   if(!email||senha.length<6){errEl.textContent='Preencha usuário e senha (mín. 6 caracteres).';errEl.style.display='block';return;}
   if(admins.find(a=>a.email===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
   const perms=[...document.querySelectorAll('#adm-new-perms input[type=checkbox]:checked')].map(c=>c.dataset.perm);
-  const res=await dbPost('admins',{email,senha,permissoes:perms});
+
+  // 1. Cria o usuário no Supabase Auth
+  const {data:authData, error:authError} = await supabaseClient.auth.signUp({email, password:senha});
+  if(authError){
+    errEl.textContent='Erro ao criar login: '+authError.message;
+    errEl.style.display='block';
+    return;
+  }
+
+  // 2. Salva na tabela admins
+  const authId = authData?.user?.id || null;
+  const res=await dbPost('admins',{email, senha, permissoes:perms, auth_id:authId});
   if(res&&res[0]){admins.push(res[0]);fb('adm-fb-ok');}
+  else{errEl.textContent='Usuário criado no login, mas falhou ao salvar permissões.';errEl.style.display='block';}
+
   document.getElementById('adm-new-email').value='';document.getElementById('adm-new-senha').value='';
-  // reset checkboxes
   document.querySelectorAll('#adm-new-perms input[type=checkbox]').forEach(c=>{
     c.checked=['personagens','biomas','pokemons'].includes(c.dataset.perm);
   });
@@ -1760,10 +1772,11 @@ async function rolarEncontro(){
     usedIds[r]=new Set();
   }
 
-  // Gera exatamente `total` cards, um de cada raridade em ciclo, sem repetir
+  // Sorteia raridade aleatoriamente (pesos originais) e evita repetir pokémon
+  function rollRarity(){const r=Math.ceil(Math.random()*100);if(r<=2)return 'rarissimo';if(r<=13)return 'raro';if(r<=51)return 'incomum';return 'comum';}
   const pokes=[];
   for(let i=0;i<total;i++){
-    const rarity=raridades[i % raridades.length];
+    const rarity=rollRarity();
     const pk=pickFromPool(pools[rarity],usedIds[rarity],rarity);
     pokes.push(pk);
   }
