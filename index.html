@@ -873,10 +873,21 @@ async function init(){
       document.getElementById('adm-user-label').textContent=session.user.email;
     }
 
-    // Detecta aba inicial pelo path
-    const pathPage = location.pathname.replace(/^\//, '') || 'roller';
+    // Detecta aba inicial pelo hash (ex: #adm) ou pathname legado
     const validPages = ['roller','fichario','bioma','dados','adm'];
-    let hash = validPages.includes(pathPage) ? pathPage : 'roller';
+    const hashPage = location.hash.replace(/^#/, '');
+    const pathPage = location.pathname.replace(/^\//, '');
+    let hash = validPages.includes(hashPage)
+      ? hashPage
+      : validPages.includes(pathPage) ? pathPage : 'roller';
+
+    // Se a aba é ADM e não há sessão, mostra login ADM sem erro
+    if(hash === 'adm' && !session){
+      navegarPara('adm', true);
+      loading(false);
+      return;
+    }
+
     await carregarAba(hash);
     navegarPara(hash, true);
 
@@ -969,10 +980,11 @@ function navegarPara(page, replace=false){
     }
   }
   if(page==='bioma') renderBiomaPage();
-  // roller usa raiz (home)
-  const path = page==='roller' ? '/' : '/'+page;
-  if(replace) history.replaceState(null,'',path);
-  else history.pushState(null,'',path);
+  // roller usa raiz sem hash; outros usam hash
+  const path = page==='roller' ? '/' : '/';
+  const hashVal = page==='roller' ? '' : page;
+  if(replace) history.replaceState(null,'', path + (hashVal ? '#'+hashVal : ''));
+  else history.pushState(null,'', path + (hashVal ? '#'+hashVal : ''));
 }
 
 function goTo(page,el){
@@ -2053,12 +2065,12 @@ async function limparHistPokemon(){
 // START
 // ══════════════════════════════════════
 window.addEventListener('popstate', ()=>{
+  const hashPage = location.hash.replace(/^#/, '');
   const pathPage = location.pathname.replace(/^\//, '') || 'roller';
-  const page = ['roller','fichario','bioma','dados','adm'].includes(pathPage) ? pathPage : 'roller';
-  const validPages = ['roller','ficha','fichario','bioma','dados','adm'];
-  if(validPages.includes(page)){
-    carregarAba(page).then(()=>navegarPara(page));
-  }
+  const validPages = ['roller','fichario','bioma','dados','adm'];
+  const page = validPages.includes(hashPage) ? hashPage
+             : validPages.includes(pathPage) ? pathPage : 'roller';
+  carregarAba(page).then(()=>navegarPara(page));
 });
 
 init();
