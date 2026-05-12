@@ -574,14 +574,14 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
               <div class="field"><label>Usuário (e-mail)</label><input type="text" id="adm-new-email" placeholder="novo@email.com"/></div>
               <div class="field"><label>Senha</label><input type="password" id="adm-new-senha" placeholder="Mín. 6 caracteres"/></div>
             </div>
-            <div class="field" style="margin-bottom:12px">
-              <label style="margin-bottom:8px;display:block">Permissões</label>
-              <div style="display:flex;flex-wrap:wrap;gap:8px" id="adm-new-perms">
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="personagens" checked/> 👥 Personagens</label>
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="biomas" checked/> 🗺️ Biomas</label>
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="pokemons" checked/> ⚡ Pokémon</label>
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="editor"/> 🎨 Editor Visual</label>
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="historicos"/> 🗑️ Históricos</label>
+            <div class="field" style="margin-bottom:10px">
+              <label style="margin-bottom:6px;display:block">Permissões</label>
+              <div style="display:flex;flex-wrap:wrap;gap:3px" id="adm-new-perms">
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="personagens" checked style="margin:0"/> 👥 Personagens</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="biomas" checked style="margin:0"/> 🗺️ Biomas</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="pokemons" checked style="margin:0"/> ⚡ Pokémon</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="editor" style="margin:0"/> 🎨 Editor</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="historicos" style="margin:0"/> 🗑️ Históricos</label>
               </div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="adicionarAdmin()">+ Adicionar Admin</button>
@@ -1074,7 +1074,7 @@ function admTab(sec,el){
   if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();}
   if(sec==='biomas')renderTbodyBiomas();
   if(sec==='pokemons'){syncBiomaSelects();}
-  if(sec==='admins')renderTbodyAdmins();
+  if(sec==='admins'){ if(!admins||admins.length===0){ dbGet('admins').then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
     const isGold=isSuperAdmin();
@@ -1185,16 +1185,22 @@ async function salvarPermsAdmin(id, email){
 }
 function renderTbodyAdmins(){
   const superAdmin = isSuperAdmin();
-  const permLabels = {personagens:'👥 Personagens',biomas:'🗺️ Biomas',pokemons:'⚡ Pokémon',editor:'🎨 Editor',historicos:'🗑️ Históricos'};
-  document.getElementById('tbody-admins').innerHTML=admins.map(a=>{
+  const permIcons  = {personagens:'👥',biomas:'🗺️',pokemons:'⚡',editor:'🎨',historicos:'🗑️'};
+  const permNames  = {personagens:'Personagens',biomas:'Biomas',pokemons:'Pokémon',editor:'Editor',historicos:'Históricos'};
+  const tbody = document.getElementById('tbody-admins');
+  if(!admins || admins.length === 0){
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);font-size:13px;padding:16px 10px">Nenhum administrador cadastrado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=admins.map(a=>{
     const isSuper = a.email===SUPER_ADMIN;
     const isMe = a.email===admLogado?.email;
     const perms = getAdminPerms(a);
     const permsCell = isSuper
       ? '<span style="font-size:11px;background:#fdf3dc;color:#7a5010;padding:2px 8px;border-radius:8px;font-weight:700">⭐ Super Admin</span>'
       : superAdmin
-        ? `<div id="perms-row-${a.id}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">${ALL_PERMS.map(p=>`<label style="display:flex;align-items:center;gap:3px;font-size:11px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="${p}" ${perms.includes(p)?'checked':''}/> ${permLabels[p]}</label>`).join('')}</div><button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px" onclick="salvarPermsAdmin('${a.id}','${a.email}')">Salvar</button>`
-        : perms.map(p=>`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 7px;border-radius:6px;font-weight:700;margin-right:3px">${permLabels[p]||p}</span>`).join('');
+        ? `<div id="perms-row-${a.id}" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">${ALL_PERMS.map(p=>`<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap"><input type="checkbox" data-perm="${p}" ${perms.includes(p)?'checked':''} style="margin:0"/> ${permIcons[p]} ${permNames[p]}</label>`).join('')}</div><button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px" onclick="salvarPermsAdmin('${a.id}','${a.email}')">Salvar</button>`
+        : perms.map(p=>`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 6px;border-radius:5px;font-weight:700;margin-right:2px;white-space:nowrap">${permIcons[p]} ${permNames[p]}</span>`).join('');
     return`<tr>
       <td>${a.email}${isMe?' <span style="font-size:10px;color:var(--muted)">(você)</span>':''}${isSuper?' <span style="font-size:10px;color:#e8a020">★</span>':''}</td>
       <td>${permsCell}</td>
