@@ -390,13 +390,13 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div class="adm-layout">
       <div class="adm-sidebar">
         <div class="adm-sidebar-user" id="adm-user-label">—</div>
-        <button class="adm-nav-btn active" onclick="admTab('personagens',this)">👥 Personagens</button>
-        <button class="adm-nav-btn" onclick="admTab('biomas',this)">🗺️ Biomas</button>
-        <button class="adm-nav-btn" onclick="admTab('pokemons',this)">⚡ Pokémon</button>
+        <button class="adm-nav-btn active" data-sec="personagens" onclick="admTab('personagens',this)">👥 Personagens</button>
+        <button class="adm-nav-btn" data-sec="biomas" onclick="admTab('biomas',this)">🗺️ Biomas</button>
+        <button class="adm-nav-btn" data-sec="pokemons" onclick="admTab('pokemons',this)">⚡ Pokémon</button>
         <div class="adm-nav-sep"></div>
-        <button class="adm-nav-btn" onclick="admTab('admins',this)">🔑 Admins</button>
-        <button class="adm-nav-btn" onclick="admTab('editor',this)">🎨 Editor Visual</button>
-        <button class="adm-nav-btn" onclick="admTab('historicos',this)">🗑️ Históricos</button>
+        <button class="adm-nav-btn" id="btn-sec-admins" onclick="admTab('admins',this)">🔑 Admins</button>
+        <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)">🎨 Editor Visual</button>
+        <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()">Sair</button>
       </div>
@@ -567,19 +567,29 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         <!-- ADMINS -->
         <div class="adm-section" id="sec-admins">
           <div class="sec-title">Administradores</div>
-          <div class="sec-sub">Gerencie quem tem acesso ao painel ADM</div>
-          <div class="box">
+          <div class="sec-sub">Gerencie quem tem acesso ao painel ADM e quais seções cada admin pode editar</div>
+          <div class="box" id="adm-add-box">
             <div class="box-title">Novo administrador</div>
             <div class="g2">
-              <div class="field"><label>Usuário</label><input type="text" id="adm-new-email" placeholder="novo_usuario"/></div>
+              <div class="field"><label>Usuário (e-mail)</label><input type="text" id="adm-new-email" placeholder="novo@email.com"/></div>
               <div class="field"><label>Senha</label><input type="password" id="adm-new-senha" placeholder="Mín. 6 caracteres"/></div>
+            </div>
+            <div class="field" style="margin-bottom:12px">
+              <label style="margin-bottom:8px;display:block">Permissões</label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px" id="adm-new-perms">
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="personagens" checked/> 👥 Personagens</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="biomas" checked/> 🗺️ Biomas</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="pokemons" checked/> ⚡ Pokémon</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="editor"/> 🎨 Editor Visual</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="historicos"/> 🗑️ Históricos</label>
+              </div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="adicionarAdmin()">+ Adicionar Admin</button>
             <div class="fb fb-ok" id="adm-fb-ok">✓ Admin adicionado!</div>
             <div class="fb fb-err" id="adm-fb-err">—</div>
           </div>
           <div class="adm-table-wrap"><table class="adm-table">
-            <thead><tr><th>Usuário</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Usuário</th><th>Permissões</th><th>Ações</th></tr></thead>
             <tbody id="tbody-admins"></tbody>
           </table></div>
         </div>
@@ -651,9 +661,9 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         <!-- HISTÓRICOS -->
         <div class="adm-section" id="sec-historicos">
           <div class="sec-title">Históricos</div>
-          <div class="sec-sub">Limpeza dos históricos de rolagens — disponível apenas para o admin <strong>pchaptersrpg@gmail.com</strong></div>
+          <div class="sec-sub">Limpeza dos históricos de rolagens — disponível apenas para o super admin</div>
           <div id="hist-clear-blocked" style="display:none;background:#fde8e8;border:1.5px solid #f0c0c0;border-radius:8px;padding:16px;color:var(--red);font-size:13px;font-weight:600">
-            🔒 Apenas o admin <strong>pchaptersrpg@gmail.com</strong> pode limpar os históricos.
+            🔒 Apenas o super admin pode limpar os históricos.
           </div>
           <div id="hist-clear-panel">
             <div class="box" style="border-color:#f0c0c0">
@@ -928,6 +938,7 @@ async function carregarAba(page){
       biomas=_biomas; pokemonDB=_pokemons;
       syncBiomaSelect();
       renderTbodyPersonagens(); renderTbodyPlayers();
+      aplicarPermissoesSidebar();
     }
     loaded[page] = true;
   } catch(e){ console.error('Erro ao carregar aba',page,e); }
@@ -1028,6 +1039,12 @@ function toggleRaridade(r){
   document.getElementById('acc-'+r).classList.toggle('open');
 }
 function admTab(sec,el){
+  // verifica permissão
+  const perms = admLogado ? getAdminPerms(admins.find(a=>a.email===admLogado.email)||{email:admLogado.email,permissoes:[]}) : [];
+  const protegidas = ['personagens','biomas','pokemons','editor','historicos'];
+  if(protegidas.includes(sec) && !perms.includes(sec) && !isSuperAdmin()){
+    alert('Você não tem permissão para acessar esta seção.');return;
+  }
   document.querySelectorAll('.adm-section').forEach(s=>s.classList.remove('active'));
   document.getElementById('sec-'+sec).classList.add('active');
   document.querySelectorAll('.adm-nav-btn').forEach(b=>b.classList.remove('active'));
@@ -1038,7 +1055,7 @@ function admTab(sec,el){
   if(sec==='admins')renderTbodyAdmins();
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
-    const isGold=admLogado?.email==='pchaptersrpg@gmail.com';
+    const isGold=isSuperAdmin();
     document.getElementById('hist-clear-blocked').style.display=isGold?'none':'block';
     document.getElementById('hist-clear-panel').style.display=isGold?'block':'none';
   }
@@ -1061,6 +1078,7 @@ async function fazerLogin(){
   // carrega dados do ADM agora que está logado
   loaded.adm=false;
   await carregarAba('adm');
+  aplicarPermissoesSidebar();
 }
 async function fazerLogout(){
   await supabaseClient.auth.signOut();
@@ -1074,32 +1092,93 @@ async function fazerLogout(){
 // ══════════════════════════════════════
 // ADMINS
 // ══════════════════════════════════════
+const SUPER_ADMIN = 'adm@nendo.ne';
+const ALL_PERMS = ['personagens','biomas','pokemons','editor','historicos'];
+
+function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
+
+function getAdminPerms(a){
+  // super admin tem tudo sempre
+  if(a.email === SUPER_ADMIN) return ALL_PERMS;
+  // perms salvas no banco (array) ou padrão
+  if(Array.isArray(a.permissoes) && a.permissoes.length) return a.permissoes;
+  return ['personagens','biomas','pokemons'];
+}
+
+function aplicarPermissoesSidebar(){
+  const perms = admLogado ? getAdminPerms(admins.find(a=>a.email===admLogado.email)||{email:admLogado.email,permissoes:[]}) : [];
+  // botões com data-sec
+  document.querySelectorAll('.adm-nav-btn[data-sec]').forEach(btn=>{
+    const sec = btn.dataset.sec;
+    btn.style.display = perms.includes(sec) ? '' : 'none';
+  });
+  // botão admins: só super admin vê
+  const btnAdmins = document.getElementById('btn-sec-admins');
+  if(btnAdmins) btnAdmins.style.display = isSuperAdmin() ? '' : 'none';
+  // caixa de adicionar admin: só super admin
+  const addBox = document.getElementById('adm-add-box');
+  if(addBox) addBox.style.display = isSuperAdmin() ? '' : 'none';
+  // se a aba atual ficou oculta, vai para a primeira visível
+  const activeBtn = document.querySelector('.adm-nav-btn.active');
+  if(activeBtn && activeBtn.style.display==='none'){
+    const first = document.querySelector('.adm-nav-btn:not([style*="display: none"]):not([style*="display:none"])');
+    if(first) first.click();
+  }
+}
+
 async function adicionarAdmin(){
+  if(!isSuperAdmin()){alert('Apenas o super admin pode adicionar admins.');return;}
   const email=document.getElementById('adm-new-email').value.trim();
   const senha=document.getElementById('adm-new-senha').value;
   const errEl=document.getElementById('adm-fb-err');
   document.getElementById('adm-fb-ok').style.display='none';errEl.style.display='none';
   if(!email||senha.length<6){errEl.textContent='Preencha usuário e senha (mín. 6 caracteres).';errEl.style.display='block';return;}
   if(admins.find(a=>a.email===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
-  const res=await dbPost('admins',{email,senha});
+  const perms=[...document.querySelectorAll('#adm-new-perms input[type=checkbox]:checked')].map(c=>c.dataset.perm);
+  const res=await dbPost('admins',{email,senha,permissoes:perms});
   if(res&&res[0]){admins.push(res[0]);fb('adm-fb-ok');}
   document.getElementById('adm-new-email').value='';document.getElementById('adm-new-senha').value='';
+  // reset checkboxes
+  document.querySelectorAll('#adm-new-perms input[type=checkbox]').forEach(c=>{
+    c.checked=['personagens','biomas','pokemons'].includes(c.dataset.perm);
+  });
   renderTbodyAdmins();
 }
 async function removerAdmin(id,email){
-  if(admins.length<=1){alert('Deve existir ao menos 1 administrador.');return;}
+  if(!isSuperAdmin()){alert('Apenas o super admin pode remover admins.');return;}
+  if(email===SUPER_ADMIN){alert('O super admin não pode ser removido.');return;}
   if(email===admLogado?.email){alert('Você não pode remover a si mesmo.');return;}
   if(!confirm(`Remover o admin "${email}"?`))return;
   await dbDel('admins',`id=eq.${id}`);
   admins=admins.filter(a=>a.id!==id);
   renderTbodyAdmins();
 }
+async function salvarPermsAdmin(id, email){
+  if(!isSuperAdmin()) return;
+  const checks=[...document.querySelectorAll(`#perms-row-${id} input[type=checkbox]:checked`)].map(c=>c.dataset.perm);
+  await dbPatch('admins',`id=eq.${id}`,{permissoes:checks});
+  const a=admins.find(x=>x.id===id);if(a)a.permissoes=checks;
+  renderTbodyAdmins();
+  fb('adm-fb-ok');
+}
 function renderTbodyAdmins(){
-  document.getElementById('tbody-admins').innerHTML=admins.map(a=>`
-    <tr>
-      <td>${a.email}${a.email===admLogado?.email?' <span style="font-size:10px;color:var(--muted)">(você)</span>':''}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="removerAdmin('${a.id}','${a.email}')" ${a.email===admLogado?.email?'disabled':''}>Remover</button></td>
-    </tr>`).join('');
+  const superAdmin = isSuperAdmin();
+  const permLabels = {personagens:'👥 Personagens',biomas:'🗺️ Biomas',pokemons:'⚡ Pokémon',editor:'🎨 Editor',historicos:'🗑️ Históricos'};
+  document.getElementById('tbody-admins').innerHTML=admins.map(a=>{
+    const isSuper = a.email===SUPER_ADMIN;
+    const isMe = a.email===admLogado?.email;
+    const perms = getAdminPerms(a);
+    const permsCell = isSuper
+      ? '<span style="font-size:11px;background:#fdf3dc;color:#7a5010;padding:2px 8px;border-radius:8px;font-weight:700">⭐ Super Admin</span>'
+      : superAdmin
+        ? `<div id="perms-row-${a.id}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">${ALL_PERMS.map(p=>`<label style="display:flex;align-items:center;gap:3px;font-size:11px;font-weight:600;cursor:pointer"><input type="checkbox" data-perm="${p}" ${perms.includes(p)?'checked':''}/> ${permLabels[p]}</label>`).join('')}</div><button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px" onclick="salvarPermsAdmin('${a.id}','${a.email}')">Salvar</button>`
+        : perms.map(p=>`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 7px;border-radius:6px;font-weight:700;margin-right:3px">${permLabels[p]||p}</span>`).join('');
+    return`<tr>
+      <td>${a.email}${isMe?' <span style="font-size:10px;color:var(--muted)">(você)</span>':''}${isSuper?' <span style="font-size:10px;color:#e8a020">★</span>':''}</td>
+      <td>${permsCell}</td>
+      <td>${!isSuper&&!isMe&&superAdmin?`<button class="btn btn-danger btn-sm" onclick="removerAdmin('${a.id}','${a.email}')">Remover</button>`:''}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ══════════════════════════════════════
