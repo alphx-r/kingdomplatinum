@@ -194,6 +194,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .rol-tab-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--text);cursor:pointer;transition:all .18s;user-select:none}
 .rol-tab-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--brand-light)}
 .rol-tab-btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.rol-sticky-header{display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);border-left-width:4px;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:12px}
+.rol-scroll-body{overflow-y:auto;max-height:calc(100vh - 320px)}
 .rol-entry{border-bottom:1px solid var(--border);padding:12px 18px}
 .rol-entry:last-child{border-bottom:none}
 .rol-entry-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px}
@@ -2079,18 +2081,45 @@ function syncRolagensBiomaSelect(){
 
 function normKey(n){ return (n||'Desconhecido').toLowerCase().trim(); }
 
+// Resolve um nome de rolagem para a chave canônica de um personagem cadastrado.
+// Tenta: (1) match exato, (2) primeiro nome do personagem, (3) começa com o nome da rolagem
+function resolveKey(nomeRolagem){
+  const k=normKey(nomeRolagem);
+  // (1) exato
+  const exato=personagens.find(x=>normKey(x.nome)===k);
+  if(exato) return normKey(exato.nome);
+  // (2) primeiro nome do personagem cadastrado bate com k inteiro
+  const porPrimeiro=personagens.find(x=>{
+    const primeiroNome=normKey(x.nome).split(/\s+/)[0];
+    return primeiroNome===k;
+  });
+  if(porPrimeiro) return normKey(porPrimeiro.nome);
+  // (3) k é prefixo do nome do personagem
+  const porPrefixo=personagens.find(x=>normKey(x.nome).startsWith(k+' ')||normKey(x.nome)===k);
+  if(porPrefixo) return normKey(porPrefixo.nome);
+  // sem match — usa o próprio nome normalizado
+  return k;
+}
+
 function buildGrupos(){
   const biomaFiltro=document.getElementById('rolagens-bioma-sel')?.value||'';
   const mapa={};
+  const ensureKey=(rawNome)=>{
+    const k=resolveKey(rawNome);
+    if(!mapa[k]){
+      // canon: preferir nome do personagem cadastrado, senão o nome da rolagem
+      const pCad=personagens.find(x=>normKey(x.nome)===k);
+      mapa[k]={canon: pCad ? pCad.nome : (rawNome||'Desconhecido'), rolls:[]};
+    }
+    return k;
+  };
   historico.forEach(e=>{
     if(biomaFiltro && e.bioma!==biomaFiltro) return;
-    const k=normKey(e.personagem);
-    if(!mapa[k]) mapa[k]={canon:e.personagem||'Desconhecido',rolls:[]};
+    const k=ensureKey(e.personagem);
     mapa[k].rolls.push({...e,_tipo:'pokemon'});
   });
   historicoDados.forEach(e=>{
-    const k=normKey(e.personagem);
-    if(!mapa[k]) mapa[k]={canon:e.personagem||'Desconhecido',rolls:[]};
+    const k=ensureKey(e.personagem);
     mapa[k].rolls.push({...e,_tipo:'dado'});
   });
   Object.values(mapa).forEach(g=>{
@@ -2158,18 +2187,6 @@ function renderRolagens(){
   const img=p?.img||null;
   const player=p?.player||'';
 
-  const headerHtml=`<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:16px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r)">
-    <div style="width:52px;height:52px;border-radius:50%;border:2.5px solid ${cor};background:${cor}22;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
-      ${img?`<img src="${img}" style="width:52px;height:52px;object-fit:cover;border-radius:50%"/>`:
-            `<img src="${FALLBACK_AVATAR}" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated"/>`}
-    </div>
-    <div>
-      <div style="font-family:var(--font-title);font-size:16px;font-weight:700;color:var(--text)">${g.canon}</div>
-      ${player?`<div style="font-size:12px;color:${cor};font-weight:700">${player}</div>`:''}
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${g.rolls.length} roll${g.rolls.length!==1?'s':''}</div>
-    </div>
-  </div>`;
-
   const entriesHtml=g.rolls.map(e=>{
     if(e._tipo==='pokemon'){
       const pokes=Array.isArray(e.pokes)?e.pokes:[];
@@ -2217,7 +2234,24 @@ function renderRolagens(){
     }
   }).join('');
 
-  container.innerHTML=headerHtml+`<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden">${entriesHtml||'<div style="padding:20px;color:var(--muted);font-size:13px">Sem rolls.</div>'}</div>`;
+  // Header fixo + lista com scroll
+  container.innerHTML=`
+    <div class="rol-sticky-header" style="border-color:${cor}">
+      <div style="width:56px;height:56px;border-radius:50%;border:2.5px solid ${cor};background:${cor}22;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+        ${img?`<img src="${img}" style="width:56px;height:56px;object-fit:cover;border-radius:50%"/>`:
+              `<img src="${FALLBACK_AVATAR}" style="width:42px;height:42px;object-fit:contain;image-rendering:pixelated"/>`}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--text);letter-spacing:.3px">${g.canon}</div>
+        ${player?`<div style="font-size:12px;color:${cor};font-weight:700;margin-top:1px">${player}</div>`:''}
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${g.rolls.length} roll${g.rolls.length!==1?'s':''}</div>
+      </div>
+    </div>
+    <div class="rol-scroll-body">
+      <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden">
+        ${entriesHtml||'<div style="padding:20px;color:var(--muted);font-size:13px">Sem rolls.</div>'}
+      </div>
+    </div>`;
 }
 
 function selecionarRolagemTab(key){
