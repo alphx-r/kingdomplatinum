@@ -1050,7 +1050,7 @@ function toggleRaridade(r){
 }
 function admTab(sec,el){
   // verifica permissão
-  const perms = admLogado ? getAdminPerms(admins.find(a=>a.email===admLogado.email)||{email:admLogado.email,permissoes:[]}) : [];
+  const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   const protegidas = ['personagens','biomas','pokemons','editor','historicos'];
   if(protegidas.includes(sec) && !perms.includes(sec) && !isSuperAdmin()){
     alert('Você não tem permissão para acessar esta seção.');return;
@@ -1081,16 +1081,16 @@ async function fazerLogin(){
   errEl.style.display='none';
   // Autenticação direta pela tabela admins (sem Supabase Auth)
   const lista=await dbGet('admins','select=*');
-  const match=lista.find(a=>a.email===email&&a.senha===senha);
+  const match=lista.find(a=>a.nome===email&&a.senha===senha);
   // Super admin pode estar ausente da tabela — verifica pelo email constante
   const isSA = email===SUPER_ADMIN;
   if(!match && !isSA){errEl.style.display='block';return;}
   if(!match && isSA){
     // super admin não está na tabela ainda: cria automaticamente
-    const res=await dbPost('admins',{email, senha, permissoes:ALL_PERMS});
+    const res=await dbPost('admins',{nome:email, senha, permissoes:ALL_PERMS});
     if(res&&res[0]) lista.push(res[0]);
   }
-  const loggedEmail = match ? match.email : email;
+  const loggedEmail = match ? match.nome : email;
   admLogado={email:loggedEmail};
   admins=lista;
   document.getElementById('adm-login-wrap').style.display='none';
@@ -1118,14 +1118,16 @@ function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
 
 function getAdminPerms(a){
   // super admin tem tudo sempre
-  if(a.email === SUPER_ADMIN) return ALL_PERMS;
+  if(a.nome === SUPER_ADMIN) return ALL_PERMS;
   // perms salvas no banco (array) ou padrão
-  if(Array.isArray(a.permissoes) && a.permissoes.length) return a.permissoes;
+  const p = a.permissoes;
+  if(Array.isArray(p) && p.length) return p;
+  if(typeof p === 'string'){try{const arr=JSON.parse(p);if(Array.isArray(arr)&&arr.length)return arr;}catch(e){}}
   return ['personagens','biomas','pokemons'];
 }
 
 function aplicarPermissoesSidebar(){
-  const perms = admLogado ? getAdminPerms(admins.find(a=>a.email===admLogado.email)||{email:admLogado.email,permissoes:[]}) : [];
+  const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   // botões com data-sec
   document.querySelectorAll('.adm-nav-btn[data-sec]').forEach(btn=>{
     const sec = btn.dataset.sec;
@@ -1152,11 +1154,11 @@ async function adicionarAdmin(){
   const errEl=document.getElementById('adm-fb-err');
   document.getElementById('adm-fb-ok').style.display='none';errEl.style.display='none';
   if(!email||senha.length<6){errEl.textContent='Preencha usuário e senha (mín. 6 caracteres).';errEl.style.display='block';return;}
-  if(admins.find(a=>a.email===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
+  if(admins.find(a=>a.nome===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
   const perms=[...document.querySelectorAll('#adm-new-perms input[type=checkbox]:checked')].map(c=>c.dataset.perm);
 
   // Salva direto na tabela admins (sem Supabase Auth)
-  const res=await dbPost('admins',{email, senha, permissoes:perms});
+  const res=await dbPost('admins',{nome:email, senha, permissoes:perms});
   if(res&&res[0]){admins.push(res[0]);fb('adm-fb-ok');}
   else{
     const msg=Array.isArray(res)&&res.message ? res.message : (res?.message||'Verifique as permissões da tabela admins no Supabase (RLS).');
@@ -1197,8 +1199,8 @@ function renderTbodyAdmins(){
     return;
   }
   tbody.innerHTML=admins.map(a=>{
-    const isSuper = a.email===SUPER_ADMIN;
-    const isMe = a.email===admLogado?.email;
+    const isSuper = a.nome===SUPER_ADMIN;
+    const isMe = a.nome===admLogado?.email;
     const perms = getAdminPerms(a);
     const permsCell = isSuper
       ? '<span style="font-size:11px;background:#fdf3dc;color:#7a5010;padding:2px 8px;border-radius:8px;font-weight:700">⭐ Super Admin</span>'
@@ -1206,7 +1208,7 @@ function renderTbodyAdmins(){
         ? `<div id="perms-row-${a.id}" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">${ALL_PERMS.map(p=>`<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap"><input type="checkbox" data-perm="${p}" ${perms.includes(p)?'checked':''} style="margin:0"/> ${permIcons[p]} ${permNames[p]}</label>`).join('')}</div><button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px" onclick="salvarPermsAdmin('${a.id}','${a.email}')">Salvar</button>`
         : perms.map(p=>`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 6px;border-radius:5px;font-weight:700;margin-right:2px;white-space:nowrap">${permIcons[p]} ${permNames[p]}</span>`).join('');
     return`<tr>
-      <td>${a.email}${isMe?' <span style="font-size:10px;color:var(--muted)">(você)</span>':''}${isSuper?' <span style="font-size:10px;color:#e8a020">★</span>':''}</td>
+      <td>${a.nome}${isMe?' <span style="font-size:10px;color:var(--muted)">(você)</span>':''}${isSuper?' <span style="font-size:10px;color:#e8a020">★</span>':''}</td>
       <td>${permsCell}</td>
       <td>${!isSuper&&!isMe&&superAdmin?`<button class="btn btn-danger btn-sm" onclick="removerAdmin('${a.id}','${a.email}')">Remover</button>`:''}</td>
     </tr>`;
