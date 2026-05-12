@@ -551,6 +551,49 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
             <button class="btn btn-primary btn-sm" onclick="adicionarPokemon()">+ Adicionar Pokémon</button>
             <div class="fb fb-ok" id="pk-fb">✓ Pokémon adicionado!</div>
           </div>
+          <!-- ALTERAÇÃO EM MASSA DE RARIDADE -->
+          <div class="box" id="bulk-raridade-box">
+            <div class="box-title">🎯 Alterar Raridade em Massa</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div class="field" style="margin-bottom:0">
+                <label>Filtrar por bioma</label>
+                <select id="bulk-bioma-sel" onchange="renderBulkPkList()" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:14px;color:var(--text);width:100%">
+                  <option value="">— Todos os biomas —</option>
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Buscar Pokémon</label>
+                <input type="text" id="bulk-search" placeholder="Digite o nome..." oninput="renderBulkPkList()" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:14px;color:var(--text);width:100%"/>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">
+                Pokémon (<span id="bulk-count">0</span> selecionados)
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="bulkSelectAll()">Selecionar todos</button>
+                <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="bulkClearAll()">Limpar seleção</button>
+              </div>
+            </div>
+            <div id="bulk-pk-list" style="max-height:240px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);padding:6px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:4px;margin-bottom:12px">
+              <div style="color:var(--muted);font-size:13px;padding:8px;grid-column:1/-1">Nenhum Pokémon encontrado.</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="field" style="margin-bottom:0;flex:1;min-width:180px">
+                <label>Nova raridade</label>
+                <select id="bulk-nova-raridade" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:14px;color:var(--text);width:100%">
+                  <option value="comum">Comum (52–100)</option>
+                  <option value="incomum">Incomum (14–51)</option>
+                  <option value="raro">Raro (3–13)</option>
+                  <option value="rarissimo">Raríssimo (1–2)</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" style="margin-top:18px;white-space:nowrap" onclick="aplicarBulkRaridade()">✔ Aplicar Raridade</button>
+            </div>
+            <div class="fb fb-ok" id="bulk-fb-ok">✓ Raridade atualizada!</div>
+            <div class="fb fb-err" id="bulk-fb-err">—</div>
+          </div>
+
           <div id="pk-filtro-wrap" style="margin-bottom:16px">
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Filtrar por bioma</div>
             <div id="pk-filtro-btns" style="display:flex;flex-wrap:wrap;gap:6px"></div>
@@ -1407,6 +1450,7 @@ function syncBiomaSelects(){
   if(pks)pks.innerHTML=opts;
   if(imp)imp.innerHTML=opts;
   if(mpk)mpk.innerHTML=opts;
+  syncBulkBiomaSelect();renderBulkPkList();
   // botões de filtro estilo dados
   const btns=document.getElementById('pk-filtro-btns');
   if(btns){
@@ -1624,6 +1668,85 @@ function renderTbodyPokemons(){
       <td style="font-size:12px;color:var(--muted)">${habs.join(' / ')||'—'}</td>
     </tr>`;
   }).join('');
+}
+
+// ══════════════════════════════════════
+// BULK RARIDADE
+// ══════════════════════════════════════
+let bulkSelecionados=new Set();
+function syncBulkBiomaSelect(){
+  const sel=document.getElementById('bulk-bioma-sel');
+  if(!sel)return;
+  const atual=sel.value;
+  sel.innerHTML='<option value="">— Todos os biomas —</option>'+biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('');
+  sel.value=atual;
+}
+function renderBulkPkList(){
+  const bioma=document.getElementById('bulk-bioma-sel')?.value||'';
+  const busca=(document.getElementById('bulk-search')?.value||'').toLowerCase().trim();
+  let lista=pokemonDB.slice();
+  if(bioma)lista=lista.filter(p=>p.bioma===bioma);
+  if(busca)lista=lista.filter(p=>p.nome.toLowerCase().includes(busca));
+  lista.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const container=document.getElementById('bulk-pk-list');
+  if(!container)return;
+  if(lista.length===0){
+    container.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px;grid-column:1/-1">Nenhum Pokémon encontrado.</div>';
+    atualizarBulkCount();return;
+  }
+  container.innerHTML=lista.map(p=>{
+    const sel=bulkSelecionados.has(p.id);
+    const rc2={comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
+    return`<label style="display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${sel?'var(--brand-light)':'transparent'};border:1.5px solid ${sel?'var(--brand-mid)':'transparent'};transition:all .15s;user-select:none" onclick="toggleBulkPk('${p.id}',this)">
+      <input type="checkbox" ${sel?'checked':''} style="pointer-events:none;flex-shrink:0" />
+      <img src="${p.sprite||FALLBACK_SPRITE}" style="width:28px;height:28px;object-fit:contain;flex-shrink:0" onerror="this.src='${FALLBACK_SPRITE}'"/>
+      <span style="font-size:12px;font-weight:600;flex:1;line-height:1.2">${p.nome}</span>
+      <span class="poke-rarity ${rc2[p.raridade]||'rc'}" style="font-size:9px;padding:1px 6px">${rlbl[p.raridade]||p.raridade}</span>
+    </label>`;
+  }).join('');
+  atualizarBulkCount();
+}
+function toggleBulkPk(id,label){
+  if(bulkSelecionados.has(id)){bulkSelecionados.delete(id);}
+  else{bulkSelecionados.add(id);}
+  const cb=label.querySelector('input[type=checkbox]');
+  if(cb)cb.checked=bulkSelecionados.has(id);
+  label.style.background=bulkSelecionados.has(id)?'var(--brand-light)':'transparent';
+  label.style.border=`1.5px solid ${bulkSelecionados.has(id)?'var(--brand-mid)':'transparent'}`;
+  atualizarBulkCount();
+}
+function atualizarBulkCount(){
+  const el=document.getElementById('bulk-count');
+  if(el)el.textContent=bulkSelecionados.size;
+}
+function bulkSelectAll(){
+  const bioma=document.getElementById('bulk-bioma-sel')?.value||'';
+  const busca=(document.getElementById('bulk-search')?.value||'').toLowerCase().trim();
+  let lista=pokemonDB.slice();
+  if(bioma)lista=lista.filter(p=>p.bioma===bioma);
+  if(busca)lista=lista.filter(p=>p.nome.toLowerCase().includes(busca));
+  lista.forEach(p=>bulkSelecionados.add(p.id));
+  renderBulkPkList();
+}
+function bulkClearAll(){bulkSelecionados.clear();renderBulkPkList();}
+async function aplicarBulkRaridade(){
+  if(bulkSelecionados.size===0){
+    const err=document.getElementById('bulk-fb-err');
+    err.textContent='⚠ Selecione ao menos um Pokémon.';err.style.display='block';
+    setTimeout(()=>err.style.display='none',3000);return;
+  }
+  const novaRaridade=document.getElementById('bulk-nova-raridade').value;
+  const ids=[...bulkSelecionados];
+  for(const id of ids){
+    const p=pokemonDB.find(x=>x.id===id);if(!p)continue;
+    await dbPatch('pokemons',`id=eq.${id}`,{raridade:novaRaridade});
+    p.raridade=novaRaridade;
+  }
+  bulkSelecionados.clear();
+  renderBulkPkList();
+  renderTbodyPokemons();renderTbodyBiomas();
+  const ok=document.getElementById('bulk-fb-ok');
+  ok.style.display='block';setTimeout(()=>ok.style.display='none',2500);
 }
 
 // IMPORTADOR
