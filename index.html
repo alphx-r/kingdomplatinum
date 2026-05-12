@@ -91,7 +91,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .player-pontos-lbl{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
 .player-pontos-val{font-size:13px;font-weight:700;color:var(--text)}
 .fichas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.ficha-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;transition:all .25s;padding:16px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;animation:fadeUp .35s both}
+.ficha-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:visible;transition:all .25s;padding:22px 12px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;animation:fadeUp .35s both;position:relative}
 .ficha-card:hover{border-color:var(--brand-mid);transform:translateY(-2px);box-shadow:0 4px 14px rgba(37,99,168,.12)}
 .ficha-card-avatar{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
 .ficha-card-avatar img{width:72px;height:72px;object-fit:cover;border-radius:50%}
@@ -1557,39 +1557,30 @@ function renderFichario(){
     container.innerHTML='<div style="color:var(--muted);font-size:14px;padding:20px">Nenhum personagem cadastrado ainda.</div>';
     return;
   }
-  const grupos={};
-  personagens.forEach(p=>{ if(!grupos[p.player])grupos[p.player]=[]; grupos[p.player].push(p); });
-  const playersOrdenados=Object.keys(grupos).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  container.innerHTML=playersOrdenados.map(playerNome=>{
-    const chars=grupos[playerNome].slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
-    const cards=chars.map(p=>`
-      <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}"
-        ${p.ficha_url?`onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}>
-        <div class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
-          ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
-            :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
+  const sorted=personagens.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const cards=sorted.map(p=>`
+    <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}"
+      ${p.ficha_url?`onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}>
+      <div style="position:relative;width:100%">
+        <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);background:${p.cor};color:#fff;font-size:9px;font-weight:700;font-family:var(--font-body);padding:2px 8px;border-radius:6px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;letter-spacing:.3px;text-transform:uppercase;z-index:1">
+          ${p.player}
         </div>
-        <div class="ficha-name">${p.nome}</div>
-        ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
-        <div class="ficha-pontos-box"><span class="ficha-pontos-lbl">Pontos</span><span class="ficha-pontos-val">${p.pontos||0}</span></div>
-      </div>`).join('');
-    return`<div class="player-section">
-      <div class="player-section-header">
-        <div class="player-section-name">${playerNome}</div>
       </div>
-      <div class="fichas-grid">${cards}</div>
-    </div>`;
-  }).join('');
+      <div style="margin-top:16px" class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
+        ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
+          :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
+      </div>
+      <div class="ficha-name">${p.nome}</div>
+      ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
+      <div class="ficha-pontos-box"><span class="ficha-pontos-lbl">Pontos</span><span class="ficha-pontos-val">${p.pontos||0}</span></div>
+    </div>`).join('');
+  container.innerHTML=`<div class="fichas-grid">${cards}</div>`;
 }
 function filtrarFichas(q){
   q=q.toLowerCase();
-  document.querySelectorAll('.player-section').forEach(sec=>{
-    let any=false;
-    sec.querySelectorAll('.ficha-card').forEach(c=>{
-      const match=c.dataset.nome.includes(q)||c.dataset.player.includes(q);
-      c.style.display=match?'':'none';if(match)any=true;
-    });
-    sec.style.display=any?'':'none';
+  document.querySelectorAll('.ficha-card').forEach(c=>{
+    const match=c.dataset.nome.includes(q)||c.dataset.player.includes(q);
+    c.style.display=match?'':'none';
   });
 }
 function renderPersonagensDatalist(){
