@@ -1085,7 +1085,14 @@ async function fazerLogin(){
   // Autenticação direta pela tabela admins (sem Supabase Auth)
   const lista=await dbGet('admins','select=*');
   const match=lista.find(a=>a.email===email&&a.senha===senha);
-  if(!match){errEl.style.display='block';return;}
+  // Super admin pode estar ausente da tabela — verifica pelo email constante
+  const isSA = email===SUPER_ADMIN;
+  if(!match && !isSA){errEl.style.display='block';return;}
+  if(!match && isSA){
+    // super admin não está na tabela ainda: cria automaticamente
+    const res=await dbPost('admins',{email, senha, permissoes:ALL_PERMS});
+    if(res&&res[0]) lista.push(res[0]);
+  }
   admLogado={email:match.email};
   admins=lista;
   document.getElementById('adm-login-wrap').style.display='none';
@@ -2012,7 +2019,7 @@ function renderHistDados(){
 function parseBrDate(str){ const [d,m,a]=str.split('/'); return new Date(`${a}-${m}-${d}`); }
 
 async function limparHistPokemonPorData(){
-  if(admLogado?.email!=='pchaptersrpg@gmail.com'){alert('Apenas o admin gold pode limpar os históricos.');return;}
+  if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   const de=document.getElementById('poke-data-de').value;
   const ate=document.getElementById('poke-data-ate').value;
   const errEl=document.getElementById('hist-poke-fb-err');
@@ -2039,7 +2046,7 @@ async function limparHistPokemonPorData(){
 }
 
 async function limparHistDadosPorData(){
-  if(admLogado?.email!=='pchaptersrpg@gmail.com'){alert('Apenas o admin gold pode limpar os históricos.');return;}
+  if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   const de=document.getElementById('dados-data-de').value;
   const ate=document.getElementById('dados-data-ate').value;
   const errEl=document.getElementById('hist-dados-fb-err');
@@ -2066,7 +2073,7 @@ async function limparHistDadosPorData(){
 }
 
 async function limparHistDados(){
-  if(admLogado?.email!=='pchaptersrpg@gmail.com'){alert('Apenas o admin gold pode limpar os históricos.');return;}
+  if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   if(!confirm('Limpar TODO o histórico de dados? Esta ação não pode ser desfeita.'))return;
   await dbDel('historico_dados','id=gte.0');
   historicoDados=[];
@@ -2074,7 +2081,7 @@ async function limparHistDados(){
   fb('hist-dados-fb');
 }
 async function limparHistPokemon(){
-  if(admLogado?.email!=='pchaptersrpg@gmail.com'){alert('Apenas o admin gold pode limpar os históricos.');return;}
+  if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   if(!confirm('Limpar TODO o histórico de encontros Pokémon? Esta ação não pode ser desfeita.'))return;
   await dbDel('historico','id=gte.0');
   historico=[];
