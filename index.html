@@ -277,12 +277,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .npc-card-banner-wrap{position:relative;width:100%;height:200px;overflow:hidden;flex-shrink:0}
 .npc-card-banner-bg{width:100%;height:100%;object-fit:cover;display:block}
 .npc-card-banner-solid{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:72px}
-.npc-card-namebar{padding:10px 14px 8px;background:var(--surface2);border-bottom:1.5px solid var(--border)}
-.npc-card-name{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.npc-card-photoplayer{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npc-card-namebar{padding:10px 14px 8px;background:var(--surface2);border-bottom:1.5px solid var(--border);text-align:center}
+.npc-card-name{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.4px;text-transform:uppercase}
+.npc-card-photoplayer{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px}
 .npc-card-body{padding:10px 14px 8px;flex:1;min-height:0}
 .npc-card-role{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
-.npc-card-desc{font-size:12px;color:var(--text);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.npc-card-desc{font-size:12px;color:var(--text);line-height:1.6}
 .npc-card-tags{display:flex;flex-wrap:wrap;gap:4px;padding:0 14px 8px}
 .npc-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;text-transform:uppercase;letter-spacing:.3px}
 .npc-card-pokes{border-top:1px solid var(--border);padding:10px 14px 12px}
@@ -457,9 +457,6 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   <div class="roller-header">
     <h2>NPCs de Nendo</h2>
     <p>Personagens notáveis da região, organizados por cidade</p>
-  </div>
-  <div class="npc-search-wrap">
-    <input class="npc-search-bar" type="text" placeholder="Buscar NPC..." oninput="filtrarNpcs(this.value)" id="npc-busca"/>
   </div>
   <div id="npc-container"></div>
 </div>
@@ -2176,9 +2173,12 @@ function renderFichario(){
           ${p.player}
         </div>
       </div>
-      <div style="margin-top:16px" class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
+      <div style="margin-top:16px;position:relative;display:inline-block" class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
         ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
           :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
+        <label title="Alterar foto" onclick="event.stopPropagation()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;border-radius:50%;background:var(--brand-mid);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.25)">
+          ✏️<input type="file" accept="image/*" style="display:none" onchange="trocarFotoPersonagem('${p.id}',this)"/>
+        </label>
       </div>
       <div class="ficha-name">${p.nome}</div>
       ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
@@ -2192,6 +2192,18 @@ function filtrarFichas(q){
     const match=c.dataset.nome.includes(q)||c.dataset.player.includes(q);
     c.style.display=match?'':'none';
   });
+}
+async function trocarFotoPersonagem(id, input){
+  const file=input.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const img=e.target.result;
+    const p=personagens.find(x=>x.id==id); if(!p)return;
+    p.img=img;
+    await dbPatch('personagens',`id=eq.${id}`,{img});
+    renderFichario();
+  };
+  reader.readAsDataURL(file);
 }
 function renderPersonagensDatalist(){
   document.getElementById('personagens-lista').innerHTML=personagens.map(p=>`<option value="${p.nome}"/>`).join('');
