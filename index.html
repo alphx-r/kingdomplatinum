@@ -947,7 +947,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         <select id="modal-npc-cidade-sel"></select>
       </div>
       <div class="field">
-        <label>Cor da top bar <span style="font-size:10px;color:var(--muted);font-weight:400">(deixe em branco para usar cor do tema)</span></label>
+        <label>Cor da top bar</label>
         <div style="display:flex;align-items:center;gap:6px">
           <input type="color" id="modal-npc-topbar-cor" value="#2563a8"
             style="height:36px;width:44px;cursor:pointer;border-radius:6px;border:1.5px solid var(--border);padding:2px 4px;flex-shrink:0"
@@ -2868,14 +2868,14 @@ function renderNpcs(filtro=''){
       }).join('');
       const tagsHtml=n.tags&&n.tags.length
         ?`<div class="npc-card-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
-      // Prioridade: cor específica do NPC > cor da cidade > cor principal do tema
-      const _topbarFixed = n.topbar_cor || cidade.cor || null;
-      const topbarCor    = _topbarFixed || 'var(--brand)';
-      const topbarBgTint = _topbarFixed ? _topbarFixed+'22' : 'rgba(0,0,0,0.05)';
+      // Cor da top bar: apenas a cor individual do NPC, sem fallback de cidade
+      const topbarCor    = n.topbar_cor || 'var(--brand)';
+      const topbarBgTint = n.topbar_cor ? n.topbar_cor+'22' : 'rgba(0,0,0,0.05)';
+      const isCropped = n.foto && n.foto.startsWith('data:');
       const bannerHtml=n.foto
         ?`<div class="npc-card-topbar" style="background:${topbarCor}"></div>
           <div class="npc-card-banner-wrap">
-            <img class="npc-card-banner-bg" src="${n.foto}" alt="${n.nome}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
+            <img class="npc-card-banner-bg" src="${n.foto}" alt="${n.nome}" style="object-fit:${isCropped?'contain':'cover'}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
             <div class="npc-card-banner-solid" style="background:${topbarBgTint};display:none">${n.emoji||'👤'}</div>
           </div>
           <div class="npc-card-namebar">
@@ -3135,10 +3135,10 @@ async function abrirModalNpc(id){
     if(cidFiltro)cidSel.value=cidFiltro;
     if(delBtn)delBtn.style.display='none';
     // reset topbar cor
-    const autoEl2=document.getElementById('modal-npc-topbar-auto');
     const corEl2=document.getElementById('modal-npc-topbar-cor');
     const hexEl2=document.getElementById('modal-npc-topbar-cor-hex');
-    if(autoEl2){autoEl2.checked=true;corEl2.disabled=true;hexEl2.disabled=true;}
+    if(corEl2){corEl2.value='#2563a8';corEl2.disabled=false;}
+    if(hexEl2){hexEl2.value='';hexEl2.disabled=false;}
   }
   renderNpcTagsList();
   renderNpcPokesList();
@@ -3305,12 +3305,6 @@ async function trocarFotoPersonagem(id, input){
 }
 
 // Tags
-function _npcTopbarAutoToggle(cb){
-  const corEl=document.getElementById('modal-npc-topbar-cor');
-  const hexEl=document.getElementById('modal-npc-topbar-cor-hex');
-  corEl.disabled=cb.checked;
-  hexEl.disabled=cb.checked;
-}
 function renderNpcTagsList(){
   const cont=document.getElementById('modal-npc-tags-list');
   if(!cont)return;
@@ -3432,9 +3426,8 @@ async function salvarNpc(){
   const npc_cidade_id=document.getElementById('modal-npc-cidade-sel').value;
   const foto=_getNpcFoto();
   const errEl=document.getElementById('modal-npc-fb-err');
-  // topbar cor: null se "usar cor da cidade"
-  const autoTopbar=document.getElementById('modal-npc-topbar-auto')?.checked;
-  const topbar_cor=autoTopbar?null:document.getElementById('modal-npc-topbar-cor').value;
+  // topbar cor: usa a cor escolhida individualmente para este NPC
+  const topbar_cor=document.getElementById('modal-npc-topbar-cor').value||null;
   errEl.style.display='none';
   if(!nome){errEl.textContent='Preencha o nome.';errEl.style.display='block';return;}
   if(!npc_cidade_id){errEl.textContent='Selecione uma cidade.';errEl.style.display='block';return;}
