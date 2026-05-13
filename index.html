@@ -865,6 +865,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;padding-bottom:16px;border-bottom:1.5px solid var(--border)">
             <button class="pk-tab-btn active" data-ntab="tab-npc-cidade" onclick="setNpcAdmTab('tab-npc-cidade',this)">🏙️ Cidades</button>
             <button class="pk-tab-btn" data-ntab="tab-npc-npc" onclick="setNpcAdmTab('tab-npc-npc',this)">🧑 NPCs</button>
+            <button class="btn btn-sm" style="background:#fdf3dc;color:#7a5010;border:1px solid #e8d080;margin-left:auto" onclick="diagnosticarNpc()">🔍 Diagnosticar tabelas</button>
           </div>
 
           <!-- TAB: Cidades -->
@@ -1072,20 +1073,26 @@ const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 
 async function sb(path, opts={}){
+  const {prefer, headers:extraHeaders, ...fetchOpts} = opts;
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
+    ...fetchOpts,
     headers:{
       'apikey': SUPA_KEY,
       'Authorization': `Bearer ${SUPA_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': opts.prefer || 'return=representation',
-      ...opts.headers
-    },
-    ...opts
+      'Prefer': prefer || 'return=representation',
+      ...(extraHeaders||{})
+    }
   });
-  if(opts.method==='DELETE'||res.status===204) return [];
+  if(fetchOpts.method==='DELETE'||res.status===204) return [];
   const text = await res.text();
   if(!text) return [];
-  try{ return JSON.parse(text); }catch(e){ return []; }
+  try{
+    const parsed = JSON.parse(text);
+    // Supabase retorna objeto {code,message} em caso de erro — garante array
+    if(!res.ok){ console.error('[sb] erro Supabase:', path, parsed); return []; }
+    return parsed;
+  }catch(e){ return []; }
 }
 
 // cliente Supabase JS para Auth
@@ -1094,6 +1101,20 @@ const dbGet  = (t,q='')        => sb(`${t}?${q}&order=criado_em.asc`);
 const dbPost = (t,b)           => sb(t,{method:'POST',body:JSON.stringify(b),prefer:'return=representation'});
 const dbPatch= (t,q,b)         => sb(`${t}?${q}`,{method:'PATCH',body:JSON.stringify(b)});
 const dbDel  = (t,q)           => sb(`${t}?${q}`,{method:'DELETE',prefer:'return=minimal'});
+
+// Diagnóstico: testa se uma tabela existe e retorna o status
+async function sbStatus(tabela){
+  const res = await fetch(`${SUPA_URL}/rest/v1/${tabela}?limit=1`, {
+    headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json'}
+  });
+  return {tabela, status:res.status, ok:res.ok, body:await res.text()};
+}
+async function diagnosticarNpc(){
+  const testes = ['npc_cidades','npc_cidade','npcs','npc'];
+  const resultados = await Promise.all(testes.map(sbStatus));
+  console.table(resultados.map(r=>({tabela:r.tabela, status:r.status, ok:r.ok, resposta:r.body.slice(0,120)})));
+  alert(resultados.map(r=>`${r.tabela}: ${r.status} ${r.ok?'✅':'❌'}`).join('\n'));
+}
 
 // ══════════════════════════════════════
 // STATE
