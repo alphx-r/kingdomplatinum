@@ -1473,18 +1473,11 @@ async function fazerLogin(){
   const senha=document.getElementById('login-senha').value;
   const errEl=document.getElementById('login-erro');
   errEl.style.display='none';
-  // Autenticação direta pela tabela admins (sem Supabase Auth)
+  // Autenticação direta pela tabela admins — email + senha devem bater sempre
   const lista=await dbGet('admins','select=*');
   const match=lista.find(a=>a.nome===email&&a.senha===senha);
-  // Super admin pode estar ausente da tabela — verifica pelo email constante
-  const isSA = email===SUPER_ADMIN;
-  if(!match && !isSA){errEl.style.display='block';return;}
-  if(!match && isSA){
-    // super admin não está na tabela ainda: cria automaticamente
-    const res=await dbPost('admins',{nome:email, senha, permissoes:ALL_PERMS});
-    if(res&&res[0]) lista.push(res[0]);
-  }
-  const loggedEmail = match ? match.nome : email;
+  if(!match){errEl.style.display='block';return;}
+  const loggedEmail = match.nome;
   admLogado={email:loggedEmail};
   admins=lista;
   document.getElementById('adm-login-wrap').style.display='none';
@@ -2876,12 +2869,15 @@ function renderNpcs(filtro=''){
       }).join('');
       const tagsHtml=n.tags&&n.tags.length
         ?`<div class="npc-card-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
-      const topbarCor = n.topbar_cor || cidade.cor || '#2563a8';
+      // Prioridade: cor específica do NPC > cor da cidade > cor principal do tema
+      const _topbarFixed = n.topbar_cor || cidade.cor || null;
+      const topbarCor    = _topbarFixed || 'var(--brand)';
+      const topbarBgTint = _topbarFixed ? _topbarFixed+'22' : 'rgba(0,0,0,0.05)';
       const bannerHtml=n.foto
         ?`<div class="npc-card-topbar" style="background:${topbarCor}"></div>
           <div class="npc-card-banner-wrap">
             <img class="npc-card-banner-bg" src="${n.foto}" alt="${n.nome}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
-            <div class="npc-card-banner-solid" style="background:${topbarCor}22;display:none">${n.emoji||'👤'}</div>
+            <div class="npc-card-banner-solid" style="background:${topbarBgTint};display:none">${n.emoji||'👤'}</div>
           </div>
           <div class="npc-card-namebar">
             <div class="npc-card-name">${n.nome}</div>
@@ -2889,7 +2885,7 @@ function renderNpcs(filtro=''){
           </div>`
         :`<div class="npc-card-topbar" style="background:${topbarCor}"></div>
           <div class="npc-card-banner-wrap">
-            <div class="npc-card-banner-solid" style="background:${topbarCor}22">${n.emoji||'👤'}</div>
+            <div class="npc-card-banner-solid" style="background:${topbarBgTint}">${n.emoji||'👤'}</div>
           </div>
           <div class="npc-card-namebar">
             <div class="npc-card-name">${n.nome}</div>
@@ -3166,7 +3162,6 @@ function _abrirCrop(src, callback, aspectRatio=1){
   const overlay=document.getElementById('modal-crop-overlay');
   overlay.style.display='flex';
   const img=document.getElementById('crop-img');
-  img.src=src;
   if(_cropperInstance){_cropperInstance.destroy();_cropperInstance=null;}
   img.onload=()=>{
     _cropperInstance=new Cropper(img,{
@@ -3176,6 +3171,37 @@ function _abrirCrop(src, callback, aspectRatio=1){
       checkOrientation:false
     });
   };
+  img.onerror=()=>{
+    // Se URL externa falhar (CORS), tenta carregar via proxy blob
+    if(!src.startsWith('data:')){
+      fetch(src)
+        .then(r=>r.blob())
+        .then(blob=>{
+          const blobUrl=URL.createObjectURL(blob);
+          img.onload=()=>{
+            _cropperInstance=new Cropper(img,{
+              aspectRatio: isNaN(aspectRatio)?NaN:aspectRatio,
+              viewMode:1, autoCropArea:.85,
+              background:false, responsive:true,
+              checkOrientation:false
+            });
+          };
+          img.onerror=()=>alert('Não foi possível carregar a imagem. Verifique a URL.');
+          img.src=blobUrl;
+        })
+        .catch(()=>alert('Não foi possível carregar a imagem. Tente fazer upload do arquivo diretamente.'));
+    } else {
+      alert('Erro ao carregar a imagem.');
+    }
+  };
+  // Para URLs externas, definir crossOrigin antes do src
+  if(!src.startsWith('data:')){
+    img.crossOrigin='anonymous';
+  } else {
+    img.crossOrigin=null;
+  }
+  img.src=''; // reset para garantir disparo do onload mesmo se src igual
+  img.src=src;
 }
 function fecharCrop(){
   document.getElementById('modal-crop-overlay').style.display='none';
@@ -3231,13 +3257,22 @@ function uploadNpcFoto(input){
 function _cropNpcFotoUrl(){
   const url=document.getElementById('modal-npc-foto-url').value.trim();
   if(!url){alert('Cole uma URL de imagem primeiro.');return;}
-  _abrirCrop(url, b64=>{
+  const _aplicarCropUrl=b64=>{
     document.getElementById('modal-npc-foto-url').value='';
     const prev=document.getElementById('modal-npc-foto-preview');
     prev.innerHTML=`<img src="${b64}" style="width:72px;height:72px;object-fit:cover;border-radius:8px"/>`;
     prev.dataset.b64=b64;
     delete prev.dataset.src;
-  }, NaN);
+  };
+  // Converte para base64 primeiro para evitar bloqueio CORS no canvas do Cropper
+  fetch(url)
+    .then(r=>{if(!r.ok)throw new Error('fail');return r.blob();})
+    .then(blob=>{
+      const reader=new FileReader();
+      reader.onload=e=>_abrirCrop(e.target.result,_aplicarCropUrl,NaN);
+      reader.readAsDataURL(blob);
+    })
+    .catch(()=>_abrirCrop(url,_aplicarCropUrl,NaN));
 }
 function _getNpcFoto(){
   const prev=document.getElementById('modal-npc-foto-preview');
