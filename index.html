@@ -486,7 +486,6 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <h2>NPCs de Nendo</h2>
     <p>Personagens notáveis da região, organizados por cidade</p>
   </div>
-  <input class="npc-search-bar" type="text" placeholder="Buscar NPC ou cidade..." oninput="filtrarNpcs(this.value)" id="npc-busca" style="margin-bottom:24px"/>
   <div id="npc-container"></div>
 </div>
 <div class="page" id="page-adm">
@@ -2869,80 +2868,59 @@ function renderNpcs(filtro=''){
   const FALLBACK_POKE=FALLBACK_SPRITE||'';
 
   const html=NPC_CIDADES.map((cidade,ci)=>{
-    const npcs=cidade.npcs.filter((n,ni)=>{
+    const npcs=cidade.npcs.filter(n=>{
       if(!q)return true;
       return n.nome.toLowerCase().includes(q)||
-        n.cargo.toLowerCase().includes(q)||
+        (n.cargo||'').toLowerCase().includes(q)||
         (n.descricao||'').toLowerCase().includes(q)||
         cidade.nome.toLowerCase().includes(q);
     });
     if(!npcs.length)return'';
 
-    // Mini-cards
-    const miniCards=npcs.map((n,ni)=>{
-      const realNi=cidade.npcs.indexOf(n);
-      const isActive=_npcDetalheAtivo&&_npcDetalheAtivo.ci===ci&&_npcDetalheAtivo.ni===realNi;
+    const cards=npcs.map(n=>{
       const topbarCor=n.topbar_cor||'var(--brand)';
-      const fotoHtml=n.foto
-        ?`<img src="${n.foto}" alt="${n.nome}" onerror="this.parentElement.innerHTML='${n.emoji||'👤'}'">`
-        :`${n.emoji||'👤'}`;
-      return`<div class="npc-mini-card${isActive?' active':''}" onclick="_npcToggleDetalhe(${ci},${realNi})">
-        <div class="npc-mini-topbar" style="background:${topbarCor}"></div>
-        <div class="npc-mini-foto">${fotoHtml}</div>
-        <div class="npc-mini-nome">${n.nome}</div>
-      </div>`;
-    }).join('');
-
-    // Painel de detalhe (se algum NPC desta cidade estiver ativo)
-    let detalheHtml='';
-    if(_npcDetalheAtivo&&_npcDetalheAtivo.ci===ci){
-      const n=cidade.npcs[_npcDetalheAtivo.ni];
-      if(n){
-        const topbarCor=n.topbar_cor||'var(--brand)';
-        const topbarBgTint=n.topbar_cor?n.topbar_cor+'22':'rgba(0,0,0,0.05)';
-        const pokes=Array.isArray(n.pokes)?n.pokes:[];
-        const slots=Array(6).fill(null).map((_,i)=>pokes[i]||null);
-        const pokesHtml=slots.map(pk=>{
-          if(!pk)return`<div class="npc-poke-slot empty"></div>`;
-          const tipos=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[(t||'').toLowerCase()]||'t-normal'}">${t}</span>`).join('');
-          const habs=[pk.habilidade,pk.habilidade2].filter(Boolean);
-          const moves=Array.isArray(pk.moveset)?pk.moveset:[];
-          const genderSym=pk.genero==='macho'?'♂':pk.genero==='femea'?'♀':pk.genero==='genderless'?'—':'';
-          return`<div class="npc-poke-slot" title="">
-            <img src="${pk.sprite||FALLBACK_POKE}" onerror="this.src='${FALLBACK_POKE}'" alt="${pk.nome||''}"/>
-            <div class="npc-poke-tip">
-              <div class="npc-poke-tip-name">${pk.nome||'?'} <span class="npc-poke-tip-gender">${genderSym}</span></div>
-              ${tipos?`<div class="npc-poke-tip-types">${tipos}</div>`:''}
-              ${habs.length?`<div class="npc-poke-tip-section">Habilidade${habs.length>1?'s':''}</div><div class="npc-poke-tip-val">${habs.join(' / ')}</div>`:''}
-              ${moves.length?`<div class="npc-poke-tip-section">Moveset</div><div class="npc-poke-tip-val">${moves.join(', ')}</div>`:''}
-            </div>
-          </div>`;
-        }).join('');
-        const tagsHtml=n.tags&&n.tags.length
-          ?`<div class="npc-detail-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
-        const bannerContent=n.foto
-          ?`<img src="${n.foto}" alt="${n.nome}" onerror="this.style.display='none'">`
-          :`<div class="npc-detail-banner-solid" style="background:${topbarBgTint}">${n.emoji||'👤'}</div>`;
-        detalheHtml=`<div class="npc-detail-panel">
-          <div style="height:5px;background:${topbarCor}"></div>
-          <div class="npc-detail-header">
-            <div class="npc-detail-banner">${bannerContent}</div>
-            <div class="npc-detail-info">
-              <div class="npc-detail-nome">${n.nome}</div>
-              <div class="npc-detail-cargo">${n.cargo}</div>
-              ${n.photoplayer?`<div class="npc-detail-photoplayer">▸ ${n.photoplayer}</div>`:''}
-              ${n.descricao?`<div class="npc-detail-desc">${n.descricao}</div>`:''}
-              ${tagsHtml}
-            </div>
-            <div class="npc-detail-close" onclick="_npcFecharDetalhe()">✕</div>
-          </div>
-          <div class="npc-detail-pokes">
-            <div class="npc-detail-pokes-title">Pokémon</div>
-            <div class="npc-detail-pokes-grid">${pokesHtml}</div>
+      const topbarBgTint=n.topbar_cor?n.topbar_cor+'22':'rgba(0,0,0,0.05)';
+      const pokes=Array.isArray(n.pokes)?n.pokes:[];
+      const slots=Array(6).fill(null).map((_,i)=>pokes[i]||null);
+      const pokesHtml=slots.map(pk=>{
+        if(!pk)return`<div class="npc-poke-slot empty"></div>`;
+        const tipos=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[(t||'').toLowerCase()]||'t-normal'}">${t}</span>`).join('');
+        const habs=[pk.habilidade,pk.habilidade2].filter(Boolean);
+        const moves=Array.isArray(pk.moveset)?pk.moveset:[];
+        const genderSym=pk.genero==='macho'?'♂':pk.genero==='femea'?'♀':pk.genero==='genderless'?'—':'';
+        return`<div class="npc-poke-slot" title="">
+          <img src="${pk.sprite||FALLBACK_POKE}" onerror="this.src='${FALLBACK_POKE}'" alt="${pk.nome||''}"/>
+          <div class="npc-poke-tip">
+            <div class="npc-poke-tip-name">${pk.nome||'?'} <span class="npc-poke-tip-gender">${genderSym}</span></div>
+            ${tipos?`<div class="npc-poke-tip-types">${tipos}</div>`:''}
+            ${habs.length?`<div class="npc-poke-tip-section">Habilidade${habs.length>1?'s':''}</div><div class="npc-poke-tip-val">${habs.join(' / ')}</div>`:''}
+            ${moves.length?`<div class="npc-poke-tip-section">Moveset</div><div class="npc-poke-tip-val">${moves.join(', ')}</div>`:''}
           </div>
         </div>`;
-      }
-    }
+      }).join('');
+      const tagsHtml=n.tags&&n.tags.length
+        ?`<div class="npc-card-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
+      const bannerContent=n.foto
+        ?`<img class="npc-card-banner-bg" src="${n.foto}" alt="${n.nome}" onerror="this.style.display='none'">`
+        :`<div class="npc-card-banner-solid" style="background:${topbarBgTint}">${n.emoji||'👤'}</div>`;
+      return`<div class="npc-card">
+        <div class="npc-card-topbar" style="background:${topbarCor}"></div>
+        <div class="npc-card-banner-wrap">${bannerContent}</div>
+        <div class="npc-card-namebar">
+          <div class="npc-card-name">${n.nome}</div>
+          ${n.photoplayer?`<div class="npc-card-photoplayer">${n.photoplayer}</div>`:''}
+        </div>
+        <div class="npc-card-body">
+          ${n.cargo?`<div class="npc-card-role">${n.cargo}</div>`:''}
+          ${n.descricao?`<div class="npc-card-desc">${n.descricao}</div>`:''}
+        </div>
+        ${tagsHtml}
+        <div class="npc-card-pokes">
+          <div class="npc-card-pokes-title">Pokémon</div>
+          <div class="npc-pokes-grid">${pokesHtml}</div>
+        </div>
+      </div>`;
+    }).join('');
 
     return`<div class="npc-city-section">
       <div class="npc-city-header">
@@ -2952,34 +2930,14 @@ function renderNpcs(filtro=''){
           <div class="npc-city-count">${npcs.length} NPC${npcs.length!==1?'s':''}</div>
         </div>
       </div>
-      <div class="npc-mini-grid">${miniCards}</div>
-      ${detalheHtml}
+      <div class="npc-grid">${cards}</div>
     </div>`;
   }).join('');
 
   cont.innerHTML=html||(filtro?`<div class="npc-empty">Nenhum NPC encontrado para "${(filtro||'').replace(/</g,'&lt;')}".</div>`:'');
 }
 
-function _npcToggleDetalhe(ci,ni){
-  if(_npcDetalheAtivo&&_npcDetalheAtivo.ci===ci&&_npcDetalheAtivo.ni===ni){
-    _npcDetalheAtivo=null;
-  } else {
-    _npcDetalheAtivo={ci,ni};
-  }
-  renderNpcs(document.getElementById('npc-busca')?.value||'');
-  // scroll suave até o painel
-  if(_npcDetalheAtivo){
-    setTimeout(()=>{
-      const panels=document.querySelectorAll('.npc-detail-panel');
-      if(panels.length)panels[panels.length-1].scrollIntoView({behavior:'smooth',block:'nearest'});
-    },60);
-  }
-}
-function _npcFecharDetalhe(){
-  _npcDetalheAtivo=null;
-  renderNpcs(document.getElementById('npc-busca')?.value||'');
-}
-function filtrarNpcs(q){ _npcDetalheAtivo=null; renderNpcs(q); }
+function filtrarNpcs(q){ renderNpcs(q); }
 
 // ══════════════════════════════════════
 // NPC ADM — Gerenciamento via Supabase
