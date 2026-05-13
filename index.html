@@ -277,7 +277,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .npc-card:hover{border-color:var(--brand-mid);box-shadow:0 4px 18px rgba(37,99,168,.13)}
 .npc-card-topbar{height:6px;width:100%;flex-shrink:0}
 .npc-card-banner-wrap{position:relative;width:100%;height:200px;overflow:hidden;flex-shrink:0}
-.npc-card-banner-bg{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+.npc-card-banner-bg{width:100%;height:100%;object-fit:cover;display:block}
 .npc-card-banner-solid{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:72px}
 .npc-card-namebar{padding:5px 10px 4px;background:var(--surface2);border-bottom:1.5px solid var(--border);text-align:center}
 .npc-card-name{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.4px;text-transform:uppercase}
@@ -2867,8 +2867,8 @@ function renderNpcs(filtro=''){
       }).join('');
       const tagsHtml=n.tags&&n.tags.length
         ?`<div class="npc-card-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
-      // Cor da top bar: definida individualmente no NPC ou cor principal do tema
-      const _topbarFixed = n.topbar_cor || null;
+      // Prioridade: cor específica do NPC > cor da cidade > cor principal do tema
+      const _topbarFixed = n.topbar_cor || cidade.cor || null;
       const topbarCor    = _topbarFixed || 'var(--brand)';
       const topbarBgTint = _topbarFixed ? _topbarFixed+'22' : 'rgba(0,0,0,0.05)';
       const bannerHtml=n.foto
@@ -3134,10 +3134,10 @@ async function abrirModalNpc(id){
     if(cidFiltro)cidSel.value=cidFiltro;
     if(delBtn)delBtn.style.display='none';
     // reset topbar cor
+    const autoEl2=document.getElementById('modal-npc-topbar-auto');
     const corEl2=document.getElementById('modal-npc-topbar-cor');
     const hexEl2=document.getElementById('modal-npc-topbar-cor-hex');
-    if(corEl2)corEl2.value='#2563a8';
-    if(hexEl2)hexEl2.value='';
+    if(autoEl2){autoEl2.checked=true;corEl2.disabled=true;hexEl2.disabled=true;}
   }
   renderNpcTagsList();
   renderNpcPokesList();
@@ -3304,6 +3304,12 @@ async function trocarFotoPersonagem(id, input){
 }
 
 // Tags
+function _npcTopbarAutoToggle(cb){
+  const corEl=document.getElementById('modal-npc-topbar-cor');
+  const hexEl=document.getElementById('modal-npc-topbar-cor-hex');
+  corEl.disabled=cb.checked;
+  hexEl.disabled=cb.checked;
+}
 function renderNpcTagsList(){
   const cont=document.getElementById('modal-npc-tags-list');
   if(!cont)return;
@@ -3425,10 +3431,9 @@ async function salvarNpc(){
   const npc_cidade_id=document.getElementById('modal-npc-cidade-sel').value;
   const foto=_getNpcFoto();
   const errEl=document.getElementById('modal-npc-fb-err');
-  // topbar cor: valor do input (vazio = sem cor personalizada)
-  const topbar_cor=document.getElementById('modal-npc-topbar-cor-hex').value.trim()
-    ? document.getElementById('modal-npc-topbar-cor').value
-    : null;
+  // topbar cor: null se "usar cor da cidade"
+  const autoTopbar=document.getElementById('modal-npc-topbar-auto')?.checked;
+  const topbar_cor=autoTopbar?null:document.getElementById('modal-npc-topbar-cor').value;
   errEl.style.display='none';
   if(!nome){errEl.textContent='Preencha o nome.';errEl.style.display='block';return;}
   if(!npc_cidade_id){errEl.textContent='Selecione uma cidade.';errEl.style.display='block';return;}
