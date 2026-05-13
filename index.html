@@ -1125,7 +1125,7 @@ function fb(id,ms=2500){const el=document.getElementById(id);if(!el)return;el.st
 // ══════════════════════════════════════
 // LAZY LOADING STATE
 // ══════════════════════════════════════
-const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false};
+const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false, npcs:false};
 
 async function init(){
   loading(true);
@@ -1189,6 +1189,25 @@ async function carregarAba(page){
     else if(page==='dados'){
       // dados não precisa de Supabase — só renderiza
     }
+    else if(page==='npcs'){
+      // carrega cidades + npcs do Supabase, sobrepõe o array estático
+      const [_cidades,_npcs] = await Promise.all([
+        dbGet('npc_cidades','order=nome.asc'),
+        dbGet('npcs','order=nome.asc'),
+      ]);
+      if(_cidades&&_cidades.length){
+        npcCidades=_cidades;
+        // monta estrutura NPC_CIDADES dinamicamente
+        const estrutura=_cidades.map(c=>({
+          ...c,
+          npcs:(_npcs||[]).filter(n=>n.npc_cidade_id===c.id)
+        }));
+        // substitui temporariamente para renderNpcs usar
+        NPC_CIDADES.length=0;
+        estrutura.forEach(x=>NPC_CIDADES.push(x));
+      }
+      renderNpcs();
+    }
     else if(page==='rolagens'){
       const [_hist,_histd,_personagens,_biomas] = await Promise.all([
         dbGet('historico','order=criado_em.desc&limit=1000'),
@@ -1205,15 +1224,17 @@ async function carregarAba(page){
     }
     else if(page==='adm'){
       if(!admLogado){ return; }
-      const [_admins,_players,_personagens,_biomas,_pokemons] = await Promise.all([
+      const [_admins,_players,_personagens,_biomas,_pokemons,_npcCidades] = await Promise.all([
         dbGet('admins'),
         dbGet('players'),
         dbGet('personagens'),
         dbGet('biomas'),
         dbGet('pokemons'),
+        dbGet('npc_cidades','order=nome.asc'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons;
+      npcCidades=_npcCidades||[];
       syncBiomaSelect();
       renderTbodyPersonagens(); renderTbodyPlayers();
       aplicarPermissoesSidebar();
@@ -1347,6 +1368,12 @@ function admTab(sec,el){
     const isGold=isSuperAdmin();
     document.getElementById('hist-clear-blocked').style.display=isGold?'none':'block';
     document.getElementById('hist-clear-panel').style.display=isGold?'block':'none';
+  }
+  if(sec==='npcs-adm'){
+    carregarNpcCidades().then(()=>{
+      renderNpcCidadesLista();
+      renderNpcAdmSelCidade();
+    });
   }
 }
 
@@ -2739,7 +2766,7 @@ async function limparHistPokemon(){
 // ══════════════════════════════════════
 // NPCs
 // ══════════════════════════════════════
-const NPC_CIDADES = [
+let NPC_CIDADES = [
   {
     nome: 'Pallet Town',
     emoji: '🌿',
@@ -2904,6 +2931,373 @@ function renderNpcs(filtro=''){
   cont.innerHTML=html||(filtro?`<div class="npc-empty">Nenhum NPC encontrado para "${filtro}".</div>`:'');
 }
 function filtrarNpcs(q){ renderNpcs(q); }
+
+// ══════════════════════════════════════
+// NPC ADM — Gerenciamento via Supabase
+// ══════════════════════════════════════
+let npcCidades=[], _npcAdmTags=[], _npcAdmPokes=[];
+
+function setNpcAdmTab(tabId,btn){
+  document.querySelectorAll('#sec-npcs-adm .pk-tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('#sec-npcs-adm .pk-tab-btn').forEach(b=>b.classList.remove('active'));
+  const panel=document.getElementById(tabId);
+  if(panel)panel.classList.add('active');
+  if(btn)btn.classList.add('active');
+  if(tabId==='tab-npc-cidade') renderNpcCidadesLista();
+  if(tabId==='tab-npc-npc') renderNpcAdmSelCidade();
+}
+
+async function carregarNpcCidades(){
+  const rows=await dbGet('npc_cidades','order=nome.asc');
+  npcCidades=rows||[];
+  return npcCidades;
+}
+
+function renderNpcCidadesLista(){
+  const cont=document.getElementById('npc-cidades-lista');
+  if(!cont)return;
+  if(!npcCidades.length){
+    cont.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Nenhuma cidade cadastrada.</div>';
+    return;
+  }
+  cont.innerHTML=npcCidades.map(c=>`
+    <div class="adm-player-acc" style="border-radius:8px">
+      <div class="adm-player-acc-header" onclick="this.parentElement.classList.toggle('open')">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px;width:36px;height:36px;border-radius:50%;background:${c.cor||'#4caf50'}22;display:flex;align-items:center;justify-content:center">${c.emoji||'🌆'}</span>
+          <span class="adm-player-acc-title">${c.nome}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();abrirModalCidade('${c.id}')">✏️ Editar</button>
+          <span class="adm-player-acc-arrow">▼</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function renderNpcAdmSelCidade(){
+  const sel=document.getElementById('npc-adm-cidade-sel');
+  if(!sel)return;
+  const val=sel.value;
+  sel.innerHTML='<option value="">— Selecione uma cidade —</option>'+
+    npcCidades.map(c=>`<option value="${c.id}">${c.emoji||''} ${c.nome}</option>`).join('');
+  sel.value=val;
+  renderNpcAdmLista();
+}
+
+async function renderNpcAdmLista(){
+  const cidadeId=document.getElementById('npc-adm-cidade-sel')?.value;
+  const cont=document.getElementById('npc-npcs-lista');
+  if(!cont)return;
+  if(!cidadeId){cont.innerHTML='';return;}
+  const npcs=await dbGet('npcs',`npc_cidade_id=eq.${cidadeId}&order=nome.asc`);
+  if(!npcs||!npcs.length){
+    cont.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Nenhum NPC nesta cidade.</div>';
+    return;
+  }
+  cont.innerHTML=npcs.map(n=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:44px;height:44px;border-radius:8px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">
+          ${n.foto?`<img src="${n.foto}" style="width:44px;height:44px;object-fit:cover" onerror="this.style.display='none'">`:(n.emoji||'👤')}
+        </div>
+        <div>
+          <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text)">${n.nome}</div>
+          <div style="font-size:11px;color:var(--muted)">${n.cargo||''}</div>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="abrirModalNpc('${n.id}')">✏️ Editar</button>
+    </div>`).join('');
+}
+
+// ─── Modal Cidade ───
+function abrirModalCidade(id){
+  const modal=document.getElementById('modal-cidade-overlay');
+  document.getElementById('modal-cidade-fb').style.display='none';
+  document.getElementById('modal-cidade-fb-err').style.display='none';
+  const delBtn=document.getElementById('modal-cidade-del');
+  if(id){
+    const c=npcCidades.find(x=>x.id===id||x.id==id);
+    document.getElementById('modal-cidade-titulo').textContent='✏️ Editar Cidade';
+    document.getElementById('modal-cidade-idx').value=id;
+    document.getElementById('modal-cidade-nome').value=c?.nome||'';
+    document.getElementById('modal-cidade-emoji').value=c?.emoji||'';
+    document.getElementById('modal-cidade-cor').value=c?.cor||'#4caf50';
+    if(delBtn)delBtn.style.display='inline-block';
+  } else {
+    document.getElementById('modal-cidade-titulo').textContent='🏙️ Nova Cidade';
+    document.getElementById('modal-cidade-idx').value='';
+    document.getElementById('modal-cidade-nome').value='';
+    document.getElementById('modal-cidade-emoji').value='';
+    document.getElementById('modal-cidade-cor').value='#4caf50';
+    if(delBtn)delBtn.style.display='none';
+  }
+  modal.style.display='flex';
+}
+function fecharModalCidade(){
+  document.getElementById('modal-cidade-overlay').style.display='none';
+}
+async function salvarCidade(){
+  const id=document.getElementById('modal-cidade-idx').value;
+  const nome=document.getElementById('modal-cidade-nome').value.trim();
+  const emoji=document.getElementById('modal-cidade-emoji').value.trim();
+  const cor=document.getElementById('modal-cidade-cor').value;
+  const errEl=document.getElementById('modal-cidade-fb-err');
+  errEl.style.display='none';
+  if(!nome){errEl.textContent='Preencha o nome.';errEl.style.display='block';return;}
+  if(id){
+    await dbPatch('npc_cidades',`id=eq.${id}`,{nome,emoji,cor});
+    const c=npcCidades.find(x=>x.id===id||x.id==id);
+    if(c)Object.assign(c,{nome,emoji,cor});
+  } else {
+    const res=await dbPost('npc_cidades',{nome,emoji,cor});
+    if(res&&res[0])npcCidades.push(res[0]);
+  }
+  fb('modal-cidade-fb');
+  renderNpcCidadesLista();
+  renderNpcAdmSelCidade();
+  renderNpcs();
+  setTimeout(fecharModalCidade,800);
+}
+async function deletarCidade(){
+  const id=document.getElementById('modal-cidade-idx').value;
+  if(!id)return;
+  const c=npcCidades.find(x=>x.id===id||x.id==id);
+  if(!confirm(`Excluir a cidade "${c?.nome||id}"? Todos os NPCs desta cidade também serão excluídos.`))return;
+  // delete NPCs first
+  await dbDel('npcs',`npc_cidade_id=eq.${id}`);
+  await dbDel('npc_cidades',`id=eq.${id}`);
+  npcCidades=npcCidades.filter(x=>x.id!==id&&x.id!=id);
+  fecharModalCidade();
+  renderNpcCidadesLista();
+  renderNpcAdmSelCidade();
+  renderNpcs();
+}
+
+// ─── Modal NPC ───
+async function abrirModalNpc(id){
+  // sync cidade select
+  const cidSel=document.getElementById('modal-npc-cidade-sel');
+  cidSel.innerHTML=npcCidades.map(c=>`<option value="${c.id}">${c.emoji||''} ${c.nome}</option>`).join('');
+
+  _npcAdmTags=[];
+  _npcAdmPokes=[];
+  document.getElementById('modal-npc-fb').style.display='none';
+  document.getElementById('modal-npc-fb-err').style.display='none';
+  document.getElementById('modal-npc-foto-url').value='';
+  document.getElementById('modal-npc-foto-preview').innerHTML='👤';
+
+  const delBtn=document.getElementById('modal-npc-del');
+  const tituloEl=document.getElementById('modal-npc-titulo');
+
+  if(id){
+    tituloEl.textContent='✏️ Editar NPC';
+    document.getElementById('modal-npc-idx').value=id;
+    if(delBtn)delBtn.style.display='inline-block';
+    const rows=await dbGet('npcs',`id=eq.${id}&select=*`);
+    const n=rows&&rows[0]?rows[0]:{};
+    document.getElementById('modal-npc-nome').value=n.nome||'';
+    document.getElementById('modal-npc-cargo').value=n.cargo||'';
+    document.getElementById('modal-npc-emoji').value=n.emoji||'';
+    document.getElementById('modal-npc-desc').value=n.desc||'';
+    cidSel.value=n.npc_cidade_id||'';
+    if(n.foto){
+      document.getElementById('modal-npc-foto-url').value=n.foto;
+      _renderNpcFotoPreview(n.foto);
+    }
+    _npcAdmTags=Array.isArray(n.tags)?[...n.tags]:[];
+    _npcAdmPokes=Array.isArray(n.pokes)?n.pokes.map(p=>({...p})):[];
+  } else {
+    tituloEl.textContent='🧑 Novo NPC';
+    document.getElementById('modal-npc-idx').value='';
+    document.getElementById('modal-npc-nome').value='';
+    document.getElementById('modal-npc-cargo').value='';
+    document.getElementById('modal-npc-emoji').value='';
+    document.getElementById('modal-npc-desc').value='';
+    // pre-select current city filter
+    const cidFiltro=document.getElementById('npc-adm-cidade-sel')?.value;
+    if(cidFiltro)cidSel.value=cidFiltro;
+    if(delBtn)delBtn.style.display='none';
+  }
+  renderNpcTagsList();
+  renderNpcPokesList();
+  document.getElementById('modal-npc-overlay').style.display='flex';
+}
+function fecharModalNpc(){
+  document.getElementById('modal-npc-overlay').style.display='none';
+}
+function previewNpcFoto(){
+  const url=document.getElementById('modal-npc-foto-url').value.trim();
+  _renderNpcFotoPreview(url);
+}
+function _renderNpcFotoPreview(src){
+  const prev=document.getElementById('modal-npc-foto-preview');
+  if(src){
+    prev.innerHTML=`<img src="${src}" style="width:72px;height:72px;object-fit:cover;border-radius:8px" onerror="this.style.display='none'"/>`;
+    prev.dataset.src=src;
+  } else {
+    prev.innerHTML='👤';
+    delete prev.dataset.src;
+  }
+}
+function uploadNpcFoto(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const b64=e.target.result;
+    document.getElementById('modal-npc-foto-url').value='';
+    const prev=document.getElementById('modal-npc-foto-preview');
+    prev.innerHTML=`<img src="${b64}" style="width:72px;height:72px;object-fit:cover;border-radius:8px"/>`;
+    prev.dataset.b64=b64;
+    delete prev.dataset.src;
+  };
+  reader.readAsDataURL(file);
+}
+function _getNpcFoto(){
+  const prev=document.getElementById('modal-npc-foto-preview');
+  if(prev.dataset.b64)return prev.dataset.b64;
+  if(prev.dataset.src)return prev.dataset.src;
+  const url=document.getElementById('modal-npc-foto-url').value.trim();
+  return url||null;
+}
+
+// Tags
+function renderNpcTagsList(){
+  const cont=document.getElementById('modal-npc-tags-list');
+  if(!cont)return;
+  cont.innerHTML=_npcAdmTags.map((t,i)=>
+    `<span class="npc-tag" style="background:${t.c||'#42a5f5'}22;color:${t.c||'#42a5f5'};cursor:pointer" onclick="_removerTagNpc(${i})">${t.txt} ✕</span>`
+  ).join('');
+}
+function adicionarTagNpc(){
+  const txt=document.getElementById('modal-npc-tag-txt').value.trim();
+  const cor=document.getElementById('modal-npc-tag-cor').value;
+  if(!txt)return;
+  _npcAdmTags.push({txt,c:cor});
+  document.getElementById('modal-npc-tag-txt').value='';
+  renderNpcTagsList();
+}
+function _removerTagNpc(i){
+  _npcAdmTags.splice(i,1);
+  renderNpcTagsList();
+}
+
+// Pokémon do NPC
+function renderNpcPokesList(){
+  const cont=document.getElementById('modal-npc-pokes-list');
+  if(!cont)return;
+  if(!_npcAdmPokes.length){cont.innerHTML='';return;}
+  cont.innerHTML=_npcAdmPokes.map((pk,i)=>`
+    <div style="border:1.5px solid var(--border);border-radius:8px;padding:10px;background:var(--surface2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:40px;height:40px;background:var(--surface);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${pk.sprite?`<img src="${pk.sprite}" style="width:40px;height:40px;object-fit:contain"/>`:'❓'}
+        </div>
+        <input type="text" value="${pk.nome||''}" placeholder="Nome do Pokémon"
+          style="flex:1;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"
+          oninput="_npcAdmPokes[${i}].nome=this.value"/>
+        <button class="btn btn-danger btn-sm" onclick="_removerPokeNpc(${i})">✕</button>
+      </div>
+      <div class="g2" style="gap:6px">
+        <div class="field" style="margin-bottom:0">
+          <label>Tipos (separados por vírgula)</label>
+          <input type="text" value="${(pk.tipos||[]).join(', ')}" placeholder="fire, water..."
+            style="padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px;width:100%"
+            oninput="_npcAdmPokes[${i}].tipos=this.value.split(',').map(s=>s.trim()).filter(Boolean)"/>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Gênero</label>
+          <select style="padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px;width:100%"
+            onchange="_npcAdmPokes[${i}].genero=this.value">
+            <option value="macho"${pk.genero==='macho'?' selected':''}>♂ Macho</option>
+            <option value="femea"${pk.genero==='femea'?' selected':''}>♀ Fêmea</option>
+            <option value="genderless"${pk.genero==='genderless'?' selected':''}>— Sem gênero</option>
+            <option value="aleatorio"${(!pk.genero||pk.genero==='aleatorio')?' selected':''}>Aleatório</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Habilidade</label>
+          <input type="text" value="${pk.habilidade||''}" placeholder="Ex: Overgrow"
+            style="padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px;width:100%"
+            oninput="_npcAdmPokes[${i}].habilidade=this.value"/>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Habilidade 2</label>
+          <input type="text" value="${pk.habilidade2||''}" placeholder="Ex: Chlorophyll"
+            style="padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px;width:100%"
+            oninput="_npcAdmPokes[${i}].habilidade2=this.value"/>
+        </div>
+      </div>
+      <div class="field" style="margin-top:6px;margin-bottom:0">
+        <label>Moveset (separados por vírgula)</label>
+        <input type="text" value="${(pk.moveset||[]).join(', ')}" placeholder="Tackle, Growl, ..."
+          style="padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px;width:100%"
+          oninput="_npcAdmPokes[${i}].moveset=this.value.split(',').map(s=>s.trim()).filter(Boolean)"/>
+      </div>
+      <div class="field" style="margin-top:6px;margin-bottom:0">
+        <label>Sprite URL ou upload</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" value="${pk.sprite||''}" placeholder="https://..."
+            style="flex:1;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"
+            oninput="_npcAdmPokes[${i}].sprite=this.value;renderNpcPokesList()"/>
+          <input type="file" accept="image/*" style="font-size:11px;max-width:140px"
+            onchange="_uploadNpcPokeSprite(${i},this)"/>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function adicionarPokeNpc(){
+  if(_npcAdmPokes.length>=6)return;
+  _npcAdmPokes.push({nome:'',tipos:[],genero:'aleatorio',habilidade:'',habilidade2:'',moveset:[],sprite:null});
+  renderNpcPokesList();
+}
+function _removerPokeNpc(i){
+  _npcAdmPokes.splice(i,1);
+  renderNpcPokesList();
+}
+function _uploadNpcPokeSprite(i,input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    _npcAdmPokes[i].sprite=e.target.result;
+    renderNpcPokesList();
+  };
+  reader.readAsDataURL(file);
+}
+
+async function salvarNpc(){
+  const id=document.getElementById('modal-npc-idx').value;
+  const nome=document.getElementById('modal-npc-nome').value.trim();
+  const cargo=document.getElementById('modal-npc-cargo').value.trim();
+  const emoji=document.getElementById('modal-npc-emoji').value.trim();
+  const desc=document.getElementById('modal-npc-desc').value.trim();
+  const npc_cidade_id=document.getElementById('modal-npc-cidade-sel').value;
+  const foto=_getNpcFoto();
+  const errEl=document.getElementById('modal-npc-fb-err');
+  errEl.style.display='none';
+  if(!nome){errEl.textContent='Preencha o nome.';errEl.style.display='block';return;}
+  if(!npc_cidade_id){errEl.textContent='Selecione uma cidade.';errEl.style.display='block';return;}
+  const payload={nome,cargo,emoji,desc,npc_cidade_id,foto,tags:_npcAdmTags,pokes:_npcAdmPokes};
+  if(id){
+    await dbPatch('npcs',`id=eq.${id}`,payload);
+  } else {
+    await dbPost('npcs',payload);
+  }
+  fb('modal-npc-fb');
+  renderNpcAdmLista();
+  renderNpcs();
+  setTimeout(fecharModalNpc,800);
+}
+async function deletarNpc(){
+  const id=document.getElementById('modal-npc-idx').value;
+  if(!id)return;
+  const nome=document.getElementById('modal-npc-nome').value||id;
+  if(!confirm(`Excluir o NPC "${nome}"?`))return;
+  await dbDel('npcs',`id=eq.${id}`);
+  fecharModalNpc();
+  renderNpcAdmLista();
+  renderNpcs();
+}
 
 // ══════════════════════════════════════
 // START
