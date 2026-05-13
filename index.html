@@ -6,6 +6,7 @@
 <title>Pokémon Kingdom Platinum</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -277,12 +278,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .npc-card-banner-wrap{position:relative;width:100%;height:200px;overflow:hidden;flex-shrink:0}
 .npc-card-banner-bg{width:100%;height:100%;object-fit:cover;display:block}
 .npc-card-banner-solid{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:72px}
-.npc-card-namebar{padding:10px 14px 8px;background:var(--surface2);border-bottom:1.5px solid var(--border);text-align:center}
+.npc-card-namebar{padding:5px 10px 4px;background:var(--surface2);border-bottom:1.5px solid var(--border);text-align:center}
 .npc-card-name{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.4px;text-transform:uppercase}
 .npc-card-photoplayer{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px}
 .npc-card-body{padding:10px 14px 8px;flex:1;min-height:0}
 .npc-card-role{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
-.npc-card-desc{font-size:12px;color:var(--text);line-height:1.6}
+.npc-card-desc{font-size:12px;color:var(--text);line-height:1.6;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
 .npc-card-tags{display:flex;flex-wrap:wrap;gap:4px;padding:0 14px 8px}
 .npc-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;text-transform:uppercase;letter-spacing:.3px}
 .npc-card-pokes{border-top:1px solid var(--border);padding:10px 14px 12px}
@@ -926,7 +927,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <div id="modal-npc-foto-preview" style="width:72px;height:72px;border-radius:8px;background:var(--surface2);border:1.5px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0">👤</div>
         <div style="flex:1;min-width:160px">
-          <input type="text" id="modal-npc-foto-url" placeholder="https://..." oninput="previewNpcFoto()" style="margin-bottom:6px"/>
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input type="text" id="modal-npc-foto-url" placeholder="https://..." oninput="previewNpcFoto()" style="flex:1"/>
+            <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);white-space:nowrap" onclick="_cropNpcFotoUrl()">✂️ Ajustar</button>
+          </div>
           <input type="file" id="modal-npc-foto-file" accept="image/*" onchange="uploadNpcFoto(this)" style="font-size:12px"/>
         </div>
       </div>
@@ -1058,6 +1062,37 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   </div>
 </div>
 
+<!-- CROP MODAL -->
+<div id="modal-crop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px;padding:20px;width:min(480px,96vw);box-shadow:0 12px 48px rgba(0,0,0,.4)">
+    <div style="font-family:var(--font-title);font-size:14px;color:var(--brand);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+      <span>✂️ Ajustar imagem</span>
+      <button onclick="fecharCrop()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted)">✕</button>
+    </div>
+    <!-- Zoom / proporção -->
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="_cropSetRatio(1)" style="background:var(--surface2);border:1px solid var(--border)">1:1</button>
+      <button class="btn btn-sm" onclick="_cropSetRatio(16/9)" style="background:var(--surface2);border:1px solid var(--border)">16:9</button>
+      <button class="btn btn-sm" onclick="_cropSetRatio(4/3)" style="background:var(--surface2);border:1px solid var(--border)">4:3</button>
+      <button class="btn btn-sm" onclick="_cropSetRatio(3/4)" style="background:var(--surface2);border:1px solid var(--border)">3:4</button>
+      <button class="btn btn-sm" onclick="_cropSetRatio(NaN)" style="background:var(--surface2);border:1px solid var(--border)">Livre</button>
+      <span style="margin-left:auto;display:flex;gap:4px">
+        <button class="btn btn-sm" title="Girar -90°" onclick="_cropRotate(-90)" style="background:var(--surface2);border:1px solid var(--border)">↺</button>
+        <button class="btn btn-sm" title="Girar +90°" onclick="_cropRotate(90)" style="background:var(--surface2);border:1px solid var(--border)">↻</button>
+        <button class="btn btn-sm" title="Espelhar H" onclick="_cropFlipX()" style="background:var(--surface2);border:1px solid var(--border)">⇄</button>
+      </span>
+    </div>
+    <div style="max-height:340px;overflow:hidden;border-radius:8px;border:1.5px solid var(--border);background:#111">
+      <img id="crop-img" style="max-width:100%;display:block"/>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+      <button class="btn" onclick="fecharCrop()" style="background:var(--surface2);border:1px solid var(--border)">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarCrop()">✔ Usar esta imagem</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // ══════════════════════════════════════
@@ -1560,14 +1595,12 @@ function renderTbodyPlayers(){ renderTbodyPersonagens(); }
 // PERSONAGENS
 // ══════════════════════════════════════
 function previewPersonagemImg(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
+  _lerArquivoECrop(input, b64=>{
     const prev=document.getElementById('np-img-preview');
-    prev.innerHTML=`<img src="${e.target.result}" style="width:57px;height:57px;object-fit:cover;border-radius:50%"/>`;
-    prev.dataset.b64=e.target.result;
-  };
-  reader.readAsDataURL(file);
+    prev.innerHTML=`<img src="${b64}" style="width:57px;height:57px;object-fit:cover;border-radius:50%"/>`;
+    prev.dataset.b64=b64;
+    input.value='';
+  }, 1);
 }
 async function adicionarPersonagem(){
   const player     =document.getElementById('np-player').value.trim();
@@ -1614,22 +1647,6 @@ function abrirModalPersonagem(id){
 }
 function fecharModal(){document.getElementById('modal-personagem').style.display='none';}
 
-function modalPreviewImg(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const prev=document.getElementById('modal-p-img-preview');
-    prev.innerHTML=`<img src="${e.target.result}" style="width:52px;height:52px;object-fit:cover;border-radius:50%"/>`;
-    prev.dataset.img=e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-function modalRemoverImg(){
-  const prev=document.getElementById('modal-p-img-preview');
-  prev.innerHTML=`<img src="${FALLBACK_AVATAR}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
-  prev.dataset.img='';
-  document.getElementById('modal-p-img').value='';
-}
 async function salvarEdicaoPersonagem(){
   const id=document.getElementById('modal-p-id').value;
   const p=personagens.find(x=>x.id===id);if(!p)return;
@@ -2192,18 +2209,6 @@ function filtrarFichas(q){
     const match=c.dataset.nome.includes(q)||c.dataset.player.includes(q);
     c.style.display=match?'':'none';
   });
-}
-async function trocarFotoPersonagem(id, input){
-  const file=input.files[0]; if(!file)return;
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    const img=e.target.result;
-    const p=personagens.find(x=>x.id==id); if(!p)return;
-    p.img=img;
-    await dbPatch('personagens',`id=eq.${id}`,{img});
-    renderFichario();
-  };
-  reader.readAsDataURL(file);
 }
 function renderPersonagensDatalist(){
   document.getElementById('personagens-lista').innerHTML=personagens.map(p=>`<option value="${p.nome}"/>`).join('');
@@ -3090,6 +3095,55 @@ async function abrirModalNpc(id){
 function fecharModalNpc(){
   document.getElementById('modal-npc-overlay').style.display='none';
 }
+// ══════════════════════════════════════
+// CROP ENGINE
+// ══════════════════════════════════════
+let _cropperInstance=null, _cropCallback=null, _cropFlipXState=false;
+
+function _abrirCrop(src, callback, aspectRatio=1){
+  _cropCallback=callback;
+  _cropFlipXState=false;
+  const overlay=document.getElementById('modal-crop-overlay');
+  overlay.style.display='flex';
+  const img=document.getElementById('crop-img');
+  img.src=src;
+  if(_cropperInstance){_cropperInstance.destroy();_cropperInstance=null;}
+  img.onload=()=>{
+    _cropperInstance=new Cropper(img,{
+      aspectRatio: isNaN(aspectRatio)?NaN:aspectRatio,
+      viewMode:1, autoCropArea:.85,
+      background:false, responsive:true,
+      checkOrientation:false
+    });
+  };
+}
+function fecharCrop(){
+  document.getElementById('modal-crop-overlay').style.display='none';
+  if(_cropperInstance){_cropperInstance.destroy();_cropperInstance=null;}
+  _cropCallback=null;
+}
+function confirmarCrop(){
+  if(!_cropperInstance||!_cropCallback)return;
+  const canvas=_cropperInstance.getCroppedCanvas({maxWidth:1200,maxHeight:1200,imageSmoothingQuality:'high'});
+  const dataUrl=canvas.toDataURL('image/jpeg',0.88);
+  _cropCallback(dataUrl);
+  fecharCrop();
+}
+function _cropSetRatio(r){if(_cropperInstance)_cropperInstance.setAspectRatio(isNaN(r)?NaN:r);}
+function _cropRotate(deg){if(_cropperInstance)_cropperInstance.rotate(deg);}
+function _cropFlipX(){
+  if(!_cropperInstance)return;
+  _cropFlipXState=!_cropFlipXState;
+  _cropperInstance.scaleX(_cropFlipXState?-1:1);
+}
+
+function _lerArquivoECrop(input, callback, ratio=NaN){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>_abrirCrop(e.target.result, callback, ratio);
+  reader.readAsDataURL(file);
+}
+
 function previewNpcFoto(){
   const url=document.getElementById('modal-npc-foto-url').value.trim();
   _renderNpcFotoPreview(url);
@@ -3105,17 +3159,25 @@ function _renderNpcFotoPreview(src){
   }
 }
 function uploadNpcFoto(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const b64=e.target.result;
+  _lerArquivoECrop(input, b64=>{
     document.getElementById('modal-npc-foto-url').value='';
     const prev=document.getElementById('modal-npc-foto-preview');
     prev.innerHTML=`<img src="${b64}" style="width:72px;height:72px;object-fit:cover;border-radius:8px"/>`;
     prev.dataset.b64=b64;
     delete prev.dataset.src;
-  };
-  reader.readAsDataURL(file);
+    input.value='';
+  }, NaN);
+}
+function _cropNpcFotoUrl(){
+  const url=document.getElementById('modal-npc-foto-url').value.trim();
+  if(!url){alert('Cole uma URL de imagem primeiro.');return;}
+  _abrirCrop(url, b64=>{
+    document.getElementById('modal-npc-foto-url').value='';
+    const prev=document.getElementById('modal-npc-foto-preview');
+    prev.innerHTML=`<img src="${b64}" style="width:72px;height:72px;object-fit:cover;border-radius:8px"/>`;
+    prev.dataset.b64=b64;
+    delete prev.dataset.src;
+  }, NaN);
 }
 function _getNpcFoto(){
   const prev=document.getElementById('modal-npc-foto-preview');
@@ -3123,6 +3185,32 @@ function _getNpcFoto(){
   if(prev.dataset.src)return prev.dataset.src;
   const url=document.getElementById('modal-npc-foto-url').value.trim();
   return url||null;
+}
+
+// Personagem modal
+function modalPreviewImg(input){
+  _lerArquivoECrop(input, b64=>{
+    const prev=document.getElementById('modal-p-img-preview');
+    prev.innerHTML=`<img src="${b64}" style="width:52px;height:52px;object-fit:cover;border-radius:50%"/>`;
+    prev.dataset.img=b64;
+    input.value='';
+  }, 1);
+}
+function modalRemoverImg(){
+  const prev=document.getElementById('modal-p-img-preview');
+  prev.innerHTML=`<img src="${FALLBACK_AVATAR}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
+  prev.dataset.img='';
+  document.getElementById('modal-p-img').value='';
+}
+
+// Fichário quick-change
+async function trocarFotoPersonagem(id, input){
+  _lerArquivoECrop(input, async img=>{
+    const p=personagens.find(x=>x.id==id); if(!p)return;
+    p.img=img;
+    await dbPatch('personagens',`id=eq.${id}`,{img});
+    renderFichario();
+  }, 1);
 }
 
 // Tags
