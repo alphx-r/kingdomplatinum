@@ -628,7 +628,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
                   <option value="genderless">Sem gênero</option>
                 </select>
               </div>
-              <div class="field"><label>Bioma</label><select id="pk-bioma"></select></div>
+            </div>
+            <div class="field">
+              <label>Bioma(s) — clique para selecionar</label>
+              <div id="pk-biomas-wrap" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div>
             </div>
             <div class="field"><label>Sprite do Pokémon</label>
               <input type="file" id="pk-sprite-file" accept="image/*" onchange="previewPokeSprite(this)" style="font-size:13px"/>
@@ -1850,6 +1853,11 @@ function syncBiomaSelects(){
   if(pks)pks.innerHTML=opts;
   if(imp)imp.innerHTML=opts;
   if(mpk)mpk.innerHTML=opts;
+  // Multi-bioma tag selector no formulário manual
+  const biomasWrap=document.getElementById('pk-biomas-wrap');
+  if(biomasWrap){
+    biomasWrap.innerHTML=biomas.map(b=>`<span class="tipo-tag" data-bioma="${b.nome}" onclick="toggleBiomaTag(this)" style="background:var(--surface2);border:1.5px solid var(--border2);color:var(--text)">${b.nome}</span>`).join('');
+  }
   syncBulkBiomaSelect();renderBulkPkList();
   // botões de filtro estilo dados
   const btns=document.getElementById('pk-filtro-btns');
@@ -1862,6 +1870,7 @@ function syncBiomaSelects(){
 // POKÉMON
 // ══════════════════════════════════════
 function toggleTipo(el){el.classList.toggle('sel');}
+function toggleBiomaTag(el){el.classList.toggle('sel');}
 // ══════════════════════════════════════
 // REMOVE BACKGROUND DO SPRITE
 // ══════════════════════════════════════
@@ -1958,13 +1967,16 @@ async function adicionarPokemon(){
   const habilidade2   =document.getElementById('pk-habilidade2').value.trim();
   const raridade      =document.getElementById('pk-raridade').value;
   const genero        =document.getElementById('pk-genero').value;
-  const bioma         =document.getElementById('pk-bioma').value;
+  const biomasSel     =[...document.querySelectorAll('#pk-biomas-wrap .tipo-tag.sel')].map(t=>t.dataset.bioma);
   const tipos         =[...document.querySelectorAll('#tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev          =document.getElementById('pk-sprite-preview');
   const sprite        =prev.dataset.b64||null;
   if(!nome||tipos.length===0){alert('Preencha o nome e selecione ao menos 1 tipo.');return;}
-  const res=await dbPost('pokemons',{nome,emoji:'❓',sprite,tipos,habilidade,habilidade2,raridade,genero,bioma});
-  if(res&&res[0])pokemonDB.push(res[0]);
+  if(biomasSel.length===0){alert('Selecione ao menos 1 bioma.');return;}
+  for(const bioma of biomasSel){
+    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite,tipos,habilidade,habilidade2,raridade,genero,bioma});
+    if(res&&res[0])pokemonDB.push(res[0]);
+  }
   fb('pk-fb');
   document.getElementById('pk-nome').value='';
   document.getElementById('pk-habilidade').value='';
@@ -1973,6 +1985,7 @@ async function adicionarPokemon(){
   prev.innerHTML=`<img class="unown-fallback-img" src="${FALLBACK_SPRITE}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
   delete prev.dataset.b64;
   document.querySelectorAll('#tipos-wrap .tipo-tag').forEach(t=>t.classList.remove('sel'));
+  document.querySelectorAll('#pk-biomas-wrap .tipo-tag').forEach(t=>t.classList.remove('sel'));
   renderTbodyPokemons();renderTbodyBiomas();
 }
 async function removerPokemon(id){
