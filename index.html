@@ -2870,7 +2870,16 @@ async function limparHistDadosPorData(){
 async function limparHistDados(){
   if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   if(!confirm('Limpar TODO o histórico de dados? Esta ação não pode ser desfeita.'))return;
-  await dbDel('historico_dados','id=gte.0');
+  const fbEl=document.getElementById('hist-dados-fb');
+  const errEl=document.getElementById('hist-dados-fb-err');
+  errEl.style.display='none';
+  // Tenta deleção em massa com criado_em (funciona com UUID e inteiros)
+  const ok=await dbDel('historico_dados','criado_em=not.is.null');
+  // Fallback: deleta individualmente se ainda houver registros
+  const restantes=await sb('historico_dados?select=id');
+  if(restantes&&restantes.length>0){
+    for(const r of restantes) await dbDel('historico_dados',`id=eq.${r.id}`);
+  }
   historicoDados=[];
   renderHistDados();
   fb('hist-dados-fb');
@@ -2878,7 +2887,16 @@ async function limparHistDados(){
 async function limparHistPokemon(){
   if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   if(!confirm('Limpar TODO o histórico de encontros Pokémon? Esta ação não pode ser desfeita.'))return;
-  await dbDel('historico','id=gte.0');
+  const fbEl=document.getElementById('hist-poke-fb');
+  const errEl=document.getElementById('hist-poke-fb-err');
+  errEl.style.display='none';
+  // Tenta deleção em massa com criado_em (funciona com UUID e inteiros)
+  await dbDel('historico','criado_em=not.is.null');
+  // Fallback: deleta individualmente se ainda houver registros
+  const restantes=await sb('historico?select=id');
+  if(restantes&&restantes.length>0){
+    for(const r of restantes) await dbDel('historico',`id=eq.${r.id}`);
+  }
   historico=[];
   renderHistorico();
   fb('hist-poke-fb');
