@@ -297,7 +297,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .npc-card-body{padding:10px 14px 8px;flex:1;min-height:0}
 .npc-card-role{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
 .npc-card-desc{font-size:12px;color:var(--text);line-height:1.6;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden;text-align:justify}
-.npc-uso-badge{position:absolute;bottom:10px;right:0;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:4px 0 0 8px;border-radius:20px 0 0 20px;max-width:8px;overflow:hidden;white-space:nowrap;transition:max-width .35s cubic-bezier(.4,0,.2,1),padding .35s cubic-bezier(.4,0,.2,1),opacity .2s;z-index:2;opacity:.8;cursor:default}
+.npc-uso-badge{position:absolute;bottom:10px;right:0;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:4px 0 0 20px;border-radius:20px 0 0 20px;max-width:4px;overflow:hidden;white-space:nowrap;transition:max-width .35s cubic-bezier(.4,0,.2,1),padding .35s cubic-bezier(.4,0,.2,1),opacity .2s;z-index:2;opacity:.8;cursor:default}
 .npc-uso-livre{background:#d1fae5;color:#065f46}
 .npc-uso-adm{background:#fee2e2;color:#991b1b}
 .npc-card:hover .npc-uso-badge{max-width:160px;padding:4px 10px 4px 12px;opacity:1}
@@ -350,6 +350,14 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 @media(max-width:600px){.npc-mini-grid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}.npc-mini-foto{width:52px;height:52px}.npc-detail-header{flex-direction:column}.npc-detail-banner{width:100%;min-height:180px}.npc-detail-pokes-grid{grid-template-columns:repeat(6,1fr)}}
 .npc-empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center}
 @media(max-width:700px){.npc-grid{grid-template-columns:1fr}.npc-search-bar{width:100%}}
+.ev-tipo-btn{flex:1;padding:10px 14px;border-radius:var(--r);border:2px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center}
+.ev-tipo-btn.active{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand-mid)}
+.ev-tipo-btn:hover:not(.active){border-color:var(--brand-mid);color:var(--brand)}
+.ev-pool-btn{padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s}
+.ev-pool-btn.active{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand-mid)}
+.ev-pool-btn:hover:not(.active){border-color:var(--brand-mid);color:var(--brand)}
+.modal-pool-bioma-tab{padding:6px 14px;border-radius:20px 20px 0 0;border:1.5px solid var(--border);border-bottom:none;background:var(--surface2);font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;margin-bottom:-1px;position:relative;z-index:1}
+.modal-pool-bioma-tab.active{background:var(--surface);color:var(--brand-mid);border-color:var(--brand-mid)}
 </style>
 </head>
 <body>
@@ -526,22 +534,62 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <a href="/" style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-decoration:none;padding:6px 14px;border-radius:20px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);transition:all .2s" onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.1)'">← Voltar</a>
     </div>
   </div>
-  <div class="roller-controls">
-    <div class="ctrl-group" id="evento-bioma-wrap">
-      <label>Bioma</label>
-      <select id="evento-bioma-sel"></select>
+
+  <!-- SELETOR DE MODO (visível ao jogador quando evento tem ambos os modos) -->
+  <div id="evento-modo-selector" style="display:none;gap:10px;margin-bottom:20px">
+    <button id="evento-btn-encontro" class="ev-tipo-btn active" onclick="eventoSetModo('encontro')">⚡ Rolador de Encontro</button>
+    <button id="evento-btn-dados"    class="ev-tipo-btn"        onclick="eventoSetModo('dados')">🎲 Rolador de Dados</button>
+  </div>
+
+  <!-- ROLADOR DE ENCONTRO -->
+  <div id="evento-modo-encontro">
+    <div class="roller-controls">
+      <div class="ctrl-group" id="evento-bioma-wrap">
+        <label>Bioma</label>
+        <select id="evento-bioma-sel"></select>
+      </div>
+      <div class="ctrl-group">
+        <label>Personagem</label>
+        <input type="text" id="evento-personagem" placeholder="Nome do personagem..." list="personagens-lista"/>
+      </div>
+      <div class="ctrl-group" id="evento-adicionais-wrap">
+        <label>Pokémon adicionais</label>
+        <input type="number" id="evento-adicionais" value="0" min="0" max="10"/>
+      </div>
     </div>
-    <div class="ctrl-group">
-      <label>Personagem</label>
-      <input type="text" id="evento-personagem" placeholder="Nome do personagem..." list="personagens-lista"/>
-    </div>
-    <div class="ctrl-group" id="evento-adicionais-wrap">
-      <label>Pokémon adicionais</label>
-      <input type="number" id="evento-adicionais" value="0" min="0" max="10"/>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="roll-btn" onclick="rolarEncontroEvento()">Rolar Encontro</button>
+      <button id="evento-btn-config-pool" class="btn btn-sm" style="display:none;background:var(--surface2);border:1.5px solid var(--border);color:var(--text);font-size:12px;padding:8px 14px;border-radius:8px" onclick="abrirModalPoolEvento()">🗂️ Configurar Pokémon</button>
     </div>
   </div>
-  <button class="roll-btn" onclick="rolarEncontroEvento()">Rolar Encontro</button>
+
+  <!-- ROLADOR DE DADOS -->
+  <div id="evento-modo-dados" style="display:none">
+    <div class="dice-roller-wrap">
+      <div style="margin-bottom:14px" id="evento-dados-sides-wrap">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Dados rápidos</div>
+        <div class="dice-sides-wrap" id="evento-dice-side-btns"></div>
+      </div>
+      <div class="dice-controls">
+        <div class="ctrl-group">
+          <label>Personagem</label>
+          <input type="text" id="evento-dice-personagem" placeholder="Nome do personagem..." list="personagens-lista"/>
+        </div>
+        <div class="ctrl-group" id="evento-dado-lados-wrap">
+          <label>Lados do dado</label>
+          <input type="number" id="evento-dice-lados" value="100" min="2" max="10000" oninput="sincEventoDiceBtn()"/>
+        </div>
+        <div class="ctrl-group" id="evento-dado-motivo-wrap">
+          <label>Motivo</label>
+          <input type="text" id="evento-dice-motivo" placeholder="Ex: Ataque, Fuga..."/>
+        </div>
+      </div>
+      <button class="roll-btn" onclick="rolarDadoEvento()">Rolar Dado</button>
+    </div>
+  </div>
+
   <div id="evento-results"></div>
+
   <div id="evento-historico-wrap" style="margin-top:32px;display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">Histórico do Evento</div>
@@ -954,6 +1002,20 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
           <div class="sec-sub">Crie páginas exclusivas para eventos — cada evento gera uma URL própria com o rolador configurado</div>
           <div class="box">
             <div class="box-title">✨ Novo Evento</div>
+
+            <!-- TIPO DO ROLADOR -->
+            <div class="field" style="margin-bottom:16px">
+              <label>Tipo de rolador</label>
+              <div style="display:flex;gap:10px;margin-top:6px">
+                <button type="button" id="ev-tipo-encontro" class="ev-tipo-btn active" onclick="setEvTipo('encontro')">
+                  ⚡ Encontro Pokémon
+                </button>
+                <button type="button" id="ev-tipo-dados" class="ev-tipo-btn" onclick="setEvTipo('dados')">
+                  🎲 Rolador de Dados
+                </button>
+              </div>
+            </div>
+
             <div class="g2">
               <div class="field">
                 <label>Nome do Evento</label>
@@ -965,14 +1027,6 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
                   <span style="font-size:12px;color:var(--muted);white-space:nowrap">/evento/</span>
                   <input type="text" id="ev-slug" placeholder="captura-especial" style="flex:1" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9\-]/g,'-').replace(/-+/g,'-')"/>
                 </div>
-              </div>
-              <div class="field">
-                <label>Bioma padrão</label>
-                <select id="ev-bioma"></select>
-              </div>
-              <div class="field">
-                <label>Pokémon adicionais</label>
-                <input type="number" id="ev-adicionais" value="0" min="0" max="10"/>
               </div>
               <div class="field">
                 <label>Cor do cabeçalho</label>
@@ -987,14 +1041,82 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
               <label>Descrição <span style="font-size:10px;color:var(--muted);font-weight:400">(exibida na página do evento)</span></label>
               <textarea id="ev-desc" rows="2" placeholder="Descrição do evento..."></textarea>
             </div>
-            <div style="display:flex;gap:4px;align-items:center;margin-bottom:12px">
-              <input type="checkbox" id="ev-lock-bioma" style="cursor:pointer"/>
-              <label for="ev-lock-bioma" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar bioma (jogadores não podem trocar)</label>
+
+            <!-- OPÇÕES EXCLUSIVAS DE ENCONTRO -->
+            <div id="ev-opcoes-encontro">
+              <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
+                <div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">⚡ Configuração de Pokémon</div>
+                <div class="g2" style="margin-bottom:12px">
+                  <div class="field" style="margin-bottom:0">
+                    <label>Bioma padrão</label>
+                    <select id="ev-bioma"></select>
+                  </div>
+                  <div class="field" style="margin-bottom:0">
+                    <label>Pokémon adicionais</label>
+                    <input type="number" id="ev-adicionais" value="0" min="0" max="10"/>
+                  </div>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+                  <input type="checkbox" id="ev-lock-bioma" style="cursor:pointer"/>
+                  <label for="ev-lock-bioma" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar bioma (jogadores não podem trocar)</label>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;margin-bottom:12px">
+                  <input type="checkbox" id="ev-lock-adicionais" style="cursor:pointer"/>
+                  <label for="ev-lock-adicionais" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar quantidade de Pokémon adicionais</label>
+                </div>
+
+                <!-- POOL DE POKÉMON -->
+                <div style="border-top:1.5px solid var(--border);padding-top:12px">
+                  <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Pool de Pokémon do evento</div>
+                  <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+                    <button type="button" id="ev-pool-modo-global" class="ev-pool-btn active" onclick="setEvPoolModo('global')">🌐 Usar biomas existentes</button>
+                    <button type="button" id="ev-pool-modo-custom" class="ev-pool-btn" onclick="setEvPoolModo('custom')">🎯 Pokémon personalizados</button>
+                  </div>
+                  <div id="ev-pool-global-info" style="font-size:12px;color:var(--muted);padding:8px 10px;background:var(--surface);border-radius:6px;border:1px solid var(--border)">
+                    O evento usará os Pokémon do bioma selecionado acima, com suas raridades normais.
+                  </div>
+                  <div id="ev-pool-custom-wrap" style="display:none">
+                    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Monte biomas exclusivos para este evento com Pokémon importados do sistema.</div>
+                    <button type="button" class="btn btn-sm" style="background:var(--brand);color:#fff;margin-bottom:10px" onclick="abrirModalPoolEvento()">+ Configurar Pokémon do Evento</button>
+                    <div id="ev-pool-resumo" style="font-size:12px;color:var(--muted)"></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div style="display:flex;gap:4px;align-items:center;margin-bottom:12px">
-              <input type="checkbox" id="ev-lock-adicionais" style="cursor:pointer"/>
-              <label for="ev-lock-adicionais" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar quantidade de Pokémon adicionais</label>
+
+            <!-- OPÇÕES EXCLUSIVAS DE DADOS -->
+            <div id="ev-opcoes-dados" style="display:none">
+              <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
+                <div style="font-size:11px;font-weight:700;color:#5a1a9a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">🎲 Configuração de Dados</div>
+                <div class="g2">
+                  <div class="field">
+                    <label>Dado padrão</label>
+                    <select id="ev-dado-lados">
+                      <option value="4">d4</option>
+                      <option value="6">d6</option>
+                      <option value="8">d8</option>
+                      <option value="10">d10</option>
+                      <option value="12">d12</option>
+                      <option value="20">d20</option>
+                      <option value="100" selected>d100</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Motivo padrão <span style="font-size:10px;color:var(--muted)">(opcional)</span></label>
+                    <input type="text" id="ev-dado-motivo" placeholder="Ex: Sorte de captura"/>
+                  </div>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+                  <input type="checkbox" id="ev-lock-dado" style="cursor:pointer"/>
+                  <label for="ev-lock-dado" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar dado (jogadores não podem trocar)</label>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <input type="checkbox" id="ev-lock-motivo" style="cursor:pointer"/>
+                  <label for="ev-lock-motivo" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar motivo</label>
+                </div>
+              </div>
             </div>
+
             <button class="btn btn-primary btn-sm" onclick="criarEvento()">+ Criar Evento</button>
             <div class="fb fb-ok" id="ev-fb-ok">✓ Evento criado!</div>
             <div class="fb fb-err" id="ev-fb-err">—</div>
@@ -1283,7 +1405,198 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<!-- MODAL EDITAR EVENTO -->
+<div class="modal-overlay" id="modal-editar-evento-overlay" onclick="fecharEditarEvento()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:580px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharEditarEvento()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:16px">✏️ Editar Evento</div>
+    <input type="hidden" id="edit-ev-id"/>
+    <input type="hidden" id="edit-ev-tipo"/>
+
+    <!-- TIPO DO ROLADOR -->
+    <div class="field" style="margin-bottom:14px">
+      <label>Tipo de rolador</label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button type="button" id="edit-ev-btn-encontro" class="ev-tipo-btn active" onclick="editEvSetTipo('encontro')">⚡ Encontro Pokémon</button>
+        <button type="button" id="edit-ev-btn-dados"    class="ev-tipo-btn"        onclick="editEvSetTipo('dados')">🎲 Rolador de Dados</button>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="field">
+        <label>Nome do Evento</label>
+        <input type="text" id="edit-ev-nome"/>
+      </div>
+      <div class="field">
+        <label>Slug <span style="font-size:10px;color:var(--muted)">(URL)</span></label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap">/evento/</span>
+          <input type="text" id="edit-ev-slug" style="flex:1" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9\-]/g,'-').replace(/-+/g,'-')"/>
+        </div>
+      </div>
+      <div class="field">
+        <label>Cor do cabeçalho</label>
+        <input type="color" id="edit-ev-cor"/>
+      </div>
+      <div class="field">
+        <label>Emoji / ícone</label>
+        <input type="text" id="edit-ev-emoji" style="width:80px"/>
+      </div>
+    </div>
+    <div class="field">
+      <label>Descrição</label>
+      <textarea id="edit-ev-desc" rows="2"></textarea>
+    </div>
+
+    <!-- campos encontro -->
+    <div id="edit-ev-campos-encontro">
+      <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">⚡ Configuração de Pokémon</div>
+        <div class="g2" style="margin-bottom:10px">
+          <div class="field" style="margin-bottom:0">
+            <label>Bioma padrão</label>
+            <select id="edit-ev-bioma"></select>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label>Pokémon adicionais</label>
+            <input type="number" id="edit-ev-adicionais" min="0" max="10"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+          <input type="checkbox" id="edit-ev-lock-bioma" style="cursor:pointer"/>
+          <label for="edit-ev-lock-bioma" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar bioma</label>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:10px">
+          <input type="checkbox" id="edit-ev-lock-adicionais" style="cursor:pointer"/>
+          <label for="edit-ev-lock-adicionais" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar Pokémon adicionais</label>
+        </div>
+        <!-- POOL -->
+        <div style="border-top:1.5px solid var(--border);padding-top:10px">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Pool de Pokémon</div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+            <button type="button" id="edit-ev-pool-global" class="ev-pool-btn active" onclick="editEvSetPool('global')">🌐 Biomas existentes</button>
+            <button type="button" id="edit-ev-pool-custom" class="ev-pool-btn"        onclick="editEvSetPool('custom')">🎯 Pokémon personalizados</button>
+          </div>
+          <div id="edit-ev-pool-global-info" style="font-size:12px;color:var(--muted);padding:7px 10px;background:var(--surface);border-radius:6px;border:1px solid var(--border)">
+            O evento usará os Pokémon do bioma padrão acima.
+          </div>
+          <div id="edit-ev-pool-custom-wrap" style="display:none">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Monte biomas exclusivos com Pokémon importados do sistema.</div>
+            <button type="button" class="btn btn-sm" style="background:var(--brand);color:#fff;margin-bottom:6px" onclick="abrirModalPoolEventoEdit()">+ Configurar Pokémon do Evento</button>
+            <div id="edit-ev-pool-resumo" style="font-size:12px;color:var(--muted)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- campos dados -->
+    <div id="edit-ev-campos-dados" style="display:none">
+      <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:#5a1a9a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🎲 Configuração de Dados</div>
+        <div class="g2">
+          <div class="field">
+            <label>Dado padrão</label>
+            <select id="edit-ev-dado-lados">
+              <option value="4">d4</option><option value="6">d6</option><option value="8">d8</option>
+              <option value="10">d10</option><option value="12">d12</option><option value="20">d20</option>
+              <option value="100">d100</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Motivo padrão</label>
+            <input type="text" id="edit-ev-dado-motivo"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+          <input type="checkbox" id="edit-ev-lock-dado" style="cursor:pointer"/>
+          <label for="edit-ev-lock-dado" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar dado</label>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <input type="checkbox" id="edit-ev-lock-motivo" style="cursor:pointer"/>
+          <label for="edit-ev-lock-motivo" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar motivo</label>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-sm" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text)" onclick="fecharEditarEvento()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="salvarEdicaoEvento()">💾 Salvar</button>
+    </div>
+    <div class="fb fb-ok" id="edit-ev-fb-ok" style="margin-top:8px">✓ Evento atualizado!</div>
+    <div class="fb fb-err" id="edit-ev-fb-err" style="margin-top:8px">—</div>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="modal-pool-overlay" onclick="fecharModalPool()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:680px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharModalPool()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:4px">🎯 Pokémon Personalizados do Evento</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Monte biomas exclusivos com os Pokémon que você escolher do sistema.</div>
+
+    <!-- ABAS DE BIOMAS DO EVENTO -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:0;border-bottom:1.5px solid var(--border);padding-bottom:0">
+      <div id="pool-bioma-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+      <button class="btn btn-sm" style="background:var(--brand);color:#fff;margin-bottom:1px;border-radius:20px;font-size:11px" onclick="adicionarBiomaPool()">+ Bioma</button>
+    </div>
+
+    <!-- CONTEÚDO DO BIOMA ATIVO -->
+    <div id="pool-bioma-content" style="border:1.5px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);padding:16px;background:var(--surface)">
+      <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Adicione um bioma para começar.</div>
+    </div>
+
+    <!-- IMPORTAR DO SISTEMA -->
+    <div style="margin-top:16px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">📥 Importar do sistema</div>
+      <div class="g2" style="margin-bottom:10px">
+        <div class="field" style="margin-bottom:0">
+          <label>Bioma de origem</label>
+          <select id="pool-import-bioma-src" onchange="renderPoolImportList()"></select>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Bioma de destino (no evento)</label>
+          <select id="pool-import-bioma-dst"></select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="pool-import-busca" placeholder="Buscar Pokémon..." style="flex:1;min-width:120px;padding:7px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px" oninput="renderPoolImportList()"/>
+        <select id="pool-import-raridade" onchange="renderPoolImportList()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;background:var(--surface)">
+          <option value="">— Todas raridades —</option>
+          <option value="comum">Comum</option>
+          <option value="incomum">Incomum</option>
+          <option value="raro">Raro</option>
+          <option value="rarissimo">Raríssimo</option>
+        </select>
+      </div>
+      <div id="pool-import-lista" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:220px;overflow-y:auto;padding:4px"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-primary btn-sm" onclick="importarSelecionadosPool()">✔ Adicionar selecionados</button>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-primary" onclick="confirmarPool()">✔ Confirmar configuração</button>
+    </div>
+    <div class="fb fb-ok" id="pool-fb-ok" style="margin-top:8px">✓ Pool salvo!</div>
+  </div>
+</div>
+
+<!-- MODAL POOL JOGADOR (escolher bioma/ver pokémon do evento) -->
+<div class="modal-overlay" id="modal-pool-jogador-overlay" onclick="fecharModalPoolJogador()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:560px;max-height:90vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharModalPoolJogador()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:4px">🗂️ Pokémon do Evento</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Escolha o bioma e role o encontro com os Pokémon deste evento.</div>
+
+    <!-- abas de bioma -->
+    <div id="pool-jogador-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px"></div>
+
+    <!-- conteúdo do bioma selecionado -->
+    <div id="pool-jogador-content"></div>
+  </div>
+</div>
+
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // ══════════════════════════════════════
@@ -3798,13 +4111,17 @@ async function criarEvento(){
   const descricao = document.getElementById('ev-desc').value.trim();
   const lockBioma     = document.getElementById('ev-lock-bioma').checked;
   const lockAdicionais= document.getElementById('ev-lock-adicionais').checked;
+  // tipo do rolador e pool
+  const tipo = document.getElementById('ev-tipo-encontro').classList.contains('active') ? 'encontro' : 'dados';
+  const poolModo = document.getElementById('ev-pool-modo-custom')?.classList.contains('active') ? 'custom' : 'global';
+  const poolCustom = poolModo === 'custom' ? _poolBiomasEvento : [];
   const errEl   = document.getElementById('ev-fb-err');
   errEl.style.display='none';
   document.getElementById('ev-fb-ok').style.display='none';
   if(!nome){ errEl.textContent='Preencha o nome do evento.'; errEl.style.display='block'; return; }
   if(!slug){ errEl.textContent='Preencha o slug da URL.'; errEl.style.display='block'; return; }
   if(eventos.find(e=>e.slug===slug)){ errEl.textContent='Já existe um evento com este slug.'; errEl.style.display='block'; return; }
-  const payload = {nome, slug, bioma, adicionais, cor, emoji, descricao, lock_bioma:lockBioma, lock_adicionais:lockAdicionais, ativo:true};
+  const payload = {nome, slug, bioma, adicionais, cor, emoji, descricao, lock_bioma:lockBioma, lock_adicionais:lockAdicionais, ativo:true, tipo, pool_modo:poolModo, pool_custom:poolCustom};
   try{
     const res = await dbPost('eventos', payload);
     if(res && res[0]){ eventos.unshift(res[0]); fb('ev-fb-ok'); renderEventosLista(); }
@@ -3816,6 +4133,7 @@ async function criarEvento(){
   document.getElementById('ev-desc').value='';
   document.getElementById('ev-adicionais').value='0';
   document.getElementById('ev-emoji').value='';
+  _poolBiomasEvento = [];
   if(document.getElementById('ev-slug')._userEdited !== undefined) document.getElementById('ev-slug')._userEdited=false;
 }
 
@@ -3840,30 +4158,160 @@ function renderEventosLista(){
     el.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Nenhum evento criado ainda.</div>';
     return;
   }
-  el.innerHTML = eventos.map(ev=>`
-    <div style="background:var(--surface);border:1.5px solid ${ev.ativo?'var(--brand-mid)':'var(--border)'};border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;transition:border-color .2s">
-      <div style="width:42px;height:42px;border-radius:50%;background:${ev.cor||'var(--brand)'};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${ev.emoji||'🎪'}</div>
-      <div style="flex:1;min-width:160px">
-        <div style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text)">${ev.nome}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">${ev.descricao||''}</div>
-        <div style="display:flex;gap:10px;margin-top:5px;flex-wrap:wrap;align-items:center">
-          <span style="font-size:11px;font-weight:700;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px">🗺️ ${ev.bioma||'—'}</span>
-          <span style="font-size:11px;font-weight:700;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px">+${ev.adicionais||0} adicionais</span>
-          ${ev.lock_bioma?'<span style="font-size:10px;background:#fdf3dc;color:#7a5010;border-radius:5px;padding:2px 7px;font-weight:700">🔒 bioma travado</span>':''}
-          ${ev.lock_adicionais?'<span style="font-size:10px;background:#fdf3dc;color:#7a5010;border-radius:5px;padding:2px 7px;font-weight:700">🔒 adicionais travados</span>':''}
+  el.style.display='grid';
+  el.style.gridTemplateColumns='repeat(auto-fill,minmax(220px,1fr))';
+  el.style.gap='8px';
+  el.innerHTML = eventos.map(ev=>{
+    const isd = ev.tipo==='dados';
+    const tipoTag = isd
+      ? '<span style="font-size:9px;background:#f0e8ff;color:#5a1a9a;border-radius:4px;padding:1px 5px;font-weight:700">🎲 Dados</span>'
+      : '<span style="font-size:9px;background:#e8f0ff;color:var(--brand-mid);border-radius:4px;padding:1px 5px;font-weight:700">⚡ Encontro</span>';
+    const poolTag = ev.pool_modo==='custom'
+      ? '<span style="font-size:9px;background:#fff8e1;color:#7a5010;border-radius:4px;padding:1px 5px;font-weight:700">🎯 Custom</span>'
+      : '';
+    const info = isd
+      ? `<span style="font-size:10px;color:var(--muted)">d${ev.dado_lados||100}</span>`
+      : `<span style="font-size:10px;color:var(--muted)">${ev.bioma||'—'}</span>`;
+    return`<div style="background:var(--surface);border:1.5px solid ${ev.ativo?'var(--brand-mid)':'var(--border)'};border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:border-color .2s">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:30px;height:30px;border-radius:50%;background:${ev.cor||'var(--brand)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${ev.emoji||'🎪'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--font-title);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.nome}</div>
+          <div style="display:flex;align-items:center;gap:3px;margin-top:2px;flex-wrap:wrap">${tipoTag}${poolTag}${info}</div>
         </div>
+        <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:6px;flex-shrink:0;${ev.ativo?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${ev.ativo?'●':'○'}</span>
       </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;${ev.ativo?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${ev.ativo?'● Ativo':'○ Inativo'}</span>
-        </div>
-        <a href="/evento/${ev.slug}" target="_blank" style="font-size:11px;font-weight:700;color:var(--brand-mid);text-decoration:none;background:var(--brand-light);padding:3px 9px;border-radius:8px;white-space:nowrap">/evento/${ev.slug} ↗</a>
-        <div style="display:flex;gap:5px">
-          <button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:${ev.ativo?'#fdf3dc':'#e0f0e0'};color:${ev.ativo?'#7a5010':'#1a6a1a'};border:1px solid ${ev.ativo?'#e8d080':'#8bc88b'}" onclick="toggleEventoAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'Desativar':'Ativar'}</button>
-          <button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="deletarEvento('${ev.id}','${ev.nome}')">Excluir</button>
-        </div>
+      <a href="/evento/${ev.slug}" target="_blank" style="font-size:10px;font-weight:700;color:var(--brand-mid);text-decoration:none;background:var(--brand-light);padding:2px 8px;border-radius:6px;white-space:nowrap;text-align:center;overflow:hidden;text-overflow:ellipsis">/evento/${ev.slug} ↗</a>
+      <div style="display:flex;gap:3px;border-top:1px solid var(--border);padding-top:6px">
+        <button class="btn btn-sm" style="flex:1;font-size:10px;padding:3px 0;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="abrirEditarEvento('${ev.id}')">✏️ Editar</button>
+        <button class="btn btn-sm" style="flex:1;font-size:10px;padding:3px 0;background:${ev.ativo?'#fdf3dc':'#e8f5e8'};color:${ev.ativo?'#7a5010':'#1a6a1a'};border:1px solid ${ev.ativo?'#e8d080':'#8bc88b'}" onclick="toggleEventoAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'Pausar':'Ativar'}</button>
+        <button class="btn btn-sm" style="font-size:10px;padding:3px 6px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="deletarEvento('${ev.id}','${ev.nome}')">✕</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+// ── EDITAR EVENTO ──
+function editEvSetTipo(tipo){
+  document.getElementById('edit-ev-btn-encontro').classList.toggle('active', tipo==='encontro');
+  document.getElementById('edit-ev-btn-dados').classList.toggle('active', tipo==='dados');
+  document.getElementById('edit-ev-campos-encontro').style.display = tipo==='encontro' ? '' : 'none';
+  document.getElementById('edit-ev-campos-dados').style.display    = tipo==='dados'    ? '' : 'none';
+  document.getElementById('edit-ev-tipo').value = tipo;
+}
+function editEvSetPool(modo){
+  document.getElementById('edit-ev-pool-global').classList.toggle('active', modo==='global');
+  document.getElementById('edit-ev-pool-custom').classList.toggle('active', modo==='custom');
+  document.getElementById('edit-ev-pool-global-info').style.display  = modo==='global' ? '' : 'none';
+  document.getElementById('edit-ev-pool-custom-wrap').style.display  = modo==='custom' ? '' : 'none';
+}
+// abre o modal de pool mas salvando no contexto de edição
+function abrirModalPoolEventoEdit(){
+  const src = document.getElementById('pool-import-bioma-src');
+  const dst = document.getElementById('pool-import-bioma-dst');
+  if(src) src.innerHTML = biomas.map(b=>`<option>${b.nome}</option>`).join('');
+  if(dst) dst.innerHTML = _poolBiomasEvento.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
+  _poolSelecionados = new Set();
+  renderPoolBiomasTabs();
+  renderPoolImportList();
+  // ao confirmar vai atualizar o resumo do edit
+  _poolConfirmCallback = ()=>{
+    const resumo = document.getElementById('edit-ev-pool-resumo');
+    if(resumo){
+      const total = _poolBiomasEvento.reduce((s,b)=>s+b.pokemons.length,0);
+      resumo.textContent = `${_poolBiomasEvento.length} bioma(s) · ${total} Pokémon`;
+    }
+  };
+  document.getElementById('modal-pool-overlay').style.display='flex';
+}
+
+function abrirEditarEvento(id){
+  const ev = eventos.find(e=>e.id===id);
+  if(!ev) return;
+  document.getElementById('edit-ev-id').value   = ev.id;
+  document.getElementById('edit-ev-tipo').value = ev.tipo||'encontro';
+  document.getElementById('edit-ev-nome').value  = ev.nome||'';
+  document.getElementById('edit-ev-slug').value  = ev.slug||'';
+  document.getElementById('edit-ev-cor').value   = ev.cor||'#1a3a5c';
+  document.getElementById('edit-ev-emoji').value = ev.emoji||'';
+  document.getElementById('edit-ev-desc').value  = ev.descricao||'';
+
+  // tipo
+  const tipo = ev.tipo||'encontro';
+  editEvSetTipo(tipo);
+
+  if(tipo!=='dados'){
+    const sel = document.getElementById('edit-ev-bioma');
+    sel.innerHTML = biomas.map(b=>`<option${b.nome===ev.bioma?' selected':''}>${b.nome}</option>`).join('');
+    document.getElementById('edit-ev-adicionais').value        = ev.adicionais||0;
+    document.getElementById('edit-ev-lock-bioma').checked      = !!ev.lock_bioma;
+    document.getElementById('edit-ev-lock-adicionais').checked = !!ev.lock_adicionais;
+    // pool
+    const poolModo = ev.pool_modo||'global';
+    editEvSetPool(poolModo);
+    _poolBiomasEvento = (ev.pool_custom && Array.isArray(ev.pool_custom)) ? ev.pool_custom : [];
+    eventoPoolAtivaBioma = _poolBiomasEvento[0]?.nome||null;
+    if(poolModo==='custom'){
+      const total = _poolBiomasEvento.reduce((s,b)=>s+b.pokemons.length,0);
+      const resumo = document.getElementById('edit-ev-pool-resumo');
+      if(resumo) resumo.textContent = `${_poolBiomasEvento.length} bioma(s) · ${total} Pokémon`;
+    }
+  } else {
+    const sel = document.getElementById('edit-ev-dado-lados');
+    sel.value = String(ev.dado_lados||100);
+    document.getElementById('edit-ev-dado-motivo').value  = ev.dado_motivo||'';
+    document.getElementById('edit-ev-lock-dado').checked   = !!ev.lock_dado;
+    document.getElementById('edit-ev-lock-motivo').checked = !!ev.lock_motivo;
+  }
+  document.getElementById('edit-ev-fb-ok').style.display='none';
+  document.getElementById('edit-ev-fb-err').style.display='none';
+  document.getElementById('modal-editar-evento-overlay').style.display='flex';
+}
+
+function fecharEditarEvento(){
+  document.getElementById('modal-editar-evento-overlay').style.display='none';
+}
+
+async function salvarEdicaoEvento(){
+  const id      = document.getElementById('edit-ev-id').value;
+  const tipo    = document.getElementById('edit-ev-tipo').value;
+  const nome    = document.getElementById('edit-ev-nome').value.trim();
+  const slug    = document.getElementById('edit-ev-slug').value.trim();
+  const cor     = document.getElementById('edit-ev-cor').value;
+  const emoji   = document.getElementById('edit-ev-emoji').value.trim()||'🎪';
+  const descricao = document.getElementById('edit-ev-desc').value.trim();
+  const errEl   = document.getElementById('edit-ev-fb-err');
+  errEl.style.display='none';
+  document.getElementById('edit-ev-fb-ok').style.display='none';
+  if(!nome){ errEl.textContent='Preencha o nome.'; errEl.style.display='block'; return; }
+  if(!slug){ errEl.textContent='Preencha o slug.'; errEl.style.display='block'; return; }
+  const conflict = eventos.find(e=>e.slug===slug && e.id!==id);
+  if(conflict){ errEl.textContent='Outro evento já usa este slug.'; errEl.style.display='block'; return; }
+
+  const payload = {nome, slug, cor, emoji, descricao, tipo};
+  if(tipo!=='dados'){
+    payload.bioma            = document.getElementById('edit-ev-bioma').value;
+    payload.adicionais       = parseInt(document.getElementById('edit-ev-adicionais').value)||0;
+    payload.lock_bioma       = document.getElementById('edit-ev-lock-bioma').checked;
+    payload.lock_adicionais  = document.getElementById('edit-ev-lock-adicionais').checked;
+    const poolModo = document.getElementById('edit-ev-pool-custom').classList.contains('active') ? 'custom' : 'global';
+    payload.pool_modo   = poolModo;
+    payload.pool_custom = poolModo==='custom' ? _poolBiomasEvento : [];
+  } else {
+    payload.dado_lados       = parseInt(document.getElementById('edit-ev-dado-lados').value)||100;
+    payload.dado_motivo      = document.getElementById('edit-ev-dado-motivo').value.trim();
+    payload.lock_dado        = document.getElementById('edit-ev-lock-dado').checked;
+    payload.lock_motivo      = document.getElementById('edit-ev-lock-motivo').checked;
+  }
+
+  try{
+    await dbPatch('eventos',`id=eq.${id}`,payload);
+    const ev = eventos.find(e=>e.id===id);
+    if(ev) Object.assign(ev, payload);
+    fb('edit-ev-fb-ok');
+    renderEventosLista();
+    setTimeout(fecharEditarEvento, 700);
+  } catch(e){ errEl.textContent='Erro: '+e.message; errEl.style.display='block'; }
 }
 
 // ── PÁGINA DO EVENTO ──
@@ -3932,16 +4380,67 @@ async function iniciarPaginaEvento(slug){
     const descEl = document.getElementById('evento-desc');
     if(descEl) descEl.textContent = ev.descricao||'';
 
-    // bioma
-    const biomaWrap = document.getElementById('evento-bioma-wrap');
-    const biomaSel  = document.getElementById('evento-bioma-sel');
-    if(biomaSel){
-      biomaSel.innerHTML = biomas.map(b=>`<option${b.nome===ev.bioma?' selected':''}>${b.nome}</option>`).join('');
-      if(ev.lock_bioma && biomaWrap){
-        biomaWrap.style.opacity='.6';
-        biomaWrap.style.pointerEvents='none';
-        const lbl=biomaWrap.querySelector('label');
-        if(lbl) lbl.innerHTML='Bioma <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
+    // ── modo do evento (encontro / dados / ambos) ──
+    const modoSel   = document.getElementById('evento-modo-selector');
+    const modoEnc   = document.getElementById('evento-modo-encontro');
+    const modoDados = document.getElementById('evento-modo-dados');
+    const btnEnc    = document.getElementById('evento-btn-encontro');
+    const btnDados  = document.getElementById('evento-btn-dados');
+    const btnPool   = document.getElementById('evento-btn-config-pool');
+
+    const tipo = ev.tipo || 'encontro';
+    if(tipo === 'ambos'){
+      // mostra botões de alternância, começa em encontro
+      modoSel.style.display = 'flex';
+      modoEnc.style.display = '';
+      modoDados.style.display = 'none';
+      btnEnc.classList.add('active');
+      btnDados.classList.remove('active');
+    } else if(tipo === 'dados'){
+      modoSel.style.display = 'none';
+      modoEnc.style.display = 'none';
+      modoDados.style.display = '';
+    } else {
+      // apenas encontro
+      modoSel.style.display = 'none';
+      modoEnc.style.display = '';
+      modoDados.style.display = 'none';
+    }
+
+    // ── pool custom ──
+    // carrega pool salva no evento (se existir)
+    if(ev.pool_custom && Array.isArray(ev.pool_custom)){
+      _poolBiomasEvento = ev.pool_custom;
+    } else {
+      _poolBiomasEvento = [];
+    }
+    eventoPoolAtivaBioma = _poolBiomasEvento[0]?.nome || null;
+
+    const poolModo = ev.pool_modo || 'global';
+    if(poolModo === 'custom' && _poolBiomasEvento.length){
+      // mostra botão de config de pool e popula select de biomas com os da pool
+      if(btnPool) btnPool.style.display = '';
+      const biomaSel = document.getElementById('evento-bioma-sel');
+      if(biomaSel){
+        biomaSel.innerHTML = _poolBiomasEvento.map(b=>`<option>${b.nome}</option>`).join('');
+        if(ev.lock_bioma){
+          const biomaWrap = document.getElementById('evento-bioma-wrap');
+          if(biomaWrap){ biomaWrap.style.opacity='.6'; biomaWrap.style.pointerEvents='none'; }
+        }
+      }
+    } else {
+      if(btnPool) btnPool.style.display = 'none';
+      // modo global: popula select com biomas normais do sistema
+      const biomaWrap = document.getElementById('evento-bioma-wrap');
+      const biomaSel  = document.getElementById('evento-bioma-sel');
+      if(biomaSel){
+        biomaSel.innerHTML = biomas.map(b=>`<option${b.nome===ev.bioma?' selected':''}>${b.nome}</option>`).join('');
+        if(ev.lock_bioma && biomaWrap){
+          biomaWrap.style.opacity='.6';
+          biomaWrap.style.pointerEvents='none';
+          const lbl=biomaWrap.querySelector('label');
+          if(lbl) lbl.innerHTML='Bioma <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
+        }
       }
     }
 
@@ -3984,10 +4483,44 @@ async function rolarEncontroEvento(){
   if(!personagem){ alert('Preencha o nome do personagem!'); document.getElementById('evento-personagem').focus(); return; }
   const ev = eventoAtual;
   if(!ev){ alert('Evento não carregado.'); return; }
+
+  // ── pool custom: usa pokémon configurados pelo admin ──
+  if(ev.pool_modo==='custom' && _poolBiomasEvento.length){
+    const biomaAtivo = eventoPoolAtivaBioma || _poolBiomasEvento[0]?.nome;
+    const biomaObj   = _poolBiomasEvento.find(b=>b.nome===biomaAtivo);
+    if(!biomaObj||!biomaObj.pokemons.length){ alert('Bioma sem Pokémon configurados. Clique em "Configurar Pokémon" e escolha um bioma.'); return; }
+    const adicionais = ev.lock_adicionais ? (ev.adicionais||0) : Math.max(0,parseInt(document.getElementById('evento-adicionais').value)||0);
+    const total = 3 + adicionais;
+    const raridades=['comum','incomum','raro','rarissimo'];
+    const pools={};
+    for(const r of raridades) pools[r]=biomaObj.pokemons.filter(p=>(p.raridade||'').toLowerCase()===r);
+    function rollRarityC(){ const r=Math.ceil(Math.random()*100); if(r<=2)return 'rarissimo'; if(r<=13)return 'raro'; if(r<=51)return 'incomum'; return 'comum'; }
+    const pokes=[];
+    for(let i=0;i<total;i++){
+      const rarity=rollRarityC();
+      const pool=pools[rarity].length?pools[rarity]:(pools['comum'].length?pools['comum']:biomaObj.pokemons);
+      const pk=pool[Math.floor(Math.random()*pool.length)];
+      if(pk) pokes.push({...pk, rarity, genderS:'', genderC:'var(--muted)'});
+    }
+    const section=document.getElementById('evento-results');
+    section.innerHTML='';
+    const grid=document.createElement('div');
+    grid.className='results-grid';
+    pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
+    section.appendChild(grid);
+    const agora=new Date();
+    const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const data=agora.toLocaleDateString('pt-BR');
+    const entry={bioma:biomaAtivo,personagem,hora,data,pokes,evento_slug:ev.slug};
+    try{ const res=await dbPost('historico',entry); if(res&&res[0]) eventoHistorico.unshift(res[0]); }catch(e){}
+    eventoHistPagina=0; renderHistoricoEvento();
+    return;
+  }
+
+  // ── pool global: usa pokémon do bioma selecionado ──
   const bioma = ev.lock_bioma ? ev.bioma : document.getElementById('evento-bioma-sel').value;
   const adicionais = ev.lock_adicionais ? (ev.adicionais||0) : Math.max(0,parseInt(document.getElementById('evento-adicionais').value)||0);
   const total = 3 + adicionais;
-
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={}, usedIds={};
   for(const r of raridades){
@@ -4001,15 +4534,12 @@ async function rolarEncontroEvento(){
     const pk=pickFromPool(pools[rarity],usedIds[rarity],rarity);
     pokes.push(pk);
   }
-
-  const section = document.getElementById('evento-results');
+  const section=document.getElementById('evento-results');
   section.innerHTML='';
-  const grid = document.createElement('div');
+  const grid=document.createElement('div');
   grid.className='results-grid';
   pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
   section.appendChild(grid);
-
-  // salva com tag de evento
   const agora=new Date();
   const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data=agora.toLocaleDateString('pt-BR');
@@ -4070,7 +4600,212 @@ function renderHistoricoEvento(){
 
 
 
-// Posiciona tooltip do pokémon via mouse para garantir que sobressaia tudo
+
+// ══════════════════════════════════════
+// POOL DO EVENTO (admin + jogador)
+// ══════════════════════════════════════
+
+// Estado da pool customizada (admin cria, jogador usa)
+let eventoPoolCustom = {}; // { [biomaNome]: [{...pokemon}] }
+let eventoPoolAtivaBioma = null; // bioma ativo no modal do jogador
+
+// ── ADMIN: setEvTipo ──
+function setEvTipo(tipo){
+  document.getElementById('ev-tipo-encontro').classList.toggle('active', tipo==='encontro');
+  document.getElementById('ev-tipo-dados').classList.toggle('active', tipo==='dados');
+  document.getElementById('ev-opcoes-encontro').style.display = tipo==='encontro' ? '' : 'none';
+  document.getElementById('ev-opcoes-dados').style.display    = tipo==='dados'    ? '' : 'none';
+}
+
+// ── ADMIN: setEvPoolModo ──
+function setEvPoolModo(modo){
+  document.getElementById('ev-pool-modo-global').classList.toggle('active', modo==='global');
+  document.getElementById('ev-pool-modo-custom').classList.toggle('active', modo==='custom');
+  document.getElementById('ev-pool-global-info').style.display = modo==='global' ? '' : 'none';
+  document.getElementById('ev-pool-custom-wrap').style.display = modo==='custom' ? '' : 'none';
+}
+
+// ── ADMIN: modal pool (configurar pokémon do evento) ──
+let _poolBiomasEvento = []; // [{nome, pokemons:[]}]
+let _poolBiomaAtivoIdx = 0;
+let _poolSelecionados = new Set(); // ids selecionados no painel de importar
+
+function abrirModalPoolEvento(){
+  // popula selects de origem/destino
+  const src = document.getElementById('pool-import-bioma-src');
+  const dst = document.getElementById('pool-import-bioma-dst');
+  if(src) src.innerHTML = biomas.map(b=>`<option>${b.nome}</option>`).join('');
+  if(dst) dst.innerHTML = _poolBiomasEvento.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
+  _poolSelecionados = new Set();
+  renderPoolBiomasTabs();
+  renderPoolImportList();
+  document.getElementById('modal-pool-overlay').style.display='flex';
+}
+function fecharModalPool(){
+  document.getElementById('modal-pool-overlay').style.display='none';
+}
+
+function adicionarBiomaPool(){
+  const nome = prompt('Nome do bioma para este evento:');
+  if(!nome||!nome.trim()) return;
+  _poolBiomasEvento.push({nome:nome.trim(), pokemons:[]});
+  const dst = document.getElementById('pool-import-bioma-dst');
+  if(dst) dst.innerHTML = _poolBiomasEvento.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
+  _poolBiomaAtivoIdx = _poolBiomasEvento.length - 1;
+  renderPoolBiomasTabs();
+}
+
+function renderPoolBiomasTabs(){
+  const tabs = document.getElementById('pool-bioma-tabs');
+  const cont = document.getElementById('pool-bioma-content');
+  if(!tabs||!cont) return;
+  if(!_poolBiomasEvento.length){
+    tabs.innerHTML='';
+    cont.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Adicione um bioma para começar.</div>';
+    return;
+  }
+  tabs.innerHTML = _poolBiomasEvento.map((b,i)=>`
+    <button onclick="_poolBiomaAtivoIdx=${i};renderPoolBiomasTabs()" style="padding:6px 14px;font-size:12px;font-weight:700;border:1.5px solid ${i===_poolBiomaAtivoIdx?'var(--brand-mid)':'var(--border)'};background:${i===_poolBiomaAtivoIdx?'var(--brand-light)':'var(--surface)'};color:${i===_poolBiomaAtivoIdx?'var(--brand-mid)':'var(--muted)'};border-radius:8px 8px 0 0;cursor:pointer;margin-bottom:-1.5px;position:relative;z-index:${i===_poolBiomaAtivoIdx?2:1}">${b.nome} <span style="font-size:10px">(${b.pokemons.length})</span></button>
+  `).join('');
+  const b = _poolBiomasEvento[_poolBiomaAtivoIdx];
+  if(!b){ cont.innerHTML=''; return; }
+  cont.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:12px;font-weight:700;color:var(--brand)">${b.nome}</span>
+      <button onclick="_poolBiomasEvento.splice(_poolBiomaAtivoIdx,1);_poolBiomaAtivoIdx=Math.max(0,_poolBiomaAtivoIdx-1);const d=document.getElementById('pool-import-bioma-dst');if(d)d.innerHTML=_poolBiomasEvento.map((x,i)=>'<option value='+i+'>'+x.nome+'</option>').join('');renderPoolBiomasTabs()" style="font-size:10px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0;border-radius:6px;padding:2px 8px;cursor:pointer">✕ Remover bioma</button>
+    </div>
+    ${!b.pokemons.length
+      ? '<div style="color:var(--muted);font-size:12px;text-align:center;padding:16px">Nenhum Pokémon adicionado. Use o importador abaixo.</div>'
+      : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;max-height:180px;overflow-y:auto">
+          ${b.pokemons.map((pk,pi)=>`
+            <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px;text-align:center;position:relative">
+              <button onclick="_poolBiomasEvento[${_poolBiomaAtivoIdx}].pokemons.splice(${pi},1);renderPoolBiomasTabs()" style="position:absolute;top:2px;right:2px;font-size:9px;background:#fde8e8;color:var(--red);border:none;border-radius:4px;cursor:pointer;padding:1px 4px">✕</button>
+              <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
+              <div style="font-size:9px;font-weight:700;color:var(--text);margin-top:2px;line-height:1.2">${pk.nome}</div>
+              <div style="font-size:9px;color:var(--muted)">${pk.raridade||''}</div>
+            </div>`).join('')}
+        </div>`}
+  `;
+}
+
+function renderPoolImportList(){
+  const lista = document.getElementById('pool-import-lista');
+  if(!lista) return;
+  const biomaFiltro = document.getElementById('pool-import-bioma-src')?.value;
+  const busca = (document.getElementById('pool-import-busca')?.value||'').toLowerCase();
+  const raridade = document.getElementById('pool-import-raridade')?.value||'';
+  let pks = pokemonDB.filter(p=>
+    (!biomaFiltro || p.bioma===biomaFiltro) &&
+    (!busca || p.nome.toLowerCase().includes(busca)) &&
+    (!raridade || p.raridade===raridade)
+  );
+  lista.innerHTML = pks.map(pk=>`
+    <div onclick="togglePoolImportSel('${pk.id}',this)" data-pk-id="${pk.id}"
+      style="background:${_poolSelecionados.has(String(pk.id))?'var(--brand-light)':'var(--surface2)'};border:1.5px solid ${_poolSelecionados.has(String(pk.id))?'var(--brand-mid)':'var(--border)'};border-radius:8px;padding:6px;text-align:center;cursor:pointer;transition:all .15s">
+      <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
+      <div style="font-size:9px;font-weight:700;color:var(--text);line-height:1.2;margin-top:2px">${pk.nome}</div>
+      <div style="font-size:8px;color:var(--muted)">${pk.raridade||''}</div>
+      ${_poolSelecionados.has(String(pk.id))?'<div style="font-size:8px;color:var(--brand-mid);font-weight:700">✓ sel</div>':''}
+    </div>`).join('');
+}
+function togglePoolImportSel(id, el){
+  const sid = String(id);
+  if(_poolSelecionados.has(sid)) _poolSelecionados.delete(sid);
+  else _poolSelecionados.add(sid);
+  renderPoolImportList();
+}
+function importarSelecionadosPool(){
+  const dstIdx = parseInt(document.getElementById('pool-import-bioma-dst')?.value);
+  if(isNaN(dstIdx)||!_poolBiomasEvento[dstIdx]){ alert('Selecione um bioma de destino.'); return; }
+  const dst = _poolBiomasEvento[dstIdx];
+  pokemonDB.filter(p=>_poolSelecionados.has(String(p.id))).forEach(pk=>{
+    if(!dst.pokemons.find(x=>x.id===pk.id)) dst.pokemons.push(pk);
+  });
+  _poolSelecionados = new Set();
+  _poolBiomaAtivoIdx = dstIdx;
+  renderPoolBiomasTabs();
+  renderPoolImportList();
+}
+
+let _poolConfirmCallback = null;
+
+function confirmarPool(){
+  // resumo no formulário de criação
+  const resumo = document.getElementById('ev-pool-resumo');
+  if(resumo){
+    const total = _poolBiomasEvento.reduce((s,b)=>s+b.pokemons.length,0);
+    resumo.textContent = `${_poolBiomasEvento.length} bioma(s) · ${total} Pokémon configurado(s)`;
+  }
+  // callback de edição (se aberto a partir do modal de editar)
+  if(typeof _poolConfirmCallback === 'function'){
+    _poolConfirmCallback();
+    _poolConfirmCallback = null;
+  }
+  fb('pool-fb-ok');
+  setTimeout(fecharModalPool, 600);
+}
+
+// ── JOGADOR: alternância de modo ──
+function eventoSetModo(modo){
+  document.getElementById('evento-btn-encontro').classList.toggle('active', modo==='encontro');
+  document.getElementById('evento-btn-dados').classList.toggle('active', modo==='dados');
+  document.getElementById('evento-modo-encontro').style.display = modo==='encontro' ? '' : 'none';
+  document.getElementById('evento-modo-dados').style.display    = modo==='dados'    ? '' : 'none';
+}
+
+// ── JOGADOR: modal pool (escolher bioma/pokémon do evento) ──
+function abrirModalPoolEvento(){
+  // se admin não montou pool custom, não há o que mostrar
+  const ev = eventoAtual;
+  if(!ev) return;
+  if(ev.pool_modo!=='custom' || !_poolBiomasEvento.length){
+    // sem pool custom: apenas informativo
+    alert('Este evento usa os biomas padrão do sistema. Selecione o bioma no campo acima.');
+    return;
+  }
+  // monta lista de biomas disponíveis
+  eventoPoolAtivaBioma = _poolBiomasEvento[0]?.nome || null;
+  renderModalPoolJogador();
+  document.getElementById('modal-pool-jogador-overlay').style.display='flex';
+}
+function fecharModalPoolJogador(){
+  document.getElementById('modal-pool-jogador-overlay').style.display='none';
+}
+function renderModalPoolJogador(){
+  const tabs = document.getElementById('pool-jogador-tabs');
+  const cont = document.getElementById('pool-jogador-content');
+  if(!tabs||!cont) return;
+  tabs.innerHTML = _poolBiomasEvento.map(b=>`
+    <button onclick="eventoPoolAtivaBioma='${b.nome}';renderModalPoolJogador()" style="padding:6px 14px;font-size:12px;font-weight:700;border:1.5px solid ${b.nome===eventoPoolAtivaBioma?'var(--brand-mid)':'var(--border)'};background:${b.nome===eventoPoolAtivaBioma?'var(--brand-light)':'var(--surface)'};color:${b.nome===eventoPoolAtivaBioma?'var(--brand-mid)':'var(--muted)'};border-radius:20px;cursor:pointer">${b.nome}</button>
+  `).join('');
+  const b = _poolBiomasEvento.find(x=>x.nome===eventoPoolAtivaBioma);
+  if(!b){ cont.innerHTML=''; return; }
+  cont.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;max-height:300px;overflow-y:auto;margin-top:12px">
+      ${b.pokemons.map(pk=>`
+        <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px;text-align:center">
+          <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
+          <div style="font-size:10px;font-weight:700;color:var(--text);margin-top:3px;line-height:1.2">${pk.nome}</div>
+          <div style="font-size:9px;color:var(--muted)">${pk.raridade||''}</div>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:14px;text-align:center">
+      <button class="roll-btn" style="font-size:13px;padding:10px 28px" onclick="usarBiomaPoolJogador('${b.nome}')">⚡ Rolar neste bioma</button>
+    </div>
+  `;
+}
+function usarBiomaPoolJogador(biomaNome){
+  // seleciona o bioma no select do evento e fecha o modal
+  const sel = document.getElementById('evento-bioma-sel');
+  if(sel){
+    for(let o of sel.options){ if(o.value===biomaNome||o.text===biomaNome){ sel.value=o.value; break; } }
+  }
+  fecharModalPoolJogador();
+  rolarEncontroEvento();
+}
+
+
+
 document.addEventListener('mousemove', e => {
   const tip = document.querySelector('.npc-poke-slot:hover .npc-poke-tip');
   if (!tip) return;
