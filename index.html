@@ -4344,12 +4344,20 @@ async function salvarEdicaoEvento(){
 
   try{
     await dbPatch('eventos',`id=eq.${id}`,payload);
+    // atualiza cache local
     const ev = eventos.find(e=>e.id===id);
     if(ev) Object.assign(ev, payload);
-    // se o evento editado é o que está aberto agora, re-aplica na página
+    // se o evento editado está aberto na página, atualiza eventoAtual e re-inicializa
     if(eventoAtual && eventoAtual.id===id){
       Object.assign(eventoAtual, payload);
-      iniciarPaginaEvento(eventoAtual.slug);
+      // força releitura do Supabase para garantir dados frescos (inclusive pool_custom)
+      const evRes = await sb(`eventos?id=eq.${id}&limit=1`);
+      if(evRes && evRes[0]){
+        Object.assign(eventoAtual, evRes[0]);
+        const idx = eventos.findIndex(e=>e.id===id);
+        if(idx>=0) eventos[idx] = evRes[0];
+      }
+      await iniciarPaginaEvento(eventoAtual.slug);
     }
     fb('edit-ev-fb-ok');
     renderEventosLista();
@@ -4361,9 +4369,14 @@ async function salvarEdicaoEvento(){
 async function iniciarPaginaEvento(slug){
   loading(true);
   try{
-    // sempre recarrega o evento do banco para garantir dados frescos
-    const evRes = await sb(`eventos?slug=eq.${slug}&limit=1`);
-    const ev = (evRes&&evRes[0]) || eventos.find(e=>e.slug===slug);
+    // usa cache local se disponível (garante que edições recentes sejam refletidas)
+    // fallback para o banco caso o evento não esteja em memória
+    let ev = eventos.find(e=>e.slug===slug);
+    if(!ev){
+      const evRes = await sb(`eventos?slug=eq.${slug}&limit=1`);
+      ev = evRes&&evRes[0];
+      if(ev) eventos.push(ev);
+    }
     if(!ev){
       document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
       document.getElementById('page-evento').classList.add('active');
