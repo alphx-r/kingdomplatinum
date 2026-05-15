@@ -535,10 +535,13 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     </div>
   </div>
 
-  <!-- SELETOR DE MODO (visível ao jogador quando evento tem ambos os modos) -->
-  <div id="evento-modo-selector" style="display:none;gap:10px;margin-bottom:20px">
-    <button id="evento-btn-encontro" class="ev-tipo-btn active" onclick="eventoSetModo('encontro')">⚡ Rolador de Encontro</button>
-    <button id="evento-btn-dados"    class="ev-tipo-btn"        onclick="eventoSetModo('dados')">🎲 Rolador de Dados</button>
+
+  <!-- SELETOR DE MODO (visível ao jogador quando evento tem ambos os modos) — sticky no topo -->
+  <div id="evento-modo-selector" style="display:none;position:sticky;top:0;z-index:50;margin:-8px -8px 24px -8px;padding:12px 20px;background:var(--surface2);border-bottom:1.5px solid var(--border);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)">
+    <div style="display:flex;gap:8px;max-width:400px;margin:0 auto;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:4px">
+      <button id="evento-btn-encontro" onclick="eventoSetModo('encontro')" style="flex:1;padding:8px 12px;border-radius:8px;border:none;font-family:var(--font-body);font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;background:var(--brand);color:#fff">⚡ Encontro</button>
+      <button id="evento-btn-dados"    onclick="eventoSetModo('dados')"    style="flex:1;padding:8px 12px;border-radius:8px;border:none;font-family:var(--font-body);font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;background:transparent;color:var(--muted)">🎲 Dados</button>
+    </div>
   </div>
 
   <!-- ROLADOR DE ENCONTRO -->
@@ -1013,6 +1016,9 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
                 <button type="button" id="ev-tipo-dados" class="ev-tipo-btn" onclick="setEvTipo('dados')">
                   🎲 Rolador de Dados
                 </button>
+                <button type="button" id="ev-tipo-ambos" class="ev-tipo-btn" onclick="setEvTipo('ambos')">
+                  ⚡🎲 Ambos
+                </button>
               </div>
             </div>
 
@@ -1419,6 +1425,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <div style="display:flex;gap:8px;margin-top:6px">
         <button type="button" id="edit-ev-btn-encontro" class="ev-tipo-btn active" onclick="editEvSetTipo('encontro')">⚡ Encontro Pokémon</button>
         <button type="button" id="edit-ev-btn-dados"    class="ev-tipo-btn"        onclick="editEvSetTipo('dados')">🎲 Rolador de Dados</button>
+        <button type="button" id="edit-ev-btn-ambos"    class="ev-tipo-btn"        onclick="editEvSetTipo('ambos')">⚡🎲 Ambos</button>
       </div>
     </div>
 
@@ -4118,7 +4125,9 @@ async function criarEvento(){
   const lockBioma     = document.getElementById('ev-lock-bioma').checked;
   const lockAdicionais= document.getElementById('ev-lock-adicionais').checked;
   // tipo do rolador e pool
-  const tipo = document.getElementById('ev-tipo-encontro').classList.contains('active') ? 'encontro' : 'dados';
+  const tipo = document.getElementById('ev-tipo-ambos').classList.contains('active') ? 'ambos'
+             : document.getElementById('ev-tipo-dados').classList.contains('active') ? 'dados'
+             : 'encontro';
   const poolModo = document.getElementById('ev-pool-modo-custom')?.classList.contains('active') ? 'custom' : 'global';
   const poolCustom = poolModo === 'custom' ? _poolBiomasEvento : [];
   const errEl   = document.getElementById('ev-fb-err');
@@ -4127,7 +4136,26 @@ async function criarEvento(){
   if(!nome){ errEl.textContent='Preencha o nome do evento.'; errEl.style.display='block'; return; }
   if(!slug){ errEl.textContent='Preencha o slug da URL.'; errEl.style.display='block'; return; }
   if(eventos.find(e=>e.slug===slug)){ errEl.textContent='Já existe um evento com este slug.'; errEl.style.display='block'; return; }
-  const payload = {nome, slug, bioma, adicionais, cor, emoji, descricao, lock_bioma:lockBioma, lock_adicionais:lockAdicionais, ativo:true, tipo, pool_modo:poolModo, pool_custom:poolCustom};
+
+  const payload = {nome, slug, cor, emoji, descricao, ativo:true, tipo};
+
+  // campos de encontro (tipo encontro ou ambos)
+  if(tipo==='encontro' || tipo==='ambos'){
+    payload.bioma            = bioma;
+    payload.adicionais       = adicionais;
+    payload.lock_bioma       = lockBioma;
+    payload.lock_adicionais  = lockAdicionais;
+    payload.pool_modo        = poolModo;
+    payload.pool_custom      = poolCustom;
+  }
+  // campos de dados (tipo dados ou ambos)
+  if(tipo==='dados' || tipo==='ambos'){
+    payload.dado_lados  = parseInt(document.getElementById('ev-dado-lados')?.value)||100;
+    payload.dado_motivo = document.getElementById('ev-dado-motivo')?.value.trim()||'';
+    payload.lock_dado   = document.getElementById('ev-lock-dado')?.checked||false;
+    payload.lock_motivo = document.getElementById('ev-lock-motivo')?.checked||false;
+  }
+
   try{
     const res = await dbPost('eventos', payload);
     if(res && res[0]){ eventos.unshift(res[0]); fb('ev-fb-ok'); renderEventosLista(); }
@@ -4140,6 +4168,7 @@ async function criarEvento(){
   document.getElementById('ev-adicionais').value='0';
   document.getElementById('ev-emoji').value='';
   _poolBiomasEvento = [];
+  setEvTipo('encontro');
   if(document.getElementById('ev-slug')._userEdited !== undefined) document.getElementById('ev-slug')._userEdited=false;
 }
 
@@ -4201,8 +4230,9 @@ function renderEventosLista(){
 function editEvSetTipo(tipo){
   document.getElementById('edit-ev-btn-encontro').classList.toggle('active', tipo==='encontro');
   document.getElementById('edit-ev-btn-dados').classList.toggle('active', tipo==='dados');
-  document.getElementById('edit-ev-campos-encontro').style.display = tipo==='encontro' ? '' : 'none';
-  document.getElementById('edit-ev-campos-dados').style.display    = tipo==='dados'    ? '' : 'none';
+  document.getElementById('edit-ev-btn-ambos').classList.toggle('active', tipo==='ambos');
+  document.getElementById('edit-ev-campos-encontro').style.display = (tipo==='encontro'||tipo==='ambos') ? '' : 'none';
+  document.getElementById('edit-ev-campos-dados').style.display    = (tipo==='dados'   ||tipo==='ambos') ? '' : 'none';
   document.getElementById('edit-ev-tipo').value = tipo;
 }
 function editEvSetPool(modo){
@@ -4246,13 +4276,13 @@ function abrirEditarEvento(id){
   const tipo = ev.tipo||'encontro';
   editEvSetTipo(tipo);
 
-  if(tipo!=='dados'){
+  // campos encontro (encontro ou ambos)
+  if(tipo==='encontro' || tipo==='ambos'){
     const sel = document.getElementById('edit-ev-bioma');
     sel.innerHTML = biomas.map(b=>`<option${b.nome===ev.bioma?' selected':''}>${b.nome}</option>`).join('');
     document.getElementById('edit-ev-adicionais').value        = ev.adicionais||0;
     document.getElementById('edit-ev-lock-bioma').checked      = !!ev.lock_bioma;
     document.getElementById('edit-ev-lock-adicionais').checked = !!ev.lock_adicionais;
-    // pool
     const poolModo = ev.pool_modo||'global';
     editEvSetPool(poolModo);
     _poolBiomasEvento = (ev.pool_custom && Array.isArray(ev.pool_custom)) ? ev.pool_custom : [];
@@ -4262,12 +4292,13 @@ function abrirEditarEvento(id){
       const resumo = document.getElementById('edit-ev-pool-resumo');
       if(resumo) resumo.textContent = `${_poolBiomasEvento.length} bioma(s) · ${total} Pokémon`;
     }
-  } else {
-    const sel = document.getElementById('edit-ev-dado-lados');
-    sel.value = String(ev.dado_lados||100);
-    document.getElementById('edit-ev-dado-motivo').value  = ev.dado_motivo||'';
-    document.getElementById('edit-ev-lock-dado').checked   = !!ev.lock_dado;
-    document.getElementById('edit-ev-lock-motivo').checked = !!ev.lock_motivo;
+  }
+  // campos dados (dados ou ambos)
+  if(tipo==='dados' || tipo==='ambos'){
+    document.getElementById('edit-ev-dado-lados').value         = String(ev.dado_lados||100);
+    document.getElementById('edit-ev-dado-motivo').value        = ev.dado_motivo||'';
+    document.getElementById('edit-ev-lock-dado').checked        = !!ev.lock_dado;
+    document.getElementById('edit-ev-lock-motivo').checked      = !!ev.lock_motivo;
   }
   document.getElementById('edit-ev-fb-ok').style.display='none';
   document.getElementById('edit-ev-fb-err').style.display='none';
@@ -4295,7 +4326,7 @@ async function salvarEdicaoEvento(){
   if(conflict){ errEl.textContent='Outro evento já usa este slug.'; errEl.style.display='block'; return; }
 
   const payload = {nome, slug, cor, emoji, descricao, tipo};
-  if(tipo!=='dados'){
+  if(tipo==='encontro' || tipo==='ambos'){
     payload.bioma            = document.getElementById('edit-ev-bioma').value;
     payload.adicionais       = parseInt(document.getElementById('edit-ev-adicionais').value)||0;
     payload.lock_bioma       = document.getElementById('edit-ev-lock-bioma').checked;
@@ -4303,7 +4334,8 @@ async function salvarEdicaoEvento(){
     const poolModo = document.getElementById('edit-ev-pool-custom').classList.contains('active') ? 'custom' : 'global';
     payload.pool_modo   = poolModo;
     payload.pool_custom = poolModo==='custom' ? _poolBiomasEvento : [];
-  } else {
+  }
+  if(tipo==='dados' || tipo==='ambos'){
     payload.dado_lados       = parseInt(document.getElementById('edit-ev-dado-lados').value)||100;
     payload.dado_motivo      = document.getElementById('edit-ev-dado-motivo').value.trim();
     payload.lock_dado        = document.getElementById('edit-ev-lock-dado').checked;
@@ -4395,17 +4427,12 @@ async function iniciarPaginaEvento(slug){
     const modoSel   = document.getElementById('evento-modo-selector');
     const modoEnc   = document.getElementById('evento-modo-encontro');
     const modoDados = document.getElementById('evento-modo-dados');
-    const btnEnc    = document.getElementById('evento-btn-encontro');
-    const btnDados  = document.getElementById('evento-btn-dados');
     const btnPool   = document.getElementById('evento-btn-config-pool');
 
     const tipo = ev.tipo || 'encontro';
     if(tipo === 'ambos'){
-      modoSel.style.display = 'flex';
-      modoEnc.style.display = '';
-      modoDados.style.display = 'none';
-      btnEnc.classList.add('active');
-      btnDados.classList.remove('active');
+      modoSel.style.display = 'block';
+      eventoSetModo('encontro'); // começa em encontro por padrão
     } else if(tipo === 'dados'){
       modoSel.style.display = 'none';
       modoEnc.style.display = 'none';
@@ -4631,8 +4658,9 @@ let eventoPoolAtivaBioma = null; // bioma ativo no modal do jogador
 function setEvTipo(tipo){
   document.getElementById('ev-tipo-encontro').classList.toggle('active', tipo==='encontro');
   document.getElementById('ev-tipo-dados').classList.toggle('active', tipo==='dados');
-  document.getElementById('ev-opcoes-encontro').style.display = tipo==='encontro' ? '' : 'none';
-  document.getElementById('ev-opcoes-dados').style.display    = tipo==='dados'    ? '' : 'none';
+  document.getElementById('ev-tipo-ambos').classList.toggle('active', tipo==='ambos');
+  document.getElementById('ev-opcoes-encontro').style.display = (tipo==='encontro'||tipo==='ambos') ? '' : 'none';
+  document.getElementById('ev-opcoes-dados').style.display    = (tipo==='dados'   ||tipo==='ambos') ? '' : 'none';
 }
 
 // ── ADMIN: setEvPoolModo ──
@@ -4765,10 +4793,19 @@ function confirmarPool(){
 
 // ── JOGADOR: alternância de modo ──
 function eventoSetModo(modo){
-  document.getElementById('evento-btn-encontro').classList.toggle('active', modo==='encontro');
-  document.getElementById('evento-btn-dados').classList.toggle('active', modo==='dados');
+  const btnEnc   = document.getElementById('evento-btn-encontro');
+  const btnDados = document.getElementById('evento-btn-dados');
+  if(btnEnc){
+    btnEnc.style.background = modo==='encontro' ? 'var(--brand)' : 'transparent';
+    btnEnc.style.color      = modo==='encontro' ? '#fff' : 'var(--muted)';
+  }
+  if(btnDados){
+    btnDados.style.background = modo==='dados' ? 'var(--brand)' : 'transparent';
+    btnDados.style.color      = modo==='dados' ? '#fff' : 'var(--muted)';
+  }
   document.getElementById('evento-modo-encontro').style.display = modo==='encontro' ? '' : 'none';
   document.getElementById('evento-modo-dados').style.display    = modo==='dados'    ? '' : 'none';
+  document.getElementById('evento-results').innerHTML = '';
 }
 
 // ── JOGADOR: modal pool (escolher bioma/pokémon do evento) ──
