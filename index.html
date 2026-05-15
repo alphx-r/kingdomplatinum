@@ -4329,9 +4329,9 @@ async function salvarEdicaoEvento(){
 async function iniciarPaginaEvento(slug){
   loading(true);
   try{
-    // carrega eventos se não carregados
-    if(!eventos.length) await carregarEventos();
-    const ev = eventos.find(e=>e.slug===slug);
+    // sempre recarrega o evento do banco para garantir dados frescos
+    const evRes = await sb(`eventos?slug=eq.${slug}&limit=1`);
+    const ev = (evRes&&evRes[0]) || eventos.find(e=>e.slug===slug);
     if(!ev){
       document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
       document.getElementById('page-evento').classList.add('active');
@@ -4345,6 +4345,10 @@ async function iniciarPaginaEvento(slug){
       history.replaceState(null,'',`/evento/${slug}`);
       return;
     }
+    // atualiza cache local
+    const idx = eventos.findIndex(e=>e.slug===slug||e.id===ev.id);
+    if(idx>=0) eventos[idx]=ev; else eventos.push(ev);
+
     if(!ev.ativo){
       document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
       document.getElementById('page-evento').classList.add('active');
@@ -4375,11 +4379,7 @@ async function iniciarPaginaEvento(slug){
     // mostra a página
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     const pg = document.getElementById('page-evento');
-    if(pg){
-      pg.classList.add('active');
-      // recria o innerHTML do evento para reset limpo (caso tenha sido substituído por 404)
-      // verificar se os elementos ainda existem
-    }
+    if(pg) pg.classList.add('active');
 
     // configura header
     const header = document.getElementById('evento-header');
@@ -4401,7 +4401,6 @@ async function iniciarPaginaEvento(slug){
 
     const tipo = ev.tipo || 'encontro';
     if(tipo === 'ambos'){
-      // mostra botões de alternância, começa em encontro
       modoSel.style.display = 'flex';
       modoEnc.style.display = '';
       modoDados.style.display = 'none';
@@ -4412,58 +4411,67 @@ async function iniciarPaginaEvento(slug){
       modoEnc.style.display = 'none';
       modoDados.style.display = '';
     } else {
-      // apenas encontro
       modoSel.style.display = 'none';
       modoEnc.style.display = '';
       modoDados.style.display = 'none';
     }
 
     // ── pool custom ──
-    // carrega pool salva no evento (se existir)
-    if(ev.pool_custom && Array.isArray(ev.pool_custom)){
-      _poolBiomasEvento = ev.pool_custom;
-    } else {
-      _poolBiomasEvento = [];
-    }
+    _poolBiomasEvento = (ev.pool_custom && Array.isArray(ev.pool_custom)) ? ev.pool_custom : [];
     eventoPoolAtivaBioma = _poolBiomasEvento[0]?.nome || null;
 
     const poolModo = ev.pool_modo || 'global';
+
+    // reset de locks antes de reaplicar
+    const biomaWrap = document.getElementById('evento-bioma-wrap');
+    const biomaSel  = document.getElementById('evento-bioma-sel');
+    const addWrap   = document.getElementById('evento-adicionais-wrap');
+    const addIn     = document.getElementById('evento-adicionais');
+    if(biomaWrap){ biomaWrap.style.opacity=''; biomaWrap.style.pointerEvents=''; }
+    if(addWrap){   addWrap.style.opacity='';   addWrap.style.pointerEvents=''; }
+    const biomaLbl = biomaWrap?.querySelector('label');
+    if(biomaLbl) biomaLbl.innerHTML = 'Bioma';
+    const addLbl = addWrap?.querySelector('label');
+    if(addLbl) addLbl.innerHTML = 'Pokémon adicionais';
+
     if(poolModo === 'custom' && _poolBiomasEvento.length){
-      // mostra botão de config de pool e popula select de biomas com os da pool
       if(btnPool) btnPool.style.display = '';
-      const biomaSel = document.getElementById('evento-bioma-sel');
-      if(biomaSel){
-        biomaSel.innerHTML = _poolBiomasEvento.map(b=>`<option>${b.nome}</option>`).join('');
-        if(ev.lock_bioma){
-          const biomaWrap = document.getElementById('evento-bioma-wrap');
-          if(biomaWrap){ biomaWrap.style.opacity='.6'; biomaWrap.style.pointerEvents='none'; }
-        }
+      if(biomaSel) biomaSel.innerHTML = _poolBiomasEvento.map(b=>`<option>${b.nome}</option>`).join('');
+      if(ev.lock_bioma && biomaWrap){
+        biomaWrap.style.opacity='.6'; biomaWrap.style.pointerEvents='none';
+        if(biomaLbl) biomaLbl.innerHTML='Bioma <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
       }
     } else {
       if(btnPool) btnPool.style.display = 'none';
-      // modo global: popula select com biomas normais do sistema
-      const biomaWrap = document.getElementById('evento-bioma-wrap');
-      const biomaSel  = document.getElementById('evento-bioma-sel');
       if(biomaSel){
         biomaSel.innerHTML = biomas.map(b=>`<option${b.nome===ev.bioma?' selected':''}>${b.nome}</option>`).join('');
         if(ev.lock_bioma && biomaWrap){
-          biomaWrap.style.opacity='.6';
-          biomaWrap.style.pointerEvents='none';
-          const lbl=biomaWrap.querySelector('label');
-          if(lbl) lbl.innerHTML='Bioma <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
+          biomaWrap.style.opacity='.6'; biomaWrap.style.pointerEvents='none';
+          if(biomaLbl) biomaLbl.innerHTML='Bioma <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
         }
       }
     }
 
     // adicionais
-    const addWrap = document.getElementById('evento-adicionais-wrap');
-    const addIn   = document.getElementById('evento-adicionais');
     if(addIn) addIn.value = ev.adicionais||0;
     if(ev.lock_adicionais && addWrap){
-      addWrap.style.opacity='.6';
-      addWrap.style.pointerEvents='none';
-      const lbl=addWrap.querySelector('label');
-      if(lbl) lbl.innerHTML='Pokémon adicionais <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
+      addWrap.style.opacity='.6'; addWrap.style.pointerEvents='none';
+      if(addLbl) addLbl.innerHTML='Pokémon adicionais <span style="font-size:10px;color:var(--muted)">🔒 travado</span>';
+    }
+
+    // dados: sincroniza lados e motivo se tipo for dados
+    if(tipo === 'dados'){
+      const laIn = document.getElementById('evento-dice-lados');
+      const motIn = document.getElementById('evento-dice-motivo');
+      const dadoWrap = document.getElementById('evento-dado-lados-wrap');
+      const motivoWrap = document.getElementById('evento-dado-motivo-wrap');
+      if(laIn) laIn.value = ev.dado_lados||100;
+      if(motIn) motIn.value = ev.dado_motivo||'';
+      if(dadoWrap){ dadoWrap.style.opacity=''; dadoWrap.style.pointerEvents=''; }
+      if(motivoWrap){ motivoWrap.style.opacity=''; motivoWrap.style.pointerEvents=''; }
+      if(ev.lock_dado && dadoWrap){ dadoWrap.style.opacity='.6'; dadoWrap.style.pointerEvents='none'; }
+      if(ev.lock_motivo && motivoWrap){ motivoWrap.style.opacity='.6'; motivoWrap.style.pointerEvents='none'; }
+      sincEventoDiceBtn();
     }
 
     // carrega historico do evento
@@ -4481,7 +4489,6 @@ async function iniciarPaginaEvento(slug){
     history.replaceState(null,'',`/evento/${slug}`);
     document.title = `${ev.nome} · PKMN Kingdom`;
 
-    // oculta nav links ativos
     document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
     document.getElementById('btn-adm').classList.remove('active');
 
