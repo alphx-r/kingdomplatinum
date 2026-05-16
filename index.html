@@ -1919,13 +1919,16 @@ async function carregarAba(page){
         sb('npcs?order=nome.asc'),
       ]);
       npcCidades=_cidades||[];
-      // monta estrutura NPC_CIDADES dinamicamente
+      // monta estrutura NPC_CIDADES dinamicamente (só os com cidade)
       const estrutura=npcCidades.map(c=>({
         ...c,
         npcs:(_npcs||[]).filter(n=>n.npc_cidade_id===c.id)
       }));
       NPC_CIDADES.length=0;
       estrutura.forEach(x=>NPC_CIDADES.push(x));
+      // NPCs de evento (sem cidade)
+      NPC_EVENTOS.length=0;
+      (_npcs||[]).filter(n=>!n.npc_cidade_id).forEach(x=>NPC_EVENTOS.push(x));
       renderNpcs();
     }
     else if(page==='rolagens'){
@@ -3782,6 +3785,7 @@ async function confirmarTransferirNpc(){
 // NPCs
 // ══════════════════════════════════════
 let NPC_CIDADES = []
+let NPC_EVENTOS  = []
 
 let _npcDetalheAtivo=null; // {cidadeIdx, npcIdx}
 
@@ -3879,17 +3883,13 @@ function renderNpcs(filtro=''){
     cont.innerHTML=html||`<div class="npc-empty">Nenhum NPC oficial cadastrado.</div>`;
 
   } else {
-    // ── ABA EVENTOS: todos os NPCs simples, sem divisão por cidade, em grid de 5 colunas ──
-    const todosSimples=NPC_CIDADES.flatMap(cidade=>
-      cidade.npcs.filter(n=>{
-        if(n.modelo!=='simples') return false;
-        if(!q) return true;
-        return n.nome.toLowerCase().includes(q)||
-          (n.photoplayer||'').toLowerCase().includes(q)||
-          (n.cargo||'').toLowerCase().includes(q)||
-          cidade.nome.toLowerCase().includes(q);
-      })
-    );
+    // ── ABA EVENTOS: NPCs sem cidade (modelo simples) ──
+    const todosSimples=NPC_EVENTOS.filter(n=>{
+      if(!q) return true;
+      return n.nome.toLowerCase().includes(q)||
+        (n.photoplayer||'').toLowerCase().includes(q)||
+        (n.cargo||'').toLowerCase().includes(q);
+    });
     if(!todosSimples.length){
       cont.innerHTML=`<div class="npc-empty">Nenhum NPC de evento cadastrado.</div>`;
       return;
@@ -3956,6 +3956,9 @@ async function _resyncNpcCidades(){
   }));
   NPC_CIDADES.length=0;
   estrutura.forEach(x=>NPC_CIDADES.push(x));
+  // NPCs de evento (sem cidade)
+  NPC_EVENTOS.length=0;
+  (_npcs||[]).filter(n=>!n.npc_cidade_id).forEach(x=>NPC_EVENTOS.push(x));
 }
 
 function renderNpcCidadesLista(){
