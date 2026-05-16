@@ -1619,8 +1619,12 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 async function sb(path, opts={}){
   const {prefer, headers:extraHeaders, ...fetchOpts} = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 10000);
+  try{
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
     ...fetchOpts,
+    signal: controller.signal,
     headers:{
       'apikey': SUPA_KEY,
       'Authorization': `Bearer ${SUPA_KEY}`,
@@ -1629,6 +1633,7 @@ async function sb(path, opts={}){
       ...(extraHeaders||{})
     }
   });
+  clearTimeout(timer);
   if(fetchOpts.method==='DELETE'||res.status===204) return [];
   const text = await res.text();
   if(!text) return [];
@@ -1637,6 +1642,7 @@ async function sb(path, opts={}){
     if(!res.ok){ console.error('[sb] erro Supabase:', path, res.status, parsed); return []; }
     return parsed;
   }catch(e){ console.error('[sb] parse error:', e); return []; }
+  }catch(e){ clearTimeout(timer); console.error('[sb] fetch error:', path, e); return []; }
 }
 
 // cliente Supabase JS para Auth
@@ -1702,6 +1708,8 @@ function loading(show){
   _loadingCount = Math.max(0, _loadingCount + (show ? 1 : -1));
   document.getElementById('loading-overlay').style.display = _loadingCount > 0 ? 'flex' : 'none';
 }
+// Segurança: força o overlay a sumir após 8s mesmo que algo falhe silenciosamente
+setTimeout(()=>{ _loadingCount=0; const ov=document.getElementById('loading-overlay'); if(ov) ov.style.display='none'; }, 8000);
 function fb(id,ms=2500){const el=document.getElementById(id);if(!el)return;el.style.display='block';setTimeout(()=>el.style.display='none',ms);}
 
 // ══════════════════════════════════════
@@ -1736,13 +1744,14 @@ async function init(){
 
     if(hash === 'adm' && !admLogado){
       navegarPara('adm', true);
+      loading(false);
       return;
     }
 
     await carregarAba(hash);
     navegarPara(hash, true);
 
-  } catch(e){ console.error('Erro no init:', e); alert('Erro ao carregar dados. Verifique sua conexão.'); }
+  } catch(e){ console.error('Erro no init:', e); }
   finally{ loading(false); }
 }
 
