@@ -354,6 +354,17 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 @media(max-width:600px){.npc-mini-grid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}.npc-mini-foto{width:52px;height:52px}.npc-detail-header{flex-direction:column}.npc-detail-banner{width:100%;min-height:180px}.npc-detail-pokes-grid{grid-template-columns:repeat(6,1fr)}}
 .npc-empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center}
 @media(max-width:700px){.npc-grid{grid-template-columns:1fr}.npc-search-bar{width:100%}}
+/* NPC Card Simples — estilo fichário (eventos simples) */
+.npc-simples-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.npc-simples-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:visible;transition:all .25s;padding:18px 10px 14px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;animation:fadeUp .35s both;position:relative}
+.npc-simples-card:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(37,99,168,.14)}
+.npc-simples-topbar{position:absolute;top:0;left:0;right:0;height:4px;border-radius:var(--r) var(--r) 0 0}
+.npc-simples-avatar{width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:28px;background:var(--surface2)}
+.npc-simples-avatar img{width:68px;height:68px;object-fit:cover;border-radius:50%}
+.npc-simples-badge{position:absolute;top:10px;right:8px;font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.3px;opacity:.85}
+.npc-simples-name{font-family:var(--font-title);font-size:11px;color:var(--text);line-height:1.3;letter-spacing:.3px;text-transform:uppercase}
+.npc-simples-photoplayer{font-size:10px;color:#aab0be;font-style:italic;line-height:1.3}
+.npc-simples-tag-row{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:2px}
 .ev-tipo-btn{flex:1;padding:10px 14px;border-radius:var(--r);border:2px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center}
 .ev-tipo-btn.active{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand-mid)}
 .ev-tipo-btn:hover:not(.active){border-color:var(--brand-mid);color:var(--brand)}
@@ -1172,6 +1183,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
                 <option value="">— Todos —</option>
               </select>
               <button class="btn btn-primary btn-sm" onclick="abrirModalNpc(null)">+ Novo NPC</button>
+              <button class="btn btn-sm" style="background:#e8f0fb;color:var(--brand-mid);border:1px solid #b8d0f0;margin-left:4px" onclick="abrirModalTransferirNpc()">↗️ Transferir personagem</button>
             </div>
             <div id="npc-npcs-lista" style="display:flex;flex-direction:column;gap:8px"></div>
             <div class="fb fb-ok" id="npc-npc-fb">✓ NPC salvo!</div>
@@ -1181,6 +1193,63 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL TRANSFERIR PERSONAGEM → NPC -->
+<div class="modal-overlay" id="modal-transferir-npc-overlay" onclick="fecharModalTransferirNpc()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:520px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharModalTransferirNpc()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:4px">↗️ Transferir para NPC</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:18px">Selecione os personagens que virarão NPCs. Os personagens não marcados continuam no fichário normalmente.</div>
+
+    <!-- Busca -->
+    <div style="margin-bottom:14px">
+      <input type="text" id="transferir-busca" placeholder="Buscar personagem..." oninput="filtrarTransferirLista(this.value)"
+        style="width:100%;padding:9px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)"/>
+    </div>
+
+    <!-- Lista de personagens -->
+    <div id="transferir-lista" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;margin-bottom:18px;padding-right:4px"></div>
+
+    <!-- Config destino -->
+    <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:14px;margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">Configurações do NPC</div>
+      <div class="g2">
+        <div class="field">
+          <label>Cidade destino</label>
+          <select id="transferir-cidade" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"></select>
+        </div>
+        <div class="field">
+          <label>Modelo de card</label>
+          <select id="transferir-modelo" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%">
+            <option value="completo">Completo (com banner)</option>
+            <option value="simples">Simples (estilo fichário)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Uso</label>
+          <select id="transferir-uso" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%">
+            <option value="livre">Uso Livre</option>
+            <option value="adm">Exclusivo ADM</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Manter no fichário?</label>
+          <select id="transferir-manter" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%">
+            <option value="nao">Não — remover do fichário</option>
+            <option value="sim">Sim — manter como personagem também</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="confirmarTransferirNpc()" id="transferir-btn-confirmar">↗️ Transferir selecionados</button>
+      <span id="transferir-sel-count" style="font-size:12px;color:var(--muted)">Nenhum selecionado</span>
+    </div>
+    <div class="fb fb-ok" id="transferir-fb">✓ Transferido com sucesso!</div>
+    <div class="fb fb-err" id="transferir-fb-err">—</div>
   </div>
 </div>
 
@@ -1240,6 +1309,13 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       </div>
       <div class="field"><label>Photoplayer</label><input type="text" id="modal-npc-photoplayer" placeholder="Ex: Satoshi"/></div>
       <div class="field"><label>Emoji (fallback)</label><input type="text" id="modal-npc-emoji" placeholder="🔬" style="width:80px"/></div>
+      <div class="field">
+        <label>Modelo de card</label>
+        <select id="modal-npc-modelo" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%">
+          <option value="completo">Completo (com banner e Pokémon)</option>
+          <option value="simples">Simples (estilo fichário)</option>
+        </select>
+      </div>
       <div class="field"><label>Cidade</label>
         <select id="modal-npc-cidade-sel"></select>
       </div>
@@ -3503,6 +3579,158 @@ async function limparHistPokemon(){
 }
 
 // ══════════════════════════════════════
+// ══════════════════════════════════════
+// TRANSFERIR PERSONAGEM → NPC
+// ══════════════════════════════════════
+let _transferirSelecionados = new Set();
+
+function abrirModalTransferirNpc(){
+  _transferirSelecionados = new Set();
+  document.getElementById('transferir-busca').value = '';
+  document.getElementById('transferir-fb').style.display = 'none';
+  document.getElementById('transferir-fb-err').style.display = 'none';
+
+  // Popula cidades
+  const cidSel = document.getElementById('transferir-cidade');
+  cidSel.innerHTML = npcCidades.map(c => `<option value="${c.id}">${c.emoji||''} ${c.nome}</option>`).join('');
+
+  _renderTransferirLista('');
+  _atualizarContadorTransferir();
+  document.getElementById('modal-transferir-npc-overlay').style.display = 'flex';
+}
+
+function fecharModalTransferirNpc(){
+  document.getElementById('modal-transferir-npc-overlay').style.display = 'none';
+}
+
+function _renderTransferirLista(filtro){
+  const q = (filtro||'').toLowerCase();
+  const lista = document.getElementById('transferir-lista');
+  // Agrupa por player
+  const grupos = {};
+  personagens.forEach(p => {
+    if(q && !p.nome.toLowerCase().includes(q) && !p.player.toLowerCase().includes(q)) return;
+    if(!grupos[p.player]) grupos[p.player] = [];
+    grupos[p.player].push(p);
+  });
+  const keys = Object.keys(grupos).sort((a,b) => a.localeCompare(b,'pt-BR'));
+  if(!keys.length){
+    lista.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Nenhum personagem encontrado.</div>';
+    return;
+  }
+  lista.innerHTML = keys.map(player => {
+    const chars = grupos[player].slice().sort((a,b) => a.nome.localeCompare(b.nome,'pt-BR'));
+    const rows = chars.map(p => {
+      const sel = _transferirSelecionados.has(p.id);
+      return `<div id="transferir-row-${p.id}"
+        onclick="_toggleTransferir('${p.id}')"
+        style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1.5px solid ${sel?'var(--brand-mid)':'var(--border)'};background:${sel?'var(--brand-light)':'var(--surface)'};cursor:pointer;transition:all .15s;user-select:none">
+        <div style="width:20px;height:20px;border-radius:5px;border:1.5px solid ${sel?'var(--brand-mid)':'var(--border2)'};background:${sel?'var(--brand-mid)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">
+          ${sel?'<span style="color:#fff;font-size:12px;line-height:1">✓</span>':''}
+        </div>
+        <div style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:${p.cor}22;border:2px solid ${p.cor};flex-shrink:0;display:flex;align-items:center;justify-content:center">
+          ${p.img?`<img src="${p.img}" style="width:32px;height:32px;object-fit:cover;border-radius:50%"/>`:`<span style="font-size:14px">👤</span>`}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text)">${p.nome}</div>
+          ${p.photoplayer?`<div style="font-size:10px;color:var(--muted);font-style:italic">${p.photoplayer}</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:8px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:4px 2px 6px">${player}</div>
+      <div style="display:flex;flex-direction:column;gap:4px">${rows}</div>
+    </div>`;
+  }).join('');
+}
+
+function filtrarTransferirLista(v){
+  _renderTransferirLista(v);
+}
+
+function _toggleTransferir(id){
+  if(_transferirSelecionados.has(id)) _transferirSelecionados.delete(id);
+  else _transferirSelecionados.add(id);
+  // Atualiza só a row visual sem re-renderizar tudo
+  const filtro = document.getElementById('transferir-busca').value;
+  _renderTransferirLista(filtro);
+  _atualizarContadorTransferir();
+}
+
+function _atualizarContadorTransferir(){
+  const n = _transferirSelecionados.size;
+  const el = document.getElementById('transferir-sel-count');
+  el.textContent = n === 0 ? 'Nenhum selecionado' : `${n} personagem${n!==1?'s':''} selecionado${n!==1?'s':''}`;
+}
+
+async function confirmarTransferirNpc(){
+  if(_transferirSelecionados.size === 0){
+    const errEl = document.getElementById('transferir-fb-err');
+    errEl.textContent = 'Selecione ao menos um personagem.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const cidadeId = document.getElementById('transferir-cidade').value;
+  const modelo   = document.getElementById('transferir-modelo').value;
+  const uso      = document.getElementById('transferir-uso').value;
+  const manter   = document.getElementById('transferir-manter').value;
+  const errEl    = document.getElementById('transferir-fb-err');
+  errEl.style.display = 'none';
+  if(!cidadeId){ errEl.textContent='Selecione uma cidade.'; errEl.style.display='block'; return; }
+
+  const btn = document.getElementById('transferir-btn-confirmar');
+  btn.disabled = true;
+  btn.textContent = 'Transferindo...';
+
+  try{
+    for(const id of _transferirSelecionados){
+      const p = personagens.find(x => String(x.id) === String(id));
+      if(!p) continue;
+      // Cria NPC com os dados do personagem
+      await sbRaw('POST', 'npcs', {
+        nome: p.nome,
+        photoplayer: p.photoplayer || null,
+        foto: p.img || null,
+        emoji: '👤',
+        cargo: '',
+        descricao: '',
+        npc_cidade_id: cidadeId,
+        uso,
+        modelo,
+        topbar_cor: p.cor || null,
+        tags: [],
+        pokes: [],
+      });
+      // Remove do fichário se solicitado
+      if(manter === 'nao'){
+        await dbDel('personagens', `id=eq.${id}`);
+        personagens = personagens.filter(x => String(x.id) !== String(id));
+      }
+    }
+    // Resync
+    await _resyncNpcCidades();
+    renderNpcs();
+    if(manter === 'nao'){
+      renderTbodyPersonagens();
+      renderFichario();
+      renderPersonagensDatalist();
+    }
+    renderNpcAdmLista();
+    document.getElementById('transferir-fb').style.display = 'block';
+    _transferirSelecionados.clear();
+    _atualizarContadorTransferir();
+    _renderTransferirLista('');
+    setTimeout(fecharModalTransferirNpc, 1200);
+  } catch(e){
+    errEl.textContent = 'Erro ao transferir: ' + (e.message || e);
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↗️ Transferir selecionados';
+  }
+}
+
+// ══════════════════════════════════════
 // NPCs
 // ══════════════════════════════════════
 let NPC_CIDADES = []
@@ -3525,7 +3753,7 @@ function renderNpcs(filtro=''){
     });
     if(!npcs.length)return'';
 
-    const cards=npcs.map(n=>{
+    const cards_completos=npcs.filter(n=>!n.modelo||n.modelo==='completo').map(n=>{
       const topbarCor=n.topbar_cor||'var(--brand)';
       const topbarBgTint=n.topbar_cor?n.topbar_cor+'22':'rgba(0,0,0,0.05)';
       const pokes=Array.isArray(n.pokes)?n.pokes:[];
@@ -3569,6 +3797,28 @@ function renderNpcs(filtro=''){
         </div>
       </div>`;
     }).join('');
+
+    const cards_simples=npcs.filter(n=>n.modelo==='simples').map(n=>{
+      const topbarCor=n.topbar_cor||'var(--brand)';
+      const uso=n.uso||'livre';
+      const avatarHtml=n.foto
+        ?`<img src="${n.foto}" alt="${n.nome}" onerror="this.src='';this.parentElement.innerHTML='${(n.emoji||'👤')}'"/>`
+        :(n.emoji||'👤');
+      const tagsHtml=n.tags&&n.tags.length
+        ?`<div class="npc-simples-tag-row">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
+      return`<div class="npc-simples-card" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 14px ${topbarCor}33'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
+        <div class="npc-simples-topbar" style="background:${topbarCor}"></div>
+        <span class="npc-simples-badge ${uso==='adm'?'npc-uso-adm':'npc-uso-livre'}">${uso==='adm'?'ADM':'Livre'}</span>
+        <div class="npc-simples-avatar">${avatarHtml}</div>
+        <div class="npc-simples-name">${n.nome}</div>
+        ${n.photoplayer?`<div class="npc-simples-photoplayer">${n.photoplayer}</div>`:''}
+        ${tagsHtml}
+      </div>`;
+    }).join('');
+
+    const gridCompleto=cards_completos?`<div class="npc-grid" style="margin-bottom:${cards_simples?'20px':'0'}">${cards_completos}</div>`:'';
+    const gridSimples=cards_simples?`<div class="npc-simples-grid">${cards_simples}</div>`:'';
+    const cards=gridCompleto+gridSimples;
 
     return`<div class="npc-city-section">
       <div class="npc-city-header">
@@ -3776,6 +4026,7 @@ async function abrirModalNpc(id){
     document.getElementById('modal-npc-photoplayer').value=n.photoplayer||'';
     document.getElementById('modal-npc-emoji').value=n.emoji||'';
     document.getElementById('modal-npc-desc').value=n.descricao||'';
+    document.getElementById('modal-npc-modelo').value=n.modelo||'completo';
     cidSel.value=n.npc_cidade_id||'';
     if(n.foto){
       const prev=document.getElementById('modal-npc-foto-preview');
@@ -3804,6 +4055,7 @@ async function abrirModalNpc(id){
     document.getElementById('modal-npc-photoplayer').value='';
     document.getElementById('modal-npc-emoji').value='';
     document.getElementById('modal-npc-desc').value='';
+    document.getElementById('modal-npc-modelo').value='completo';
     // pre-select current city filter
     const cidFiltro=document.getElementById('npc-adm-cidade-sel')?.value;
     if(cidFiltro)cidSel.value=cidFiltro;
@@ -4104,7 +4356,7 @@ async function salvarNpc(){
     foto=null;
   }
 
-  const payload={nome,cargo,uso,photoplayer:photoplayer||null,emoji,descricao,npc_cidade_id,foto,tags:_npcAdmTags,pokes:_npcAdmPokes,topbar_cor:topbar_cor||null};
+  const payload={nome,cargo,uso,photoplayer:photoplayer||null,emoji,descricao,npc_cidade_id,foto,tags:_npcAdmTags,pokes:_npcAdmPokes,topbar_cor:topbar_cor||null,modelo:document.getElementById('modal-npc-modelo').value||'completo'};
 
   try{
     if(id){
