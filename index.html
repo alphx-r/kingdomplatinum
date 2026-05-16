@@ -1742,11 +1742,24 @@ async function init(){
     const pageMap = {rolls:'rolagens'};
     let hash = pageMap[pathPage] || (validPages.includes(pathPage) ? pathPage : 'roller');
 
-    if(hash === 'adm' && !admLogado){
+    if(hash === 'adm'){
+      const restaurado = await restaurarSessaoAdm();
+      if(!restaurado){
+        navegarPara('adm', true);
+        loading(false);
+        return;
+      }
+      await carregarAba('adm');
       navegarPara('adm', true);
+      document.getElementById('adm-login-wrap').style.display='none';
+      document.getElementById('adm-painel').style.display='block';
+      document.getElementById('adm-user-label').textContent=admLogado.email;
+      aplicarPermissoesSidebar();
       loading(false);
       return;
     }
+
+    restaurarSessaoAdm().catch(()=>{});
 
     await carregarAba(hash);
     navegarPara(hash, true);
@@ -1999,6 +2012,7 @@ async function fazerLogin(){
   if(!match){errEl.style.display='block';return;}
   const loggedEmail = match.nome;
   admLogado={email:loggedEmail};
+  localStorage.setItem('adm_session', JSON.stringify(admLogado));
   admins=lista;
   document.getElementById('adm-login-wrap').style.display='none';
   document.getElementById('adm-painel').style.display='block';
@@ -2009,10 +2023,26 @@ async function fazerLogin(){
 }
 async function fazerLogout(){
   admLogado=null;
+  localStorage.removeItem('adm_session');
   document.getElementById('adm-login-wrap').style.display='block';
   document.getElementById('adm-painel').style.display='none';
   document.getElementById('login-email').value='';
   document.getElementById('login-senha').value='';
+}
+
+async function restaurarSessaoAdm(){
+  try{
+    const saved = localStorage.getItem('adm_session');
+    if(!saved) return false;
+    const sess = JSON.parse(saved);
+    if(!sess?.email) return false;
+    const lista = await dbGet('admins','select=*');
+    const match = lista.find(a=>a.nome===sess.email);
+    if(!match){ localStorage.removeItem('adm_session'); return false; }
+    admLogado = {email: sess.email};
+    admins = lista;
+    return true;
+  } catch(e){ return false; }
 }
 
 // ══════════════════════════════════════
