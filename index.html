@@ -566,6 +566,14 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   <div id="npc-container"></div>
 </div>
 <!-- PÁGINA DE EVENTO -->
+<div class="page" id="page-em-construcao">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:40px 24px">
+    <div style="font-size:72px;margin-bottom:24px;filter:drop-shadow(0 4px 16px rgba(0,0,0,.12))">🚧</div>
+    <div style="font-family:var(--font-title);font-size:26px;font-weight:700;color:var(--brand);margin-bottom:10px;letter-spacing:.5px">Página em Construção</div>
+    <div style="font-size:15px;color:var(--muted);max-width:340px;line-height:1.6">Será liberada em breve.<br>Fique ligado nas novidades!</div>
+  </div>
+</div>
+<!-- PÁGINA DE EVENTO -->
 <div class="page" id="page-evento">
   <div id="evento-header" style="border-radius:var(--r);padding:20px 24px;margin-bottom:24px;display:flex;align-items:center;gap:16px">
     <div id="evento-emoji" style="font-size:36px;line-height:1"></div>
@@ -674,6 +682,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)">🎨 Editor Visual</button>
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
+        <button class="adm-nav-btn" data-sec="paginas" onclick="admTab('paginas',this)">🔒 Páginas</button>
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()">Sair</button>
       </div>
@@ -1181,8 +1190,18 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         </div>
 
 
+        <div class="adm-section" id="sec-paginas">
+          <div class="sec-title">Páginas</div>
+          <div class="sec-sub">Bloqueie páginas para os jogadores. Páginas bloqueadas exibem uma mensagem de "em construção".</div>
+          <div class="box">
+            <div class="box-title">🔒 Controle de Acesso às Páginas</div>
+            <div id="paginas-lock-list" style="display:flex;flex-direction:column;gap:12px;margin-top:4px"></div>
+            <div class="fb fb-ok" id="paginas-fb" style="margin-top:12px">✓ Salvo!</div>
+          </div>
+        </div>
+
+
         <div class="adm-section" id="sec-npcs-adm">
-          <div class="sec-title">NPCs</div>
           <div class="sec-sub">Gerencie cidades, NPCs, Pokémon e informações exibidas na página de NPCs</div>
 
           <!-- ABAS HORIZONTAIS -->
@@ -1873,6 +1892,7 @@ async function init(){
 
     if(hash === 'adm'){
       const restaurado = await restaurarSessaoAdm();
+      await carregarPaginasBloqueadas();
       if(!restaurado){
         navegarPara('adm', true);
         loading(false);
@@ -1890,8 +1910,18 @@ async function init(){
 
     restaurarSessaoAdm().catch(()=>{});
 
+    // Carrega páginas bloqueadas antes de navegar
+    await carregarPaginasBloqueadas();
+
     await carregarAba(hash);
-    navegarPara(hash, true);
+    // Se a página está bloqueada e usuário não é adm, mostra em construção
+    if(!admLogado && _paginasBloqueadas.has(hash)){
+      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+      document.getElementById('page-em-construcao').classList.add('active');
+      history.replaceState(null,'','/'+hash);
+    } else {
+      navegarPara(hash, true);
+    }
 
   } catch(e){ console.error('Erro no init:', e); }
   finally{ loading(false); }
@@ -2025,6 +2055,18 @@ function navegarPara(page, replace=false){
 }
 
 function goTo(page,el){
+  // verifica se a página está bloqueada (apenas para não-admins)
+  if(!admLogado && _paginasBloqueadas.has(page)){
+    carregarAba(page).then(()=>{
+      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+      document.getElementById('page-em-construcao').classList.add('active');
+      document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
+      document.getElementById('btn-adm').classList.remove('active');
+      if(el) el.classList.add('active');
+      history.pushState(null,'','/'+page);
+    });
+    return;
+  }
   carregarAba(page).then(()=>navegarPara(page));
   document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
   document.getElementById('btn-adm').classList.remove('active');
@@ -2129,6 +2171,86 @@ function admTab(sec,el){
     syncEventoBiomaSelect();
     carregarEventos().then(renderEventosLista);
   }
+  if(sec==='paginas') renderPaginasLock();
+}
+
+// ══════════════════════════════════════
+// SISTEMA DE PÁGINAS BLOQUEADAS
+// ══════════════════════════════════════
+const PAGINAS_CONFIG = [
+  {id:'roller',   label:'⚡ Pokémon',  desc:'Página de rolagem de encontros'},
+  {id:'bioma',    label:'🗺️ Bioma',    desc:'Catálogo de Pokémon por bioma'},
+  {id:'dados',    label:'🎲 Dados',    desc:'Rolador de dados'},
+  {id:'fichario', label:'📋 Fichário', desc:'Fichas dos personagens'},
+  {id:'rolagens', label:'📜 Rolls',    desc:'Histórico de rolagens'},
+  {id:'npcs',     label:'🧑 NPCs',     desc:'Página de NPCs e eventos'},
+];
+let _paginasBloqueadas = new Set();
+
+async function carregarPaginasBloqueadas(){
+  // Tenta carregar do banco; usa localStorage como fallback
+  try{
+    const r = await dbGet('config', 'chave=eq.paginas_bloqueadas');
+    if(r && r[0] && r[0].valor){
+      const arr = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
+      _paginasBloqueadas = new Set(Array.isArray(arr) ? arr : []);
+      localStorage.setItem('paginas_bloqueadas', JSON.stringify([..._paginasBloqueadas]));
+      return;
+    }
+  } catch(e){}
+  // Fallback: localStorage
+  try{
+    const local = localStorage.getItem('paginas_bloqueadas');
+    if(local){ _paginasBloqueadas = new Set(JSON.parse(local)); return; }
+  } catch(e){}
+  _paginasBloqueadas = new Set();
+}
+
+async function salvarPaginasBloqueadas(){
+  const arr = [..._paginasBloqueadas];
+  // Salva sempre no localStorage
+  localStorage.setItem('paginas_bloqueadas', JSON.stringify(arr));
+  // Tenta salvar no banco
+  try{
+    const payload = {chave:'paginas_bloqueadas', valor: JSON.stringify(arr)};
+    const ex = await dbGet('config','chave=eq.paginas_bloqueadas');
+    if(ex && ex.length>0) await dbPatch('config','chave=eq.paginas_bloqueadas',payload);
+    else await dbPost('config', payload);
+  } catch(e){ console.warn('Tabela config não encontrada, usando localStorage.'); }
+  const fb=document.getElementById('paginas-fb');
+  if(fb){fb.style.display='block';setTimeout(()=>fb.style.display='none',2000);}
+}
+
+function renderPaginasLock(){
+  const cont = document.getElementById('paginas-lock-list');
+  if(!cont) return;
+  carregarPaginasBloqueadas().then(()=>{
+    cont.innerHTML = PAGINAS_CONFIG.map(p=>{
+      const bloqueada = _paginasBloqueadas.has(p.id);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:${bloqueada?'#fef3f3':'var(--surface2)'};border:1.5px solid ${bloqueada?'#f0c0c0':'var(--border)'};border-radius:10px;transition:all .2s">
+        <div>
+          <div style="font-weight:700;font-size:14px;color:var(--text)">${p.label}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${p.desc}</div>
+          ${bloqueada?'<div style="font-size:11px;color:#c03030;font-weight:700;margin-top:4px">🔒 BLOQUEADA</div>':'<div style="font-size:11px;color:var(--green);font-weight:700;margin-top:4px">✓ Liberada</div>'}
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;flex-shrink:0">
+          <div style="position:relative;width:44px;height:24px">
+            <input type="checkbox" ${bloqueada?'checked':''} onchange="togglePaginaLock('${p.id}',this.checked)" style="opacity:0;width:0;height:0;position:absolute"/>
+            <span onclick="this.previousElementSibling.click()" style="position:absolute;inset:0;background:${bloqueada?'#c03030':'#ccc'};border-radius:12px;transition:background .2s;cursor:pointer"></span>
+            <span onclick="this.previousElementSibling.previousElementSibling.click()" style="position:absolute;top:3px;left:${bloqueada?'23':'3'}px;width:18px;height:18px;background:#fff;border-radius:50%;transition:left .2s;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer"></span>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:${bloqueada?'#c03030':'var(--muted)'}">Bloquear</span>
+        </label>
+      </div>`;
+    }).join('');
+  });
+}
+
+async function togglePaginaLock(pageId, bloquear){
+  if(bloquear) _paginasBloqueadas.add(pageId);
+  else _paginasBloqueadas.delete(pageId);
+  await salvarPaginasBloqueadas();
+  renderPaginasLock();
 }
 
 // ══════════════════════════════════════
@@ -3972,7 +4094,7 @@ function renderNpcs(filtro=''){
             </div>
           </div>`;
         }).join('');
-        let bagItems;if(Array.isArray(n.bag)){bagItems=n.bag;}else{const raw=(n.bag||'').trim();try{const parsed=JSON.parse(raw);bagItems=Array.isArray(parsed)?parsed:[raw];}catch(e){bagItems=raw.split('\n').map(s=>s.trim()).filter(Boolean);}}
+        let bagItems=_parseBag(n.bag);
         const bagHtml=bagItems.length
           ?bagItems.map(item=>`<div class="npc-ev-bag-item">${item}</div>`).join('')
           :`<div style="font-size:11px;opacity:.6;font-style:italic">Bag vazia</div>`;
@@ -4193,6 +4315,7 @@ async function deletarCidade(){
 }
 
 // ─── Modal NPC ───
+function _parseBag(bag){if(Array.isArray(bag))return bag.filter(Boolean);const raw=(bag||'').trim();if(!raw)return[];try{const p=JSON.parse(raw);if(Array.isArray(p))return p.map(s=>String(s).trim()).filter(Boolean);}catch(e){}return raw.split('\n').map(s=>s.trim()).filter(Boolean);}
 async function abrirModalNpc(id){
   // sync cidade select
   const cidSel=document.getElementById('modal-npc-cidade-sel');
@@ -4239,7 +4362,7 @@ async function abrirModalNpc(id){
     _npcAdmTags=Array.isArray(n.tags)?[...n.tags]:[];
     _npcAdmPokes=Array.isArray(n.pokes)?n.pokes.map(p=>({...p})):[];
     const bagEl=document.getElementById('modal-npc-bag');
-    if(bagEl) bagEl.value=Array.isArray(n.bag)?n.bag.join('\n'):(n.bag||'');
+    if(bagEl) bagEl.value=_parseBag(n.bag).join('\n');
     const corEl=document.getElementById('modal-npc-topbar-cor');
     const hexEl=document.getElementById('modal-npc-topbar-cor-hex');
     if(n.topbar_cor){
