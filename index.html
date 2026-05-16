@@ -457,13 +457,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <h2>Rolls</h2>
     <p>Histórico de encontros e dados por personagem</p>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-    <select id="rolagens-bioma-sel" onchange="renderRolagens()"
-      style="padding:9px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
-      <option value="">— Todas as rolagens —</option>
-      <option value="__dados__">🎲 Dados</option>
-    </select>
-  </div>
+
   <!-- tabs de personagens -->
   <div id="rolagens-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;padding-bottom:16px;border-bottom:1.5px solid var(--border)"></div>
   <!-- conteúdo do personagem selecionado -->
@@ -547,7 +541,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 <div class="page" id="page-npcs">
   <div class="roller-header">
     <h2>NPCs de Nendo</h2>
-    <p>Personagens da região, conheça-os!</p>
+    <p>Personagens notáveis da região, organizados por cidade</p>
   </div>
   <!-- Abas Oficiais / Eventos -->
   <div style="display:flex;justify-content:center;gap:10px;margin-bottom:28px">
@@ -1970,7 +1964,6 @@ async function carregarAba(page){
       historicoDados=_histd||[];
       if(!loaded.fichario){ personagens=_personagens||[]; }
       if(!loaded.roller){ biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); }
-      syncRolagensBiomaSelect();
       renderRolagens();
     }
     else if(page==='adm'){
@@ -2990,7 +2983,7 @@ async function migrarArtworks(){
   renderTbodyPokemons();
 }
 // ── RANKING HELPERS ──
-const RANKING_LABELS = {1:'🥇 1º lugar',2:'🥈 2º lugar',3:'🥉 3º lugar',4:'🏅 4º lugar',5:'🎖️ 5º lugar'};
+const RANKING_LABELS = {1:'Ranking 1',2:'Ranking 2',3:'Ranking 3',4:'Ranking 4',5:'Ranking 5'};
 function rankingBadge(pos){
   if(!pos||pos<1||pos>5) return '';
   const cls=`ficha-ranking-${pos}`;
@@ -3025,9 +3018,7 @@ function renderFichario(){
       <div style="margin-top:16px;position:relative;display:inline-block" class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
         ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
           :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
-        <label title="Alterar foto" onclick="event.stopPropagation()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;border-radius:50%;background:var(--brand-mid);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.25)">
-          ✏️<input type="file" accept="image/*" style="display:none" onchange="trocarFotoPersonagem('${p.id}',this)"/>
-        </label>
+
       </div>
       <div class="ficha-name">${p.nome}</div>
       ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
@@ -3133,13 +3124,12 @@ async function rolarEncontro(){
 // ══════════════════════════════════════
 let rolagemAtivaKey=null;
 
-function syncRolagensBiomaSelect(){
-  const sel=document.getElementById('rolagens-bioma-sel');
-  if(!sel)return;
-  const val=sel.value;
-  sel.innerHTML='<option value="">— Todos os biomas —</option>'+
-    biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('');
-  sel.value=val;
+// Filtro de bioma por player (key -> bioma selecionado)
+const _biomaFiltroPlayer = {};
+
+function _setFiltroPlayerBioma(key, bioma){
+  _biomaFiltroPlayer[key] = bioma;
+  renderRolagens();
 }
 
 function normKey(n){ return (n||'Desconhecido').toLowerCase().trim(); }
@@ -3165,19 +3155,16 @@ function resolveKey(nomeRolagem){
 }
 
 function buildGrupos(){
-  const biomaFiltro=document.getElementById('rolagens-bioma-sel')?.value||'';
   const mapa={};
   const ensureKey=(rawNome)=>{
     const k=resolveKey(rawNome);
     if(!mapa[k]){
-      // canon: preferir nome do personagem cadastrado, senão o nome da rolagem
       const pCad=personagens.find(x=>normKey(x.nome)===k);
       mapa[k]={canon: pCad ? pCad.nome : (rawNome||'Desconhecido'), rolls:[]};
     }
     return k;
   };
   historico.forEach(e=>{
-    if(biomaFiltro && e.bioma!==biomaFiltro) return;
     const k=ensureKey(e.personagem);
     mapa[k].rolls.push({...e,_tipo:'pokemon'});
   });
@@ -3244,7 +3231,18 @@ function renderRolagens(){
   const img=p?.img||null;
   const player=p?.player||'';
 
-  const entriesHtml=g.rolls.map(e=>{
+  // Biomas disponíveis para este player (apenas pokemon rolls)
+  const biomasDoPlayer=[...new Set(g.rolls.filter(e=>e._tipo==='pokemon'&&e.bioma).map(e=>e.bioma))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const selId=`bioma-sel-${rolagemAtivaKey.replace(/[^a-z0-9]/g,'_')}`;
+  const biomaFiltroAtual=_biomaFiltroPlayer[rolagemAtivaKey]||'';
+
+  const rollsFiltrados=g.rolls.filter(e=>{
+    if(!biomaFiltroAtual) return true;
+    if(biomaFiltroAtual==='__dados__') return e._tipo==='dado';
+    return e._tipo==='pokemon' && e.bioma===biomaFiltroAtual;
+  });
+
+  const entriesHtml=rollsFiltrados.map(e=>{
     if(e._tipo==='pokemon'){
       const pokes=Array.isArray(e.pokes)?e.pokes:[];
       const pokesHtml=pokes.map(pk=>`
@@ -3307,8 +3305,13 @@ function renderRolagens(){
       <div style="flex:1;min-width:0">
         <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--text);letter-spacing:.3px">${g.canon}</div>
         ${player?`<div style="font-size:12px;color:${cor};font-weight:700;margin-top:1px">${player}</div>`:''}
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">${g.rolls.length} roll${g.rolls.length!==1?'s':''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${rollsFiltrados.length} roll${rollsFiltrados.length!==1?'s':''}</div>
       </div>
+      ${biomasDoPlayer.length>0?`<select id="${selId}" onchange="_setFiltroPlayerBioma('${rolagemAtivaKey}',this.value)"
+        style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text);flex-shrink:0">
+        <option value="">— Todos os biomas —</option>
+        ${biomasDoPlayer.map(b=>`<option value="${b}"${biomaFiltroAtual===b?' selected':''}>${b}</option>`).join('')}
+      </select>`:''}
     </div>
     <div class="rol-scroll-body">
       <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden">
@@ -4426,15 +4429,6 @@ function modalRemoverImg(){
 }
 
 // Fichário quick-change
-async function trocarFotoPersonagem(id, input){
-  _lerArquivoECrop(input, async img=>{
-    const p=personagens.find(x=>x.id==id); if(!p)return;
-    p.img=img;
-    await dbPatch('personagens',`id=eq.${id}`,{img});
-    renderFichario();
-  }, 1);
-}
-
 // Tags
 function renderNpcTagsList(){
   const cont=document.getElementById('modal-npc-tags-list');
