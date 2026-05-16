@@ -354,17 +354,17 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 @media(max-width:600px){.npc-mini-grid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}.npc-mini-foto{width:52px;height:52px}.npc-detail-header{flex-direction:column}.npc-detail-banner{width:100%;min-height:180px}.npc-detail-pokes-grid{grid-template-columns:repeat(6,1fr)}}
 .npc-empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center}
 @media(max-width:700px){.npc-grid{grid-template-columns:1fr}.npc-search-bar{width:100%}}
-/* NPC Card Simples — estilo fichário (eventos simples) */
-.npc-simples-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
-.npc-simples-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:visible;transition:all .25s;padding:18px 10px 14px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;animation:fadeUp .35s both;position:relative}
-.npc-simples-card:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(37,99,168,.14)}
-.npc-simples-topbar{position:absolute;top:0;left:0;right:0;height:4px;border-radius:var(--r) var(--r) 0 0}
-.npc-simples-avatar{width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:28px;background:var(--surface2)}
-.npc-simples-avatar img{width:68px;height:68px;object-fit:cover;border-radius:50%}
-.npc-simples-badge{position:absolute;top:10px;right:8px;font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.3px;opacity:.85}
-.npc-simples-name{font-family:var(--font-title);font-size:11px;color:var(--text);line-height:1.3;letter-spacing:.3px;text-transform:uppercase}
-.npc-simples-photoplayer{font-size:10px;color:#aab0be;font-style:italic;line-height:1.3}
-.npc-simples-tag-row{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:2px}
+/* NPC Card Evento — estilo fichário com badge de evento no topo */
+.npc-ev-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px}
+@media(max-width:900px){.npc-ev-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:560px){.npc-ev-grid{grid-template-columns:repeat(2,1fr)}}
+.npc-ev-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:20px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;transition:all .22s;position:relative;animation:fadeUp .35s both}
+.npc-ev-card:hover{transform:translateY(-2px)}
+.npc-ev-badge{position:absolute;top:14px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:9px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#fff;padding:3px 12px;border-radius:20px}
+.npc-ev-avatar{width:86px;height:86px;border-radius:50%;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;margin-top:20px;flex-shrink:0;border:2px solid var(--border)}
+.npc-ev-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.npc-ev-name{font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text);letter-spacing:.3px;line-height:1.3}
+.npc-ev-photoplayer{font-size:11px;color:var(--muted);font-style:italic;line-height:1.3;margin-top:-4px}
 .ev-tipo-btn{flex:1;padding:10px 14px;border-radius:var(--r);border:2px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center}
 .ev-tipo-btn.active{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand-mid)}
 .ev-tipo-btn:hover:not(.active){border-color:var(--brand-mid);color:var(--brand)}
@@ -534,6 +534,17 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   <div class="roller-header">
     <h2>NPCs de Nendo</h2>
     <p>Personagens notáveis da região, organizados por cidade</p>
+  </div>
+  <!-- Abas Oficiais / Eventos -->
+  <div style="display:flex;justify-content:center;gap:10px;margin-bottom:28px">
+    <button id="npc-aba-oficiais" onclick="setNpcAba('oficiais')"
+      style="min-width:130px;padding:11px 28px;border-radius:8px;border:none;font-family:var(--font-title);font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all .2s;background:var(--brand);color:#fff">
+      OFICIAIS
+    </button>
+    <button id="npc-aba-eventos" onclick="setNpcAba('eventos')"
+      style="min-width:130px;padding:11px 28px;border-radius:8px;border:none;font-family:var(--font-title);font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all .2s;background:var(--border2);color:var(--muted)">
+      EVENTOS
+    </button>
   </div>
   <div id="npc-container"></div>
 </div>
@@ -3737,102 +3748,139 @@ let NPC_CIDADES = []
 
 let _npcDetalheAtivo=null; // {cidadeIdx, npcIdx}
 
+let _npcAbaAtiva = 'oficiais';
+
+function setNpcAba(aba){
+  _npcAbaAtiva = aba;
+  const btnOf = document.getElementById('npc-aba-oficiais');
+  const btnEv = document.getElementById('npc-aba-eventos');
+  if(btnOf){
+    btnOf.style.background = aba==='oficiais' ? 'var(--brand)' : 'var(--border2)';
+    btnOf.style.color      = aba==='oficiais' ? '#fff' : 'var(--muted)';
+  }
+  if(btnEv){
+    btnEv.style.background = aba==='eventos' ? 'var(--brand)' : 'var(--border2)';
+    btnEv.style.color      = aba==='eventos' ? '#fff' : 'var(--muted)';
+  }
+  renderNpcs();
+}
+
 function renderNpcs(filtro=''){
   const q=(filtro||'').toLowerCase();
   const cont=document.getElementById('npc-container');
   if(!cont)return;
   const FALLBACK_POKE=FALLBACK_SPRITE||'';
+  const abaAtiva=_npcAbaAtiva||'oficiais';
 
-  const html=NPC_CIDADES.map((cidade,ci)=>{
-    const npcs=cidade.npcs.filter(n=>{
-      if(!q)return true;
-      return n.nome.toLowerCase().includes(q)||
-        (n.cargo||'').toLowerCase().includes(q)||
-        (n.descricao||'').toLowerCase().includes(q)||
-        cidade.nome.toLowerCase().includes(q);
-    });
-    if(!npcs.length)return'';
-
-    const cards_completos=npcs.filter(n=>!n.modelo||n.modelo==='completo').map(n=>{
-      const topbarCor=n.topbar_cor||'var(--brand)';
-      const topbarBgTint=n.topbar_cor?n.topbar_cor+'22':'rgba(0,0,0,0.05)';
-      const pokes=Array.isArray(n.pokes)?n.pokes:[];
-      const slots=Array(6).fill(null).map((_,i)=>pokes[i]||null);
-      const pokesHtml=slots.map(pk=>{
-        if(!pk)return`<div class="npc-poke-slot empty"></div>`;
-        const tipos=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[(t||'').toLowerCase()]||'t-normal'}">${t}</span>`).join('');
-        const habs=[pk.habilidade,pk.habilidade2].filter(Boolean);
-        const moves=Array.isArray(pk.moveset)?pk.moveset:[];
-        const genderSym=pk.genero==='macho'?'♂':pk.genero==='femea'?'♀':pk.genero==='genderless'?'—':'';
-        return`<div class="npc-poke-slot" title="">
-          <img src="${pk.sprite||FALLBACK_POKE}" onerror="this.src='${FALLBACK_POKE}'" alt="${pk.nome||''}"/>
-          <div class="npc-poke-tip">
-            <div class="npc-poke-tip-name">${pk.nome||'?'} <span class="npc-poke-tip-gender">${genderSym}</span></div>
-            ${tipos?`<div class="npc-poke-tip-types">${tipos}</div>`:''}
-            ${habs.length?`<div class="npc-poke-tip-section">Habilidade${habs.length>1?'s':''}</div><div class="npc-poke-tip-val">${habs.join(' / ')}</div>`:''}
-            ${moves.length?`<div class="npc-poke-tip-section">Moveset</div><div class="npc-poke-tip-val">${moves.join(', ')}</div>`:''}
+  if(abaAtiva==='oficiais'){
+    // ── ABA OFICIAIS: cards completos, agrupados por cidade ──
+    const html=NPC_CIDADES.map((cidade)=>{
+      const npcs=cidade.npcs.filter(n=>{
+        if(n.modelo==='simples') return false; // só completos
+        if(!q) return true;
+        return n.nome.toLowerCase().includes(q)||
+          (n.cargo||'').toLowerCase().includes(q)||
+          (n.descricao||'').toLowerCase().includes(q)||
+          cidade.nome.toLowerCase().includes(q);
+      });
+      if(!npcs.length) return '';
+      const cards=npcs.map(n=>{
+        const topbarCor=n.topbar_cor||'var(--brand)';
+        const topbarBgTint=n.topbar_cor?n.topbar_cor+'22':'rgba(0,0,0,0.05)';
+        const pokes=Array.isArray(n.pokes)?n.pokes:[];
+        const slots=Array(6).fill(null).map((_,i)=>pokes[i]||null);
+        const pokesHtml=slots.map(pk=>{
+          if(!pk)return`<div class="npc-poke-slot empty"></div>`;
+          const tipos=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[(t||'').toLowerCase()]||'t-normal'}">${t}</span>`).join('');
+          const habs=[pk.habilidade,pk.habilidade2].filter(Boolean);
+          const moves=Array.isArray(pk.moveset)?pk.moveset:[];
+          const genderSym=pk.genero==='macho'?'♂':pk.genero==='femea'?'♀':pk.genero==='genderless'?'—':'';
+          return`<div class="npc-poke-slot" title="">
+            <img src="${pk.sprite||FALLBACK_POKE}" onerror="this.src='${FALLBACK_POKE}'" alt="${pk.nome||''}"/>
+            <div class="npc-poke-tip">
+              <div class="npc-poke-tip-name">${pk.nome||'?'} <span class="npc-poke-tip-gender">${genderSym}</span></div>
+              ${tipos?`<div class="npc-poke-tip-types">${tipos}</div>`:''}
+              ${habs.length?`<div class="npc-poke-tip-section">Habilidade${habs.length>1?'s':''}</div><div class="npc-poke-tip-val">${habs.join(' / ')}</div>`:''}
+              ${moves.length?`<div class="npc-poke-tip-section">Moveset</div><div class="npc-poke-tip-val">${moves.join(', ')}</div>`:''}
+            </div>
+          </div>`;
+        }).join('');
+        const tagsHtml=n.tags&&n.tags.length
+          ?`<div class="npc-card-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
+        const bannerContent=n.foto
+          ?`<img class="npc-card-banner-bg" src="${n.foto}" alt="${n.nome}" onerror="this.style.display='none'">`
+          :`<div class="npc-card-banner-solid" style="background:${topbarBgTint}">${n.emoji||'👤'}</div>`;
+        return`<div class="npc-card" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 18px ${topbarCor}33'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
+          <div class="npc-card-topbar" style="background:${topbarCor}"></div>
+          <div class="npc-card-banner-wrap">${(()=>{const u=n.uso||'livre';return`<div class="npc-uso-badge ${u==='adm'?'npc-uso-adm':'npc-uso-livre'}">${u==='adm'?'Uso exclusivo ADM':'Uso Livre'}</div>`;})()}${bannerContent}</div>
+          <div class="npc-card-namebar">
+            <div class="npc-card-name">${n.nome}</div>
+            ${n.photoplayer?`<div class="npc-card-photoplayer">${n.photoplayer}</div>`:''}
+          </div>
+          <div class="npc-card-body">
+            ${n.cargo?`<div class="npc-card-role">${n.cargo}</div>`:''}
+            ${n.descricao?`<div class="npc-card-desc">${n.descricao}</div>`:''}
+          </div>
+          ${tagsHtml}
+          <div class="npc-card-pokes">
+            <div class="npc-card-pokes-title">Pokémon</div>
+            <div class="npc-pokes-grid">${pokesHtml}</div>
           </div>
         </div>`;
       }).join('');
-      const tagsHtml=n.tags&&n.tags.length
-        ?`<div class="npc-card-tags">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
-      const bannerContent=n.foto
-        ?`<img class="npc-card-banner-bg" src="${n.foto}" alt="${n.nome}" onerror="this.style.display='none'">`
-        :`<div class="npc-card-banner-solid" style="background:${topbarBgTint}">${n.emoji||'👤'}</div>`;
-      return`<div class="npc-card" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 18px ${topbarCor}33'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
-        <div class="npc-card-topbar" style="background:${topbarCor}"></div>
-        <div class="npc-card-banner-wrap">${(()=>{const u=n.uso||'livre';return`<div class="npc-uso-badge ${u==='adm'?'npc-uso-adm':'npc-uso-livre'}">${u==='adm'?'Uso exclusivo ADM':'Uso Livre'}</div>`;})()}${bannerContent}</div>
-        <div class="npc-card-namebar">
-          <div class="npc-card-name">${n.nome}</div>
-          ${n.photoplayer?`<div class="npc-card-photoplayer">${n.photoplayer}</div>`:''}
+      return`<div class="npc-city-section">
+        <div class="npc-city-header">
+          <div class="npc-city-icon" style="background:${cidade.cor}22">${cidade.emoji}</div>
+          <div>
+            <div class="npc-city-name">${cidade.nome}</div>
+            <div class="npc-city-count">${npcs.length} NPC${npcs.length!==1?'s':''}</div>
+          </div>
         </div>
-        <div class="npc-card-body">
-          ${n.cargo?`<div class="npc-card-role">${n.cargo}</div>`:''}
-          ${n.descricao?`<div class="npc-card-desc">${n.descricao}</div>`:''}
-        </div>
-        ${tagsHtml}
-        <div class="npc-card-pokes">
-          <div class="npc-card-pokes-title">Pokémon</div>
-          <div class="npc-pokes-grid">${pokesHtml}</div>
-        </div>
+        <div class="npc-grid">${cards}</div>
       </div>`;
     }).join('');
+    cont.innerHTML=html||`<div class="npc-empty">Nenhum NPC oficial cadastrado.</div>`;
 
-    const cards_simples=npcs.filter(n=>n.modelo==='simples').map(n=>{
-      const topbarCor=n.topbar_cor||'var(--brand)';
-      const uso=n.uso||'livre';
-      const avatarHtml=n.foto
-        ?`<img src="${n.foto}" alt="${n.nome}" onerror="this.src='';this.parentElement.innerHTML='${(n.emoji||'👤')}'"/>`
-        :(n.emoji||'👤');
-      const tagsHtml=n.tags&&n.tags.length
-        ?`<div class="npc-simples-tag-row">${n.tags.map(t=>`<span class="npc-tag" style="background:${t.c}22;color:${t.c}">${t.txt}</span>`).join('')}</div>`:'';
-      return`<div class="npc-simples-card" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 14px ${topbarCor}33'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
-        <div class="npc-simples-topbar" style="background:${topbarCor}"></div>
-        <span class="npc-simples-badge ${uso==='adm'?'npc-uso-adm':'npc-uso-livre'}">${uso==='adm'?'ADM':'Livre'}</span>
-        <div class="npc-simples-avatar">${avatarHtml}</div>
-        <div class="npc-simples-name">${n.nome}</div>
-        ${n.photoplayer?`<div class="npc-simples-photoplayer">${n.photoplayer}</div>`:''}
-        ${tagsHtml}
-      </div>`;
+  } else {
+    // ── ABA EVENTOS: todos os NPCs simples, sem divisão por cidade, em grid de 5 colunas ──
+    const todosSimples=NPC_CIDADES.flatMap(cidade=>
+      cidade.npcs.filter(n=>{
+        if(n.modelo!=='simples') return false;
+        if(!q) return true;
+        return n.nome.toLowerCase().includes(q)||
+          (n.photoplayer||'').toLowerCase().includes(q)||
+          (n.cargo||'').toLowerCase().includes(q)||
+          cidade.nome.toLowerCase().includes(q);
+      })
+    );
+    if(!todosSimples.length){
+      cont.innerHTML=`<div class="npc-empty">Nenhum NPC de evento cadastrado.</div>`;
+      return;
+    }
+    // Agrupa por "cargo" (nome do evento) para criar seções como na foto
+    const grupos={};
+    todosSimples.forEach(n=>{
+      const chave=n.cargo||'Evento';
+      if(!grupos[chave]) grupos[chave]=[];
+      grupos[chave].push(n);
+    });
+    const html=Object.entries(grupos).map(([evento,npcs])=>{
+      const cards=npcs.map(n=>{
+        const topbarCor=n.topbar_cor||'var(--brand-mid)';
+        const avatarHtml=n.foto
+          ?`<img src="${n.foto}" alt="${n.nome}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.parentElement.innerHTML='<span style=\\'font-size:36px\\'>${n.emoji||'👤'}</span>'">`
+          :`<span style="font-size:36px">${n.emoji||'👤'}</span>`;
+        return`<div class="npc-ev-card" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 18px rgba(0,0,0,.12)'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
+          <div class="npc-ev-badge" style="background:${topbarCor}">${evento}</div>
+          <div class="npc-ev-avatar">${avatarHtml}</div>
+          <div class="npc-ev-name">${n.nome}</div>
+          ${n.photoplayer?`<div class="npc-ev-photoplayer">${n.photoplayer}</div>`:''}
+        </div>`;
+      }).join('');
+      return`<div class="npc-ev-grid">${cards}</div>`;
     }).join('');
-
-    const gridCompleto=cards_completos?`<div class="npc-grid" style="margin-bottom:${cards_simples?'20px':'0'}">${cards_completos}</div>`:'';
-    const gridSimples=cards_simples?`<div class="npc-simples-grid">${cards_simples}</div>`:'';
-    const cards=gridCompleto+gridSimples;
-
-    return`<div class="npc-city-section">
-      <div class="npc-city-header">
-        <div class="npc-city-icon" style="background:${cidade.cor}22">${cidade.emoji}</div>
-        <div>
-          <div class="npc-city-name">${cidade.nome}</div>
-          <div class="npc-city-count">${npcs.length} NPC${npcs.length!==1?'s':''}</div>
-        </div>
-      </div>
-      <div class="npc-grid">${cards}</div>
-    </div>`;
-  }).join('');
-
-  cont.innerHTML=html||(filtro?`<div class="npc-empty">Nenhum NPC encontrado para "${(filtro||'').replace(/</g,'&lt;')}".</div>`:'');
+    cont.innerHTML=html;
+  }
 }
 
 function filtrarNpcs(q){ renderNpcs(q); }
