@@ -3218,7 +3218,11 @@ function renderHistorico(){
       </div>`).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
-        <div><span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span><span style="font-size:11px;color:var(--muted);margin-left:8px">• ${e.bioma}</span></div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
+          <span style="font-size:11px;color:var(--muted)">• ${e.bioma}</span>
+          ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
+        </div>
         <span style="font-size:11px;color:var(--muted)">${e.hora} · ${e.data}</span>
       </div>
       <div class="hist-body">${ph}</div>
@@ -4650,8 +4654,17 @@ async function iniciarPaginaEvento(slug){
 
     // carrega historico do evento
     try{
-      const res = await sb(`historico?evento_slug=eq.${slug}&order=criado_em.desc&limit=200`);
-      eventoHistorico = res||[];
+      const [resEnc, resDado] = await Promise.all([
+        sb(`historico?evento_slug=eq.${slug}&order=criado_em.desc&limit=200`),
+        sb(`historico_dados?evento_slug=eq.${slug}&order=criado_em.desc&limit=200`)
+      ]);
+      const enc  = (resEnc||[]);
+      const dado = (resDado||[]).map(d=>({...d, tipo:'dado'}));
+      eventoHistorico = [...enc, ...dado].sort((a,b)=>{
+        const ta = new Date(`${a.data?.split('/').reverse().join('-')}T${a.hora||'00:00:00'}`);
+        const tb = new Date(`${b.data?.split('/').reverse().join('-')}T${b.hora||'00:00:00'}`);
+        return tb - ta;
+      });
     }catch(e){ eventoHistorico=[]; }
     renderHistoricoEvento();
 
@@ -4849,6 +4862,32 @@ function renderHistoricoEvento(){
   document.getElementById('evento-hist-next').style.display=eventoHistPagina<total-1?'':'none';
   document.getElementById('evento-hist-paginacao').style.display=total>1?'flex':'none';
   lista.innerHTML=pagina.map(e=>{
+    const isDado = e.tipo==='dado' || (e.lados && !e.pokes);
+    if(isDado){
+      const max=e.lados||'?';
+      const res=e.resultado;
+      const pct=max>1?Math.round((res/max)*100):100;
+      const barColor=pct>=80?'#1a7a1a':pct>=50?'var(--brand-mid)':pct>=20?'var(--accent)':'var(--red)';
+      return`<div class="hist-entry">
+        <div class="hist-header">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
+            <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · d${max}</span>
+          </div>
+          <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;padding:8px 14px">
+          <div style="font-family:var(--font-title);font-size:36px;font-weight:700;color:var(--brand);line-height:1;min-width:48px;text-align:center">${res}</div>
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:5px">${e.motivo||'—'}</div>
+            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+              <div style="height:6px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .4s"></div>
+            </div>
+            <div style="font-size:11px;color:var(--muted)">${res} de ${max} (${pct}%)</div>
+          </div>
+        </div>
+      </div>`;
+    }
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
     const ph=pokes.map(pk=>`
       <div class="hist-poke">
@@ -4866,8 +4905,11 @@ function renderHistoricoEvento(){
       </div>`).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
-        <div><span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span><span style="font-size:11px;color:var(--muted);margin-left:8px">• ${e.bioma}</span></div>
-        <span style="font-size:11px;color:var(--muted)">${e.hora} · ${e.data}</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
+          ${e.bioma?`<span style="font-size:11px;color:var(--muted)">• ${e.bioma}</span>`:''}
+        </div>
+        <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
       </div>
       <div class="hist-body">${ph}</div>
     </div>`;
