@@ -1909,7 +1909,7 @@ async function init(){
       return;
     }
 
-    restaurarSessaoAdm().catch(()=>{});
+    await restaurarSessaoAdm().catch(()=>{});
 
     // Carrega páginas bloqueadas antes de navegar
     await carregarPaginasBloqueadas();
@@ -2056,7 +2056,8 @@ function navegarPara(page, replace=false){
 }
 
 async function goTo(page,el){
-  // atualiza lista de páginas bloqueadas e verifica acesso
+  // garante que sessão e bloqueios estejam carregados
+  if(!admLogado) await restaurarSessaoAdm().catch(()=>{});
   await carregarPaginasBloqueadas();
   if(!admLogado && _paginasBloqueadas.has(page)){
     await carregarAba(page);
@@ -2191,14 +2192,14 @@ let _paginasBloqueadas = new Set();
 async function carregarPaginasBloqueadas(){
   // Tenta carregar do banco; usa localStorage como fallback
   try{
-    const r = await dbGet('config', 'chave=eq.paginas_bloqueadas');
+    const r = await sb('config?chave=eq.paginas_bloqueadas&select=valor');
     if(r && r[0] && r[0].valor){
       const arr = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
       _paginasBloqueadas = new Set(Array.isArray(arr) ? arr : []);
       localStorage.setItem('paginas_bloqueadas', JSON.stringify([..._paginasBloqueadas]));
       return;
     }
-  } catch(e){}
+  } catch(e){ console.warn('carregarPaginasBloqueadas erro banco:', e); }
   // Fallback: localStorage
   try{
     const local = localStorage.getItem('paginas_bloqueadas');
@@ -2214,9 +2215,12 @@ async function salvarPaginasBloqueadas(){
   // Tenta salvar no banco
   try{
     const payload = {chave:'paginas_bloqueadas', valor: JSON.stringify(arr)};
-    const ex = await dbGet('config','chave=eq.paginas_bloqueadas');
-    if(ex && ex.length>0) await dbPatch('config','chave=eq.paginas_bloqueadas',payload);
-    else await dbPost('config', payload);
+    const ex = await sb('config?chave=eq.paginas_bloqueadas&select=chave');
+    if(ex && ex.length>0){
+      await sb('config?chave=eq.paginas_bloqueadas', {method:'PATCH', body:JSON.stringify(payload), prefer:'return=minimal'});
+    } else {
+      await sb('config', {method:'POST', body:JSON.stringify(payload), prefer:'return=minimal'});
+    }
   } catch(e){ console.warn('Tabela config não encontrada, usando localStorage.'); }
   const fb=document.getElementById('paginas-fb');
   if(fb){fb.style.display='block';setTimeout(()=>fb.style.display='none',2000);}
