@@ -566,14 +566,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   </div>
   <div id="npc-container"></div>
 </div>
-<!-- PÁGINA DE EVENTO -->
-<div class="page" id="page-em-construcao">
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:40px 24px">
-    <div style="font-size:72px;margin-bottom:24px;filter:drop-shadow(0 4px 16px rgba(0,0,0,.12))">🚧</div>
-    <div style="font-family:var(--font-title);font-size:26px;font-weight:700;color:var(--brand);margin-bottom:10px;letter-spacing:.5px">Página em Construção</div>
-    <div style="font-size:15px;color:var(--muted);max-width:340px;line-height:1.6">Será liberada em breve.<br>Fique ligado nas novidades!</div>
-  </div>
-</div>
+
 <!-- PÁGINA DE EVENTO -->
 <div class="page" id="page-evento">
   <div id="evento-header" style="border-radius:var(--r);padding:20px 24px;margin-bottom:24px;display:flex;align-items:center;gap:16px">
@@ -683,7 +676,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)">🎨 Editor Visual</button>
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
-        <button class="adm-nav-btn" data-sec="paginas" onclick="admTab('paginas',this)">🔒 Páginas</button>
+
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()">Sair</button>
       </div>
@@ -1190,16 +1183,6 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
           </div>
         </div>
 
-
-        <div class="adm-section" id="sec-paginas">
-          <div class="sec-title">Páginas</div>
-          <div class="sec-sub">Bloqueie páginas para os jogadores. Páginas bloqueadas exibem uma mensagem de "em construção".</div>
-          <div class="box">
-            <div class="box-title">🔒 Controle de Acesso às Páginas</div>
-            <div id="paginas-lock-list" style="display:flex;flex-direction:column;gap:12px;margin-top:4px"></div>
-            <div class="fb fb-ok" id="paginas-fb" style="margin-top:12px">✓ Salvo!</div>
-          </div>
-        </div>
 
 
         <div class="adm-section" id="sec-npcs-adm">
@@ -1893,7 +1876,6 @@ async function init(){
 
     if(hash === 'adm'){
       const restaurado = await restaurarSessaoAdm();
-      await carregarPaginasBloqueadas();
       if(!restaurado){
         navegarPara('adm', true);
         loading(false);
@@ -1911,18 +1893,8 @@ async function init(){
 
     await restaurarSessaoAdm().catch(()=>{});
 
-    // Carrega páginas bloqueadas antes de navegar
-    await carregarPaginasBloqueadas();
-
     await carregarAba(hash);
-    // Se a página está bloqueada e usuário não é adm, mostra em construção
-    if(!admLogado && _paginasBloqueadas.has(hash)){
-      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-      document.getElementById('page-em-construcao').classList.add('active');
-      history.replaceState(null,'','/'+hash);
-    } else {
-      navegarPara(hash, true);
-    }
+    navegarPara(hash, true);
 
   } catch(e){ console.error('Erro no init:', e); }
   finally{ loading(false); }
@@ -2028,15 +2000,6 @@ async function carregarAba(page){
 // NAVEGAÇÃO COM HASH
 // ══════════════════════════════════════
 function navegarPara(page, replace=false){
-  // Bloqueia acesso direto para não-admins, independente do caminho de chamada
-  if(!admLogado && page !== 'adm' && _paginasBloqueadas.has(page)){
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    document.getElementById('page-em-construcao').classList.add('active');
-    const path = page==='roller' ? '/' : page==='rolagens' ? '/rolls' : '/'+page;
-    if(replace) history.replaceState(null,'', path);
-    else history.pushState(null,'', path);
-    return;
-  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const el=document.getElementById('page-'+page);
   if(el) el.classList.add('active');
@@ -2065,21 +2028,9 @@ function navegarPara(page, replace=false){
 }
 
 async function goTo(page,el){
-  // garante que sessão e bloqueios estejam carregados (sempre do banco)
   if(!admLogado){
     const restaurado = await restaurarSessaoAdm().catch(()=>false);
     if(!restaurado) admLogado = null;
-  }
-  await carregarPaginasBloqueadas();
-  if(!admLogado && _paginasBloqueadas.has(page)){
-    await carregarAba(page);
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    document.getElementById('page-em-construcao').classList.add('active');
-    document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
-    document.getElementById('btn-adm').classList.remove('active');
-    if(el) el.classList.add('active');
-    history.pushState(null,'','/'+page);
-    return;
   }
   carregarAba(page).then(()=>navegarPara(page));
   document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
@@ -2185,86 +2136,6 @@ function admTab(sec,el){
     syncEventoBiomaSelect();
     carregarEventos().then(renderEventosLista);
   }
-  if(sec==='paginas') renderPaginasLock();
-}
-
-// ══════════════════════════════════════
-// SISTEMA DE PÁGINAS BLOQUEADAS
-// ══════════════════════════════════════
-const PAGINAS_CONFIG = [
-  {id:'roller',   label:'⚡ Pokémon',  desc:'Página de rolagem de encontros'},
-  {id:'bioma',    label:'🗺️ Bioma',    desc:'Catálogo de Pokémon por bioma'},
-  {id:'dados',    label:'🎲 Dados',    desc:'Rolador de dados'},
-  {id:'fichario', label:'📋 Fichário', desc:'Fichas dos personagens'},
-  {id:'rolagens', label:'📜 Rolls',    desc:'Histórico de rolagens'},
-  {id:'npcs',     label:'🧑 NPCs',     desc:'Página de NPCs e eventos'},
-];
-let _paginasBloqueadas = new Set();
-
-async function carregarPaginasBloqueadas(){
-  // Sempre busca do banco — nunca usa localStorage como fallback de segurança,
-  // pois um cache desatualizado poderia liberar páginas que já foram bloqueadas.
-  try{
-    const r = await sb('config?chave=eq.paginas_bloqueadas&select=valor');
-    if(r && r[0] && r[0].valor){
-      const arr = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
-      _paginasBloqueadas = new Set(Array.isArray(arr) ? arr : []);
-    } else {
-      _paginasBloqueadas = new Set();
-    }
-  } catch(e){
-    // Se o banco falhar, assume tudo bloqueado para não expor páginas indevidamente.
-    // O adm continua acessando normalmente pois passa pela verificação admLogado.
-    console.warn('Erro ao carregar páginas bloqueadas do banco:', e);
-    _paginasBloqueadas = new Set(['roller','fichario','bioma','dados','rolagens','npcs']);
-  }
-}
-
-async function salvarPaginasBloqueadas(){
-  const arr = [..._paginasBloqueadas];
-  localStorage.setItem('paginas_bloqueadas', JSON.stringify(arr));
-  try{
-    const payload = {chave:'paginas_bloqueadas', valor: JSON.stringify(arr)};
-    const ex = await sb('config?chave=eq.paginas_bloqueadas&select=chave');
-    if(ex && ex.length>0){
-      await sb('config?chave=eq.paginas_bloqueadas', {method:'PATCH', body:JSON.stringify(payload), prefer:'return=minimal'});
-    } else {
-      await sb('config', {method:'POST', body:JSON.stringify(payload), prefer:'return=minimal'});
-    }
-  } catch(e){ console.warn('Erro ao salvar no banco:', e); }
-  const fb=document.getElementById('paginas-fb');
-  if(fb){fb.style.display='block';setTimeout(()=>fb.style.display='none',2000);}
-}
-
-function renderPaginasLock(){
-  const cont = document.getElementById('paginas-lock-list');
-  if(!cont) return;
-  carregarPaginasBloqueadas().then(()=>{
-    cont.innerHTML = PAGINAS_CONFIG.map(p=>{
-      const bloqueada = _paginasBloqueadas.has(p.id);
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:${bloqueada?'#fef3f3':'var(--surface2)'};border:1.5px solid ${bloqueada?'#f0c0c0':'var(--border)'};border-radius:10px;transition:all .2s">
-        <div>
-          <div style="font-weight:700;font-size:14px;color:var(--text)">${p.label}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${p.desc}</div>
-          ${bloqueada?'<div style="font-size:11px;color:#c03030;font-weight:700;margin-top:4px">🔒 BLOQUEADA</div>':'<div style="font-size:11px;color:var(--green);font-weight:700;margin-top:4px">✓ Liberada</div>'}
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;flex-shrink:0" onclick="togglePaginaLock('${p.id}',${!bloqueada})">
-          <div style="position:relative;width:44px;height:24px">
-            <span style="position:absolute;inset:0;background:${bloqueada?'#c03030':'#ccc'};border-radius:12px;transition:background .2s"></span>
-            <span style="position:absolute;top:3px;left:${bloqueada?'23':'3'}px;width:18px;height:18px;background:#fff;border-radius:50%;transition:left .2s;box-shadow:0 1px 4px rgba(0,0,0,.3)"></span>
-          </div>
-          <span style="font-size:12px;font-weight:700;color:${bloqueada?'#c03030':'var(--muted)'}">${bloqueada?'Desbloquear':'Bloquear'}</span>
-        </label>
-      </div>`;
-    }).join('');
-  });
-}
-
-async function togglePaginaLock(pageId, bloquear){
-  if(bloquear) _paginasBloqueadas.add(pageId);
-  else _paginasBloqueadas.delete(pageId);
-  await salvarPaginasBloqueadas();
-  renderPaginasLock();
 }
 
 // ══════════════════════════════════════
@@ -2319,7 +2190,7 @@ async function restaurarSessaoAdm(){
 // ADMINS
 // ══════════════════════════════════════
 const SUPER_ADMIN = 'adm@nendo.ne';
-const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','paginas'];
+const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos'];
 
 function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
 
@@ -2338,12 +2209,7 @@ function aplicarPermissoesSidebar(){
   // botões com data-sec
   document.querySelectorAll('.adm-nav-btn[data-sec]').forEach(btn=>{
     const sec = btn.dataset.sec;
-    if(sec === 'paginas'){
-      // paginas: só super admin vê
-      btn.style.display = isSuperAdmin() ? '' : 'none';
-    } else {
-      btn.style.display = perms.includes(sec) ? '' : 'none';
-    }
+    btn.style.display = perms.includes(sec) ? '' : 'none';
   });
   // botão admins: só super admin vê
   const btnAdmins = document.getElementById('btn-sec-admins');
@@ -5848,13 +5714,6 @@ window.addEventListener('popstate', async ()=>{
   const validPages = ['roller','fichario','bioma','dados','adm','rolagens','npcs'];
   const pageMap = {rolls:'rolagens'};
   const page = pageMap[pathPage] || (validPages.includes(pathPage) ? pathPage : 'roller');
-  await carregarPaginasBloqueadas();
-  if(!admLogado && _paginasBloqueadas.has(page)){
-    await carregarAba(page);
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    document.getElementById('page-em-construcao').classList.add('active');
-    return;
-  }
   carregarAba(page).then(()=>navegarPara(page));
 });
 
