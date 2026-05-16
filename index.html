@@ -2028,6 +2028,15 @@ async function carregarAba(page){
 // NAVEGAÇÃO COM HASH
 // ══════════════════════════════════════
 function navegarPara(page, replace=false){
+  // Bloqueia acesso direto para não-admins, independente do caminho de chamada
+  if(!admLogado && page !== 'adm' && _paginasBloqueadas.has(page)){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-em-construcao').classList.add('active');
+    const path = page==='roller' ? '/' : page==='rolagens' ? '/rolls' : '/'+page;
+    if(replace) history.replaceState(null,'', path);
+    else history.pushState(null,'', path);
+    return;
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const el=document.getElementById('page-'+page);
   if(el) el.classList.add('active');
@@ -2056,8 +2065,11 @@ function navegarPara(page, replace=false){
 }
 
 async function goTo(page,el){
-  // garante que sessão e bloqueios estejam carregados
-  if(!admLogado) await restaurarSessaoAdm().catch(()=>{});
+  // garante que sessão e bloqueios estejam carregados (sempre do banco)
+  if(!admLogado){
+    const restaurado = await restaurarSessaoAdm().catch(()=>false);
+    if(!restaurado) admLogado = null;
+  }
   await carregarPaginasBloqueadas();
   if(!admLogado && _paginasBloqueadas.has(page)){
     await carregarAba(page);
@@ -2190,21 +2202,22 @@ const PAGINAS_CONFIG = [
 let _paginasBloqueadas = new Set();
 
 async function carregarPaginasBloqueadas(){
+  // Sempre busca do banco — nunca usa localStorage como fallback de segurança,
+  // pois um cache desatualizado poderia liberar páginas que já foram bloqueadas.
   try{
     const r = await sb('config?chave=eq.paginas_bloqueadas&select=valor');
     if(r && r[0] && r[0].valor){
       const arr = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
       _paginasBloqueadas = new Set(Array.isArray(arr) ? arr : []);
-      localStorage.setItem('paginas_bloqueadas', JSON.stringify([..._paginasBloqueadas]));
-      return;
+    } else {
+      _paginasBloqueadas = new Set();
     }
-  } catch(e){}
-  // Fallback: localStorage
-  try{
-    const local = localStorage.getItem('paginas_bloqueadas');
-    if(local){ _paginasBloqueadas = new Set(JSON.parse(local)); return; }
-  } catch(e){}
-  _paginasBloqueadas = new Set();
+  } catch(e){
+    // Se o banco falhar, assume tudo bloqueado para não expor páginas indevidamente.
+    // O adm continua acessando normalmente pois passa pela verificação admLogado.
+    console.warn('Erro ao carregar páginas bloqueadas do banco:', e);
+    _paginasBloqueadas = new Set(['roller','fichario','bioma','dados','rolagens','npcs']);
+  }
 }
 
 async function salvarPaginasBloqueadas(){
@@ -2292,13 +2305,14 @@ async function restaurarSessaoAdm(){
     if(!saved) return false;
     const sess = JSON.parse(saved);
     if(!sess?.email) return false;
+    // Sempre valida contra o banco — nunca confia só no localStorage
     const lista = await dbGet('admins','select=*');
     const match = lista.find(a=>a.nome===sess.email);
-    if(!match){ localStorage.removeItem('adm_session'); return false; }
+    if(!match){ localStorage.removeItem('adm_session'); admLogado=null; return false; }
     admLogado = {email: sess.email};
     admins = lista;
     return true;
-  } catch(e){ return false; }
+  } catch(e){ admLogado=null; return false; }
 }
 
 // ══════════════════════════════════════
