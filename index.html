@@ -2190,7 +2190,6 @@ const PAGINAS_CONFIG = [
 let _paginasBloqueadas = new Set();
 
 async function carregarPaginasBloqueadas(){
-  // Tenta carregar do banco; usa localStorage como fallback
   try{
     const r = await sb('config?chave=eq.paginas_bloqueadas&select=valor');
     if(r && r[0] && r[0].valor){
@@ -2199,7 +2198,7 @@ async function carregarPaginasBloqueadas(){
       localStorage.setItem('paginas_bloqueadas', JSON.stringify([..._paginasBloqueadas]));
       return;
     }
-  } catch(e){ console.warn('carregarPaginasBloqueadas erro banco:', e); }
+  } catch(e){}
   // Fallback: localStorage
   try{
     const local = localStorage.getItem('paginas_bloqueadas');
@@ -2210,9 +2209,7 @@ async function carregarPaginasBloqueadas(){
 
 async function salvarPaginasBloqueadas(){
   const arr = [..._paginasBloqueadas];
-  // Salva sempre no localStorage
   localStorage.setItem('paginas_bloqueadas', JSON.stringify(arr));
-  // Tenta salvar no banco
   try{
     const payload = {chave:'paginas_bloqueadas', valor: JSON.stringify(arr)};
     const ex = await sb('config?chave=eq.paginas_bloqueadas&select=chave');
@@ -2221,7 +2218,7 @@ async function salvarPaginasBloqueadas(){
     } else {
       await sb('config', {method:'POST', body:JSON.stringify(payload), prefer:'return=minimal'});
     }
-  } catch(e){ console.warn('Tabela config não encontrada, usando localStorage.'); }
+  } catch(e){ console.warn('Erro ao salvar no banco:', e); }
   const fb=document.getElementById('paginas-fb');
   if(fb){fb.style.display='block';setTimeout(()=>fb.style.display='none',2000);}
 }
