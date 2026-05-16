@@ -100,9 +100,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .ficha-card-avatar img{width:72px;height:72px;object-fit:cover;border-radius:50%}
 .ficha-name{font-family:var(--font-title);font-size:12px;color:var(--text);line-height:1.3;letter-spacing:.3px}
 .ficha-photoplayer{font-size:11px;color:#aab0be;font-style:italic;line-height:1.3}
-.ficha-pontos-box{display:inline-flex;align-items:center;gap:4px;background:var(--accent-light);border:1px solid #e8d080;border-radius:10px;padding:2px 8px}
-.ficha-pontos-lbl{font-size:9px;color:#7a5010;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
-.ficha-pontos-val{font-size:12px;font-weight:700;color:#7a5010}
+.ficha-ranking-box{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:10px;font-weight:700;font-size:12px;border:1.5px solid}
+.ficha-ranking-1{background:#fff8cc;border-color:#e8c800;color:#7a5e00}
+.ficha-ranking-2{background:#f2f2f2;border-color:#aaaaaa;color:#444444}
+.ficha-ranking-3{background:#fff0e8;border-color:#c87030;color:#7a3a00}
+.ficha-ranking-4{background:#f0f4ff;border-color:#8aabee;color:#2a4a8a}
+.ficha-ranking-5{background:#f5f0ff;border-color:#9a78e0;color:#4a1a8a}
 /* ADM PLAYER ACCORDION */
 .adm-player-acc{border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
 .adm-player-acc-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);cursor:pointer;user-select:none;transition:background .15s}
@@ -2156,13 +2159,17 @@ function renderTbodyAdmins(){
 // ══════════════════════════════════════
 // PLAYERS
 // ══════════════════════════════════════
-async function editarPontosPlayer(id,nome){
-  const p=personagens.find(x=>x.id===id);if(!p)return;
-  const val=prompt(`Pontos de "${nome}":`,p.pontos||0);if(val===null)return;
-  const n=parseInt(val);if(isNaN(n)){alert('Valor inválido.');return;}
+async function editarRankingPersonagem(id,nome){
+  const p=personagens.find(x=>String(x.id)===String(id));if(!p)return;
+  const opcoes=[0,1,2,3,4,5];
+  const atual=p.pontos||0;
+  const val=prompt(`Ranking de "${nome}" (0 = sem ranking, 1 a 5):`,atual);
+  if(val===null)return;
+  const n=parseInt(val);
+  if(isNaN(n)||n<0||n>5){alert('Valor inválido. Use 0 (sem ranking) ou 1 a 5.');return;}
   await dbPatch('personagens',`id=eq.${id}`,{pontos:n});
   p.pontos=n;
-  renderTbodyPlayers();renderFichario();
+  renderTbodyPersonagens();renderFichario();
 }
 async function removerPlayer(id,nome){
   const qtd=personagens.filter(p=>p.player===nome).length;
@@ -2198,7 +2205,7 @@ async function adicionarPersonagem(){
     if(res&&res[0])players.push(res[0]);
   }
   // cria personagem primeiro para ter o ID
-  const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,pontos:0});
+  const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,pontos:null});
   if(!res||!res[0]){alert('Erro ao criar personagem.');return;}
   const novo = res[0];
   personagens.push(novo);
@@ -2324,7 +2331,7 @@ function renderTbodyPersonagens(){
           </div><strong>${p.nome}</strong>
         </td>
         <td style="font-weight:700;color:var(--brand-mid)">
-          <span style="cursor:pointer" onclick="editarPontosPlayer('${p.id}','${p.nome}')" title="Clique para editar">${p.pontos||0} ✏️</span>
+          ${rankingBadgeAdm(p.pontos)} <span style="cursor:pointer;font-size:11px;color:var(--muted)" onclick="editarRankingPersonagem('${p.id}','${p.nome}')" title="Clique para editar">✏️</span>
         </td>
         <td style="white-space:nowrap">
           <button class="btn btn-danger btn-xs" style="padding:3px 8px;font-size:11px" onclick="removerPersonagem('${p.id}')">Remover</button>
@@ -2337,7 +2344,7 @@ function renderTbodyPersonagens(){
       </div>
       <div class="adm-player-acc-body">
         <div class="adm-table-wrap"><table class="adm-table">
-          <thead><tr><th>Personagem</th><th>Pontos</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Personagem</th><th>Ranking</th><th>Ações</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
       </div>
@@ -2827,13 +2834,31 @@ async function migrarArtworks(){
   } else { fb('mig-fb-ok'); }
   renderTbodyPokemons();
 }
+// ── RANKING HELPERS ──
+const RANKING_LABELS = {1:'🥇 1º lugar',2:'🥈 2º lugar',3:'🥉 3º lugar',4:'🏅 4º lugar',5:'🎖️ 5º lugar'};
+function rankingBadge(pos){
+  if(!pos||pos<1||pos>5) return '';
+  const cls=`ficha-ranking-${pos}`;
+  return `<div class="ficha-ranking-box ${cls}">${RANKING_LABELS[pos]}</div>`;
+}
+function rankingBadgeAdm(pos){
+  if(!pos||pos<1||pos>5) return `<span style="font-size:12px;color:var(--muted)">—</span>`;
+  const cls=`ficha-ranking-${pos}`;
+  return `<span class="ficha-ranking-box ${cls}" style="font-size:11px;padding:2px 7px">${RANKING_LABELS[pos]}</span>`;
+}
+
 function renderFichario(){
   const container=document.getElementById('fichas-container');
   if(personagens.length===0){
     container.innerHTML='<div style="color:var(--muted);font-size:14px;padding:20px">Nenhum personagem cadastrado ainda.</div>';
     return;
   }
-  const sorted=personagens.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  // Ordena: com ranking primeiro (1 antes de 5), sem ranking por último, depois por nome
+  const sorted=personagens.slice().sort((a,b)=>{
+    const ra=a.pontos||99, rb=b.pontos||99;
+    if(ra!==rb) return ra-rb;
+    return a.nome.localeCompare(b.nome,'pt-BR');
+  });
   const cards=sorted.map(p=>`
     <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}"
       ${p.ficha_url?`onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}>
@@ -2851,7 +2876,7 @@ function renderFichario(){
       </div>
       <div class="ficha-name">${p.nome}</div>
       ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
-      <div class="ficha-pontos-box"><span class="ficha-pontos-lbl">Pontos</span><span class="ficha-pontos-val">${p.pontos||0}</span></div>
+      ${p.pontos ? rankingBadge(p.pontos) : ''}
     </div>`).join('');
   container.innerHTML=`<div class="fichas-grid">${cards}</div>`;
 }
@@ -3084,7 +3109,7 @@ function renderRolagens(){
         <div class="rol-entry-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span class="rol-entry-bioma">⚡ Encontro · ${e.bioma||'?'}</span>
-            ${e.evento_slug?`<span style="font-size:9px;font-weight:700;background:#fff3cd;color:#7a5010;border-radius:4px;padding:1px 6px;border:1px solid #e8d080">🎪 ${e.evento_slug}</span>`:''}
+            ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
           </div>
           <span class="rol-entry-hora">${e.hora||''} · ${e.data||''}</span>
         </div>
@@ -3099,7 +3124,7 @@ function renderRolagens(){
         <div class="rol-entry-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · d${max}</span>
-            ${e.evento_slug?`<span style="font-size:9px;font-weight:700;background:#fff3cd;color:#7a5010;border-radius:4px;padding:1px 6px;border:1px solid #e8d080">🎪 ${e.evento_slug}</span>`:''}
+            ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
           </div>
           <span class="rol-entry-hora">${e.hora||''} · ${e.data||''}</span>
         </div>
@@ -4619,6 +4644,7 @@ async function iniciarPaginaEvento(slug){
       if(motivoWrap){ motivoWrap.style.opacity=''; motivoWrap.style.pointerEvents=''; }
       if(ev.lock_dado && dadoWrap){ dadoWrap.style.opacity='.6'; dadoWrap.style.pointerEvents='none'; }
       if(ev.lock_motivo && motivoWrap){ motivoWrap.style.opacity='.6'; motivoWrap.style.pointerEvents='none'; }
+      renderEventoDiceBtns();
       sincEventoDiceBtn();
     }
 
@@ -4716,6 +4742,90 @@ async function rolarEncontroEvento(){
   }catch(e){}
   eventoHistPagina=0;
   renderHistoricoEvento();
+}
+
+// ── EVENTO: sincroniza botões de atalho do dado ──
+function sincEventoDiceBtn(){
+  const v = parseInt(document.getElementById('evento-dice-lados')?.value);
+  document.querySelectorAll('#evento-dice-side-btns .dice-side-btn').forEach(b=>{
+    const lbl = b.textContent.replace('d','');
+    b.classList.toggle('active', parseInt(lbl)===v);
+  });
+}
+
+function setEventoLados(n){
+  const el = document.getElementById('evento-dice-lados');
+  if(el){ el.value = n; sincEventoDiceBtn(); }
+}
+
+function renderEventoDiceBtns(){
+  const wrap = document.getElementById('evento-dice-side-btns');
+  if(!wrap) return;
+  const lados = [4,6,8,10,12,20,100];
+  const atual = parseInt(document.getElementById('evento-dice-lados')?.value)||100;
+  wrap.innerHTML = lados.map(n=>
+    `<button class="dice-side-btn${n===atual?' active':''}" onclick="setEventoLados(${n})">d${n}</button>`
+  ).join('');
+}
+
+// ── EVENTO: rolar dado ──
+async function rolarDadoEvento(){
+  const ev = eventoAtual;
+  if(!ev){ alert('Evento não carregado.'); return; }
+
+  const personagemEl = document.getElementById('evento-dice-personagem');
+  const ladosEl      = document.getElementById('evento-dice-lados');
+  const motivoEl     = document.getElementById('evento-dice-motivo');
+
+  const personagem = personagemEl?.value.trim() || '';
+  const lados      = parseInt(ladosEl?.value) || 0;
+  const motivo     = motivoEl?.value.trim() || '';
+
+  if(!personagem){ alert('Preencha o nome do personagem!'); personagemEl?.focus(); return; }
+  if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
+  if(!motivo){ alert('Preencha o motivo da rolagem!'); motivoEl?.focus(); return; }
+
+  const resultado = Math.floor(Math.random() * lados) + 1;
+  const agora = new Date();
+  const hora  = agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const data  = agora.toLocaleDateString('pt-BR');
+
+  // Exibe resultado na área de resultados
+  const section = document.getElementById('evento-results');
+  if(section){
+    const pct = Math.round((resultado / lados) * 100);
+    const barColor = pct>=80?'#1a7a1a':pct>=50?'var(--brand-mid)':pct>=20?'var(--accent)':'var(--red)';
+    section.innerHTML = `<div class="rol-entry" style="animation:fadeUp .35s both">
+      <div class="rol-entry-header">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · d${lados}</span>
+          <span class="rol-entry-bioma">🎪 ${ev.slug}</span>
+        </div>
+        <span class="rol-entry-hora">${hora} · ${data}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;padding:4px 0">
+        <div style="font-family:var(--font-title);font-size:48px;font-weight:700;color:var(--brand);line-height:1;min-width:60px;text-align:center">${resultado}</div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">${motivo}</div>
+          <div style="background:var(--border);border-radius:4px;height:7px;overflow:hidden;margin-bottom:5px">
+            <div style="height:7px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .5s"></div>
+          </div>
+          <div style="font-size:12px;color:var(--muted)">${resultado} de ${lados} (${pct}%)</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Salva no histórico
+  const entry = {personagem, lados, motivo, resultado, hora, data, evento_slug: ev.slug};
+  try{
+    const res = await dbPost('historico_dados', entry);
+    if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
+    else            eventoHistorico.unshift({...entry, id:Date.now(), tipo:'dado'});
+  }catch(e){ eventoHistorico.unshift({...entry, id:Date.now(), tipo:'dado'}); }
+  eventoHistPagina = 0;
+  renderHistoricoEvento();
+  if(loaded.rolagens) renderRolagens();
 }
 
 function mudarPaginaHistEvento(dir){
@@ -4930,6 +5040,7 @@ function eventoSetModo(modo){
   document.getElementById('evento-modo-encontro').style.display = modo==='encontro' ? '' : 'none';
   document.getElementById('evento-modo-dados').style.display    = modo==='dados'    ? '' : 'none';
   document.getElementById('evento-results').innerHTML = '';
+  if(modo==='dados') renderEventoDiceBtns();
 }
 
 // ── JOGADOR: modal pool (escolher bioma/pokémon do evento) ──
