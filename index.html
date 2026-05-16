@@ -1320,15 +1320,29 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       </div>
       <div class="field"><label>Photoplayer</label><input type="text" id="modal-npc-photoplayer" placeholder="Ex: Satoshi"/></div>
       <div class="field"><label>Emoji (fallback)</label><input type="text" id="modal-npc-emoji" placeholder="🔬" style="width:80px"/></div>
-      <div class="field">
-        <label>Modelo de card</label>
-        <select id="modal-npc-modelo" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%">
-          <option value="completo">Completo (com banner e Pokémon)</option>
-          <option value="simples">Simples (estilo fichário)</option>
-        </select>
+      <div class="field" style="grid-column:1/-1">
+        <label>Tipo de NPC</label>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button type="button" id="modal-npc-tipo-oficial" onclick="_setNpcTipo('completo')"
+            style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid var(--brand);background:var(--brand);color:#fff;font-family:var(--font-body);font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;align-items:center;gap:3px">
+            <span style="font-size:18px">🏛️</span><span>Oficial</span>
+            <span style="font-size:10px;font-weight:400;opacity:.8">Aba Oficiais</span>
+          </button>
+          <button type="button" id="modal-npc-tipo-evento" onclick="_setNpcTipo('simples')"
+            style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid var(--border);background:var(--surface2);color:var(--muted);font-family:var(--font-body);font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;align-items:center;gap:3px">
+            <span style="font-size:18px">🎪</span><span>Evento</span>
+            <span style="font-size:10px;font-weight:400;opacity:.8">Aba Eventos</span>
+          </button>
+        </div>
+        <input type="hidden" id="modal-npc-modelo" value="completo"/>
       </div>
-      <div class="field"><label>Cidade</label>
+      <div class="field" id="modal-npc-cidade-wrap"><label>Cidade</label>
         <select id="modal-npc-cidade-sel"></select>
+      </div>
+      <div class="field" id="modal-npc-evento-nome-wrap" style="display:none">
+        <label>Nome do evento</label>
+        <input type="text" id="modal-npc-evento-nome" placeholder="Ex: Trade-Up Festival"/>
+        <span style="font-size:10px;color:var(--muted);margin-top:3px">Aparece como badge no card e agrupa os NPCs na aba Eventos</span>
       </div>
       <div class="field">
         <label>Cor da top bar</label>
@@ -4092,13 +4106,18 @@ async function abrirModalNpc(id){
     const rows=await sb(`npcs?id=eq.${id}&select=*`);
     const n=rows&&rows[0]?rows[0]:{};
     document.getElementById('modal-npc-nome').value=n.nome||'';
-    document.getElementById('modal-npc-cargo').value=n.cargo||'';
     document.getElementById('modal-npc-uso').value=n.uso||'livre';
     document.getElementById('modal-npc-photoplayer').value=n.photoplayer||'';
     document.getElementById('modal-npc-emoji').value=n.emoji||'';
     document.getElementById('modal-npc-desc').value=n.descricao||'';
-    document.getElementById('modal-npc-modelo').value=n.modelo||'completo';
-    cidSel.value=n.npc_cidade_id||'';
+    const modelo=n.modelo||'completo';
+    _setNpcTipo(modelo);
+    if(modelo==='simples'){
+      document.getElementById('modal-npc-evento-nome').value=n.cargo||'';
+    } else {
+      document.getElementById('modal-npc-cargo').value=n.cargo||'';
+      cidSel.value=n.npc_cidade_id||'';
+    }
     if(n.foto){
       const prev=document.getElementById('modal-npc-foto-preview');
       prev.innerHTML=`<img src="${n.foto}" style="width:72px;height:72px;object-fit:cover;border-radius:8px"/>`;
@@ -4107,7 +4126,6 @@ async function abrirModalNpc(id){
     }
     _npcAdmTags=Array.isArray(n.tags)?[...n.tags]:[];
     _npcAdmPokes=Array.isArray(n.pokes)?n.pokes.map(p=>({...p})):[];
-    // topbar cor
     const corEl=document.getElementById('modal-npc-topbar-cor');
     const hexEl=document.getElementById('modal-npc-topbar-cor-hex');
     if(n.topbar_cor){
@@ -4122,16 +4140,15 @@ async function abrirModalNpc(id){
     document.getElementById('modal-npc-idx').value='';
     document.getElementById('modal-npc-nome').value='';
     document.getElementById('modal-npc-cargo').value='';
+    document.getElementById('modal-npc-evento-nome').value='';
     document.getElementById('modal-npc-uso').value='livre';
     document.getElementById('modal-npc-photoplayer').value='';
     document.getElementById('modal-npc-emoji').value='';
     document.getElementById('modal-npc-desc').value='';
-    document.getElementById('modal-npc-modelo').value='completo';
-    // pre-select current city filter
+    _setNpcTipo('completo');
     const cidFiltro=document.getElementById('npc-adm-cidade-sel')?.value;
     if(cidFiltro)cidSel.value=cidFiltro;
     if(delBtn)delBtn.style.display='none';
-    // reset topbar cor
     const corEl2=document.getElementById('modal-npc-topbar-cor');
     const hexEl2=document.getElementById('modal-npc-topbar-cor-hex');
     if(corEl2){corEl2.value='#2563a8';corEl2.disabled=false;}
@@ -4141,6 +4158,26 @@ async function abrirModalNpc(id){
   renderNpcPokesList();
   document.getElementById('modal-npc-overlay').style.display='flex';
 }
+
+function _setNpcTipo(modelo){
+  document.getElementById('modal-npc-modelo').value=modelo;
+  const btnOf=document.getElementById('modal-npc-tipo-oficial');
+  const btnEv=document.getElementById('modal-npc-tipo-evento');
+  const cidadeWrap=document.getElementById('modal-npc-cidade-wrap');
+  const eventoWrap=document.getElementById('modal-npc-evento-nome-wrap');
+  if(modelo==='completo'){
+    btnOf.style.background='var(--brand)'; btnOf.style.borderColor='var(--brand)'; btnOf.style.color='#fff';
+    btnEv.style.background='var(--surface2)'; btnEv.style.borderColor='var(--border)'; btnEv.style.color='var(--muted)';
+    cidadeWrap.style.display='';
+    eventoWrap.style.display='none';
+  } else {
+    btnEv.style.background='var(--brand)'; btnEv.style.borderColor='var(--brand)'; btnEv.style.color='#fff';
+    btnOf.style.background='var(--surface2)'; btnOf.style.borderColor='var(--border)'; btnOf.style.color='var(--muted)';
+    cidadeWrap.style.display='none';
+    eventoWrap.style.display='';
+  }
+}
+
 function fecharModalNpc(){
   document.getElementById('modal-npc-overlay').style.display='none';
 }
@@ -4401,17 +4438,21 @@ function _uploadNpcPokeSprite(i,input){
 async function salvarNpc(){
   const id=document.getElementById('modal-npc-idx').value;
   const nome=document.getElementById('modal-npc-nome').value.trim();
-  const cargo=document.getElementById('modal-npc-cargo').value.trim();
+  const modelo=document.getElementById('modal-npc-modelo').value||'completo';
+  const isEvento=modelo==='simples';
+  const cargo=isEvento
+    ? document.getElementById('modal-npc-evento-nome').value.trim()
+    : document.getElementById('modal-npc-cargo').value.trim();
   const uso=document.getElementById('modal-npc-uso').value||'livre';
   const photoplayer=document.getElementById('modal-npc-photoplayer').value.trim();
   const emoji=document.getElementById('modal-npc-emoji').value.trim();
   const descricao=document.getElementById('modal-npc-desc').value.trim();
-  const npc_cidade_id=document.getElementById('modal-npc-cidade-sel').value;
+  const npc_cidade_id=isEvento ? null : document.getElementById('modal-npc-cidade-sel').value;
   const errEl=document.getElementById('modal-npc-fb-err');
   const topbar_cor=document.getElementById('modal-npc-topbar-cor').value||null;
   errEl.style.display='none';
   if(!nome){errEl.textContent='Preencha o nome.';errEl.style.display='block';return;}
-  if(!npc_cidade_id){errEl.textContent='Selecione uma cidade.';errEl.style.display='block';return;}
+  if(!isEvento&&!npc_cidade_id){errEl.textContent='Selecione uma cidade.';errEl.style.display='block';return;}
 
   // Resolve foto
   const prev=document.getElementById('modal-npc-foto-preview');
