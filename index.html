@@ -1227,11 +1227,11 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:14px;margin-bottom:18px">
       <div style="font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">Configurações do NPC</div>
       <div class="g2">
-        <div class="field">
-          <label>Cidade destino</label>
-          <select id="transferir-cidade" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"></select>
+        <div class="field" style="grid-column:1/-1">
+          <label>Local de destino</label>
+          <select id="transferir-cidade" onchange="_onTransferirLocalChange()" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"></select>
         </div>
-        <div class="field">
+        <div class="field" id="transferir-modelo-wrap">
           <label>Modelo de card</label>
           <select id="transferir-modelo" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%">
             <option value="completo">Completo (com banner)</option>
@@ -3601,13 +3601,31 @@ function abrirModalTransferirNpc(){
   document.getElementById('transferir-fb').style.display = 'none';
   document.getElementById('transferir-fb-err').style.display = 'none';
 
-  // Popula cidades
+  // Popula local de destino: cidades + opção de evento
   const cidSel = document.getElementById('transferir-cidade');
-  cidSel.innerHTML = npcCidades.map(c => `<option value="${c.id}">${c.emoji||''} ${c.nome}</option>`).join('');
+  cidSel.innerHTML =
+    `<option value="__evento__">🎪 NPC de Evento (aba Eventos)</option>` +
+    (npcCidades.length ? `<option disabled>── Cidades (aba Oficiais) ──</option>` : '') +
+    npcCidades.map(c => `<option value="${c.id}">${c.emoji||''} ${c.nome}</option>`).join('');
 
+  _onTransferirLocalChange();
   _renderTransferirLista('');
   _atualizarContadorTransferir();
   document.getElementById('modal-transferir-npc-overlay').style.display = 'flex';
+}
+
+function _onTransferirLocalChange(){
+  const val = document.getElementById('transferir-cidade').value;
+  const modeloWrap = document.getElementById('transferir-modelo-wrap');
+  const modeloSel  = document.getElementById('transferir-modelo');
+  if(val === '__evento__'){
+    // Evento: modelo fixo em simples, esconde o select de modelo
+    modeloSel.value = 'simples';
+    modeloWrap.style.display = 'none';
+  } else {
+    modeloWrap.style.display = '';
+    if(modeloSel.value === 'simples') modeloSel.value = 'completo';
+  }
 }
 
 function fecharModalTransferirNpc(){
@@ -3681,13 +3699,18 @@ async function confirmarTransferirNpc(){
     errEl.style.display = 'block';
     return;
   }
-  const cidadeId = document.getElementById('transferir-cidade').value;
-  const modelo   = document.getElementById('transferir-modelo').value;
-  const uso      = document.getElementById('transferir-uso').value;
-  const manter   = document.getElementById('transferir-manter').value;
-  const errEl    = document.getElementById('transferir-fb-err');
+  const localVal  = document.getElementById('transferir-cidade').value;
+  const modelo    = document.getElementById('transferir-modelo').value;
+  const uso       = document.getElementById('transferir-uso').value;
+  const manter    = document.getElementById('transferir-manter').value;
+  const errEl     = document.getElementById('transferir-fb-err');
   errEl.style.display = 'none';
-  if(!cidadeId){ errEl.textContent='Selecione uma cidade.'; errEl.style.display='block'; return; }
+
+  const isEvento  = localVal === '__evento__';
+  const cidadeId  = isEvento ? null : localVal;
+  const modeloFinal = isEvento ? 'simples' : modelo;
+
+  if(!isEvento && !cidadeId){ errEl.textContent='Selecione um local de destino.'; errEl.style.display='block'; return; }
 
   const btn = document.getElementById('transferir-btn-confirmar');
   btn.disabled = true;
@@ -3707,7 +3730,7 @@ async function confirmarTransferirNpc(){
         descricao: '',
         npc_cidade_id: cidadeId,
         uso,
-        modelo,
+        modelo: modeloFinal,
         topbar_cor: p.cor || null,
         tags: [],
         pokes: [],
