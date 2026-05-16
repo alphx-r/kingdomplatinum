@@ -2055,17 +2055,17 @@ function navegarPara(page, replace=false){
   else history.pushState(null,'', path);
 }
 
-function goTo(page,el){
-  // verifica se a página está bloqueada (apenas para não-admins)
+async function goTo(page,el){
+  // atualiza lista de páginas bloqueadas e verifica acesso
+  await carregarPaginasBloqueadas();
   if(!admLogado && _paginasBloqueadas.has(page)){
-    carregarAba(page).then(()=>{
-      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-      document.getElementById('page-em-construcao').classList.add('active');
-      document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
-      document.getElementById('btn-adm').classList.remove('active');
-      if(el) el.classList.add('active');
-      history.pushState(null,'','/'+page);
-    });
+    await carregarAba(page);
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-em-construcao').classList.add('active');
+    document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
+    document.getElementById('btn-adm').classList.remove('active');
+    if(el) el.classList.add('active');
+    history.pushState(null,'','/'+page);
     return;
   }
   carregarAba(page).then(()=>navegarPara(page));
@@ -5823,7 +5823,7 @@ document.addEventListener('mousemove', e => {
   });
 })();
 
-window.addEventListener('popstate', ()=>{
+window.addEventListener('popstate', async ()=>{
   const pathPage = location.pathname.replace(/^\//, '') || 'roller';
   const eventoMatch = pathPage.match(/^evento\/(.+)$/);
   if(eventoMatch){
@@ -5833,6 +5833,13 @@ window.addEventListener('popstate', ()=>{
   const validPages = ['roller','fichario','bioma','dados','adm','rolagens','npcs'];
   const pageMap = {rolls:'rolagens'};
   const page = pageMap[pathPage] || (validPages.includes(pathPage) ? pathPage : 'roller');
+  await carregarPaginasBloqueadas();
+  if(!admLogado && _paginasBloqueadas.has(page)){
+    await carregarAba(page);
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-em-construcao').classList.add('active');
+    return;
+  }
   carregarAba(page).then(()=>navegarPara(page));
 });
 
