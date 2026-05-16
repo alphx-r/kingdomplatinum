@@ -365,6 +365,19 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .npc-ev-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
 .npc-ev-name{font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text);letter-spacing:.3px;line-height:1.3}
 .npc-ev-photoplayer{font-size:11px;color:var(--muted);font-style:italic;line-height:1.3;margin-top:-4px}
+/* NPC Evento: painel expandido ao clicar */
+.npc-ev-card{cursor:pointer}
+.npc-ev-detail{display:none;width:100%;margin-top:10px;padding-top:10px;border-top:1.5px solid var(--border);text-align:left}
+.npc-ev-card.open .npc-ev-detail{display:block;animation:fadeUp .2s both}
+.npc-ev-detail-name{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.4px;text-transform:uppercase;text-align:center;margin-bottom:10px}
+/* bag */
+.npc-ev-bag-wrap{position:relative;display:inline-block;margin-top:4px}
+.npc-ev-bag-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface2);font-size:11px;font-weight:700;color:var(--text);cursor:default;transition:border-color .15s}
+.npc-ev-bag-wrap:hover .npc-ev-bag-btn{border-color:var(--brand-mid);color:var(--brand-mid)}
+.npc-ev-bag-tip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);min-width:160px;max-width:220px;background:var(--text);color:var(--surface);border-radius:10px;padding:10px 12px;z-index:99999;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.4);white-space:nowrap}
+.npc-ev-bag-wrap:hover .npc-ev-bag-tip{display:block}
+.npc-ev-bag-item{font-size:11px;padding:2px 0;opacity:.9;border-bottom:1px solid rgba(255,255,255,.1)}
+.npc-ev-bag-item:last-child{border-bottom:none}
 .ev-tipo-btn{flex:1;padding:10px 14px;border-radius:var(--r);border:2px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center}
 .ev-tipo-btn.active{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand-mid)}
 .ev-tipo-btn:hover:not(.active){border-color:var(--brand-mid);color:var(--brand)}
@@ -1393,6 +1406,13 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <label>Pokémon (até 6)</label>
       <div id="modal-npc-pokes-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px"></div>
       <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border)" onclick="adicionarPokeNpc()">+ Pokémon</button>
+    </div>
+
+    <!-- Bag / Itens do NPC -->
+    <div class="field">
+      <label>🎒 Bag / Itens <span style="font-size:10px;color:var(--muted);font-weight:400">(um por linha)</span></label>
+      <textarea id="modal-npc-bag" rows="4" placeholder="Potion x2&#10;Pokéball x5&#10;Rare Candy&#10;..." style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);resize:vertical"></textarea>
+      <span style="font-size:10px;color:var(--muted);margin-top:3px;display:block">Aparece ao passar o mouse no botão de bag do card</span>
     </div>
 
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -3934,11 +3954,41 @@ function renderNpcs(filtro=''){
         const avatarHtml=n.foto
           ?`<img src="${n.foto}" alt="${n.nome}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.parentElement.innerHTML='<span style=\\'font-size:36px\\'>${n.emoji||'👤'}</span>'">`
           :`<span style="font-size:36px">${n.emoji||'👤'}</span>`;
-        return`<div class="npc-ev-card" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 18px rgba(0,0,0,.12)'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
+        const pokes=Array.isArray(n.pokes)?n.pokes:[];
+        const slots=Array(6).fill(null).map((_,i)=>pokes[i]||null);
+        const pokesHtml=slots.map(pk=>{
+          if(!pk)return`<div class="npc-poke-slot empty"></div>`;
+          const tipos=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[(t||'').toLowerCase()]||'t-normal'}">${t}</span>`).join('');
+          const habs=[pk.habilidade,pk.habilidade2].filter(Boolean);
+          const moves=Array.isArray(pk.moveset)?pk.moveset:[];
+          const genderSym=pk.genero==='macho'?'♂':pk.genero==='femea'?'♀':pk.genero==='genderless'?'—':'';
+          return`<div class="npc-poke-slot" title="">
+            <img src="${pk.sprite||FALLBACK_POKE}" onerror="this.src='${FALLBACK_POKE}'" alt="${pk.nome||''}"/>
+            <div class="npc-poke-tip">
+              <div class="npc-poke-tip-name">${pk.nome||'?'} <span class="npc-poke-tip-gender">${genderSym}</span></div>
+              ${tipos?`<div class="npc-poke-tip-types">${tipos}</div>`:''}
+              ${habs.length?`<div class="npc-poke-tip-section">Habilidade${habs.length>1?'s':''}</div><div class="npc-poke-tip-val">${habs.join(' / ')}</div>`:''}
+              ${moves.length?`<div class="npc-poke-tip-section">Moveset</div><div class="npc-poke-tip-val">${moves.join(', ')}</div>`:''}
+            </div>
+          </div>`;
+        }).join('');
+        const bagItems=Array.isArray(n.bag)?n.bag:((n.bag||'').split('\n').map(s=>s.trim()).filter(Boolean));
+        const bagHtml=bagItems.length
+          ?bagItems.map(item=>`<div class="npc-ev-bag-item">${item}</div>`).join('')
+          :`<div style="font-size:11px;opacity:.6;font-style:italic">Bag vazia</div>`;
+        return`<div class="npc-ev-card" onclick="toggleNpcEvCard(this)" onmouseover="this.style.borderColor='${topbarCor}';this.style.boxShadow='0 4px 18px rgba(0,0,0,.12)'" onmouseout="this.style.borderColor='';this.style.boxShadow=''">
           <div class="npc-ev-badge" style="background:${topbarCor}">${evento}</div>
           <div class="npc-ev-avatar">${avatarHtml}</div>
           <div class="npc-ev-name">${n.nome}</div>
           ${n.photoplayer?`<div class="npc-ev-photoplayer">${n.photoplayer}</div>`:''}
+          <div class="npc-ev-detail" onclick="event.stopPropagation()">
+            <div class="npc-ev-detail-name">${n.nome}</div>
+            <div class="npc-pokes-grid" style="margin-bottom:8px">${pokesHtml}</div>
+            <div class="npc-ev-bag-wrap">
+              <div class="npc-ev-bag-btn">🎒 Bag</div>
+              <div class="npc-ev-bag-tip">${bagHtml}</div>
+            </div>
+          </div>
         </div>`;
       }).join('');
       return`<div class="npc-ev-grid">${cards}</div>`;
@@ -3948,6 +3998,13 @@ function renderNpcs(filtro=''){
 }
 
 function filtrarNpcs(q){ renderNpcs(q); }
+
+function toggleNpcEvCard(card){
+  const isOpen = card.classList.contains('open');
+  // fecha todos os outros na mesma grid
+  card.closest('.npc-ev-grid')?.querySelectorAll('.npc-ev-card.open').forEach(c=>c.classList.remove('open'));
+  if(!isOpen) card.classList.add('open');
+}
 
 function filtrarNpcsPorSel(val){
   // limpa o campo de texto e filtra pelo valor do select
@@ -4179,6 +4236,8 @@ async function abrirModalNpc(id){
     }
     _npcAdmTags=Array.isArray(n.tags)?[...n.tags]:[];
     _npcAdmPokes=Array.isArray(n.pokes)?n.pokes.map(p=>({...p})):[];
+    const bagEl=document.getElementById('modal-npc-bag');
+    if(bagEl) bagEl.value=Array.isArray(n.bag)?n.bag.join('\n'):(n.bag||'');
     const corEl=document.getElementById('modal-npc-topbar-cor');
     const hexEl=document.getElementById('modal-npc-topbar-cor-hex');
     if(n.topbar_cor){
@@ -4199,6 +4258,8 @@ async function abrirModalNpc(id){
     document.getElementById('modal-npc-emoji').value='';
     document.getElementById('modal-npc-desc').value='';
     _setNpcTipo('completo');
+    const bagElNew=document.getElementById('modal-npc-bag');
+    if(bagElNew) bagElNew.value='';
     const cidFiltro=document.getElementById('npc-adm-cidade-sel')?.value;
     if(cidFiltro)cidSel.value=cidFiltro;
     if(delBtn)delBtn.style.display='none';
@@ -4521,7 +4582,7 @@ async function salvarNpc(){
     foto=null;
   }
 
-  const payload={nome,cargo,uso,photoplayer:photoplayer||null,emoji,descricao,npc_cidade_id,foto,tags:_npcAdmTags,pokes:_npcAdmPokes,topbar_cor:topbar_cor||null,modelo:document.getElementById('modal-npc-modelo').value||'completo'};
+  const payload={nome,cargo,uso,photoplayer:photoplayer||null,emoji,descricao,npc_cidade_id,foto,tags:_npcAdmTags,pokes:_npcAdmPokes,bag:(document.getElementById('modal-npc-bag')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean),topbar_cor:topbar_cor||null,modelo:document.getElementById('modal-npc-modelo').value||'completo'};
 
   try{
     if(id){
