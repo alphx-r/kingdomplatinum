@@ -358,8 +358,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .npc-ev-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px}
 @media(max-width:900px){.npc-ev-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:560px){.npc-ev-grid{grid-template-columns:repeat(2,1fr)}}
-.npc-ev-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:20px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;transition:all .22s;position:relative;animation:fadeUp .35s both;cursor:pointer;min-height:170px}
-.npc-ev-card:hover{transform:translateY(-2px)}
+.npc-ev-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:20px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;transition:border-color .22s,box-shadow .22s;position:relative;cursor:pointer;min-height:170px}
 .npc-ev-badge{position:absolute;top:14px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:9px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#fff;padding:3px 12px;border-radius:20px;z-index:1}
 .npc-ev-face{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
 .npc-ev-avatar{width:86px;height:86px;border-radius:50%;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;margin-top:20px;flex-shrink:0;border:2px solid var(--border)}
@@ -375,9 +374,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 /* bag */
 .npc-ev-bag-wrap{position:relative;display:inline-block;margin-top:2px}
 .npc-ev-bag-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface2);font-size:11px;font-weight:700;color:var(--text);cursor:default;transition:border-color .15s,color .15s}
-.npc-ev-bag-wrap:hover .npc-ev-bag-btn{border-color:var(--brand-mid);color:var(--brand-mid)}
-.npc-ev-bag-tip{display:none;position:fixed;min-width:160px;max-width:220px;background:var(--text);color:var(--surface);border-radius:10px;padding:10px 12px;z-index:99999;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.4)}
-.npc-ev-bag-wrap:hover .npc-ev-bag-tip{display:block}
+.npc-ev-bag-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
+.npc-ev-bag-tip-data{display:none}
 .npc-ev-bag-item{font-size:11px;padding:2px 0;opacity:.9;border-bottom:1px solid rgba(255,255,255,.1)}
 .npc-ev-bag-item:last-child{border-bottom:none}
 .ev-tipo-btn{flex:1;padding:10px 14px;border-radius:var(--r);border:2px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center}
@@ -3990,7 +3988,7 @@ function renderNpcs(filtro=''){
             <div class="npc-pokes-grid">${pokesHtml}</div>
             <div class="npc-ev-bag-wrap">
               <div class="npc-ev-bag-btn">🎒 bag</div>
-              <div class="npc-ev-bag-tip">${bagHtml}</div>
+              <div class="npc-ev-bag-tip-data">${bagHtml}</div>
             </div>
           </div>
         </div>`;
@@ -5621,7 +5619,7 @@ function usarBiomaPoolJogador(biomaNome){
 
 
 document.addEventListener('mousemove', e => {
-  // pokémon slot tooltip
+  // pokémon slot tooltip (cards oficiais — position:fixed já funciona)
   const tip = document.querySelector('.npc-poke-slot:hover .npc-poke-tip');
   if (tip) {
     const tw = 210, th = tip.offsetHeight || 140;
@@ -5633,19 +5631,67 @@ document.addEventListener('mousemove', e => {
     tip.style.left = x + 'px';
     tip.style.top  = y + 'px';
   }
-  // bag tooltip
-  const bagTip = document.querySelector('.npc-ev-bag-wrap:hover .npc-ev-bag-tip');
-  if (bagTip) {
-    const tw = bagTip.offsetWidth || 180, th = bagTip.offsetHeight || 100;
+  // global tooltip reposition
+  const gpt = document.getElementById('global-poke-tip');
+  if (gpt && gpt.style.display !== 'none') {
+    const tw = 210, th = gpt.offsetHeight || 140;
+    let x = e.clientX - tw / 2;
+    let y = e.clientY - th - 16;
+    if (x < 8) x = 8;
+    if (x + tw > window.innerWidth - 8) x = window.innerWidth - tw - 8;
+    if (y < 8) y = e.clientY + 16;
+    gpt.style.left = x + 'px';
+    gpt.style.top  = y + 'px';
+  }
+  const gbt = document.getElementById('global-bag-tip');
+  if (gbt && gbt.style.display !== 'none') {
+    const tw = gbt.offsetWidth || 180, th = gbt.offsetHeight || 100;
     let x = e.clientX - tw / 2;
     let y = e.clientY - th - 14;
     if (x < 8) x = 8;
     if (x + tw > window.innerWidth - 8) x = window.innerWidth - tw - 8;
     if (y < 8) y = e.clientY + 16;
-    bagTip.style.left = x + 'px';
-    bagTip.style.top  = y + 'px';
+    gbt.style.left = x + 'px';
+    gbt.style.top  = y + 'px';
   }
 });
+
+// Global tooltips for ev-card poke slots and bag (avoids stacking context clipping)
+(function(){
+  const pokeTip = document.createElement('div');
+  pokeTip.id = 'global-poke-tip';
+  pokeTip.style.cssText = 'display:none;position:fixed;width:210px;background:var(--text);color:var(--surface);border-radius:10px;padding:10px 12px;z-index:99999;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.4);font-family:var(--font-body)';
+  document.body.appendChild(pokeTip);
+
+  const bagTip = document.createElement('div');
+  bagTip.id = 'global-bag-tip';
+  bagTip.style.cssText = 'display:none;position:fixed;min-width:160px;max-width:220px;background:var(--text);color:var(--surface);border-radius:10px;padding:10px 12px;z-index:99999;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.4);font-family:var(--font-body)';
+  document.body.appendChild(bagTip);
+
+  document.addEventListener('mouseover', e => {
+    // poke slot inside ev-card detail
+    const slot = e.target.closest('.npc-ev-detail .npc-poke-slot:not(.empty)');
+    if (slot) {
+      const inner = slot.querySelector('.npc-poke-tip');
+      if (inner) { pokeTip.innerHTML = inner.innerHTML; pokeTip.style.display = 'block'; }
+      return;
+    }
+    // bag btn inside ev-card detail
+    const bagBtn = e.target.closest('.npc-ev-bag-btn');
+    if (bagBtn) {
+      const inner = bagBtn.parentElement?.querySelector('.npc-ev-bag-tip-data');
+      if (inner) { bagTip.innerHTML = inner.innerHTML; bagTip.style.display = 'block'; }
+      return;
+    }
+  });
+
+  document.addEventListener('mouseout', e => {
+    const slot = e.target.closest('.npc-ev-detail .npc-poke-slot');
+    if (slot && !slot.contains(e.relatedTarget)) { pokeTip.style.display = 'none'; }
+    const bagBtn = e.target.closest('.npc-ev-bag-btn');
+    if (bagBtn && !bagBtn.contains(e.relatedTarget)) { bagTip.style.display = 'none'; }
+  });
+})();
 
 window.addEventListener('popstate', ()=>{
   const pathPage = location.pathname.replace(/^\//, '') || 'roller';
