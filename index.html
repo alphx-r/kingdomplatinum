@@ -1781,6 +1781,34 @@ const dbPost = (t,b)           => sb(t,{method:'POST',body:JSON.stringify(b),pre
 const dbPatch= (t,q,b)         => sb(`${t}?${q}`,{method:'PATCH',body:JSON.stringify(b),prefer:'return=representation'});
 const dbDel  = (t,q)           => sb(`${t}?${q}`,{method:'DELETE',prefer:'return=minimal'});
 
+// Busca tabela completa em páginas de 200 linhas para evitar statement timeout
+async function dbGetAll(tabela, query='', pageSize=200){
+  let all=[], offset=0, tentativas=0;
+  while(tentativas<50){
+    const sep = query ? '&' : '?';
+    const q = query ? `?${query}` : '';
+    const res = await fetch(`${SUPA_URL}/rest/v1/${tabela}${q}${query?'&':'?'}limit=${pageSize}&offset=${offset}`, {
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'count=none',
+      }
+    });
+    if(!res.ok){ console.error('[dbGetAll] erro:', tabela, res.status); break; }
+    const text = await res.text();
+    if(!text) break;
+    let page;
+    try{ page = JSON.parse(text); }catch(e){ break; }
+    if(!Array.isArray(page)||page.length===0) break;
+    all = all.concat(page);
+    if(page.length < pageSize) break;
+    offset += pageSize;
+    tentativas++;
+  }
+  return all;
+}
+
 // sbRaw: como sb() mas lança erro se Supabase retornar status de erro
 async function sbRaw(method, path, body){
   const res=await fetch(`${SUPA_URL}/rest/v1/${path}`,{
@@ -1904,7 +1932,7 @@ async function carregarAba(page){
     if(page==='roller'){
       const [_biomas,_pokemons] = await Promise.all([
         dbGet('biomas'),
-        dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
       // Não marca como carregado se dados essenciais vieram vazios (RLS ou rede)
@@ -1929,7 +1957,7 @@ async function carregarAba(page){
       if(!loaded.roller || !pokemonDB.length || !biomas.length){
         const [_biomas,_pokemons] = await Promise.all([
           dbGet('biomas'),
-          dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+          dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
         ]);
         biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
         if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
@@ -1979,7 +2007,7 @@ async function carregarAba(page){
         dbGet('players'),
         dbGet('personagens'),
         dbGet('biomas'),
-        dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
         sb('npc_cidades?order=nome.asc'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
@@ -5043,7 +5071,7 @@ async function iniciarPaginaEvento(slug){
 
     // garante que biomas e pokemonDB estão carregados
     if(!loaded.roller){
-      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma')]);
+      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma')]);
       biomas = (_b||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
       pokemonDB = _p||[];
       syncBiomaSelect();
