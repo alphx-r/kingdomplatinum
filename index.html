@@ -1745,6 +1745,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 async function sb(path, opts={}){
   const {prefer, headers:extraHeaders, ...fetchOpts} = opts;
+  const isGet = !fetchOpts.method || fetchOpts.method === 'GET';
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), 30000);
   try{
@@ -1755,7 +1756,9 @@ async function sb(path, opts={}){
       'apikey': SUPA_KEY,
       'Authorization': `Bearer ${SUPA_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': prefer || 'return=representation',
+      'Prefer': prefer || (isGet ? 'count=none' : 'return=representation'),
+      // Range 0-9999 garante até 10.000 linhas em GETs (evita corte silencioso do Supabase)
+      ...(isGet ? {'Range': '0-9999', 'Range-Unit': 'items'} : {}),
       ...(extraHeaders||{})
     }
   });
@@ -1901,10 +1904,11 @@ async function carregarAba(page){
     if(page==='roller'){
       const [_biomas,_pokemons] = await Promise.all([
         dbGet('biomas'),
-        dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+        dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma&order=nome.asc'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
-      if(!pokemonDB.length){ loaded['roller']=false; }
+      // Não marca como carregado se dados essenciais vieram vazios (RLS ou rede)
+      if(!pokemonDB.length || !biomas.length){ loaded['roller']=false; console.warn('[carregarAba] roller: dados vazios'); }
       syncBiomaSelect();
       renderPersonagensDatalist();
       Promise.all([
@@ -1922,12 +1926,13 @@ async function carregarAba(page){
       renderPersonagensDatalist();
     }
     else if(page==='bioma'){
-      if(!loaded.roller || !pokemonDB.length){
+      if(!loaded.roller || !pokemonDB.length || !biomas.length){
         const [_biomas,_pokemons] = await Promise.all([
           dbGet('biomas'),
-          dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+          dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma&order=nome.asc'),
         ]);
         biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
+        if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
         syncBiomaSelect();
       }
     }
@@ -1974,12 +1979,13 @@ async function carregarAba(page){
         dbGet('players'),
         dbGet('personagens'),
         dbGet('biomas'),
-        dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+        dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma&order=nome.asc'),
         sb('npc_cidades?order=nome.asc'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
       npcCidades=_npcCidades||[];
+      if(!pokemonDB.length || !biomas.length){ loaded['adm']=false; console.warn('[carregarAba] adm: dados vazios'); }
       syncBiomaSelect();
       syncEventoBiomaSelect();
       renderTbodyPersonagens(); renderTbodyPlayers();
@@ -5035,7 +5041,7 @@ async function iniciarPaginaEvento(slug){
 
     // garante que biomas e pokemonDB estão carregados
     if(!loaded.roller){
-      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma')]);
+      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGet('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma&order=nome.asc')]);
       biomas = (_b||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
       pokemonDB = _p||[];
       syncBiomaSelect();
