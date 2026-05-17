@@ -2703,12 +2703,21 @@ async function adicionarPokemon(){
   const biomasSel     =[...document.querySelectorAll('#pk-biomas-wrap .pk-bioma-tag.sel')].map(t=>t.dataset.bioma);
   const tipos         =[...document.querySelectorAll('#tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev          =document.getElementById('pk-sprite-preview');
-  const sprite        =prev.dataset.b64||null;
+  const b64           =prev.dataset.b64||null;
   if(!nome||tipos.length===0){alert('Preencha o nome e selecione ao menos 1 tipo.');return;}
   if(biomasSel.length===0){alert('Selecione ao menos 1 bioma.');return;}
   for(const bioma of biomasSel){
-    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite,tipos,habilidade,habilidade2,raridade,genero,bioma});
-    if(res&&res[0])pokemonDB.push(res[0]);
+    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite:null,tipos,habilidade,habilidade2,raridade,genero,bioma});
+    if(!res||!res[0]) continue;
+    const novo=res[0];
+    if(b64&&b64.startsWith('data:')){
+      loading(true);
+      const ext=b64.includes('image/png')?'png':'jpg';
+      const url=await uploadImgStorage(b64,'pokemons',`${novo.id}.${ext}`);
+      loading(false);
+      if(url){ await dbPatch('pokemons',`id=eq.${novo.id}`,{sprite:url}); novo.sprite=url; }
+    }
+    pokemonDB.push(novo);
   }
   fb('pk-fb');
   document.getElementById('pk-nome').value='';
@@ -2763,10 +2772,18 @@ async function salvarEdicaoPokemon(){
   const habilidade2=document.getElementById('modal-pk-hab2').value.trim();
   const tipos=[...document.querySelectorAll('#modal-pk-tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev=document.getElementById('modal-pk-sprite-preview');
-  const sprite=prev.dataset.b64||p.sprite;
+  const b64=prev.dataset.b64||null;
   if(!nome){alert('Preencha o nome.');return;}
-  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite});
-  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite});
+  let spriteUrl=p.sprite;
+  if(b64&&b64.startsWith('data:')){
+    loading(true);
+    const ext=b64.includes('image/png')?'png':'jpg';
+    const url=await uploadImgStorage(b64,'pokemons',`${id}.${ext}`);
+    loading(false);
+    if(url) spriteUrl=url;
+  }
+  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl});
+  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl});
   fb('modal-pk-fb');
   renderTbodyPokemons();renderTbodyBiomas();
 }
