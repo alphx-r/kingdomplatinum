@@ -793,6 +793,26 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
               <label>Bioma(s) — clique para selecionar</label>
               <div id="pk-biomas-wrap" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div>
             </div>
+            <div class="field">
+              <label>Estação exclusiva <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional — deixe vazio para aparecer sempre)</span></label>
+              <select id="pk-estacao">
+                <option value="">— Aparece em qualquer estação —</option>
+                <option value="primavera">🌱 Primavera</option>
+                <option value="verao">☀️ Verão</option>
+                <option value="outono">🍂 Outono</option>
+                <option value="inverno">❄️ Inverno</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Boost sazonal <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional — raridade promovida nesta estação, mas aparece sempre)</span></label>
+              <select id="pk-estacao-boost">
+                <option value="">— Sem boost —</option>
+                <option value="primavera">🌱 Primavera</option>
+                <option value="verao">☀️ Verão</option>
+                <option value="outono">🍂 Outono</option>
+                <option value="inverno">❄️ Inverno</option>
+              </select>
+            </div>
             <div class="field"><label>Sprite do Pokémon</label>
               <input type="file" id="pk-sprite-file" accept="image/*" onchange="previewPokeSprite(this)" style="font-size:13px"/>
               <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
@@ -1104,6 +1124,53 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
             <div class="fb fb-ok" id="estacao-fb" style="display:none">✓ Estação atualizada!</div>
             <div class="fb fb-err" id="estacao-fb-err" style="display:none">Erro ao salvar.</div>
           </div>
+
+          <!-- PAINEL EM MASSA -->
+          <div class="box">
+            <div class="box-title">⚡ Configurar Pokémon por Estação (em massa)</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Selecione uma estação, filtre por bioma e marque os Pokémon. <b>Exclusivo</b> = só aparece nessa estação. <b>Boost</b> = aparece sempre, mas com raridade promovida nessa estação.</p>
+
+            <!-- Filtros -->
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end">
+              <div class="field" style="margin:0;flex:1;min-width:140px">
+                <label>Estação</label>
+                <select id="est-massa-estacao" onchange="renderEstMassa()">
+                  <option value="primavera">🌱 Primavera</option>
+                  <option value="verao">☀️ Verão</option>
+                  <option value="outono">🍂 Outono</option>
+                  <option value="inverno">❄️ Inverno</option>
+                </select>
+              </div>
+              <div class="field" style="margin:0;flex:1;min-width:140px">
+                <label>Bioma</label>
+                <select id="est-massa-bioma" onchange="renderEstMassa()">
+                  <option value="">— Todos —</option>
+                </select>
+              </div>
+              <div class="field" style="margin:0;flex:1;min-width:160px">
+                <label>Buscar</label>
+                <input type="text" id="est-massa-busca" placeholder="Nome do Pokémon..." oninput="renderEstMassa()"/>
+              </div>
+            </div>
+
+            <!-- Legenda -->
+            <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+              <span style="font-size:12px;display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#2e9e50;display:inline-block"></span> Exclusivo desta estação</span>
+              <span style="font-size:12px;display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#e07a10;display:inline-block"></span> Boost nesta estação</span>
+              <span style="font-size:12px;display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--border);display:inline-block"></span> Sem relação</span>
+            </div>
+
+            <!-- Lista de pokémon -->
+            <div id="est-massa-lista" style="max-height:400px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;padding:4px"></div>
+
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="salvarEstMassa()">💾 Salvar alterações</button>
+              <button class="btn btn-sm" onclick="limparEstMassa()" style="background:var(--surface2)">🗑 Limpar seleção desta estação</button>
+            </div>
+            <div class="fb fb-ok" id="est-massa-fb" style="display:none;margin-top:8px">✓ Pokémon atualizados!</div>
+            <div class="fb fb-err" id="est-massa-fb-err" style="display:none;margin-top:8px">Erro ao salvar.</div>
+          </div>
+
           <div class="box">
             <div class="box-title">Páginas onde a estação aparece</div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px" id="estacao-paginas-wrap">
@@ -1534,6 +1601,24 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       </div>
       <div class="field"><label>Habilidade 1</label><input type="text" id="modal-pk-hab1"/></div>
       <div class="field"><label>Habilidade 2</label><input type="text" id="modal-pk-hab2"/></div>
+      <div class="field"><label>Estação exclusiva</label>
+        <select id="modal-pk-estacao">
+          <option value="">— Qualquer estação —</option>
+          <option value="primavera">🌱 Primavera</option>
+          <option value="verao">☀️ Verão</option>
+          <option value="outono">🍂 Outono</option>
+          <option value="inverno">❄️ Inverno</option>
+        </select>
+      </div>
+      <div class="field"><label>Boost sazonal</label>
+        <select id="modal-pk-estacao-boost">
+          <option value="">— Sem boost —</option>
+          <option value="primavera">🌱 Primavera</option>
+          <option value="verao">☀️ Verão</option>
+          <option value="outono">🍂 Outono</option>
+          <option value="inverno">❄️ Inverno</option>
+        </select>
+      </div>
     </div>
     <div class="field" style="margin-top:4px">
       <label>Tipos</label>
@@ -1967,6 +2052,26 @@ async function init(){
     const estilo = await carregarEstiloSalvo();
     aplicarVars(estilo);
 
+    // Aplica tema sazonal automaticamente se a estação tiver um tema salvo
+    const _cfgEstacaoInit = await dbGet('config','chave=eq.estacao_ativa').catch(()=>[]);
+    if(_cfgEstacaoInit&&_cfgEstacaoInit[0]){
+      estacaoAtiva = _cfgEstacaoInit[0].valor;
+      // Só aplica tema sazonal se não houver estilo customizado salvo pelo ADM
+      const temaSazonal = TEMAS_SAZONAIS[estacaoAtiva];
+      if(temaSazonal){
+        // Mescla: usa o estilo salvo como base, mas aplica as cores da estação
+        const estiloFinal = Object.assign({}, estilo, {
+          brand: temaSazonal.brand,
+          brandMid: temaSazonal.brandMid,
+          accent: temaSazonal.accent,
+          bg: temaSazonal.bg,
+          surface: temaSazonal.surface,
+          text: temaSazonal.text,
+        });
+        aplicarVars(estiloFinal);
+      }
+    }
+
     const pathPage = location.pathname.replace(/^\//, '') || 'roller';
 
     // Rota de evento: /evento/slug
@@ -2241,7 +2346,7 @@ function toggleRaridade(r){
   document.getElementById('acc-'+r).classList.toggle('open');
 }
 function admTab(sec,el){
-  if(sec==='estacao') setTimeout(marcarBtnEstacao,0);
+  if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   // verifica permissão
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos'];
@@ -2820,6 +2925,8 @@ async function adicionarPokemon(){
   const habilidade2   =document.getElementById('pk-habilidade2').value.trim();
   const raridade      =document.getElementById('pk-raridade').value;
   const genero        =document.getElementById('pk-genero').value;
+  const estacao       =document.getElementById('pk-estacao').value||null;
+  const estacaoBoost  =document.getElementById('pk-estacao-boost').value||null;
   const biomasSel     =[...document.querySelectorAll('#pk-biomas-wrap .pk-bioma-tag.sel')].map(t=>t.dataset.bioma);
   const tipos         =[...document.querySelectorAll('#tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev          =document.getElementById('pk-sprite-preview');
@@ -2827,7 +2934,7 @@ async function adicionarPokemon(){
   if(!nome||tipos.length===0){alert('Preencha o nome e selecione ao menos 1 tipo.');return;}
   if(biomasSel.length===0){alert('Selecione ao menos 1 bioma.');return;}
   for(const bioma of biomasSel){
-    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite:null,tipos,habilidade,habilidade2,raridade,genero,bioma});
+    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite:null,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,estacao_boost:estacaoBoost});
     if(!res||!res[0]) continue;
     const novo=res[0];
     if(b64&&b64.startsWith('data:')){
@@ -2861,6 +2968,8 @@ function abrirModalPk(id){
   document.getElementById('modal-pk-id').value=id;
   document.getElementById('modal-pk-nome').value=p.nome;
   document.getElementById('modal-pk-hab1').value=p.habilidade||'';
+  document.getElementById('modal-pk-estacao').value=p.estacao||'';
+  document.getElementById('modal-pk-estacao-boost').value=p.estacao_boost||'';
   document.getElementById('modal-pk-hab2').value=p.habilidade2||'';
   document.getElementById('modal-pk-raridade').value=p.raridade;
   document.getElementById('modal-pk-genero').value=p.genero||'aleatorio';
@@ -2890,6 +2999,8 @@ async function salvarEdicaoPokemon(){
   const genero=document.getElementById('modal-pk-genero').value;
   const habilidade=document.getElementById('modal-pk-hab1').value.trim();
   const habilidade2=document.getElementById('modal-pk-hab2').value.trim();
+  const estacao=document.getElementById('modal-pk-estacao').value||null;
+  const estacaoBoost=document.getElementById('modal-pk-estacao-boost').value||null;
   const tipos=[...document.querySelectorAll('#modal-pk-tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev=document.getElementById('modal-pk-sprite-preview');
   const b64=prev.dataset.b64||null;
@@ -2902,8 +3013,8 @@ async function salvarEdicaoPokemon(){
     loading(false);
     if(url) spriteUrl=url;
   }
-  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl});
-  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl});
+  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost});
+  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost});
   fb('modal-pk-fb');
   renderTbodyPokemons();renderTbodyBiomas();
 }
@@ -3236,8 +3347,102 @@ function renderPersonagensDatalist(){
 
 
 // ══════════════════════════════════════
-// ESTAÇÃO
+// ESTAÇÃO EM MASSA
 // ══════════════════════════════════════
+function renderEstMassa(){
+  const estacao = document.getElementById('est-massa-estacao')?.value;
+  const bioma   = document.getElementById('est-massa-bioma')?.value||'';
+  const busca   = (document.getElementById('est-massa-busca')?.value||'').toLowerCase();
+  const cont    = document.getElementById('est-massa-lista');
+  if(!cont) return;
+
+  // Popula select de biomas se ainda não foi
+  const selBioma = document.getElementById('est-massa-bioma');
+  if(selBioma && selBioma.options.length <= 1){
+    biomas.forEach(b=>{ const o=document.createElement('option'); o.value=b.nome; o.textContent=b.nome; selBioma.appendChild(o); });
+  }
+
+  let lista = pokemonDB.slice();
+  if(bioma) lista = lista.filter(p=>p.bioma===bioma);
+  if(busca) lista = lista.filter(p=>p.nome.toLowerCase().includes(busca));
+  lista.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+
+  if(!lista.length){ cont.innerHTML='<div style="padding:12px;font-size:13px;color:var(--muted)">Nenhum Pokémon encontrado.</div>'; return; }
+
+  cont.innerHTML = lista.map(p=>{
+    const isExclusivo = p.estacao === estacao;
+    const isBoost     = p.estacao_boost === estacao;
+    const bg = isExclusivo ? 'rgba(46,158,80,.08)' : isBoost ? 'rgba(224,122,16,.08)' : '';
+    const sprite = p.sprite ? `<img src="${p.sprite}" style="width:32px;height:32px;object-fit:contain;border-radius:4px" onerror="this.style.display='none'">` : `<span style="font-size:20px">${p.emoji||'❓'}</span>`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);background:${bg}" data-pk-id="${p.id}">
+      <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${sprite}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.nome}</div>
+        <div style="font-size:10px;color:var(--muted)">${p.bioma} · ${p.raridade}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="toggleEstMassa('${p.id}','exclusivo','${estacao}')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1.5px solid ${isExclusivo?'#2e9e50':'var(--border)'};background:${isExclusivo?'#2e9e50':'var(--surface)'};color:${isExclusivo?'#fff':'var(--muted)'};cursor:pointer;font-weight:600">🌿 Exclusivo</button>
+        <button onclick="toggleEstMassa('${p.id}','boost','${estacao}')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1.5px solid ${isBoost?'#e07a10':'var(--border)'};background:${isBoost?'#e07a10':'var(--surface)'};color:${isBoost?'#fff':'var(--muted)'};cursor:pointer;font-weight:600">⬆ Boost</button>
+        <button onclick="toggleEstMassa('${p.id}','nenhum','${estacao}')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1.5px solid ${(!isExclusivo&&!isBoost)?'var(--brand)':'var(--border)'};background:${(!isExclusivo&&!isBoost)?'var(--brand)':'var(--surface)'};color:${(!isExclusivo&&!isBoost)?'#fff':'var(--muted)'};cursor:pointer;font-weight:600">✕ Nenhum</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Alterações pendentes (salvas em lote)
+const _estMassaPendente = {}; // {id: {estacao: val, estacao_boost: val}}
+
+function toggleEstMassa(pkId, tipo, estacao){
+  const p = pokemonDB.find(x=>x.id===pkId);
+  if(!p) return;
+
+  // Calcula novo estado
+  if(tipo==='exclusivo'){
+    // Se já é exclusivo desta estação, remove; senão aplica
+    if(p.estacao===estacao){ p.estacao=null; } else { p.estacao=estacao; p.estacao_boost=null; }
+  } else if(tipo==='boost'){
+    if(p.estacao_boost===estacao){ p.estacao_boost=null; } else { p.estacao_boost=estacao; p.estacao=null; }
+  } else {
+    // nenhum: limpa ambos se eram desta estação
+    if(p.estacao===estacao) p.estacao=null;
+    if(p.estacao_boost===estacao) p.estacao_boost=null;
+  }
+
+  _estMassaPendente[pkId] = {estacao: p.estacao||null, estacao_boost: p.estacao_boost||null};
+  renderEstMassa();
+}
+
+async function salvarEstMassa(){
+  const ids = Object.keys(_estMassaPendente);
+  if(!ids.length){ fb('est-massa-fb'); return; }
+  const fbe = document.getElementById('est-massa-fb-err');
+  fbe.style.display='none';
+  loading(true);
+  try{
+    await Promise.all(ids.map(id=>dbPatch('pokemons',`id=eq.${id}`,_estMassaPendente[id])));
+    for(const id of ids) delete _estMassaPendente[id];
+    fb('est-massa-fb');
+  }catch(e){
+    fbe.textContent='Erro ao salvar: '+e.message; fbe.style.display='block';
+  }
+  loading(false);
+}
+
+async function limparEstMassa(){
+  const estacao = document.getElementById('est-massa-estacao')?.value;
+  if(!confirm(`Remover todos os vínculos de estação (exclusivo e boost) para "${estacao}"?`)) return;
+  loading(true);
+  // Pega todos os pokémon com vínculo nesta estação
+  const alvos = pokemonDB.filter(p=>p.estacao===estacao||p.estacao_boost===estacao);
+  await Promise.all(alvos.map(p=>{
+    if(p.estacao===estacao) p.estacao=null;
+    if(p.estacao_boost===estacao) p.estacao_boost=null;
+    return dbPatch('pokemons',`id=eq.${p.id}`,{estacao:p.estacao,estacao_boost:p.estacao_boost});
+  }));
+  loading(false);
+  renderEstMassa();
+  fb('est-massa-fb');
+}
 function estacaoPorMes(){
   const mes = new Date().getMonth() + 1; // 1–12
   const mapa = {1:'primavera',2:'verao',3:'outono',4:'inverno',
@@ -3391,17 +3596,20 @@ async function rolarEncontro(){
   const pools={};
   const usedIds={};
   for(const r of raridades){
-    // inclui pokémon sem estação definida + exclusivos da estação ativa
+    // inclui pokémon sem estação exclusiva + exclusivos da estação ativa
     pools[r]=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva));
     usedIds[r]=new Set();
   }
-  // pool de boost: pokémon da estação com raridade promovida (ex: incomum → comum)
+  // pool de boost: pokémon com estacao_boost da estação ativa entram na raridade promovida
+  // ex: um Incomum com boost de inverno entra no pool de Comum durante o inverno
   const BOOST_MAP={rarissimo:'raro',raro:'incomum',incomum:'comum',comum:'comum'};
-  const boostedPools={};
-  for(const r of raridades){
-    const alvo=BOOST_MAP[r];
-    const extras=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r&&p.estacao===estacaoAtiva);
-    boostedPools[alvo]=[...(pools[alvo]||[]),...extras];
+  const boostedPools={...pools};
+  if(estacaoAtiva){
+    for(const r of raridades){
+      const alvo=BOOST_MAP[r];
+      const comBoost=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao);
+      if(comBoost.length) boostedPools[alvo]=[...(boostedPools[alvo]||[]),...comBoost];
+    }
   }
 
   // Sorteia raridade aleatoriamente (pesos originais) e evita repetir pokémon
