@@ -3106,7 +3106,10 @@ function renderFichario(){
   const sorted=personagens.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const cards=sorted.map(p=>`
     <div class="ficha-card" data-nome="${p.nome.toLowerCase()}" data-player="${p.player.toLowerCase()}"
-      ${p.ficha_url?`onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`:''}>
+      ${p.ficha_url
+        ? `onclick="window.open('${p.ficha_url}','_blank')" style="cursor:pointer" title="Abrir ficha de ${p.nome}"`
+        : `onclick="adicionarLinkFicha(${p.id},'${p.nome.replace(/'/g,"\\'")}')" style="cursor:pointer" title="Adicionar link da ficha de ${p.nome}"`
+      }>
       <div style="position:relative;width:100%">
         <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);background:${p.cor};color:#fff;font-size:9px;font-weight:700;font-family:var(--font-body);padding:2px 8px;border-radius:6px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;letter-spacing:.3px;text-transform:uppercase;z-index:1">
           ${p.player}
@@ -3115,13 +3118,31 @@ function renderFichario(){
       <div style="margin-top:16px;position:relative;display:inline-block" class="ficha-card-avatar" style="background:${p.cor}22;border:2px solid ${p.cor}">
         ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
           :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">`}
-
       </div>
       <div class="ficha-name">${p.nome}</div>
       ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
       ${p.pontos ? rankingBadge(p.pontos) : ''}
+      ${!p.ficha_url?`<div style="font-size:10px;color:var(--muted);margin-top:2px;font-style:italic">+ adicionar ficha</div>`:''}
     </div>`).join('');
   container.innerHTML=`<div class="fichas-grid">${cards}</div>`;
+}
+async function adicionarLinkFicha(id, nome){
+  const url = prompt(`Cole o link da ficha de ${nome}:`);
+  if(!url) return;
+  const trimmed = url.trim();
+  if(!trimmed.startsWith('http')){
+    alert('Link inválido. Use um endereço que comece com http ou https.');
+    return;
+  }
+  try{
+    await dbPatch('personagens',`id=eq.${id}`,{ficha_url:trimmed});
+    const p = personagens.find(x=>x.id===id);
+    if(p) p.ficha_url = trimmed;
+    renderFichario();
+  }catch(e){
+    alert('Erro ao salvar o link. Tente novamente.');
+    console.error(e);
+  }
 }
 function filtrarFichas(q){
   q=q.toLowerCase();
