@@ -692,7 +692,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div class="loot-table-wrap" id="loot-table-acc">
       <div class="loot-table-header" onclick="toggleLootTable()">
         <div class="loot-table-title">
-          🎁 Itens disponíveis
+          ⛏️ Escavação - 05/36
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="loot-table-arrow">▼</span>
@@ -736,8 +736,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div id="loot-modal-box" style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);width:100%;max-width:560px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.2)" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1.5px solid var(--border);flex-shrink:0">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:18px">🎁</span>
-          <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;text-transform:uppercase">Itens disponíveis</div>
+          <span style="font-size:18px">⛏️</span>
+          <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;text-transform:uppercase">Escavação - 05/36</div>
         </div>
         <button onclick="fecharLootModal()" style="background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;padding:4px 6px;border-radius:6px;transition:color .15s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">✕</button>
       </div>
@@ -3461,30 +3461,36 @@ function renderPersonagensDatalist(){
 const _poolItens = { 'ev': [], 'edit-ev': [] };
 
 function renderItensLista(prefix){
-  const cont = document.getElementById(`${prefix}-itens-lista`);
+  const cont = document.getElementById(prefix+'-itens-lista');
   if(!cont) return;
   const lista = _poolItens[prefix] || [];
   if(!lista.length){
     cont.innerHTML = '<span style="font-size:12px;color:var(--muted);align-self:center">Nenhum item adicionado.</span>';
     return;
   }
-  cont.innerHTML = lista.map((item,i) => {
-    const hasSprite = !!_itemSpritesCustom[item];
-    const safeItem  = item.replace(/'/g,"\'");
-    const inputId   = `adm-sprite-${prefix}-${i}`;
-    const spriteHtml = hasSprite
-      ? `<img src="${_itemSpritesCustom[item]}" alt=""/>`
-      : `<span class="adm-sprite-placeholder">📦</span>`;
-    return `<span class="item-tag-adm" title="${item}">
-      <div class="adm-item-sprite-box">${spriteHtml}</div>
-      <span class="adm-item-name">${item}</span>
-      <div class="adm-item-actions">
-        <label for="${inputId}" title="Upload sprite">🖼</label>
-        <input type="file" id="${inputId}" accept="image/*" style="display:none" onchange="_admUploadSprite(this,'${safeItem}','${prefix}')"/>
-        <button onclick="removerItemPool('${prefix}',${i})" title="Remover">×</button>
-      </div>
-    </span>`;
+  cont.innerHTML = lista.map(function(item,i){
+    const hasCustom = !!_itemSpritesCustom[item];
+    const cached    = _itemSpriteCache[item];
+    const spriteUrl = hasCustom ? _itemSpritesCustom[item]
+                    : (cached && cached !== 'error' && cached !== null) ? cached
+                    : _itemSpriteUrl(item);
+    const safeItem  = item.replace(/'/g,"\'").replace(/"/g,'&quot;');
+    const inputId   = 'adm-sprite-'+prefix+'-'+i;
+    const imgHtml   = '<img class="adm-item-img" data-item="'+safeItem+'" src="'+spriteUrl+'" alt="" onerror="this.style.opacity=\'0.25\';this.style.filter=\'grayscale(1)\'" />';
+    return '<span class="item-tag-adm" title="'+item+'">'
+      +'<div class="adm-item-sprite-box">'+imgHtml+'</div>'
+      +'<span class="adm-item-name">'+item+'</span>'
+      +'<div class="adm-item-actions">'
+        +'<label for="'+inputId+'" title="Upload sprite">🖼</label>'
+        +'<input type="file" id="'+inputId+'" accept="image/*" style="display:none" onchange="_admUploadSprite(this,\''+safeItem+'\',\''+prefix+'\')"/>'
+        +'<button onclick="removerItemPool(\''+prefix+'\','+i+')" title="Remover">×</button>'
+      +'</div>'
+    +'</span>';
   }).join('');
+  // Dispara fetch assíncrono para cada item sem sprite custom
+  lista.forEach(function(item){
+    if(!_itemSpritesCustom[item]) _fetchItemSprite(item);
+  });
 }
 
 function _admUploadSprite(inputEl, nome, prefix){
@@ -3526,21 +3532,25 @@ function abrirLootModal(){
   const itens = ev?.pool_itens || [];
   if(!itens.length) return;
   const n = itens.length;
-  grid.innerHTML = itens.map((nome, i) => {
+  grid.innerHTML = itens.map(function(nome, i){
     const diceLabel = n === 1 ? '1' : String(i+1);
     const hasCustom = !!_itemSpritesCustom[nome];
-    const spriteUrl = hasCustom ? _itemSpritesCustom[nome] : _itemSpriteUrl(nome);
-    const safeNome  = nome.replace(/'/g,"\'");
+    const cached    = _itemSpriteCache[nome];
+    const spriteUrl = hasCustom ? _itemSpritesCustom[nome]
+                    : (cached && cached !== 'error' && cached !== null) ? cached
+                    : _itemSpriteUrl(nome);
+    const safeNome  = nome.replace(/'/g,"\'").replace(/"/g,'&quot;');
     return '<div class="loot-item-card">'
       +'<div class="loot-item-sprite-wrap">'
         +'<span class="loot-dice-badge">'+diceLabel+'</span>'
-        +'<img class="loot-item-sprite-img" src="'+spriteUrl+'" alt=""'
+        +'<img class="loot-item-sprite-img" data-item="'+safeNome+'" src="'+spriteUrl+'" alt=""'
           +' style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"'
-          +' onerror="_lootItemImgError(this,\''+safeNome+'\')" />'
+          +' onerror="_lootItemImgError(this,\''+safeNome+'\')"/>'
       +'</div>'
       +'<div class="loot-item-name" title="'+nome+'">'+nome+'</div>'
     +'</div>';
   }).join('');
+  itens.forEach(function(nome){ if(!_itemSpritesCustom[nome]) _fetchItemSprite(nome); });
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
@@ -3555,11 +3565,46 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const o=document
 // Armazena sprites customizados por nome de item (base64)
 const _itemSpritesCustom = {};
 
-function _itemSpriteUrl(nome){
-  const slug = nome.trim().toLowerCase()
+// Cache de URLs já resolvidas pela API
+const _itemSpriteCache = {};
+
+function _itemSlug(nome){
+  return nome.trim().toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/, '');
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/,'');
+}
+
+// Retorna URL estática como fallback imediato enquanto a API é consultada
+function _itemSpriteUrl(nome){
+  const slug = _itemSlug(nome);
   return 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/'+slug+'.png';
+}
+
+// Busca sprite via PokeAPI e atualiza todas as imagens do item na tela
+async function _fetchItemSprite(nome){
+  if(_itemSpriteCache[nome] !== undefined) return _itemSpriteCache[nome];
+  _itemSpriteCache[nome] = null; // marca como "buscando"
+  try {
+    const slug = _itemSlug(nome);
+    const res  = await fetch('https://pokeapi.co/api/v2/item/'+slug+'/');
+    if(!res.ok) throw new Error('not found');
+    const data = await res.json();
+    const url  = data && data.sprites && data.sprites.default;
+    if(!url) throw new Error('no sprite');
+    _itemSpriteCache[nome] = url;
+    // Atualiza todas as imgs do item que estão na tela
+    document.querySelectorAll('.loot-item-sprite-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){
+      img.src = url;
+      img.style.opacity = '';
+      img.style.filter  = '';
+    });
+    document.querySelectorAll('.adm-item-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){
+      img.src = url;
+    });
+  } catch(e){
+    _itemSpriteCache[nome] = 'error';
+  }
+  return _itemSpriteCache[nome];
 }
 
 function _lootItemImgError(el, nome){
@@ -3599,21 +3644,25 @@ function renderEventoItensGrid(itens){
   wrap.style.display = '';
 
   const n = itens.length;
-  grid.innerHTML = itens.map((nome, i) => {
+  grid.innerHTML = itens.map(function(nome, i){
     const diceLabel  = n === 1 ? '1' : String(i+1);
     const hasCustom  = !!_itemSpritesCustom[nome];
-    const spriteUrl  = hasCustom ? _itemSpritesCustom[nome] : _itemSpriteUrl(nome);
-    const safeNome   = nome.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const cached     = _itemSpriteCache[nome];
+    const spriteUrl  = hasCustom ? _itemSpritesCustom[nome]
+                     : (cached && cached !== 'error' && cached !== null) ? cached
+                     : _itemSpriteUrl(nome);
+    const safeNome   = nome.replace(/'/g,"\'").replace(/"/g,'&quot;');
     return '<div class="loot-item-card">'
       +'<div class="loot-item-sprite-wrap">'
         +'<span class="loot-dice-badge">'+diceLabel+'</span>'
-        +'<img class="loot-item-sprite-img" src="'+spriteUrl+'" alt=""'
+        +'<img class="loot-item-sprite-img" data-item="'+safeNome+'" src="'+spriteUrl+'" alt=""'
           +' style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"'
-          +' onerror="_lootItemImgError(this,\''+safeNome+'\')" />'
+          +' onerror="_lootItemImgError(this,\''+safeNome+'\')"/>'
       +'</div>'
       +'<div class="loot-item-name" title="'+nome+'">'+nome+'</div>'
     +'</div>';
   }).join('');
+  itens.forEach(function(nome){ if(!_itemSpritesCustom[nome]) _fetchItemSprite(nome); });
 }
 
 // ══════════════════════════════════════
