@@ -2167,13 +2167,19 @@ function admTab(sec,el){
   if(sec==='admins'){ if(!admins||admins.length===0){ dbGet('admins').then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
-    // Popula selects de personagem com nomes únicos do histórico
-    const nomesHist = [...new Set(historico.map(e=>e.personagem).filter(Boolean))].sort();
-    const nomesDados = [...new Set(historicoDados.map(e=>e.personagem).filter(Boolean))].sort();
-    const selPoke = document.getElementById('poke-filtro-personagem');
-    const selDados = document.getElementById('dados-filtro-personagem');
-    if(selPoke) selPoke.innerHTML = '<option value="">— Todos os personagens —</option>' + nomesHist.map(n=>`<option value="${n}">${n}</option>`).join('');
-    if(selDados) selDados.innerHTML = '<option value="">— Todos os personagens —</option>' + nomesDados.map(n=>`<option value="${n}">${n}</option>`).join('');
+    // Popula selects de personagem buscando direto do banco
+    (async()=>{
+      const [rh, rd] = await Promise.all([
+        sb('historico?select=personagem&order=personagem.asc'),
+        sb('historico_dados?select=personagem&order=personagem.asc'),
+      ]);
+      const nomesHist  = [...new Set((rh ||[]).map(e=>e.personagem).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+      const nomesDados = [...new Set((rd ||[]).map(e=>e.personagem).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+      const selPoke  = document.getElementById('poke-filtro-personagem');
+      const selDados = document.getElementById('dados-filtro-personagem');
+      if(selPoke)  selPoke.innerHTML  = '<option value="">— Todos os personagens —</option>' + nomesHist.map(n=>`<option value="${n}">${n}</option>`).join('');
+      if(selDados) selDados.innerHTML = '<option value="">— Todos os personagens —</option>' + nomesDados.map(n=>`<option value="${n}">${n}</option>`).join('');
+    })();
     const isGold=isSuperAdmin();
     document.getElementById('hist-clear-blocked').style.display=isGold?'none':'block';
     document.getElementById('hist-clear-panel').style.display=isGold?'block':'none';
@@ -3657,15 +3663,20 @@ async function limparHistPokemonPorData(){
   const deD=de?new Date(de):null;
   const ateD=ate?new Date(ate):null;
   if(deD&&ateD&&deD>ateD){errEl.textContent='A data "De" não pode ser maior que "Até".';errEl.style.display='block';return;}
-  const targets=historico.filter(e=>{
-    if(pessoa && e.personagem !== pessoa) return false;
+  // Monta query direto no banco para pegar todos (não só os 100 em memória)
+  let q='historico?select=id,data,personagem';
+  const filters=[];
+  if(pessoa) filters.push(`personagem=eq.${encodeURIComponent(pessoa)}`);
+  if(filters.length) q+='&'+filters.join('&');
+  const todos=await sb(q);
+  const targets=(todos||[]).filter(e=>{
     const d=parseBrDate(e.data);
     if(deD&&d<deD)return false;
     if(ateD&&d>ateD)return false;
     return true;
   });
   if(targets.length===0){errEl.textContent='Nenhum registro encontrado com esses filtros.';errEl.style.display='block';return;}
-  const desc=[pessoa?`personagem "${pessoa}"`:'',de||ate?`período ${de||'início'} a ${ate||'hoje'}`:''].filter(Boolean).join(', ');
+  const desc=[pessoa?`"${pessoa}"`:'',de||ate?`${de||'início'} a ${ate||'hoje'}`:''].filter(Boolean).join(' · ');
   if(!confirm(`Apagar ${targets.length} registro${targets.length!==1?'s':''} de encontros${desc?' ('+desc+')':''}?`))return;
   for(const e of targets) await dbDel('historico',`id=eq.${e.id}`);
   const ids=new Set(targets.map(e=>e.id));
@@ -3688,15 +3699,19 @@ async function limparHistDadosPorData(){
   const deD=de?new Date(de):null;
   const ateD=ate?new Date(ate):null;
   if(deD&&ateD&&deD>ateD){errEl.textContent='A data "De" não pode ser maior que "Até".';errEl.style.display='block';return;}
-  const targets=historicoDados.filter(e=>{
-    if(pessoa && e.personagem !== pessoa) return false;
+  let q='historico_dados?select=id,data,personagem';
+  const filters=[];
+  if(pessoa) filters.push(`personagem=eq.${encodeURIComponent(pessoa)}`);
+  if(filters.length) q+='&'+filters.join('&');
+  const todos=await sb(q);
+  const targets=(todos||[]).filter(e=>{
     const d=parseBrDate(e.data);
     if(deD&&d<deD)return false;
     if(ateD&&d>ateD)return false;
     return true;
   });
   if(targets.length===0){errEl.textContent='Nenhum registro encontrado com esses filtros.';errEl.style.display='block';return;}
-  const desc=[pessoa?`personagem "${pessoa}"`:'',de||ate?`período ${de||'início'} a ${ate||'hoje'}`:''].filter(Boolean).join(', ');
+  const desc=[pessoa?`"${pessoa}"`:'',de||ate?`${de||'início'} a ${ate||'hoje'}`:''].filter(Boolean).join(' · ');
   if(!confirm(`Apagar ${targets.length} registro${targets.length!==1?'s':''} de dados${desc?' ('+desc+')':''}?`))return;
   for(const e of targets) await dbDel('historico_dados',`id=eq.${e.id}`);
   const ids=new Set(targets.map(e=>e.id));
