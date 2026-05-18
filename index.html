@@ -59,7 +59,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .roller-header{text-align:center;margin-bottom:28px;padding-top:8px}
 .roller-header h2{font-family:var(--font-title);font-size:22px;color:var(--brand);margin-bottom:6px}
 .roller-header p{font-size:14px;color:var(--muted)}
-.roller-controls{display:grid;grid-template-columns:0.96fr 1.5fr 0.7fr 1.5fr 0.85fr;gap:14px;margin-bottom:18px}
+.roller-controls{display:grid;grid-template-columns:0.96fr 1.5fr 0.7fr 1.5fr;gap:14px;margin-bottom:18px}
 .roller-controls-extra{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
 .ctrl-group{display:flex;flex-direction:column;gap:6px}
 .ctrl-group label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
@@ -437,13 +437,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     </div>
     <div class="ctrl-group">
       <label>Encontros</label>
-      <input type="number" id="n-encontrar" value="3" min="1" max="20"/>
+      <input type="number" id="n-encontrar" value="3" min="1" max="20" oninput="verificarMotivoExtra()"/>
     </div>
     <div class="ctrl-group">
-      <label>Motivo Extra</label>
+      <label>Motivo Extra <span id="motivo-obrigatorio" style="color:var(--red);display:none">*</span></label>
       <input type="text" id="motivo-extras" placeholder="Habilidade, Item ou Skill"/>
     </div>
-    <div class="ctrl-group"><label>Encontros Extras</label><input type="number" id="n-adicionais" value="0" min="0" max="10"/></div>
   </div>
 
   <button class="roll-btn" onclick="rolarEncontro()">Rolar Encontro</button>
@@ -3179,6 +3178,21 @@ function buildCardHtml(pk,delay){
   </div>`;
 }
 
+function verificarMotivoExtra(){
+  const nEncontrar=parseInt(document.getElementById('n-encontrar').value)||3;
+  const obrig=document.getElementById('motivo-obrigatorio');
+  const input=document.getElementById('motivo-extras');
+  if(nEncontrar>3){
+    obrig.style.display='inline';
+    input.setAttribute('required','required');
+    input.style.borderColor='var(--red)';
+  } else {
+    obrig.style.display='none';
+    input.removeAttribute('required');
+    input.style.borderColor='';
+  }
+}
+
 async function rolarEncontro(){
   const personagem=document.getElementById('personagem').value.trim();
   if(!personagem){
@@ -3187,15 +3201,16 @@ async function rolarEncontro(){
     return;
   }
   if(personagem) localStorage.setItem('ultimo_personagem', personagem);
-  const adicionais=Math.max(0,parseInt(document.getElementById('n-adicionais').value)||0);
+  const adicionais=0;
   const nEncontrar=Math.max(1,parseInt(document.getElementById('n-encontrar').value)||3);
   const motivoExtras=(document.getElementById('motivo-extras').value||'').trim();
-  const total=nEncontrar+adicionais;
+  const total=nEncontrar;
 
-  // Valida motivo quando for mais de 3 pokémon no dia
+  // Motivo obrigatório quando mais de 3
   if(total>3&&!motivoExtras){
-    const ok=confirm(`Você está rolando ${total} Pokémon (mais de 3). Por favor, informe o motivo (habilidade/item) no campo "Motivo de extras".\n\nDeseja continuar sem preencher?`);
-    if(!ok){ document.getElementById('motivo-extras').focus(); return; }
+    alert(`Você está rolando ${total} Pokémon. Por favor, informe o motivo.`);
+    document.getElementById('motivo-extras').focus();
+    return;
   }
 
   const bioma=document.getElementById('bioma').value;
