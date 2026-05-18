@@ -59,7 +59,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .roller-header{text-align:center;margin-bottom:28px;padding-top:8px}
 .roller-header h2{font-family:var(--font-title);font-size:22px;color:var(--brand);margin-bottom:6px}
 .roller-header p{font-size:14px;color:var(--muted)}
-.roller-controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+.roller-controls{display:grid;grid-template-columns:1.2fr 1.5fr 0.7fr 1.5fr 0.6fr;gap:14px;margin-bottom:18px}
+.roller-controls-extra{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
 .ctrl-group{display:flex;flex-direction:column;gap:6px}
 .ctrl-group label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
 .ctrl-group select,.ctrl-group input{padding:9px 12px;border-radius:var(--r);border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:14px;color:var(--text);transition:border .2s;width:100%}
@@ -247,6 +248,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   .roller-header{margin-bottom:18px}
   .roller-header h2{font-size:18px}
   .roller-controls{grid-template-columns:1fr;gap:10px;margin-bottom:14px}
+  .roller-controls-extra{grid-template-columns:1fr;gap:10px;margin-bottom:14px}
 
   .roll-btn{font-size:14px;padding:13px}
   .results-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
@@ -433,7 +435,15 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <input type="text" id="personagem" placeholder="Nome do personagem..." list="personagens-lista" required oninput="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())"/>
       <datalist id="personagens-lista"></datalist>
     </div>
-    <div class="ctrl-group"><label>Pokémon adicionais</label><input type="number" id="n-adicionais" value="0" min="0" max="10"/></div>
+    <div class="ctrl-group">
+      <label>Encontros</label>
+      <input type="number" id="n-encontrar" value="3" min="1" max="20"/>
+    </div>
+    <div class="ctrl-group">
+      <label>Motivo Extra</label>
+      <input type="text" id="motivo-extras" placeholder="Habilidade, Item ou Skill"/>
+    </div>
+    <div class="ctrl-group"><label>Encontros Extras</label><input type="number" id="n-adicionais" value="0" min="0" max="10"/></div>
   </div>
 
   <button class="roll-btn" onclick="rolarEncontro()">Rolar Encontro</button>
@@ -3178,7 +3188,16 @@ async function rolarEncontro(){
   }
   if(personagem) localStorage.setItem('ultimo_personagem', personagem);
   const adicionais=Math.max(0,parseInt(document.getElementById('n-adicionais').value)||0);
-  const total=3+adicionais;
+  const nEncontrar=Math.max(1,parseInt(document.getElementById('n-encontrar').value)||3);
+  const motivoExtras=(document.getElementById('motivo-extras').value||'').trim();
+  const total=nEncontrar+adicionais;
+
+  // Valida motivo quando for mais de 3 pokémon no dia
+  if(total>3&&!motivoExtras){
+    const ok=confirm(`Você está rolando ${total} Pokémon (mais de 3). Por favor, informe o motivo (habilidade/item) no campo "Motivo de extras".\n\nDeseja continuar sem preencher?`);
+    if(!ok){ document.getElementById('motivo-extras').focus(); return; }
+  }
+
   const bioma=document.getElementById('bioma').value;
 
   // Monta os pools por raridade para este bioma
@@ -3201,11 +3220,22 @@ async function rolarEncontro(){
 
   const section=document.getElementById('results-section');
   section.innerHTML='';
+  if(motivoExtras&&total>3){
+    const banner=document.createElement('div');
+    banner.style.cssText='background:var(--accent-light);border:1.5px solid var(--accent);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
+    banner.innerHTML=`<span style="font-size:16px">⚡</span><span><strong>Extras via habilidade/item:</strong> ${motivoExtras} — rolando ${total} Pokémon (${nEncontrar} base + ${adicionais} adicionais)</span>`;
+    section.appendChild(banner);
+  } else if(nEncontrar!==3){
+    const banner=document.createElement('div');
+    banner.style.cssText='background:var(--brand-light);border:1.5px solid var(--border2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:var(--brand);font-family:var(--font-body)';
+    banner.innerHTML=`Rolando <strong>${nEncontrar}</strong> Pokémon${adicionais>0?` + <strong>${adicionais}</strong> adicionais`:''} neste encontro.`;
+    section.appendChild(banner);
+  }
   const grid=document.createElement('div');
   grid.className='results-grid';
   pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
   section.appendChild(grid);
-  await salvarNoHistorico(bioma,personagem,pokes);
+  await salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar);
 }
 
 // ══════════════════════════════════════
@@ -3420,11 +3450,13 @@ function selecionarRolagemTab(key){
 // ══════════════════════════════════════
 // HISTÓRICO
 // ══════════════════════════════════════
-async function salvarNoHistorico(bioma,personagem,pokes){
+async function salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar){
   const agora=new Date();
   const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data=agora.toLocaleDateString('pt-BR');
   const entry={bioma,personagem,hora,data,pokes};
+  if(motivoExtras) entry.motivoExtras=motivoExtras;
+  if(nEncontrar&&nEncontrar!==3) entry.nEncontrar=nEncontrar;
   const res=await dbPost('historico',entry);
   if(res&&res[0])historico.unshift(res[0]);
   histPagina=0;
@@ -3471,6 +3503,8 @@ function renderHistorico(){
           <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
           <span style="font-size:11px;color:var(--muted)">• ${e.bioma}</span>
           ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
+          ${e.motivoExtras?`<span style="font-size:10px;background:var(--accent-light);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid var(--accent)">⚡ ${e.motivoExtras}</span>`:''}
+          ${e.nEncontrar&&e.nEncontrar!==3?`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 7px;border-radius:8px;border:1px solid var(--border2)">${pokes.length} Pokémon</span>`:''}
         </div>
         <span style="font-size:11px;color:var(--muted)">${e.hora} · ${e.data}</span>
       </div>
