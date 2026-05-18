@@ -1010,13 +1010,19 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
           <div id="hist-clear-panel">
             <div class="box" style="border-color:#f0c0c0">
               <div class="box-title" style="color:var(--red)">🗑️ Histórico de Encontros Pokémon</div>
-              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Apaga rolagens de encontro Pokémon no período selecionado, ou tudo de uma vez.</p>
+              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Apaga rolagens de encontro Pokémon no período selecionado e/ou por personagem, ou tudo de uma vez.</p>
               <div class="g2" style="margin-bottom:12px">
                 <div class="field"><label>De</label><input type="date" id="poke-data-de"/></div>
                 <div class="field"><label>Até</label><input type="date" id="poke-data-ate"/></div>
               </div>
+              <div class="field" style="margin-bottom:12px">
+                <label>Personagem (opcional)</label>
+                <select id="poke-filtro-personagem" style="width:100%">
+                  <option value="">— Todos os personagens —</option>
+                </select>
+              </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-danger btn-sm" onclick="limparHistPokemonPorData()">🗑 Apagar período</button>
+                <button class="btn btn-danger btn-sm" onclick="limparHistPokemonPorData()">🗑 Apagar seleção</button>
                 <button class="btn btn-danger" onclick="limparHistPokemon()">Limpar tudo</button>
               </div>
               <div class="fb fb-ok" id="hist-poke-fb" style="margin-top:8px">✓ Registros apagados!</div>
@@ -1024,13 +1030,19 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
             </div>
             <div class="box" style="border-color:#f0c0c0">
               <div class="box-title" style="color:var(--red)">🗑️ Histórico de Dados</div>
-              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Apaga rolagens de dados no período selecionado, ou tudo de uma vez.</p>
+              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Apaga rolagens de dados no período selecionado e/ou por personagem, ou tudo de uma vez.</p>
               <div class="g2" style="margin-bottom:12px">
                 <div class="field"><label>De</label><input type="date" id="dados-data-de"/></div>
                 <div class="field"><label>Até</label><input type="date" id="dados-data-ate"/></div>
               </div>
+              <div class="field" style="margin-bottom:12px">
+                <label>Personagem (opcional)</label>
+                <select id="dados-filtro-personagem" style="width:100%">
+                  <option value="">— Todos os personagens —</option>
+                </select>
+              </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-danger btn-sm" onclick="limparHistDadosPorData()">🗑 Apagar período</button>
+                <button class="btn btn-danger btn-sm" onclick="limparHistDadosPorData()">🗑 Apagar seleção</button>
                 <button class="btn btn-danger" onclick="limparHistDados()">Limpar tudo</button>
               </div>
               <div class="fb fb-ok" id="hist-dados-fb" style="margin-top:8px">✓ Registros apagados!</div>
@@ -1203,6 +1215,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
           <!-- TAB: NPCs -->
           <div class="pk-tab-panel" id="tab-npc-npc">
             <div style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px">🧑 Gerenciar NPCs</div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+              <button id="npc-adm-tipo-oficial" class="pk-tab-btn active" onclick="setNpcAdmTipo('oficial',this)" style="font-size:12px;padding:6px 14px">🏙️ Oficiais</button>
+              <button id="npc-adm-tipo-evento" class="pk-tab-btn" onclick="setNpcAdmTipo('evento',this)" style="font-size:12px;padding:6px 14px">🎪 Eventos</button>
+            </div>
             <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
               <select id="npc-adm-cidade-sel" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)" onchange="renderNpcAdmLista()">
                 <option value="">— Todos —</option>
@@ -2151,6 +2167,13 @@ function admTab(sec,el){
   if(sec==='admins'){ if(!admins||admins.length===0){ dbGet('admins').then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
+    // Popula selects de personagem com nomes únicos do histórico
+    const nomesHist = [...new Set(historico.map(e=>e.personagem).filter(Boolean))].sort();
+    const nomesDados = [...new Set(historicoDados.map(e=>e.personagem).filter(Boolean))].sort();
+    const selPoke = document.getElementById('poke-filtro-personagem');
+    const selDados = document.getElementById('dados-filtro-personagem');
+    if(selPoke) selPoke.innerHTML = '<option value="">— Todos os personagens —</option>' + nomesHist.map(n=>`<option value="${n}">${n}</option>`).join('');
+    if(selDados) selDados.innerHTML = '<option value="">— Todos os personagens —</option>' + nomesDados.map(n=>`<option value="${n}">${n}</option>`).join('');
     const isGold=isSuperAdmin();
     document.getElementById('hist-clear-blocked').style.display=isGold?'none':'block';
     document.getElementById('hist-clear-panel').style.display=isGold?'block':'none';
@@ -3627,20 +3650,23 @@ async function limparHistPokemonPorData(){
   if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   const de=document.getElementById('poke-data-de').value;
   const ate=document.getElementById('poke-data-ate').value;
+  const pessoa=document.getElementById('poke-filtro-personagem')?.value||'';
   const errEl=document.getElementById('hist-poke-fb-err');
   errEl.style.display='none';
-  if(!de&&!ate){errEl.textContent='Selecione ao menos uma data.';errEl.style.display='block';return;}
+  if(!de&&!ate&&!pessoa){errEl.textContent='Selecione ao menos uma data ou personagem.';errEl.style.display='block';return;}
   const deD=de?new Date(de):null;
   const ateD=ate?new Date(ate):null;
   if(deD&&ateD&&deD>ateD){errEl.textContent='A data "De" não pode ser maior que "Até".';errEl.style.display='block';return;}
   const targets=historico.filter(e=>{
+    if(pessoa && e.personagem !== pessoa) return false;
     const d=parseBrDate(e.data);
     if(deD&&d<deD)return false;
     if(ateD&&d>ateD)return false;
     return true;
   });
-  if(targets.length===0){errEl.textContent='Nenhum registro encontrado nesse período.';errEl.style.display='block';return;}
-  if(!confirm(`Apagar ${targets.length} registro${targets.length!==1?'s':''} de encontros entre ${de||'início'} e ${ate||'hoje'}?`))return;
+  if(targets.length===0){errEl.textContent='Nenhum registro encontrado com esses filtros.';errEl.style.display='block';return;}
+  const desc=[pessoa?`personagem "${pessoa}"`:'',de||ate?`período ${de||'início'} a ${ate||'hoje'}`:''].filter(Boolean).join(', ');
+  if(!confirm(`Apagar ${targets.length} registro${targets.length!==1?'s':''} de encontros${desc?' ('+desc+')':''}?`))return;
   for(const e of targets) await dbDel('historico',`id=eq.${e.id}`);
   const ids=new Set(targets.map(e=>e.id));
   historico=historico.filter(e=>!ids.has(e.id));
@@ -3648,26 +3674,30 @@ async function limparHistPokemonPorData(){
   fb('hist-poke-fb');
   document.getElementById('poke-data-de').value='';
   document.getElementById('poke-data-ate').value='';
+  if(document.getElementById('poke-filtro-personagem')) document.getElementById('poke-filtro-personagem').value='';
 }
 
 async function limparHistDadosPorData(){
   if(!isSuperAdmin()){alert('Apenas o admin gold pode limpar os históricos.');return;}
   const de=document.getElementById('dados-data-de').value;
   const ate=document.getElementById('dados-data-ate').value;
+  const pessoa=document.getElementById('dados-filtro-personagem')?.value||'';
   const errEl=document.getElementById('hist-dados-fb-err');
   errEl.style.display='none';
-  if(!de&&!ate){errEl.textContent='Selecione ao menos uma data.';errEl.style.display='block';return;}
+  if(!de&&!ate&&!pessoa){errEl.textContent='Selecione ao menos uma data ou personagem.';errEl.style.display='block';return;}
   const deD=de?new Date(de):null;
   const ateD=ate?new Date(ate):null;
   if(deD&&ateD&&deD>ateD){errEl.textContent='A data "De" não pode ser maior que "Até".';errEl.style.display='block';return;}
   const targets=historicoDados.filter(e=>{
+    if(pessoa && e.personagem !== pessoa) return false;
     const d=parseBrDate(e.data);
     if(deD&&d<deD)return false;
     if(ateD&&d>ateD)return false;
     return true;
   });
-  if(targets.length===0){errEl.textContent='Nenhum registro encontrado nesse período.';errEl.style.display='block';return;}
-  if(!confirm(`Apagar ${targets.length} registro${targets.length!==1?'s':''} de dados entre ${de||'início'} e ${ate||'hoje'}?`))return;
+  if(targets.length===0){errEl.textContent='Nenhum registro encontrado com esses filtros.';errEl.style.display='block';return;}
+  const desc=[pessoa?`personagem "${pessoa}"`:'',de||ate?`período ${de||'início'} a ${ate||'hoje'}`:''].filter(Boolean).join(', ');
+  if(!confirm(`Apagar ${targets.length} registro${targets.length!==1?'s':''} de dados${desc?' ('+desc+')':''}?`))return;
   for(const e of targets) await dbDel('historico_dados',`id=eq.${e.id}`);
   const ids=new Set(targets.map(e=>e.id));
   historicoDados=historicoDados.filter(e=>!ids.has(e.id));
@@ -3675,6 +3705,7 @@ async function limparHistDadosPorData(){
   fb('hist-dados-fb');
   document.getElementById('dados-data-de').value='';
   document.getElementById('dados-data-ate').value='';
+  if(document.getElementById('dados-filtro-personagem')) document.getElementById('dados-filtro-personagem').value='';
 }
 
 async function limparHistDados(){
@@ -4165,13 +4196,29 @@ function renderNpcAdmSelCidade(){
   renderNpcAdmLista();
 }
 
+let _npcAdmTipo = 'oficial'; // 'oficial' | 'evento'
+function setNpcAdmTipo(tipo, btn){
+  _npcAdmTipo = tipo;
+  document.querySelectorAll('#tab-npc-npc .pk-tab-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  // Mostra/esconde o select de cidade conforme o tipo
+  const sel = document.getElementById('npc-adm-cidade-sel');
+  if(sel) sel.style.display = tipo === 'oficial' ? '' : 'none';
+  renderNpcAdmLista();
+}
+
 async function renderNpcAdmLista(){
   const cidadeId=document.getElementById('npc-adm-cidade-sel')?.value;
   const cont=document.getElementById('npc-npcs-lista');
   if(!cont)return;
-  const npcs=await sb(cidadeId?`npcs?npc_cidade_id=eq.${cidadeId}&order=nome.asc`:`npcs?order=nome.asc`);
+  let npcs;
+  if(_npcAdmTipo === 'evento'){
+    npcs=await sb('npcs?modelo=eq.simples&order=nome.asc');
+  } else {
+    npcs=await sb(cidadeId?`npcs?npc_cidade_id=eq.${cidadeId}&modelo=neq.simples&order=nome.asc`:`npcs?modelo=neq.simples&order=nome.asc`);
+  }
   if(!npcs||!npcs.length){
-    cont.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0">Nenhum NPC nesta cidade.</div>';
+    cont.innerHTML=`<div style="color:var(--muted);font-size:13px;padding:8px 0">Nenhum NPC ${_npcAdmTipo==='evento'?'de evento':'oficial'} cadastrado.</div>`;
     return;
   }
   cont.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:12px">` +
@@ -4184,6 +4231,7 @@ async function renderNpcAdmLista(){
         <div style="height:4px;width:100%;background:${topbarCor};flex-shrink:0"></div>
         <div style="width:60px;height:60px;margin:10px auto 6px;border-radius:8px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex-shrink:0">${fotoHtml}</div>
         <div style="font-family:var(--font-title);font-size:10px;font-weight:700;color:var(--text);letter-spacing:.3px;text-transform:uppercase;padding:0 6px 10px;line-height:1.3;word-break:break-word">${n.nome}</div>
+        ${_npcAdmTipo==='evento'&&n.cargo?`<div style="font-size:9px;color:var(--muted);padding:0 6px 8px;font-style:italic">${n.cargo}</div>`:''}
       </div>`;
     }).join('') + `</div>`;
 }
