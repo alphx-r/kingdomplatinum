@@ -445,6 +445,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .loot-item-sprite-wrap .loot-emoji{font-size:28px;line-height:1}
 .loot-dice-badge{position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:var(--brand-mid);color:#fff;font-family:var(--font-title);font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap;border:1.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2);letter-spacing:.3px;z-index:2}
 .loot-item-name{font-size:9px;font-weight:700;color:var(--muted);text-align:center;line-height:1.3;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.2px}
+.loot-upload-btn{display:none;position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);background:var(--brand-mid);color:#fff;border-radius:20px;padding:2px 7px;cursor:pointer;align-items:center;justify-content:center;gap:3px;font-size:9px;font-weight:700;white-space:nowrap;border:1.5px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.18);transition:background .15s;z-index:3}
+.loot-upload-btn:hover{background:var(--brand)}
 /* Keep old tag styles for adm */
 .item-pool-tag{position:relative;width:38px;height:38px;border-radius:8px;background:var(--brand-mid);display:inline-flex;align-items:center;justify-content:center;cursor:default;font-size:13px;font-weight:700;color:#fff;border:2px solid var(--brand);transition:transform .15s,box-shadow .15s;user-select:none;}
 .item-pool-tag:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.18);}
@@ -680,8 +682,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div class="loot-table-wrap" id="loot-table-acc">
       <div class="loot-table-header" onclick="toggleLootTable()">
         <div class="loot-table-title">
-          🎁 Itens disponíveis
-          <span class="loot-table-count" id="loot-table-count">0 itens</span>
+          🎁 <span id="loot-table-datarpg" style="letter-spacing:.5px">Itens</span>
+          <span class="loot-table-count" id="loot-table-count">0</span>
         </div>
         <span class="loot-table-arrow">▼</span>
       </div>
@@ -1287,6 +1289,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
                 <label>Emoji / ícone</label>
                 <input type="text" id="ev-emoji" placeholder="🎪" style="width:80px"/>
               </div>
+              <div class="field">
+                <label>Mês / Ano RPG <span style="font-size:10px;color:var(--muted)">(ex: 05/36)</span></label>
+                <input type="text" id="ev-data-rpg" placeholder="MM/AA" style="width:90px" maxlength="5" oninput="this.value=this.value.replace(/[^0-9/]/g,'')"/>
+              </div>
             </div>
             <div class="field">
               <label>Descrição <span style="font-size:10px;color:var(--muted);font-weight:400">(exibida na página do evento)</span></label>
@@ -1812,6 +1818,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <div class="field">
         <label>Emoji / ícone</label>
         <input type="text" id="edit-ev-emoji" style="width:80px"/>
+      </div>
+      <div class="field">
+        <label>Mês / Ano RPG <span style="font-size:10px;color:var(--muted)">(ex: 05/36)</span></label>
+        <input type="text" id="edit-ev-data-rpg" placeholder="MM/AA" style="width:90px" maxlength="5" oninput="this.value=this.value.replace(/[^0-9/]/g,'')"/>
       </div>
     </div>
     <div class="field">
@@ -3459,55 +3469,77 @@ function toggleLootTable(){
   if(acc) acc.classList.toggle('open');
 }
 
+// Armazena sprites customizados por nome de item (base64)
+const _itemSpritesCustom = {};
+
 function _itemSpriteUrl(nome){
-  // Tenta buscar sprite do PokeAPI items usando slug do nome
   const slug = nome.trim().toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g,'')
-    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${slug}.png`;
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/, '');
+  return 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/'+slug+'.png';
 }
 
-function _itemEmoji(nome){
-  const n = nome.toLowerCase();
-  if(n.includes('bola')||n.includes('ball')) return '🟣';
-  if(n.includes('poção')||n.includes('pocao')||n.includes('potion')) return '🧪';
-  if(n.includes('pedra')||n.includes('stone')) return '🔮';
-  if(n.includes('mail')||n.includes('carta')) return '✉️';
-  if(n.includes('tm')||n.includes('mt')) return '💿';
-  if(n.includes('hm')||n.includes('mh')) return '💿';
-  if(n.includes('berry')||n.includes('fruta')||n.includes('bagas')) return '🍓';
-  if(n.includes('evo')||n.includes('evolv')) return '✨';
-  if(n.includes('repelente')||n.includes('repel')) return '🛡️';
-  if(n.includes('incenso')||n.includes('incense')) return '🪄';
-  return '🎁';
+function _lootItemImgError(el, nome){
+  el.onerror = null;
+  el.src = FALLBACK_SPRITE;
+  el.style.opacity = '0.35';
+  el.style.filter = 'grayscale(1)';
+  const card = el.closest('.loot-item-card');
+  if(card){
+    const btn = card.querySelector('.loot-upload-btn');
+    if(btn) btn.style.display = 'flex';
+  }
 }
 
-function renderEventoItensGrid(itens){
-  const wrap = document.getElementById('evento-itens-wrap');
-  const grid = document.getElementById('evento-itens-grid');
+function _lootUploadSprite(inputEl, nome){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const b64 = e.target.result;
+    _itemSpritesCustom[nome] = b64;
+    const card = inputEl.closest('.loot-item-card');
+    if(!card) return;
+    const img = card.querySelector('.loot-item-sprite-img');
+    const btn = card.querySelector('.loot-upload-btn');
+    if(img){ img.src = b64; img.style.opacity='1'; img.style.filter='none'; }
+    if(btn){ btn.style.display='none'; }
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderEventoItensGrid(itens, dataRpg){
+  const wrap    = document.getElementById('evento-itens-wrap');
+  const grid    = document.getElementById('evento-itens-grid');
   const countEl = document.getElementById('loot-table-count');
+  const dateEl  = document.getElementById('loot-table-datarpg');
   if(!wrap || !grid) return;
   if(!itens || !itens.length){ wrap.style.display='none'; return; }
   wrap.style.display = '';
-  if(countEl) countEl.textContent = itens.length + (itens.length===1?' item':' itens');
-  
+  if(countEl) countEl.textContent = itens.length;
+  if(dateEl)  dateEl.textContent  = dataRpg ? dataRpg : 'Itens';
+
   const n = itens.length;
-  // Distribui números do dado: se um item, dado 1. Se vários, distribui 1..n
   grid.innerHTML = itens.map((nome, i) => {
-    const diceLabel = n === 1 ? '1' : `${i+1}`;
-    const spriteUrl = _itemSpriteUrl(nome);
-    const emoji = _itemEmoji(nome);
-    return `<div class="loot-item-card">
-      <div class="loot-item-sprite-wrap">
-        <span class="loot-dice-badge">${diceLabel}</span>
-        <img src="${spriteUrl}" alt="" 
-          style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"
-          onerror="this.style.display='none';this.nextElementSibling.style.display='block'"
-          onload="this.nextElementSibling.style.display='none'"/>
-        <span class="loot-emoji" style="display:none">${emoji}</span>
-      </div>
-      <div class="loot-item-name" title="${nome}">${nome}</div>
-    </div>`;
+    const diceLabel  = n === 1 ? '1' : String(i+1);
+    const hasCustom  = !!_itemSpritesCustom[nome];
+    const spriteUrl  = hasCustom ? _itemSpritesCustom[nome] : _itemSpriteUrl(nome);
+    const safeNome   = nome.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const inputId    = 'loot-upload-'+i;
+    return '<div class="loot-item-card">'
+      +'<div class="loot-item-sprite-wrap">'
+        +'<span class="loot-dice-badge">'+diceLabel+'</span>'
+        +'<img class="loot-item-sprite-img" src="'+spriteUrl+'" alt=""'
+          +' style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"'
+          +' onerror="_lootItemImgError(this,\''+safeNome+'\')" />'
+        +'<label class="loot-upload-btn" for="'+inputId+'" title="Enviar sprite">'
+          +'<span style="font-size:12px;line-height:1">📁</span>'
+          +'<input type="file" id="'+inputId+'" accept="image/*" style="display:none"'
+            +' onchange="_lootUploadSprite(this,\''+safeNome+'\')" />'
+        +'</label>'
+      +'</div>'
+      +'<div class="loot-item-name" title="'+nome+'">'+nome+'</div>'
+    +'</div>';
   }).join('');
 }
 
@@ -5532,7 +5564,8 @@ async function criarEvento(){
   if(!slug){ errEl.textContent='Preencha o slug da URL.'; errEl.style.display='block'; return; }
   if(eventos.find(e=>e.slug===slug)){ errEl.textContent='Já existe um evento com este slug.'; errEl.style.display='block'; return; }
 
-  const payload = {nome, slug, cor, emoji, descricao, ativo:true, tipo};
+  const dataRpg = document.getElementById('ev-data-rpg').value.trim();
+  const payload = {nome, slug, cor, emoji, descricao, ativo:true, tipo, data_rpg: dataRpg||null};
 
   // campos de encontro (tipo encontro ou ambos)
   if(tipo==='encontro' || tipo==='ambos'){
@@ -5672,6 +5705,7 @@ function abrirEditarEvento(id){
   document.getElementById('edit-ev-id').value   = ev.id;
   document.getElementById('edit-ev-tipo').value = ev.tipo||'encontro';
   document.getElementById('edit-ev-nome').value  = ev.nome||'';
+  const dataRpgEl = document.getElementById('edit-ev-data-rpg'); if(dataRpgEl) dataRpgEl.value = ev.data_rpg||'';
   document.getElementById('edit-ev-slug').value  = ev.slug||'';
   document.getElementById('edit-ev-cor').value   = ev.cor||'#1a3a5c';
   document.getElementById('edit-ev-emoji').value = ev.emoji||'';
@@ -5732,7 +5766,8 @@ async function salvarEdicaoEvento(){
   const conflict = eventos.find(e=>e.slug===slug && e.id!==id);
   if(conflict){ errEl.textContent='Outro evento já usa este slug.'; errEl.style.display='block'; return; }
 
-  const payload = {nome, slug, cor, emoji, descricao, tipo};
+  const dataRpg = document.getElementById('edit-ev-data-rpg').value.trim();
+  const payload = {nome, slug, cor, emoji, descricao, tipo, data_rpg: dataRpg||null};
   if(tipo==='encontro' || tipo==='ambos'){
     payload.bioma            = document.getElementById('edit-ev-bioma').value;
     payload.adicionais       = parseInt(document.getElementById('edit-ev-adicionais').value)||0;
@@ -5923,7 +5958,7 @@ async function iniciarPaginaEvento(slug){
       const sidesWrap = document.getElementById('evento-dados-sides-wrap');
       if(sidesWrap) sidesWrap.style.display = ev.lock_dado ? 'none' : '';
       // Renderiza grade de itens
-      renderEventoItensGrid(ev.pool_itens||[]);
+      renderEventoItensGrid(ev.pool_itens||[], ev.data_rpg||'');
       renderEventoDiceBtns();
       sincEventoDiceBtn();
     }
