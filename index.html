@@ -1077,6 +1077,18 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
             <div class="fb fb-ok" id="estacao-fb" style="display:none">✓ Estação atualizada!</div>
             <div class="fb fb-err" id="estacao-fb-err" style="display:none">Erro ao salvar.</div>
           </div>
+          <div class="box">
+            <div class="box-title">Páginas onde a estação aparece</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px" id="estacao-paginas-wrap">
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="roller"   onchange="salvarPaginasEstacao()"/> Pokémon</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="fichario" onchange="salvarPaginasEstacao()"/> Fichário</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="bioma"    onchange="salvarPaginasEstacao()"/> Bioma</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="dados"    onchange="salvarPaginasEstacao()"/> Dados</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="rolagens" onchange="salvarPaginasEstacao()"/> Rolls</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="npcs"     onchange="salvarPaginasEstacao()"/> NPCs</label>
+            </div>
+            <div class="fb fb-ok" id="estacao-pag-fb" style="display:none">✓ Páginas salvas!</div>
+          </div>
         </div>
         <!-- EVENTOS -->
         <div class="adm-section" id="sec-eventos">
@@ -1890,6 +1902,7 @@ async function diagnosticarNpc(){
 // ══════════════════════════════════════
 let admins=[], players=[], personagens=[], biomas=[], pokemonDB=[], historico=[], eventos=[];
 let estacaoAtiva = null; // carregado da tabela config
+let estacaoPaginas = ['roller','fichario','bioma','dados','rolagens','npcs']; // páginas onde o FAB aparece
 let admLogado=null, histPagina=0;
 const HIST_POR_PAG=10;
 
@@ -1983,13 +1996,16 @@ async function carregarAba(page){
   loading(true);
   try{
     if(page==='roller'){
-      const [_biomas,_pokemons,_cfg] = await Promise.all([
+      const [_biomas,_pokemons,_cfg,_cfgPag] = await Promise.all([
         dbGet('biomas'),
         dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao'),
         dbGet('config','chave=eq.estacao_ativa'),
+        dbGet('config','chave=eq.estacao_paginas'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
       estacaoAtiva = (_cfg&&_cfg[0]) ? _cfg[0].valor : null;
+      if(_cfgPag&&_cfgPag[0]){ try{ estacaoPaginas=JSON.parse(_cfgPag[0].valor); }catch(e){} }
+      else { dbPost('config',{chave:'estacao_paginas',valor:JSON.stringify(estacaoPaginas)}).catch(()=>{}); }
       // Verifica se a estação do mês atual bate com a salva; se não, atualiza automaticamente
       const _estacaoDoMes = estacaoPorMes();
       if(_estacaoDoMes && _estacaoDoMes !== estacaoAtiva){
@@ -2090,6 +2106,7 @@ async function carregarAba(page){
 // NAVEGAÇÃO COM HASH
 // ══════════════════════════════════════
 function navegarPara(page, replace=false){
+  setTimeout(renderEstacaoFab, 0);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const el=document.getElementById('page-'+page);
   if(el) el.classList.add('active');
@@ -2296,7 +2313,7 @@ async function restaurarSessaoAdm(){
 // ADMINS
 // ══════════════════════════════════════
 const SUPER_ADMIN = 'adm@nendo.ne';
-const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos'];
+const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','estacao'];
 
 function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
 
@@ -3207,10 +3224,17 @@ const ESTACAO_CFG={
   outono:   {emoji:'🍂',cor:'#a05020',label:'Outono'},
   inverno:  {emoji:'❄️',cor:'#3a80c8',label:'Inverno'},
 };
+function paginaAtual(){
+  const path=location.pathname.replace(/^\//,'');
+  if(!path||path==='roller') return 'roller';
+  if(path==='rolls') return 'rolagens';
+  return path;
+}
 function renderEstacaoFab(){
   const fab=document.getElementById('estacao-fab');
   if(!fab) return;
-  if(!estacaoAtiva||!ESTACAO_CFG[estacaoAtiva]){ fab.style.display='none'; return; }
+  const pagina=paginaAtual();
+  if(!estacaoAtiva||!ESTACAO_CFG[estacaoAtiva]||!estacaoPaginas.includes(pagina)){ fab.style.display='none'; return; }
   const e=ESTACAO_CFG[estacaoAtiva];
   fab.style.display='flex';
   fab.style.background=e.cor;
@@ -3224,6 +3248,20 @@ function marcarBtnEstacao(){
     btn.style.color=k===estacaoAtiva?'#fff':'';
     btn.style.borderColor=k===estacaoAtiva?'var(--brand-mid)':'var(--border)';
   });
+  // marcar checkboxes de páginas
+  document.querySelectorAll('#estacao-paginas-wrap input[type=checkbox]').forEach(cb=>{
+    cb.checked = estacaoPaginas.includes(cb.value);
+  });
+}
+async function salvarPaginasEstacao(){
+  const checks=document.querySelectorAll('#estacao-paginas-wrap input[type=checkbox]');
+  estacaoPaginas=[...checks].filter(c=>c.checked).map(c=>c.value);
+  const fb=document.getElementById('estacao-pag-fb');
+  try{
+    await dbPatch('config','chave=eq.estacao_paginas',{valor:JSON.stringify(estacaoPaginas)});
+    renderEstacaoFab();
+    fb.style.display='block'; setTimeout(()=>fb.style.display='none',2000);
+  }catch(e){ console.error(e); }
 }
 async function setEstacao(val){
   const fb=document.getElementById('estacao-fb');
@@ -6023,6 +6061,6 @@ init();
 </script>
 
 <!-- ESTAÇÃO FAB -->
-<div id="estacao-fab" style="display:none;position:fixed;bottom:24px;right:24px;z-index:500;border-radius:50px;padding:10px 18px;font-family:var(--font-body);font-size:13px;font-weight:700;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.22);pointer-events:none;display:flex;align-items:center;gap:8px;transition:opacity .3s"></div>
+<div id="estacao-fab" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99;padding:5px 0;font-family:var(--font-body);font-size:12px;font-weight:700;color:#fff;pointer-events:none;justify-content:center;align-items:center;gap:6px;opacity:0.5;letter-spacing:.4px;transition:opacity .3s"></div>
 </body>
 </html>
