@@ -3454,11 +3454,16 @@ async function salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar)
   const agora=new Date();
   const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data=agora.toLocaleDateString('pt-BR');
-  const entry={bioma,personagem,hora,data,pokes};
+  const entry={bioma,personagem,hora,data,pokes:pokes||[],nEncontrar:nEncontrar||3};
   if(motivoExtras) entry.motivoExtras=motivoExtras;
-  if(nEncontrar&&nEncontrar!==3) entry.nEncontrar=nEncontrar;
-  const res=await dbPost('historico',entry);
-  if(res&&res[0])historico.unshift(res[0]);
+  try{
+    const res=await dbPost('historico',entry);
+    if(res&&res[0]) historico.unshift(res[0]);
+    else if(res&&Array.isArray(res)&&res.length===0){
+      // banco retornou vazio mas não erro — insere localmente para exibir
+      historico.unshift({...entry,id:Date.now(),criado_em:new Date().toISOString()});
+    }
+  }catch(e){ console.error('[salvarNoHistorico]',e); }
   histPagina=0;
   renderHistorico();
   if(loaded.rolagens) renderRolagens();
