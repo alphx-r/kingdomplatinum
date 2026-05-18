@@ -432,7 +432,6 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .loot-table-header{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:#1a1208;cursor:pointer;user-select:none;transition:background .15s}
 .loot-table-header:hover{background:#231810}
 .loot-table-title{font-family:var(--font-title);font-size:12px;font-weight:700;color:#c8a87a;letter-spacing:.8px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
-.loot-date-badge{font-size:11px;font-weight:700;background:#5c3a1e;color:#e8c07a;padding:3px 10px;border-radius:6px;border:1px solid #7a5030;letter-spacing:.5px;font-family:var(--font-title)}
 .loot-table-arrow{color:#7a5a3a;font-size:11px;transition:transform .25s;line-height:1}
 .loot-table-wrap.open .loot-table-arrow{transform:rotate(180deg)}
 .loot-table-body{display:none;padding:14px 16px 16px;border-top:1px solid #3a2a1a;background:#120d06}
@@ -677,14 +676,13 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   </div>
 
   <!-- GRADE DE ITENS DO EVENTO -->
-  <div id="evento-itens-wrap" style="display:none;margin-bottom:20px">
+  <div id="evento-itens-wrap" style="display:none;margin-bottom:20px;visibility:hidden;height:0;overflow:hidden">
     <div class="loot-table-wrap" id="loot-table-acc">
       <div class="loot-table-header" onclick="toggleLootTable()">
         <div class="loot-table-title">
           🎁 Itens disponíveis
         </div>
         <div style="display:flex;align-items:center;gap:8px">
-          <span class="loot-date-badge" id="loot-table-datarpg" style="display:none"></span>
           <span class="loot-table-arrow">▼</span>
         </div>
       </div>
@@ -721,7 +719,26 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 
   <div id="evento-results"></div>
 
-  <div id="evento-historico-wrap" style="margin-top:32px;display:none">
+  <!-- MODAL LOOT TABLE -->
+  <div id="loot-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:20px" onclick="fecharLootModal(event)">
+    <div id="loot-modal-box" style="background:#120d06;border:1.5px solid #3a2a1a;border-radius:14px;width:100%;max-width:560px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 16px 60px rgba(0,0,0,.7)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #3a2a1a;background:#1a1208;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px">🎁</span>
+          <div>
+            <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#c8a87a;letter-spacing:.8px;text-transform:uppercase">Itens disponíveis</div>
+            <div id="loot-modal-subtitle" style="font-size:11px;color:#7a5a3a;margin-top:1px"></div>
+          </div>
+        </div>
+        <button onclick="fecharLootModal()" style="background:none;border:none;font-size:20px;color:#7a5a3a;cursor:pointer;line-height:1;padding:4px 6px;border-radius:6px;transition:color .15s" onmouseover="this.style.color='#c8a87a'" onmouseout="this.style.color='#7a5a3a'">×</button>
+      </div>
+      <div style="padding:18px;overflow-y:auto">
+        <div id="loot-modal-grid" class="loot-items-grid"></div>
+      </div>
+    </div>
+  </div>
+
+    <div id="evento-historico-wrap" style="margin-top:32px;display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">Histórico do Evento</div>
       <div style="font-size:12px;color:var(--muted)" id="evento-hist-label"></div>
@@ -3484,6 +3501,43 @@ function toggleLootTable(){
   if(acc) acc.classList.toggle('open');
 }
 
+function abrirLootModal(){
+  const overlay = document.getElementById('loot-modal-overlay');
+  const grid    = document.getElementById('loot-modal-grid');
+  const sub     = document.getElementById('loot-modal-subtitle');
+  if(!overlay || !grid) return;
+  const ev = window.eventoAtual;
+  const itens = ev?.pool_itens || [];
+  if(!itens.length) return;
+  if(sub) sub.textContent = itens.length+' ite'+(itens.length===1?'m':'ns');
+  const n = itens.length;
+  grid.innerHTML = itens.map((nome, i) => {
+    const diceLabel = n === 1 ? '1' : String(i+1);
+    const hasCustom = !!_itemSpritesCustom[nome];
+    const spriteUrl = hasCustom ? _itemSpritesCustom[nome] : _itemSpriteUrl(nome);
+    const safeNome  = nome.replace(/'/g,"\'");
+    return '<div class="loot-item-card">'
+      +'<div class="loot-item-sprite-wrap">'
+        +'<span class="loot-dice-badge">'+diceLabel+'</span>'
+        +'<img class="loot-item-sprite-img" src="'+spriteUrl+'" alt=""'
+          +' style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"'
+          +' onerror="_lootItemImgError(this,\''+safeNome+'\')" />'
+      +'</div>'
+      +'<div class="loot-item-name" title="'+nome+'">'+nome+'</div>'
+    +'</div>';
+  }).join('');
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharLootModal(e){
+  if(e && e.target !== document.getElementById('loot-modal-overlay')) return;
+  const overlay = document.getElementById('loot-modal-overlay');
+  if(overlay) overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const o=document.getElementById('loot-modal-overlay'); if(o&&o.style.display!=='none'){ o.style.display='none'; document.body.style.overflow=''; } } });
+
 // Armazena sprites customizados por nome de item (base64)
 const _itemSpritesCustom = {};
 
@@ -3523,17 +3577,12 @@ function _lootUploadSprite(inputEl, nome){
   reader.readAsDataURL(file);
 }
 
-function renderEventoItensGrid(itens, dataRpg){
+function renderEventoItensGrid(itens){
   const wrap    = document.getElementById('evento-itens-wrap');
   const grid    = document.getElementById('evento-itens-grid');
-  const dateEl  = document.getElementById('loot-table-datarpg');
   if(!wrap || !grid) return;
   if(!itens || !itens.length){ wrap.style.display='none'; return; }
   wrap.style.display = '';
-  if(dateEl){
-    if(dataRpg){ dateEl.textContent = dataRpg; dateEl.style.display=''; }
-    else { dateEl.style.display='none'; }
-  }
 
   const n = itens.length;
   grid.innerHTML = itens.map((nome, i) => {
@@ -5714,7 +5763,6 @@ function abrirEditarEvento(id){
   document.getElementById('edit-ev-id').value   = ev.id;
   document.getElementById('edit-ev-tipo').value = ev.tipo||'encontro';
   document.getElementById('edit-ev-nome').value  = ev.nome||'';
-  const dataRpgEl = document.getElementById('edit-ev-data-rpg'); if(dataRpgEl) dataRpgEl.value = ev.data_rpg||'';
   document.getElementById('edit-ev-slug').value  = ev.slug||'';
   document.getElementById('edit-ev-cor').value   = ev.cor||'#1a3a5c';
   document.getElementById('edit-ev-emoji').value = ev.emoji||'';
@@ -5966,7 +6014,7 @@ async function iniciarPaginaEvento(slug){
       const sidesWrap = document.getElementById('evento-dados-sides-wrap');
       if(sidesWrap) sidesWrap.style.display = ev.lock_dado ? 'none' : '';
       // Renderiza grade de itens
-      renderEventoItensGrid(ev.pool_itens||[], ev.data_rpg||'');
+      renderEventoItensGrid(ev.pool_itens||[]);
       renderEventoDiceBtns();
       sincEventoDiceBtn();
     }
