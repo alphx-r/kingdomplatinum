@@ -679,6 +679,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
         <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)">🎨 Editor Visual</button>
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
+        <button class="adm-nav-btn" data-sec="estacao" onclick="admTab('estacao',this)">🌿 Estação</button>
 
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()">Sair</button>
@@ -1060,6 +1061,23 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
           </div>
         </div>
 
+
+        <!-- ESTAÇÃO -->
+        <div class="adm-section" id="sec-estacao">
+          <div class="sec-title">🌿 Estação do Ano</div>
+          <div class="sec-sub">Define a estação ativa do RPG — afeta os encontros Pokémon para todos os jogadores</div>
+          <div class="box">
+            <div class="box-title">Estação atual</div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px" id="estacao-btns">
+              <button class="btn" id="est-btn-primavera" onclick="setEstacao('primavera')" style="font-size:15px;padding:14px;border:2px solid var(--border)">🌸 Primavera</button>
+              <button class="btn" id="est-btn-verao"    onclick="setEstacao('verao')"    style="font-size:15px;padding:14px;border:2px solid var(--border)">☀️ Verão</button>
+              <button class="btn" id="est-btn-outono"   onclick="setEstacao('outono')"   style="font-size:15px;padding:14px;border:2px solid var(--border)">🍂 Outono</button>
+              <button class="btn" id="est-btn-inverno"  onclick="setEstacao('inverno')"  style="font-size:15px;padding:14px;border:2px solid var(--border)">❄️ Inverno</button>
+            </div>
+            <div class="fb fb-ok" id="estacao-fb" style="display:none">✓ Estação atualizada!</div>
+            <div class="fb fb-err" id="estacao-fb-err" style="display:none">Erro ao salvar.</div>
+          </div>
+        </div>
         <!-- EVENTOS -->
         <div class="adm-section" id="sec-eventos">
           <div class="sec-title">Eventos</div>
@@ -1871,6 +1889,7 @@ async function diagnosticarNpc(){
 // STATE
 // ══════════════════════════════════════
 let admins=[], players=[], personagens=[], biomas=[], pokemonDB=[], historico=[], eventos=[];
+let estacaoAtiva = null; // carregado da tabela config
 let admLogado=null, histPagina=0;
 const HIST_POR_PAG=10;
 
@@ -1964,11 +1983,20 @@ async function carregarAba(page){
   loading(true);
   try{
     if(page==='roller'){
-      const [_biomas,_pokemons] = await Promise.all([
+      const [_biomas,_pokemons,_cfg] = await Promise.all([
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao'),
+        dbGet('config','chave=eq.estacao_ativa'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
+      estacaoAtiva = (_cfg&&_cfg[0]) ? _cfg[0].valor : null;
+      // Verifica se a estação do mês atual bate com a salva; se não, atualiza automaticamente
+      const _estacaoDoMes = estacaoPorMes();
+      if(_estacaoDoMes && _estacaoDoMes !== estacaoAtiva){
+        estacaoAtiva = _estacaoDoMes;
+        dbPatch('config','chave=eq.estacao_ativa',{valor:estacaoAtiva}).catch(()=>{});
+      }
+      renderEstacaoFab();
       // Não marca como carregado se dados essenciais vieram vazios (RLS ou rede)
       if(!pokemonDB.length || !biomas.length){ loaded['roller']=false; console.warn('[carregarAba] roller: dados vazios'); }
       syncBiomaSelect();
@@ -2169,6 +2197,7 @@ function toggleRaridade(r){
   document.getElementById('acc-'+r).classList.toggle('open');
 }
 function admTab(sec,el){
+  if(sec==='estacao') setTimeout(marcarBtnEstacao,0);
   // verifica permissão
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos'];
@@ -3161,6 +3190,58 @@ function renderPersonagensDatalist(){
 
 
 
+
+// ══════════════════════════════════════
+// ESTAÇÃO
+// ══════════════════════════════════════
+function estacaoPorMes(){
+  const mes = new Date().getMonth() + 1; // 1–12
+  const mapa = {1:'primavera',2:'verao',3:'outono',4:'inverno',
+                5:'primavera',6:'verao',7:'outono',8:'inverno',
+                9:'primavera',10:'verao',11:'outono',12:'inverno'};
+  return mapa[mes] || null;
+}
+const ESTACAO_CFG={
+  primavera:{emoji:'🌸',cor:'#d45fa0',label:'Primavera'},
+  verao:    {emoji:'☀️',cor:'#e07a10',label:'Verão'},
+  outono:   {emoji:'🍂',cor:'#a05020',label:'Outono'},
+  inverno:  {emoji:'❄️',cor:'#3a80c8',label:'Inverno'},
+};
+function renderEstacaoFab(){
+  const fab=document.getElementById('estacao-fab');
+  if(!fab) return;
+  if(!estacaoAtiva||!ESTACAO_CFG[estacaoAtiva]){ fab.style.display='none'; return; }
+  const e=ESTACAO_CFG[estacaoAtiva];
+  fab.style.display='flex';
+  fab.style.background=e.cor;
+  fab.innerHTML=`${e.emoji} ${e.label}`;
+}
+function marcarBtnEstacao(){
+  Object.keys(ESTACAO_CFG).forEach(k=>{
+    const btn=document.getElementById('est-btn-'+k);
+    if(!btn) return;
+    btn.style.background=k===estacaoAtiva?'var(--brand-mid)':'';
+    btn.style.color=k===estacaoAtiva?'#fff':'';
+    btn.style.borderColor=k===estacaoAtiva?'var(--brand-mid)':'var(--border)';
+  });
+}
+async function setEstacao(val){
+  const fb=document.getElementById('estacao-fb');
+  const fbe=document.getElementById('estacao-fb-err');
+  fb.style.display='none'; fbe.style.display='none';
+  try{
+    await dbPatch('config','chave=eq.estacao_ativa',{valor:val});
+    estacaoAtiva=val;
+    renderEstacaoFab();
+    marcarBtnEstacao();
+    fb.style.display='block';
+    setTimeout(()=>fb.style.display='none',2500);
+  }catch(e){
+    fbe.textContent='Erro ao salvar: '+e.message;
+    fbe.style.display='block';
+  }
+}
+
 // ══════════════════════════════════════
 // ROLADOR
 // ══════════════════════════════════════
@@ -3240,13 +3321,22 @@ async function rolarEncontro(){
 
   const bioma=document.getElementById('bioma').value;
 
-  // Monta os pools por raridade para este bioma
+  // Monta os pools por raridade para este bioma (aplica filtro de estação)
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={};
   const usedIds={};
   for(const r of raridades){
-    pools[r]=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r);
+    // inclui pokémon sem estação definida + exclusivos da estação ativa
+    pools[r]=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva));
     usedIds[r]=new Set();
+  }
+  // pool de boost: pokémon da estação com raridade promovida (ex: incomum → comum)
+  const BOOST_MAP={rarissimo:'raro',raro:'incomum',incomum:'comum',comum:'comum'};
+  const boostedPools={};
+  for(const r of raridades){
+    const alvo=BOOST_MAP[r];
+    const extras=pokemonDB.filter(p=>p.bioma===bioma&&p.raridade===r&&p.estacao===estacaoAtiva);
+    boostedPools[alvo]=[...(pools[alvo]||[]),...extras];
   }
 
   // Sorteia raridade aleatoriamente (pesos originais) e evita repetir pokémon
@@ -3254,7 +3344,8 @@ async function rolarEncontro(){
   const pokes=[];
   for(let i=0;i<total;i++){
     const rarity=rollRarity();
-    const pk=pickFromPool(pools[rarity],usedIds[rarity],rarity);
+    const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
+    const pk=pickFromPool(pool,usedIds[rarity],rarity);
     pokes.push(pk);
   }
 
@@ -5930,5 +6021,8 @@ init();
   resetIdle();
 })();
 </script>
+
+<!-- ESTAÇÃO FAB -->
+<div id="estacao-fab" style="display:none;position:fixed;bottom:24px;right:24px;z-index:500;border-radius:50px;padding:10px 18px;font-family:var(--font-body);font-size:13px;font-weight:700;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.22);pointer-events:none;display:flex;align-items:center;gap:8px;transition:opacity .3s"></div>
 </body>
 </html>
