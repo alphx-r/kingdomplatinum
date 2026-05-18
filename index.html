@@ -3463,181 +3463,81 @@ function renderPersonagensDatalist(){
 // ══════════════════════════════════════
 // POOL DE ITENS DO EVENTO
 // ══════════════════════════════════════
-// ══════════════════════════════════════
-// FUNÇÕES EXTRAS (pools de itens por evento)
-// ══════════════════════════════════════
-// Estrutura: { 'ev': [{id, titulo, icone, itens:[]}], 'edit-ev': [...] }
-const _funcoesExtras = { 'ev': [], 'edit-ev': [] };
-// Mantém compatibilidade com _poolItens antigo
 const _poolItens = { 'ev': [], 'edit-ev': [] };
 
-function toggleFuncoesExtras(prefix){
-  const cb    = document.getElementById(prefix+'-funcoes-ativas');
-  const body  = document.getElementById(prefix+'-funcoes-body');
-  const arrow = document.getElementById(prefix+'-funcoes-arrow');
-  if(!body) return;
-  // toggle: se o body estava escondido, abre; senão fecha
-  const aberto = body.style.display !== 'none';
-  body.style.display = aberto ? 'none' : 'block';
-  if(arrow) arrow.style.transform = aberto ? '' : 'rotate(180deg)';
-  if(cb) cb.checked = !aberto;
-}
-
-function _funcaoId(){ return 'f'+Date.now()+Math.floor(Math.random()*1000); }
-
-function adicionarFuncaoExtra(prefix){
-  if(!_funcoesExtras[prefix]) _funcoesExtras[prefix] = [];
-  const id = _funcaoId();
-  _funcoesExtras[prefix].push({ id, titulo: '', icone: '🎁', itens: [] });
-  renderFuncoesExtrasAdm(prefix);
-  // Foca no input de título da função recém criada
-  setTimeout(()=>{
-    const inp = document.querySelector(`[data-func-titulo="${id}"]`);
-    if(inp) inp.focus();
-  }, 50);
-}
-
-function removerFuncaoExtra(prefix, id){
-  _funcoesExtras[prefix] = (_funcoesExtras[prefix]||[]).filter(f=>f.id!==id);
-  renderFuncoesExtrasAdm(prefix);
-}
-
-function adicionarItemFuncao(prefix, id){
-  const inp = document.querySelector(`[data-func-item-inp="${id}"]`);
-  const nome = inp?.value.trim();
-  if(!nome) return;
-  const func = (_funcoesExtras[prefix]||[]).find(f=>f.id===id);
-  if(!func) return;
-  func.itens.push(nome);
-  inp.value = '';
-  renderFuncoesExtrasAdm(prefix);
-}
-
-function removerItemFuncao(prefix, funcId, idx){
-  const func = (_funcoesExtras[prefix]||[]).find(f=>f.id===funcId);
-  if(!func) return;
-  func.itens.splice(idx, 1);
-  renderFuncoesExtrasAdm(prefix);
-}
-
-function renderFuncoesExtrasAdm(prefix){
-  const cont = document.getElementById(prefix+'-funcoes-lista');
+function renderItensLista(prefix){
+  const cont = document.getElementById(prefix+'-itens-lista');
   if(!cont) return;
-  const lista = _funcoesExtras[prefix] || [];
+  const lista = _poolItens[prefix] || [];
   if(!lista.length){
-    cont.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 0 8px">Nenhuma função adicionada.</div>';
+    cont.innerHTML = '<span style="font-size:12px;color:var(--muted)">Nenhum item adicionado.</span>';
     return;
   }
-  cont.innerHTML = lista.map(func=>{
-    const n = func.itens.length;
-    const itensHtml = func.itens.map((item,i)=>`
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative">
-        <span style="width:26px;height:26px;border-radius:50%;background:var(--brand-mid);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${n===1?'1':i+1}</span>
-        <span style="font-size:9px;font-weight:600;color:var(--text);text-align:center;width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item}">${item}</span>
-        <button onclick="removerItemFuncao('${prefix}','${func.id}',${i})" style="position:absolute;top:-4px;right:0;width:13px;height:13px;border-radius:50%;background:#e53935;color:#fff;border:none;cursor:pointer;font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0">×</button>
-      </div>`).join('');
-    return `
-    <div style="border:1.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;background:var(--surface)">
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border)">
-        <input data-func-icone="${func.id}" type="text" value="${func.icone}" maxlength="2"
-          style="width:34px;text-align:center;font-size:18px;padding:2px 4px;border:1.5px solid var(--border);border-radius:6px;background:var(--surface)"
-          oninput="(function(el){const f=(_funcoesExtras['${prefix}']||[]).find(x=>x.id==='${func.id}');if(f)f.icone=el.value;})(this)"/>
-        <input data-func-titulo="${func.id}" type="text" placeholder="Título da função..." value="${func.titulo}"
-          style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;background:var(--surface)"
-          oninput="(function(el){const f=(_funcoesExtras['${prefix}']||[]).find(x=>x.id==='${func.id}');if(f)f.titulo=el.value;})(this)"/>
-        <button onclick="removerFuncaoExtra('${prefix}','${func.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px" title="Remover função">🗑</button>
-      </div>
-      <div style="padding:10px 12px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:8px;margin-bottom:8px;min-height:20px">${itensHtml||'<span style="font-size:11px;color:var(--muted)">Sem itens.</span>'}</div>
-        <div style="display:flex;gap:6px">
-          <input data-func-item-inp="${func.id}" type="text" placeholder="Nome do item..."
-            style="flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--surface)"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();adicionarItemFuncao('${prefix}','${func.id}');}"/>
-          <button class="btn btn-sm btn-primary" onclick="adicionarItemFuncao('${prefix}','${func.id}')">+ Item</button>
-        </div>
-      </div>
-    </div>`;
+  const n = lista.length;
+  cont.style.display = 'grid';
+  cont.style.gridTemplateColumns = 'repeat(10,1fr)';
+  cont.style.gap = '8px 4px';
+  cont.innerHTML = lista.map(function(item,i){
+    const diceLabel = n === 1 ? '1' : String(i+1);
+    return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 2px;position:relative">'
+      +'<span style="width:28px;height:28px;border-radius:50%;background:#4caf50;color:#fff;font-family:var(--font-title);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.18)">'+diceLabel+'</span>'
+      +'<span style="font-size:10px;font-weight:600;color:var(--text);text-align:center;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+item+'">'+item+'</span>'
+      +'<button class="adm-item-remove-btn" data-prefix="'+prefix+'" data-idx="'+i+'" title="Remover" style="position:absolute;top:-5px;right:-2px;width:14px;height:14px;border-radius:50%;background:#e53935;color:#fff;border:none;cursor:pointer;font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0">×</button>'
+    +'</div>';
   }).join('');
+  cont.querySelectorAll('.adm-item-remove-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      removerItemPool(btn.dataset.prefix, parseInt(btn.dataset.idx));
+    });
+  });
 }
 
-function getFuncoesPayload(prefix){
-  return (_funcoesExtras[prefix]||[]).map(f=>({ id:f.id, titulo:f.titulo||'Itens', icone:f.icone||'🎁', itens:f.itens||[] }));
+function _admUploadSprite(inputEl, nome, prefix){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    _itemSpritesCustom[nome] = e.target.result;
+    renderItensLista(prefix);
+  };
+  reader.readAsDataURL(file);
 }
 
-function loadFuncoesExtras(prefix, data){
-  _funcoesExtras[prefix] = (Array.isArray(data)?data:[]).map(f=>({
-    id: f.id||_funcaoId(), titulo: f.titulo||'', icone: f.icone||'🎁', itens: Array.isArray(f.itens)?f.itens:[]
-  }));
-  const cb   = document.getElementById(prefix+'-funcoes-ativas');
-  const body = document.getElementById(prefix+'-funcoes-body');
-  const arrow= document.getElementById(prefix+'-funcoes-arrow');
-  const temFuncoes = _funcoesExtras[prefix].length > 0;
-  if(cb) cb.checked = temFuncoes;
-  if(body) body.style.display = temFuncoes ? 'block' : 'none';
-  if(arrow) arrow.style.transform = temFuncoes ? 'rotate(180deg)' : '';
-  renderFuncoesExtrasAdm(prefix);
+function adicionarItemPool(prefix){
+  const inp = document.getElementById(`${prefix}-item-nome`);
+  const nome = inp?.value.trim();
+  if(!nome) return;
+  if(!_poolItens[prefix]) _poolItens[prefix] = [];
+  _poolItens[prefix].push(nome);
+  inp.value = '';
+  renderItensLista(prefix);
 }
 
-// ══════════════════════════════════════
-// RENDER FUNÇÕES EXTRAS NA PÁGINA DO JOGADOR
-// ══════════════════════════════════════
-let _lootModalFuncaoAtual = null;
-
-function renderFuncoesExtrasJogador(funcoes){
-  const wrap = document.getElementById('evento-funcoes-extras-wrap');
-  if(!wrap) return;
-  if(!funcoes||!funcoes.length){ wrap.innerHTML=''; return; }
-  wrap.innerHTML = funcoes.map((func,fi)=>{
-    const n = func.itens.length;
-    const icone = func.icone||'🎁';
-    const titulo = func.titulo||'Itens';
-    const itensHtml = func.itens.map((nome,i)=>`
-      <div class="loot-item-card" onclick="abrirLootModal(${fi})">
-        <span class="loot-dice-badge">${n===1?'1':i+1}</span>
-        <span class="loot-item-name" title="${nome}">${nome}</span>
-      </div>`).join('');
-    return `
-    <div style="border:1.5px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
-      <button onclick="toggleAccordionFuncao(this)" style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface2);border:none;cursor:pointer;text-align:left">
-        <span style="font-size:18px">${icone}</span>
-        <span style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);flex:1;text-transform:uppercase;letter-spacing:.5px">${titulo}</span>
-        <span style="font-size:10px;color:var(--muted);font-weight:600">${n} item${n!==1?'s':''}</span>
-        <span style="color:var(--muted);font-size:11px;transition:transform .2s" class="acc-arrow">▼</span>
-      </button>
-      <div class="acc-body" style="display:none;padding:12px;background:var(--surface)">
-        <div class="loot-items-grid">${itensHtml}</div>
-      </div>
-    </div>`;
-  }).join('');
+function removerItemPool(prefix, idx){
+  _poolItens[prefix].splice(idx, 1);
+  renderItensLista(prefix);
 }
 
-function toggleAccordionFuncao(btn){
-  const body  = btn.nextElementSibling;
-  const arrow = btn.querySelector('.acc-arrow');
-  const aberto = body.style.display !== 'none';
-  body.style.display = aberto ? 'none' : 'block';
-  if(arrow) arrow.style.transform = aberto ? '' : 'rotate(180deg)';
+function toggleLootTable(){
+  const acc = document.getElementById('loot-table-acc');
+  if(acc) acc.classList.toggle('open');
 }
 
-function abrirLootModal(funcIdx){
-  const ev = eventoAtual;
-  if(!ev) return;
-  const funcoes = ev.funcoes_extras || (ev.pool_itens&&ev.pool_itens.length ? [{titulo:'Itens',icone:'🎁',itens:ev.pool_itens}] : []);
-  const func = funcoes[funcIdx];
-  if(!func||!func.itens.length) return;
+function abrirLootModal(){
   const overlay = document.getElementById('loot-modal-overlay');
   const grid    = document.getElementById('loot-modal-grid');
-  const titulo  = document.getElementById('loot-modal-titulo');
-  const icon    = document.getElementById('loot-modal-icon');
-  if(!overlay||!grid) return;
-  const n = func.itens.length;
-  if(titulo) titulo.textContent = func.titulo||'Itens';
-  if(icon)   icon.textContent   = func.icone||'🎁';
-  grid.innerHTML = func.itens.map((nome,i)=>`
-    <div class="loot-item-card">
-      <span class="loot-dice-badge">${n===1?'1':i+1}</span>
-      <span class="loot-item-name" title="${nome}">${nome}</span>
-    </div>`).join('');
+  if(!overlay || !grid) return;
+  const ev = eventoAtual;
+  const itens = ev?.pool_itens || [];
+  if(!itens.length) return;
+  const n = itens.length;
+  grid.innerHTML = itens.map(function(nome, i){
+    const diceLabel = n === 1 ? '1' : String(i+1);
+    return '<div class="loot-item-card">'
+      +'<span class="loot-dice-badge">'+diceLabel+'</span>'
+      +'<span class="loot-item-name" title="'+nome+'">'+nome+'</span>'
+    +'</div>';
+  }).join('');
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
@@ -3651,14 +3551,109 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const o=document
 
 // Armazena sprites customizados por nome de item (base64)
 const _itemSpritesCustom = {};
-const _itemSpriteCache = {};
-function _itemSlug(nome){ return nome.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/,''); }
-function _itemSpriteUrl(nome){ return 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/'+_itemSlug(nome)+'.png'; }
-async function _fetchItemSprite(nome){ if(_itemSpriteCache[nome]!==undefined)return _itemSpriteCache[nome]; _itemSpriteCache[nome]=null; try{ const slug=_itemSlug(nome); const res=await fetch('https://pokeapi.co/api/v2/item/'+slug+'/'); if(!res.ok)throw new Error(); const data=await res.json(); const url=data&&data.sprites&&data.sprites.default; if(!url)throw new Error(); _itemSpriteCache[nome]=url; document.querySelectorAll('.loot-item-sprite-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){ img.src=url; img.style.opacity=''; img.style.filter=''; }); }catch(e){ _itemSpriteCache[nome]='error'; } return _itemSpriteCache[nome]; }
 
-function renderItensLista(prefix){ renderFuncoesExtrasAdm(prefix); }
-function adicionarItemPool(prefix){ }
-function removerItemPool(prefix, idx){ }
+// Cache de URLs já resolvidas pela API
+const _itemSpriteCache = {};
+
+function _itemSlug(nome){
+  return nome.trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/,'');
+}
+
+// Retorna URL estática como fallback imediato enquanto a API é consultada
+function _itemSpriteUrl(nome){
+  const slug = _itemSlug(nome);
+  return 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/'+slug+'.png';
+}
+
+// Busca sprite via PokeAPI e atualiza todas as imagens do item na tela
+async function _fetchItemSprite(nome){
+  if(_itemSpriteCache[nome] !== undefined) return _itemSpriteCache[nome];
+  _itemSpriteCache[nome] = null; // marca como "buscando"
+  try {
+    const slug = _itemSlug(nome);
+    const res  = await fetch('https://pokeapi.co/api/v2/item/'+slug+'/');
+    if(!res.ok) throw new Error('not found');
+    const data = await res.json();
+    const url  = data && data.sprites && data.sprites.default;
+    if(!url) throw new Error('no sprite');
+    _itemSpriteCache[nome] = url;
+    // Atualiza todas as imgs do item que estão na tela
+    document.querySelectorAll('.loot-item-sprite-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){
+      img.src = url;
+      img.style.opacity = '';
+      img.style.filter  = '';
+    });
+    document.querySelectorAll('.adm-item-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){
+      img.src = url;
+    });
+  } catch(e){
+    _itemSpriteCache[nome] = 'error';
+  }
+  return _itemSpriteCache[nome];
+}
+
+function _lootItemImgError(el, nome){
+  el.onerror = null;
+  el.src = FALLBACK_SPRITE;
+  el.style.opacity = '0.35';
+  el.style.filter = 'grayscale(1)';
+  const card = el.closest('.loot-item-card');
+  if(card){
+    const btn = card.querySelector('.loot-upload-btn');
+    if(btn) btn.style.display = 'flex';
+  }
+}
+
+function _lootUploadSprite(inputEl, nome){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const b64 = e.target.result;
+    _itemSpritesCustom[nome] = b64;
+    const card = inputEl.closest('.loot-item-card');
+    if(!card) return;
+    const img = card.querySelector('.loot-item-sprite-img');
+    const btn = card.querySelector('.loot-upload-btn');
+    if(img){ img.src = b64; img.style.opacity='1'; img.style.filter='none'; }
+    if(btn){ btn.style.display='none'; }
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderEventoItensGrid(itens){
+  const wrap    = document.getElementById('evento-itens-wrap');
+  const grid    = document.getElementById('evento-itens-grid');
+  if(!wrap || !grid) return;
+  if(!itens || !itens.length){ wrap.style.display='none'; return; }
+  wrap.style.display = '';
+
+  const n = itens.length;
+  grid.innerHTML = itens.map(function(nome, i){
+    const diceLabel = n === 1 ? '1' : String(i+1);
+    return '<div class="loot-item-card">'
+      +'<span class="loot-dice-badge">'+diceLabel+'</span>'
+      +'<span class="loot-item-name" title="'+nome+'">'+nome+'</span>'
+    +'</div>';
+  }).join('');
+}
+
+function toggleFuncoesExtras(prefix){
+  const cb    = document.getElementById(prefix+'-funcoes-ativas');
+  const body  = document.getElementById(prefix+'-funcoes-body');
+  const arrow = document.getElementById(prefix+'-funcoes-arrow');
+  if(!body) return;
+  const aberto = body.style.display !== 'none';
+  body.style.display = aberto ? 'none' : 'block';
+  if(arrow) arrow.style.transform = aberto ? '' : 'rotate(180deg)';
+  if(cb) cb.checked = !aberto;
+}
+
+function adicionarFuncaoExtra(prefix){
+  alert('Funcionalidade removida — use o Pool de Itens acima.');
+}
 
 // ══════════════════════════════════════
 // ESTAÇÃO EM MASSA
@@ -5699,7 +5694,6 @@ async function criarEvento(){
     payload.lock_dado   = document.getElementById('ev-lock-dado')?.checked||false;
     payload.lock_motivo = document.getElementById('ev-lock-motivo')?.checked||false;
     payload.pool_itens  = _poolItens['ev'] || [];
-    payload.funcoes_extras = getFuncoesPayload('ev');
   }
 
   try{
@@ -5715,7 +5709,7 @@ async function criarEvento(){
   document.getElementById('ev-emoji').value='';
   _poolBiomasEvento = [];
   _poolItens['ev'] = [];
-  loadFuncoesExtras('ev', []);
+  renderItensLista('ev');
   setEvTipo('encontro');
   if(document.getElementById('ev-slug')._userEdited !== undefined) document.getElementById('ev-slug')._userEdited=false;
 }
@@ -5855,7 +5849,7 @@ function abrirEditarEvento(id){
     document.getElementById('edit-ev-lock-dado').checked        = !!ev.lock_dado;
     document.getElementById('edit-ev-lock-motivo').checked      = !!ev.lock_motivo;
     _poolItens['edit-ev'] = Array.isArray(ev.pool_itens) ? [...ev.pool_itens] : [];
-    loadFuncoesExtras('edit-ev', ev.funcoes_extras||[]);
+    renderItensLista('edit-ev');
   }
   document.getElementById('edit-ev-fb-ok').style.display='none';
   document.getElementById('edit-ev-fb-err').style.display='none';
@@ -5898,7 +5892,6 @@ async function salvarEdicaoEvento(){
     payload.lock_dado        = document.getElementById('edit-ev-lock-dado').checked;
     payload.lock_motivo      = document.getElementById('edit-ev-lock-motivo').checked;
     payload.pool_itens       = _poolItens['edit-ev'] || [];
-    payload.funcoes_extras   = getFuncoesPayload('edit-ev');
   }
 
   try{
@@ -6077,11 +6070,8 @@ async function iniciarPaginaEvento(slug){
       // Esconde dados rápidos quando os lados estão travados
       const sidesWrap = document.getElementById('evento-dados-sides-wrap');
       if(sidesWrap) sidesWrap.style.display = ev.lock_dado ? 'none' : '';
-      // Renderiza funções extras (pools de itens com accordion)
-      const funcoes = ev.funcoes_extras && ev.funcoes_extras.length
-        ? ev.funcoes_extras
-        : (ev.pool_itens && ev.pool_itens.length ? [{ titulo:'Itens', icone:'🎁', itens: ev.pool_itens }] : []);
-      renderFuncoesExtrasJogador(funcoes);
+      // Renderiza grade de itens
+      renderEventoItensGrid(ev.pool_itens||[]);
       renderEventoDiceBtns();
       sincEventoDiceBtn();
     }
