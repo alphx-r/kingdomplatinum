@@ -108,14 +108,14 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .ficha-ranking-4{background:#f0f4ff;border-color:#8aabee;color:#2a4a8a}
 .ficha-ranking-5{background:#f5f0ff;border-color:#9a78e0;color:#4a1a8a}
 /* ADM PLAYER ACCORDION */
-.adm-player-acc{border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
-.adm-player-acc-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);cursor:pointer;user-select:none;transition:background .15s}
+.adm-player-acc{border:1px solid var(--border);border-radius:6px;margin-bottom:4px;overflow:hidden}
+.adm-player-acc-header{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--surface);cursor:pointer;user-select:none;transition:background .15s}
 .adm-player-acc-header:hover{background:var(--surface2)}
-.adm-player-acc-title{font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text);letter-spacing:.5px;text-transform:uppercase}
-.adm-player-acc-meta{font-size:11px;color:var(--muted);margin-left:8px;font-family:var(--font-body)}
-.adm-player-acc-arrow{font-size:11px;color:var(--muted);transition:transform .25s}
+.adm-player-acc-title{font-family:var(--font-title);font-size:11px;font-weight:700;color:var(--text);letter-spacing:.4px;text-transform:uppercase}
+.adm-player-acc-meta{font-size:10px;color:var(--muted);margin-left:6px;font-family:var(--font-body)}
+.adm-player-acc-arrow{font-size:10px;color:var(--muted);transition:transform .25s}
 .adm-player-acc.open .adm-player-acc-arrow{transform:rotate(180deg)}
-.adm-player-acc-body{display:none;border-top:1.5px solid var(--border)}
+.adm-player-acc-body{display:none;border-top:1px solid var(--border)}
 .adm-player-acc.open .adm-player-acc-body{display:block}
 /* ADM PK GRID */
 .pk-adm-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;transition:all .2s;text-align:center}
@@ -818,6 +818,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
                 </div>
               </div>
             </div>
+              <div class="field" style="grid-column:1/-1"><label>Link da Ficha (Google Docs ou outro)</label><input type="url" id="np-ficha" placeholder="https://docs.google.com/..."></div>
             <button class="btn btn-primary btn-sm" onclick="adicionarPersonagem()">+ Adicionar</button>
             <div class="fb fb-ok" id="np-fb">✓ Personagem adicionado!</div>
           </div>
@@ -2720,6 +2721,7 @@ async function adicionarPersonagem(){
   const nome       =document.getElementById('np-nome').value.trim();
   const photoplayer=document.getElementById('np-photoplayer').value.trim();
   const cor        =document.getElementById('np-cor').value;
+  const fichaUrl   =document.getElementById('np-ficha').value.trim()||null;
   const prev       =document.getElementById('np-img-preview');
   const imgData    =prev.dataset.b64||'';
   if(!player||!nome){alert('Preencha o nome do player e do personagem.');return;}
@@ -2728,7 +2730,7 @@ async function adicionarPersonagem(){
     if(res&&res[0])players.push(res[0]);
   }
   // cria personagem primeiro para ter o ID
-  const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,pontos:1});
+  const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,pontos:1,ficha_url:fichaUrl});
   if(!res||!res[0]){alert('Erro ao criar personagem.');return;}
   const novo = res[0];
   personagens.push(novo);
@@ -2751,6 +2753,7 @@ async function adicionarPersonagem(){
   document.getElementById('np-nome').value='';
   document.getElementById('np-photoplayer').value='';
   document.getElementById('np-img').value='';
+  document.getElementById('np-ficha').value='';
   prev.innerHTML=`<img class="unown-fallback-img" src="${FALLBACK_AVATAR}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
   delete prev.dataset.b64;
   renderTbodyPersonagens();renderTbodyPlayers();renderFichario();renderPersonagensDatalist();
@@ -2857,6 +2860,11 @@ function renderTbodyPersonagens(){
           ${rankingBadgeAdm(p.pontos)} <span style="cursor:pointer;font-size:11px;color:var(--muted)" onclick="editarRankingPersonagem('${p.id}','${p.nome}')" title="Clique para editar">✏️</span>
         </td>
         <td style="white-space:nowrap">
+          ${p.ficha_url
+            ? `<a href="${p.ficha_url}" target="_blank" rel="noopener" class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:var(--brand);color:#fff;border-radius:6px;text-decoration:none;display:inline-flex;align-items:center;gap:4px">📄 Ficha</a>`
+            : `<span style="font-size:11px;color:var(--muted);font-style:italic">—</span>`}
+        </td>
+        <td style="white-space:nowrap">
           <button class="btn btn-danger btn-xs" style="padding:3px 8px;font-size:11px" onclick="removerPersonagem('${p.id}')">Remover</button>
         </td>
       </tr>`).join('');
@@ -2867,7 +2875,7 @@ function renderTbodyPersonagens(){
       </div>
       <div class="adm-player-acc-body">
         <div class="adm-table-wrap"><table class="adm-table">
-          <thead><tr><th>Personagem</th><th>Ranking</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Personagem</th><th>Ranking</th><th>Ficha</th><th>Ações</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
       </div>
