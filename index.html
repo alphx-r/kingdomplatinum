@@ -1771,7 +1771,17 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <div class="field"><label>Nome do Personagem</label><input type="text" id="modal-p-nome"/></div>
       <div class="field"><label>Photoplayer</label><input type="text" id="modal-p-photoplayer" placeholder="Ex: Satoshi"/></div>
       <div class="field"><label>Cor do avatar</label><input type="color" id="modal-p-cor"/></div>
-      <div class="field g2-full"><label>Link da Ficha (Google Docs)</label><input type="url" id="modal-p-ficha" placeholder="https://docs.google.com/..."/></div>
+      <div class="field"><label>Link da Ficha (Google Docs)</label><input type="url" id="modal-p-ficha" placeholder="https://docs.google.com/..."/></div>
+      <div class="field"><label>Ranking</label>
+        <select id="modal-p-pontos" style="padding:7px 10px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="0">— Sem ranking</option>
+          <option value="1">Ranking 1</option>
+          <option value="2">Ranking 2</option>
+          <option value="3">Ranking 3</option>
+          <option value="4">Ranking 4</option>
+          <option value="5">Ranking 5</option>
+        </select>
+      </div>
       <div class="field"><label>Imagem do personagem</label>
         <input type="file" id="modal-p-img" accept="image/*" onchange="modalPreviewImg(this)" style="font-size:13px"/>
         <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
@@ -2686,13 +2696,13 @@ function renderTbodyAdmins(){
 async function editarRankingPersonagem(id,nome){
   const p=personagens.find(x=>String(x.id)===String(id));if(!p)return;
   const opcoes=[0,1,2,3,4,5];
-  const atual=p.pontos||0;
+  const atual=p.ranking||0;
   const val=prompt(`Ranking de "${nome}" (0 = sem ranking, 1 a 5):`,atual);
   if(val===null)return;
   const n=parseInt(val);
   if(isNaN(n)||n<0||n>5){alert('Valor inválido. Use 0 (sem ranking) ou 1 a 5.');return;}
-  await dbPatch('personagens',`id=eq.${id}`,{pontos:n});
-  p.pontos=n;
+  await dbPatch('personagens',`id=eq.${id}`,{ranking:n});
+  p.ranking=n;
   renderTbodyPersonagens();renderFichario();
 }
 async function removerPlayer(id,nome){
@@ -2730,7 +2740,7 @@ async function adicionarPersonagem(){
     if(res&&res[0])players.push(res[0]);
   }
   // cria personagem primeiro para ter o ID
-  const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,pontos:1,ficha_url:fichaUrl});
+  const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,ranking:1,ficha_url:fichaUrl});
   if(!res||!res[0]){alert('Erro ao criar personagem.');return;}
   const novo = res[0];
   personagens.push(novo);
@@ -2772,6 +2782,7 @@ function abrirModalPersonagem(id){
   document.getElementById('modal-p-photoplayer').value=p.photoplayer||'';
   document.getElementById('modal-p-cor').value=p.cor||'#2563a8';
   document.getElementById('modal-p-ficha').value=p.ficha_url||'';
+  document.getElementById('modal-p-pontos').value=String(p.ranking||0);
   const prev=document.getElementById('modal-p-img-preview');
   prev.innerHTML=p.img?`<img src="${p.img}" style="width:52px;height:52px;object-fit:cover;border-radius:50%"/>`
     :`<img src="${FALLBACK_AVATAR}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
@@ -2811,6 +2822,7 @@ async function salvarEdicaoPersonagem(){
   const novoPhotoplayer=document.getElementById('modal-p-photoplayer').value.trim();
   const novaCor        =document.getElementById('modal-p-cor').value;
   const novaFicha      =document.getElementById('modal-p-ficha').value.trim()||null;
+  const novosRanking   =parseInt(document.getElementById('modal-p-pontos').value)||0;
   const prev           =document.getElementById('modal-p-img-preview');
   const imgData        =prev.dataset.img||'';
   if(!novoPlayer||!novoNome){alert('Preencha todos os campos.');return;}
@@ -2833,8 +2845,8 @@ async function salvarEdicaoPersonagem(){
     const res=await dbPost('players',{nome:novoPlayer});
     if(res&&res[0])players.push(res[0]);
   }
-  await dbPatch('personagens',`id=eq.${id}`,{player:novoPlayer,nome:novoNome,photoplayer:novoPhotoplayer||null,cor:novaCor,img:novaImg,ficha_url:novaFicha});
-  p.player=novoPlayer;p.nome=novoNome;p.photoplayer=novoPhotoplayer||null;p.cor=novaCor;p.img=novaImg;p.ficha_url=novaFicha;
+  await dbPatch('personagens',`id=eq.${id}`,{player:novoPlayer,nome:novoNome,photoplayer:novoPhotoplayer||null,cor:novaCor,img:novaImg,ficha_url:novaFicha,ranking:novosRanking});
+  p.player=novoPlayer;p.nome=novoNome;p.photoplayer=novoPhotoplayer||null;p.cor=novaCor;p.img=novaImg;p.ficha_url=novaFicha;p.ranking=novosRanking;
   fecharModal();
   renderTbodyPersonagens();renderTbodyPlayers();renderFichario();renderPersonagensDatalist();
 }
@@ -2856,9 +2868,6 @@ function renderTbodyPersonagens(){
           ${p.img?`<img src="${p.img}" style="width:24px;height:24px;object-fit:cover;border-radius:50%"/>`:`<img src="${FALLBACK_AVATAR}" style="width:18px;height:18px;object-fit:contain;image-rendering:pixelated"/>`}
         </div>
         <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nome}</span>
-        <span style="font-size:10px;color:var(--brand-mid);font-weight:700;flex-shrink:0">${rankingBadgeAdm(p.pontos)}</span>
-        ${p.ficha_url?`<a href="${p.ficha_url}" target="_blank" rel="noopener" title="Abrir ficha" style="font-size:13px;text-decoration:none;flex-shrink:0">📄</a>`:`<span style="font-size:13px;opacity:.25;flex-shrink:0">📄</span>`}
-        <span onclick="editarRankingPersonagem('${p.id}','${p.nome}')" title="Editar ranking" style="cursor:pointer;font-size:11px;flex-shrink:0">✏️</span>
         <span onclick="removerPersonagem('${p.id}')" title="Remover" style="cursor:pointer;font-size:11px;color:var(--red);flex-shrink:0">🗑️</span>
       </div>`).join('');
     return`<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
@@ -3434,7 +3443,7 @@ function renderFichario(){
       </div>
       <div class="ficha-name">${p.nome}</div>
       ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
-      ${p.pontos ? rankingBadge(p.pontos) : ''}
+      ${p.ranking ? rankingBadge(p.ranking) : ''}
     </div>`).join('');
   container.innerHTML=`<div class="fichas-grid">${cards}</div>`;
   container.querySelectorAll('.ficha-card').forEach(card=>{
