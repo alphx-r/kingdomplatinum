@@ -916,6 +916,7 @@ body.edit-mode .page.active{padding-top:100px}
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
         <button class="adm-nav-btn" data-sec="estacao" onclick="admTab('estacao',this)">🌿 Estação</button>
+        <button class="adm-nav-btn" data-sec="forcados" onclick="admTab('forcados',this)">🎯 Forçar Resultado</button>
 
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()">Sair</button>
@@ -1395,6 +1396,61 @@ body.edit-mode .page.active{padding-top:100px}
           </div>
         </div>
 
+
+        <!-- FORÇAR RESULTADO -->
+        <div class="adm-section" id="sec-forcados">
+          <div class="sec-title">🎯 Forçar Resultado</div>
+          <div class="sec-sub">Defina Pokémon específicos que aparecerão na próxima rolagem de um personagem. Após a rolagem, o resultado forçado é consumido automaticamente.</div>
+
+          <div class="box">
+            <div class="box-title">Nova força de resultado</div>
+            <div class="g2" style="margin-bottom:12px">
+              <div class="field" style="margin-bottom:0">
+                <label>Personagem</label>
+                <select id="frc-personagem" style="width:100%">
+                  <option value="">— Selecione —</option>
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Bioma (opcional — limita busca)</label>
+                <select id="frc-bioma" style="width:100%" onchange="renderFrcPool()">
+                  <option value="">— Todos os biomas —</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-bottom:10px">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Buscar Pokémon</div>
+              <input type="text" id="frc-busca" placeholder="Digite o nome..." oninput="renderFrcPool()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:14px;margin-bottom:10px"/>
+              <div id="frc-pool" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-height:320px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;padding:8px;background:var(--surface2)">
+                <div style="grid-column:1/-1;text-align:center;color:var(--muted);font-size:13px;padding:16px">Selecione um bioma ou busque pelo nome</div>
+              </div>
+            </div>
+
+            <div id="frc-selecionados-wrap" style="display:none;margin-bottom:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Pokémon selecionados <span id="frc-sel-count" style="color:var(--brand-mid)"></span></div>
+              <div id="frc-selecionados" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+            </div>
+
+            <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+              <div class="field" style="margin-bottom:0;flex:1;min-width:180px">
+                <label>Nota interna (opcional)</label>
+                <input type="text" id="frc-nota" placeholder="Ex: Recompensa de missão" style="width:100%"/>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="salvarForcado()">🎯 Salvar resultado forçado</button>
+            <div class="fb fb-ok" id="frc-fb" style="margin-top:8px">✓ Resultado forçado salvo!</div>
+            <div class="fb fb-err" id="frc-fb-err" style="margin-top:8px">Erro ao salvar.</div>
+          </div>
+
+          <div class="box">
+            <div class="box-title">Resultados forçados ativos</div>
+            <div id="frc-lista" style="display:flex;flex-direction:column;gap:8px">
+              <div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">Nenhum resultado forçado ativo.</div>
+            </div>
+          </div>
+        </div>
 
         <!-- ESTAÇÃO -->
         <div class="adm-section" id="sec-estacao">
@@ -2689,6 +2745,7 @@ function toggleRaridade(r){
 }
 function admTab(sec,el){
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
+  if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
   // verifica permissão
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos'];
@@ -4635,18 +4692,50 @@ async function rolarEncontro(){
     }
   }
 
+  // Verifica se há resultado forçado para este personagem
+  const forcadoIds = await consumirForcado(personagem);
+
   // Sorteia raridade aleatoriamente (pesos originais) e evita repetir pokémon
   function rollRarity(){const r=Math.ceil(Math.random()*100);if(r<=2)return 'rarissimo';if(r<=13)return 'raro';if(r<=51)return 'incomum';return 'comum';}
   const pokes=[];
-  for(let i=0;i<total;i++){
-    const rarity=rollRarity();
-    const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
-    const pk=pickFromPool(pool,usedIds[rarity],rarity);
-    pokes.push(pk);
+
+  if(forcadoIds && forcadoIds.length){
+    // Usa os Pokémon forçados (na ordem definida, completando com sorteio se houver mais slots)
+    for(let i=0;i<total;i++){
+      const pkId = forcadoIds[i];
+      if(pkId){
+        const pkData = pokemonDB.find(p=>p.id===pkId);
+        if(pkData){
+          const gender=rollGender(pkData.genero);
+          pokes.push({nome:pkData.nome,tipos:pkData.tipos||[],emoji:pkData.emoji||'❓',sprite:pkData.sprite||null,habilidade:pkData.habilidade,rarity:pkData.raridade,genderS:gender.s,genderC:gender.c,_forcado:true});
+          continue;
+        }
+      }
+      // slot sem forçado: sorteia normalmente
+      const rarity=rollRarity();
+      const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
+      pokes.push(pickFromPool(pool,usedIds[rarity],rarity));
+    }
+  } else {
+    for(let i=0;i<total;i++){
+      const rarity=rollRarity();
+      const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
+      const pk=pickFromPool(pool,usedIds[rarity],rarity);
+      pokes.push(pk);
+    }
   }
 
   const section=document.getElementById('results-section');
   section.innerHTML='';
+
+  // Banner de resultado forçado
+  if(forcadoIds && forcadoIds.length){
+    const bannerF=document.createElement('div');
+    bannerF.style.cssText='background:#fff0d8;border:1.5px solid #e8a020;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a4a00;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
+    bannerF.innerHTML='<span style="font-size:16px">🎯</span><span><strong>Resultado forçado</strong> — definido pelo mestre para esta rolagem.</span>';
+    section.appendChild(bannerF);
+  }
+
   if(motivoExtras&&total>3){
     const banner=document.createElement('div');
     banner.style.cssText='background:var(--accent-light);border:1.5px solid var(--accent);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
@@ -7336,6 +7425,186 @@ document.addEventListener('mousemove', e => {
     if (bagBtn && !bagBtn.contains(e.relatedTarget)) { bagTip.style.display = 'none'; }
   });
 })();
+
+// ══════════════════════════════════════
+// FORÇAR RESULTADO
+// ══════════════════════════════════════
+let forcadosAtivos = []; // cache local
+
+// Carrega do Supabase
+async function carregarForcados(){
+  const rows = await dbGet('config', 'chave=like.forced_result_%');
+  forcadosAtivos = (rows||[]).map(r => {
+    try { return { chave: r.chave, ...JSON.parse(r.valor) }; } catch(e){ return null; }
+  }).filter(Boolean);
+  renderFrcLista();
+}
+
+// Preenche selects de personagem e bioma na aba forçados
+function populateFrcSelects(){
+  const selP = document.getElementById('frc-personagem');
+  const selB = document.getElementById('frc-bioma');
+  if(!selP || !selB) return;
+
+  // Personagens
+  selP.innerHTML = '<option value="">— Selecione —</option>' +
+    personagens.map(p => `<option value="${p.nome}">${p.nome}</option>`).join('');
+
+  // Biomas
+  selB.innerHTML = '<option value="">— Todos os biomas —</option>' +
+    biomas.map(b => `<option value="${b.nome}">${b.nome}</option>`).join('');
+}
+
+// Renderiza o pool de Pokémon disponíveis para selecionar
+function renderFrcPool(){
+  const biomaFiltro = document.getElementById('frc-bioma')?.value || '';
+  const busca = (document.getElementById('frc-busca')?.value || '').trim().toLowerCase();
+  const container = document.getElementById('frc-pool');
+  if(!container) return;
+
+  let lista = pokemonDB.slice();
+  if(biomaFiltro) lista = lista.filter(p => p.bioma === biomaFiltro);
+  if(busca) lista = lista.filter(p => p.nome.toLowerCase().includes(busca));
+  lista = lista.slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  if(!lista.length){
+    container.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--muted);font-size:13px;padding:16px">Nenhum Pokémon encontrado.</div>';
+    return;
+  }
+
+  container.innerHTML = lista.map(p => {
+    const selected = frcSelecionados.find(x => x.id === p.id);
+    const border = selected ? 'border-color:var(--brand-mid);background:var(--brand-light)' : '';
+    const sprite = p.sprite || FALLBACK_SPRITE;
+    return `<div onclick="toggleFrcPoke('${p.id}')" title="${p.nome}"
+      style="background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;transition:all .15s;${border}"
+      onmouseover="if(!this.dataset.sel)this.style.borderColor='var(--border2)'" onmouseout="if(!this.dataset.sel)this.style.borderColor='var(--border)'"
+      data-pkid="${p.id}" ${selected?'data-sel="1"':''}>
+      <img src="${sprite}" style="width:56px;height:56px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
+      <div style="font-family:var(--font-title);font-size:10px;text-align:center;line-height:1.3;color:var(--text)">${p.nome}</div>
+      <span class="poke-rarity ${rcls[p.raridade]||'rc'}" style="font-size:9px">${rlbl[p.raridade]||p.raridade}</span>
+    </div>`;
+  }).join('');
+}
+
+let frcSelecionados = []; // [{id, nome, sprite, tipos, raridade, habilidade, genero}]
+
+function toggleFrcPoke(pkId){
+  const p = pokemonDB.find(x => x.id === pkId);
+  if(!p) return;
+  const idx = frcSelecionados.findIndex(x => x.id === pkId);
+  if(idx >= 0){
+    frcSelecionados.splice(idx, 1);
+  } else {
+    frcSelecionados.push(p);
+  }
+  renderFrcPool();
+  renderFrcSelecionados();
+}
+
+function renderFrcSelecionados(){
+  const wrap = document.getElementById('frc-selecionados-wrap');
+  const container = document.getElementById('frc-selecionados');
+  const count = document.getElementById('frc-sel-count');
+  if(!wrap || !container) return;
+  if(!frcSelecionados.length){
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+  if(count) count.textContent = `(${frcSelecionados.length})`;
+  container.innerHTML = frcSelecionados.map(p => `
+    <div style="display:flex;align-items:center;gap:6px;background:var(--brand-light);border:1.5px solid var(--brand-mid);border-radius:20px;padding:4px 10px 4px 6px">
+      <img src="${p.sprite||FALLBACK_SPRITE}" style="width:24px;height:24px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
+      <span style="font-size:12px;font-weight:700;color:var(--brand)">${p.nome}</span>
+      <span onclick="toggleFrcPoke('${p.id}')" style="cursor:pointer;font-size:11px;color:var(--red);margin-left:2px" title="Remover">✕</span>
+    </div>`).join('');
+}
+
+async function salvarForcado(){
+  const personagem = document.getElementById('frc-personagem')?.value;
+  const nota = document.getElementById('frc-nota')?.value.trim() || '';
+  const fbOk = document.getElementById('frc-fb');
+  const fbErr = document.getElementById('frc-fb-err');
+
+  if(!personagem){ alert('Selecione um personagem.'); return; }
+  if(!frcSelecionados.length){ alert('Selecione ao menos 1 Pokémon.'); return; }
+
+  const chave = 'forced_result_' + personagem.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  const valor = JSON.stringify({ personagem, pokemons: frcSelecionados.map(p=>p.id), nota, criadoEm: new Date().toISOString() });
+
+  // Verifica se já existe
+  const existing = await dbGet('config', `chave=eq.${chave}`);
+  let res;
+  if(existing && existing.length){
+    res = await dbPatch('config', `chave=eq.${chave}`, { valor });
+  } else {
+    res = await dbPost('config', { chave, valor });
+  }
+
+  if(res !== null){
+    fbOk.style.display='block'; fbErr.style.display='none';
+    setTimeout(()=>fbOk.style.display='none', 2500);
+    frcSelecionados = [];
+    document.getElementById('frc-personagem').value = '';
+    document.getElementById('frc-nota').value = '';
+    document.getElementById('frc-busca').value = '';
+    renderFrcPool();
+    renderFrcSelecionados();
+    await carregarForcados();
+  } else {
+    fbErr.style.display='block'; fbErr.textContent='Erro ao salvar.';
+    fbOk.style.display='none';
+    setTimeout(()=>fbErr.style.display='none', 2500);
+  }
+}
+
+async function removerForcado(chave){
+  if(!confirm('Remover este resultado forçado?')) return;
+  await dbDel('config', `chave=eq.${chave}`);
+  await carregarForcados();
+}
+
+function renderFrcLista(){
+  const container = document.getElementById('frc-lista');
+  if(!container) return;
+  if(!forcadosAtivos.length){
+    container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">Nenhum resultado forçado ativo.</div>';
+    return;
+  }
+  container.innerHTML = forcadosAtivos.map(f => {
+    const pokes = (f.pokemons||[]).map(id => pokemonDB.find(p=>p.id===id)).filter(Boolean);
+    const sprites = pokes.map(p=>`<img src="${p.sprite||FALLBACK_SPRITE}" title="${p.nome}" style="width:36px;height:36px;object-fit:contain;border-radius:50%;border:1.5px solid var(--border);background:var(--surface)" onerror="this.src='${FALLBACK_SPRITE}'">`).join('');
+    const dt = f.criadoEm ? new Date(f.criadoEm).toLocaleDateString('pt-BR') : '';
+    return `<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--brand);margin-bottom:4px">🎯 ${f.personagem}</div>
+        ${f.nota?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">📝 ${f.nota}</div>`:''}
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${sprites}
+          ${!pokes.length?'<span style="font-size:12px;color:var(--muted)">IDs não encontrados no banco</span>':''}
+        </div>
+        ${dt?`<div style="font-size:10px;color:var(--muted);margin-top:4px">Criado em ${dt}</div>`:''}
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="removerForcado('${f.chave}')">🗑 Remover</button>
+    </div>`;
+  }).join('');
+}
+
+// Hook: consulta se há resultado forçado antes de sortear
+async function consumirForcado(personagem){
+  const chave = 'forced_result_' + personagem.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  const rows = await dbGet('config', `chave=eq.${chave}`);
+  if(!rows || !rows.length) return null;
+  try {
+    const data = JSON.parse(rows[0].valor);
+    // Consome (apaga) após ler
+    await dbDel('config', `chave=eq.${chave}`);
+    // Atualiza cache
+    forcadosAtivos = forcadosAtivos.filter(f => f.chave !== chave);
+    return data.pokemons || [];
+  } catch(e){ return null; }
+}
+
 
 window.addEventListener('popstate', async ()=>{
   const pathPage = location.pathname.replace(/^\//, '') || 'roller';
