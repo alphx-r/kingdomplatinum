@@ -520,7 +520,6 @@ body.edit-mode .page.active{padding-top:100px}
     <div class="nav-drop-wrap" id="nav-drop-wrap">
       <button class="nav-drop-btn" id="nav-drop-btn" onclick="toggleNavDrop(event)"><span style="font-size:11px">▾</span></button>
       <div class="nav-drop-menu" id="nav-drop-menu">
-        <button class="nav-drop-item" onclick="goTo('ganhos',null);closeNavDrop()">Ganhos</button>
         <button class="nav-drop-item" onclick="goTo('nature',null);closeNavDrop()">Natures</button>
       </div>
     </div>
@@ -617,7 +616,6 @@ body.edit-mode .page.active{padding-top:100px}
   <button class="nav-link" onclick="goTo('fichario',this);closeMobileMenu()">Fichário</button>
   <button class="nav-link" onclick="goTo('rolagens',this);closeMobileMenu()">Rolls</button>
   <button class="nav-link" onclick="goTo('npcs',this);closeMobileMenu()">NPCs</button>
-  <button class="nav-link" onclick="goTo('ganhos',this);closeMobileMenu()">Ganhos</button>
   <button class="nav-link" onclick="goTo('nature',this);closeMobileMenu()">Natures</button>
 </div>
 
@@ -892,7 +890,7 @@ body.edit-mode .page.active{padding-top:100px}
   </div>
 </div>
 
-<div class="page page-info-editable" id="page-ganhos" data-page-key="page_ganhos">
+<div class="page page-info-editable" id="page-ganhos" data-page-key="page_ganhos" data-page-disabled="true">
   <div class="roller-header">
     <h2>Ganhos por Atividades</h2>
     <p>Recompensas recebidas ao participar de ações dentro do RPG. Todos os ganhos são contados por turno, exceto quando indicado. Postagens sem conteúdo feitas apenas para farmar ganhos serão ignoradas.</p>
@@ -1120,6 +1118,7 @@ body.edit-mode .page.active{padding-top:100px}
         <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)">🎨 Editor Visual</button>
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
+        <button class="adm-nav-btn" data-sec="paginas" onclick="admTab('paginas',this)">📄 Páginas</button>
         <button class="adm-nav-btn" data-sec="estacao" onclick="admTab('estacao',this)">🌿 Estação</button>
 
         <div class="adm-nav-sep"></div>
@@ -1867,6 +1866,11 @@ body.edit-mode .page.active{padding-top:100px}
           </div>
         </div>
 
+      <div class="adm-section" id="sec-paginas">
+        <div class="box-title" style="margin-bottom:20px">📄 Visibilidade das Páginas</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Ative ou desative páginas do site para os jogadores. Páginas desativadas ficam ocultas do menu e inacessíveis.</p>
+        <div style="display:flex;flex-direction:column;gap:10px" id="paginas-toggle-list"></div>
+      </div>
       </div>
     </div>
   </div>
@@ -7565,6 +7569,73 @@ init();
   );
   resetIdle();
 })();
+
+// ══ GERENCIAMENTO DE PÁGINAS ══════════════════════════════════════
+const PAGINAS_GERENCIADAS = [
+  { id: 'page-ganhos',  label: 'Ganhos por Atividades', key: 'page_ganhos',  navDesktop: 'ganhos',  icon: '📋' },
+  { id: 'page-nature',  label: 'Natures',                key: 'page_nature',  navDesktop: 'nature',  icon: '🌿' },
+  { id: 'page-npcs',    label: 'NPCs',                   key: 'page_npcs',    navDesktop: 'npcs',    icon: '🧑' },
+  { id: 'page-fichario',label: 'Fichário',               key: 'page_fichario',navDesktop: 'fichario',icon: '📁' },
+  { id: 'page-rolagens',label: 'Rolls / Histórico',      key: 'page_rolagens',navDesktop: 'rolagens',icon: '🎲' },
+  { id: 'page-dados',   label: 'Dados',                  key: 'page_dados',   navDesktop: 'dados',   icon: '🎯' },
+];
+
+function getPaginaAtiva(key){
+  const stored = localStorage.getItem('page_disabled_'+key);
+  // ganhos começa desativada, resto começa ativa
+  if(stored === null) return key !== 'page_ganhos';
+  return stored !== 'true';
+}
+
+function setPaginaAtiva(key, ativo){
+  localStorage.setItem('page_disabled_'+key, ativo ? 'false' : 'true');
+}
+
+function renderPaginasToggle(){
+  const list = document.getElementById('paginas-toggle-list');
+  if(!list) return;
+  list.innerHTML = PAGINAS_GERENCIADAS.map(p => {
+    const ativo = getPaginaAtiva(p.key);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">${p.icon}</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">${p.label}</div>
+          <div style="font-size:11px;color:${ativo?'#4caf50':'var(--muted)'};margin-top:2px">${ativo?'✓ Visível':'✗ Oculta'}</div>
+        </div>
+      </div>
+      <button onclick="togglePagina('${p.key}','${p.navDesktop}')" style="padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:var(--font-body);background:${ativo?'#fde8e8':'#e8f5e9'};color:${ativo?'#c62828':'#2e7d32'};transition:all .2s">
+        ${ativo ? 'Desativar' : 'Ativar'}
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function togglePagina(key, navKey){
+  const ativo = getPaginaAtiva(key);
+  setPaginaAtiva(key, !ativo);
+  aplicarVisibilidadePaginas();
+  renderPaginasToggle();
+}
+
+function aplicarVisibilidadePaginas(){
+  PAGINAS_GERENCIADAS.forEach(p => {
+    const ativo = getPaginaAtiva(p.key);
+    // nav desktop (dropdown)
+    document.querySelectorAll('.nav-drop-item').forEach(btn => {
+      if(btn.textContent.trim() === p.label || btn.getAttribute('onclick')?.includes("'"+p.navDesktop+"'")){
+        btn.style.display = ativo ? '' : 'none';
+      }
+    });
+    // nav mobile
+    document.querySelectorAll('#nav-dropdown .nav-link').forEach(btn => {
+      if(btn.getAttribute('onclick')?.includes("'"+p.navDesktop+"'")){
+        btn.style.display = ativo ? '' : 'none';
+      }
+    });
+  });
+}
+
 </script>
 
 <!-- ESTAÇÃO FAB -->
