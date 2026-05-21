@@ -249,6 +249,8 @@ body.edit-mode .page-info-editable{outline:2px dashed var(--brand-mid);outline-o
 .ed-btn:hover,.ed-btn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
 .ed-sep{width:1px;height:18px;background:var(--border);margin:0 1px;flex-shrink:0}
 .ed-color{width:20px;height:20px;border-radius:3px;border:1px solid var(--border);cursor:pointer;padding:0;flex-shrink:0}
+.ed-table-ctx{position:fixed;z-index:960;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:4px 6px;display:none;align-items:center;gap:3px;box-shadow:0 4px 16px rgba(0,0,0,.18);flex-wrap:wrap}
+.ed-table-ctx.visible{display:flex}
 /* ══════════════════════════════════════════════════ */
 @media(max-width:768px){
   .nav{padding:0 14px;height:52px;position:relative}
@@ -549,6 +551,18 @@ body.edit-mode .page-info-editable{outline:2px dashed var(--brand-mid);outline-o
   <div class="ed-sep"></div>
   <button class="ed-btn" style="background:var(--brand);color:#fff;border-color:var(--brand);font-weight:700" onmousedown="event.preventDefault();salvarPaginaEditada()" title="Salvar">💾 Salvar</button>
   <button class="ed-btn" onmousedown="event.preventDefault();sairModoEdicao()" title="Sair sem salvar">✕</button>
+</div>
+<!-- TABLE CONTEXT TOOLBAR -->
+<div class="ed-table-ctx" id="ed-table-ctx">
+  <span style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:0 2px">Tabela</span>
+  <div class="ed-sep"></div>
+  <button class="ed-btn" onmousedown="event.preventDefault();edTableAddRow()" title="Adicionar linha abaixo">+ Linha</button>
+  <button class="ed-btn" onmousedown="event.preventDefault();edTableAddCol()" title="Adicionar coluna à direita">+ Coluna</button>
+  <div class="ed-sep"></div>
+  <button class="ed-btn" onmousedown="event.preventDefault();edTableDelRow()" title="Remover linha atual">− Linha</button>
+  <button class="ed-btn" onmousedown="event.preventDefault();edTableDelCol()" title="Remover coluna atual">− Coluna</button>
+  <div class="ed-sep"></div>
+  <button class="ed-btn" onmousedown="event.preventDefault();edTableDelTable()" style="color:var(--red,#e53)" title="Remover tabela inteira">🗑 Tabela</button>
 </div>
 <!-- BOTÃO EDITAR -->
 <button class="page-edit-btn" id="page-edit-btn" onclick="toggleEditMode()" title="Editar página">✏️</button>
@@ -3698,6 +3712,7 @@ function sairModoEdicao(){
   document.body.classList.remove('edit-mode');
   document.getElementById('editor-toolbar').classList.remove('visible');
   document.getElementById('page-edit-btn').classList.remove('active');
+  edShowTableCtx(null);
   document.getElementById('page-edit-btn').title = 'Editar página';
   editPageKey = null;
 }
@@ -3705,6 +3720,80 @@ function sairModoEdicao(){
 function edCmd(cmd, val){
   document.execCommand(cmd, false, val !== undefined ? val : null);
   setTimeout(edUpdateToolbar, 10);
+}
+
+// Table context detection
+let _edTableCtxCell = null;
+function edGetCurrentCell(){
+  const sel = window.getSelection();
+  if(!sel || !sel.anchorNode) return null;
+  let node = sel.anchorNode;
+  while(node && node.nodeName !== 'TD' && node.nodeName !== 'TH' && node !== document.body)
+    node = node.parentNode;
+  return (node && (node.nodeName==='TD'||node.nodeName==='TH')) ? node : null;
+}
+function edShowTableCtx(cell){
+  const ctx = document.getElementById('ed-table-ctx');
+  if(!cell){ ctx.classList.remove('visible'); _edTableCtxCell=null; return; }
+  _edTableCtxCell = cell;
+  ctx.classList.add('visible');
+  // Position near cell
+  const r = cell.getBoundingClientRect();
+  ctx.style.top  = (r.bottom + window.scrollY + 6) + 'px';
+  ctx.style.left = Math.min(r.left + window.scrollX, window.innerWidth - ctx.offsetWidth - 12) + 'px';
+}
+function edTableAddRow(){
+  const cell = _edTableCtxCell; if(!cell) return;
+  const row = cell.closest('tr');
+  const table = cell.closest('table');
+  const newRow = row.cloneNode(true);
+  // Clear content of new row cells
+  newRow.querySelectorAll('td,th').forEach(td => {
+    td.innerHTML = '&nbsp;';
+    if(td.nodeName==='TH') { const newTd = document.createElement('td'); newTd.innerHTML='&nbsp;'; newTd.style.cssText=td.style.cssText; row.parentNode.insertBefore(newTd, td); }
+  });
+  // Convert TH to TD in new data row
+  newRow.querySelectorAll('th').forEach(th => {
+    const td = document.createElement('td');
+    td.innerHTML = '&nbsp;';
+    td.style.cssText = th.style.cssText;
+    th.replaceWith(td);
+  });
+  row.after(newRow);
+}
+function edTableAddCol(){
+  const cell = _edTableCtxCell; if(!cell) return;
+  const table = cell.closest('table');
+  const colIdx = cell.cellIndex;
+  table.querySelectorAll('tr').forEach(row => {
+    const refCell = row.cells[colIdx];
+    if(!refCell) return;
+    const newCell = document.createElement(refCell.nodeName);
+    newCell.innerHTML = '&nbsp;';
+    newCell.style.cssText = refCell.style.cssText;
+    refCell.after(newCell);
+  });
+}
+function edTableDelRow(){
+  const cell = _edTableCtxCell; if(!cell) return;
+  const row = cell.closest('tr');
+  const table = cell.closest('table');
+  if(table.querySelectorAll('tr').length <= 1){ if(confirm('Remover a tabela inteira?')) table.remove(); return; }
+  row.remove();
+  edShowTableCtx(null);
+}
+function edTableDelCol(){
+  const cell = _edTableCtxCell; if(!cell) return;
+  const table = cell.closest('table');
+  const colIdx = cell.cellIndex;
+  const firstRow = table.querySelector('tr');
+  if(firstRow && firstRow.cells.length <= 1){ if(confirm('Remover a tabela inteira?')) table.remove(); return; }
+  table.querySelectorAll('tr').forEach(row => { if(row.cells[colIdx]) row.cells[colIdx].remove(); });
+  edShowTableCtx(null);
+}
+function edTableDelTable(){
+  const cell = _edTableCtxCell; if(!cell) return;
+  if(confirm('Remover esta tabela?')){ cell.closest('table').remove(); edShowTableCtx(null); }
 }
 
 function edUpdateToolbar(){
@@ -3718,6 +3807,10 @@ function edUpdateToolbar(){
     const el = document.getElementById(id);
     if(el) el.classList.toggle('on', document.queryCommandState(cmd));
   });
+  // Show/hide table context toolbar
+  if(document.body.classList.contains('edit-mode')){
+    edShowTableCtx(edGetCurrentCell());
+  }
 }
 
 function edInsertLink(){
