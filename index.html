@@ -4153,16 +4153,52 @@ function renderItensLista(prefix){
     return;
   }
   const n = lista.length;
-  cont.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%">'
+  cont.innerHTML = '<div id="itens-grid-'+prefix+'" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%">'
     + lista.map(function(item,i){
       const diceLabel = n === 1 ? '1' : String(i+1);
-      return '<div style="display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;background:var(--surface);border:1px solid var(--border);min-width:0">'
-        +'<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:#4caf50;color:#fff;font-family:var(--font-title);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">'+diceLabel+'</span>'
+      return '<div class="itens-drag-item" draggable="true" data-prefix="'+prefix+'" data-idx="'+i+'" style="display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;background:var(--surface);border:1px solid var(--border);min-width:0;cursor:grab;transition:opacity .15s,box-shadow .15s">'
+        +'<span style="flex-shrink:0;color:var(--muted);font-size:10px;cursor:grab;padding:0 1px">⠿</span>'
+        +'<span class="itens-dice-badge" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:#4caf50;color:#fff;font-family:var(--font-title);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">'+diceLabel+'</span>'
         +'<span style="font-size:11px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+item+'">'+item+'</span>'
-        +'<button class="adm-item-remove-btn" data-prefix="'+prefix+'" data-idx="'+i+'" title="Remover" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:0">×</button>'
+        +'<button class="adm-item-remove-btn" data-prefix="'+prefix+'" data-idx="'+i+'" title="Remover" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:0">x</button>'
       +'</div>';
     }).join('')
     + '</div>';
+
+  // Drag-and-drop
+  let dragSrc = null;
+  cont.querySelectorAll('.itens-drag-item').forEach(function(el){
+    el.addEventListener('dragstart', function(e){
+      dragSrc = el;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(function(){ el.style.opacity = '0.4'; }, 0);
+    });
+    el.addEventListener('dragend', function(){
+      el.style.opacity = '';
+      cont.querySelectorAll('.itens-drag-item').forEach(function(r){ r.style.boxShadow=''; });
+    });
+    el.addEventListener('dragover', function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if(el !== dragSrc) el.style.boxShadow = '0 0 0 2px var(--brand-mid)';
+    });
+    el.addEventListener('dragleave', function(){
+      el.style.boxShadow = '';
+    });
+    el.addEventListener('drop', function(e){
+      e.preventDefault();
+      el.style.boxShadow = '';
+      if(!dragSrc || dragSrc === el) return;
+      const fromIdx = parseInt(dragSrc.dataset.idx);
+      const toIdx   = parseInt(el.dataset.idx);
+      const arr = _poolItens[prefix];
+      const moved = arr.splice(fromIdx, 1)[0];
+      arr.splice(toIdx, 0, moved);
+      renderItensLista(prefix);
+    });
+  });
+
+  // Remove buttons
   cont.querySelectorAll('.adm-item-remove-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       removerItemPool(btn.dataset.prefix, parseInt(btn.dataset.idx));
