@@ -280,9 +280,9 @@ body.edit-mode .page.active{padding-top:48px}
 .ed-dropdown-btn:hover,.ed-dropdown-btn.open{background:var(--brand-light);border-color:var(--brand-mid);color:var(--brand)}
 .ed-dropdown-btn .ed-dd-arrow{font-size:8px;opacity:.6;transition:transform .15s}
 .ed-dropdown-btn.open .ed-dd-arrow{transform:rotate(180deg)}
-.ed-dropdown-menu{display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:6px;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:9100;flex-direction:column;gap:2px}
+.ed-dropdown-menu{display:none;position:fixed;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:6px;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:9100;flex-direction:column;gap:2px}
 .ed-dropdown-menu.open{display:flex}
-.ed-dropdown-menu.right{left:auto;right:0}
+.ed-dropdown-menu.right{}
 .ed-dd-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:7px;border:none;background:transparent;font-size:12px;font-family:var(--font-body);color:var(--text);cursor:pointer;transition:background .12s;text-align:left;white-space:nowrap;width:100%}
 .ed-dd-item:hover{background:var(--brand-light);color:var(--brand)}
 .ed-dd-item .ed-dd-icon{font-size:13px;width:18px;text-align:center;flex-shrink:0}
@@ -4538,12 +4538,26 @@ function edToggleDropdown(id){
   const isOpen = menu.classList.contains('open');
   edCloseDropdowns();
   if(!isOpen){
+    // Position using fixed coords from button rect
+    const rect = btn.getBoundingClientRect();
+    menu.style.top = (rect.bottom + 4) + 'px';
+    // Check if it would overflow right edge
+    const menuW = 190; // approx min-width
+    if(rect.left + menuW > window.innerWidth - 8){
+      menu.style.left = 'auto';
+      menu.style.right = (window.innerWidth - rect.right) + 'px';
+    } else {
+      menu.style.left = rect.left + 'px';
+      menu.style.right = 'auto';
+    }
     menu.classList.add('open');
     btn.classList.add('open');
-    // Close on outside click
     setTimeout(()=>{
       document.addEventListener('mousedown', function _close(e){
-        if(!wrap.contains(e.target)){ edCloseDropdowns(); document.removeEventListener('mousedown',_close); }
+        if(!menu.contains(e.target) && !btn.contains(e.target)){
+          edCloseDropdowns();
+          document.removeEventListener('mousedown', _close);
+        }
       });
     }, 0);
   }
