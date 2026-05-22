@@ -300,6 +300,8 @@ body.edit-mode .page.active{padding-top:48px}
 .ed-spacer::after{content:"↕ espaço — clique para ajustar";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;color:var(--muted);white-space:nowrap;pointer-events:none}
 
 /* ── Table context floating toolbar ── */
+.ed-cell-sel{outline:2px solid var(--brand)!important;background:rgba(0,128,80,.12)!important}
+.ed-drag-over{outline:2px dashed var(--brand-mid);outline-offset:2px}
 .ed-table-ctx{position:fixed;z-index:8960;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:5px 7px;display:none;align-items:center;gap:3px;box-shadow:0 6px 20px rgba(0,0,0,.18);flex-wrap:wrap}
 .ed-table-ctx.visible{display:flex}
 
@@ -768,8 +770,8 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <div class="ed-tb-sep"></div>
 
     <!-- ── Desfazer/Refazer ── -->
-    <button class="ed-btn" onmousedown="event.preventDefault();document.execCommand('undo')" title="Desfazer (Ctrl+Z)">↩</button>
-    <button class="ed-btn" onmousedown="event.preventDefault();document.execCommand('redo')" title="Refazer (Ctrl+Y)">↪</button>
+    <button class="ed-btn" onmousedown="event.preventDefault();edUndo()" title="Desfazer (Ctrl+Z)">↩</button>
+    <button class="ed-btn" onmousedown="event.preventDefault();edRedo()" title="Refazer (Ctrl+Y)">↪</button>
 
     <div class="ed-tb-sep"></div>
 
@@ -832,7 +834,8 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   <div class="ed-sep"></div>
   <button class="ed-btn" onmousedown="event.preventDefault();edTableDelRow()" title="− Linha">− Lin</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edTableDelCol()" title="− Coluna">− Col</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edTableMergeCells()" title="Mesclar células selecionadas">Mesc</button>
+  <button class="ed-btn" id="ed-merge-btn" onmousedown="event.preventDefault();edTableMergeCells()" title="Mesclar: Shift+clique nas células e clique aqui">Mesclar</button>
+  <button class="ed-btn" onmousedown="event.preventDefault();edTableUnmergeCells()" title="Desfazer mesclagem da célula atual">Desmesclar</button>
   <div class="ed-sep"></div>
   <button class="ed-btn" onmousedown="event.preventDefault();edTableStyle()" title="Estilo da tabela">Estilo</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edTableDelTable()" class="danger" title="Remover tabela">✕ Tab</button>
@@ -4477,8 +4480,18 @@ function entrarModoEdicao(){
     }
   };
   pageEl.addEventListener('keydown', pageEl._edKeyHandler);
-  pageEl.addEventListener('keyup', edUpdateToolbar);
+  pageEl.addEventListener('keyup', e=>{
+    edUpdateToolbar();
+    // Ctrl+Z / Ctrl+Y keyboard shortcuts
+    if(e.ctrlKey && e.key==='z'){ e.preventDefault(); edUndo(); return; }
+    if(e.ctrlKey && (e.key==='y'||e.key==='Z')){ e.preventDefault(); edRedo(); return; }
+    edScheduleUndo();
+  });
   pageEl.addEventListener('mouseup', edUpdateToolbar);
+  // Push initial snapshot
+  _edUndoStack.length = 0; _edRedoStack.length = 0;
+  edPushUndo();
+  edRewireTableClicks(pageEl);
   pageEl.addEventListener('input', edOnInput);
   pageEl.addEventListener('click', edOnClick);
   // Image click
@@ -4527,6 +4540,7 @@ function sairModoEdicao(){
 function edCmd(cmd, val){
   document.execCommand(cmd, false, val !== undefined ? val : null);
   setTimeout(edUpdateToolbar, 10);
+  edScheduleUndo();
 }
 
 // ── Toolbar dropdowns ────────────────────────────────────────────
@@ -4669,47 +4683,95 @@ function edBoxWrapCard(){
   edShowBoxCtx(card);
 }
 
-// ── Drag & Drop blocks ────────────────────────────────────────────
+// ── Drag & Drop blocks (pointer-events) ──────────────────────────
+let _edDragEl=null, _edDragPage=null, _edDragPlaceholder=null, _edDragStartY=0;
 function edAddDragHandles(page){
   if(!page) return;
-  // Remove old handles
-  page.querySelectorAll(':scope > .ed-drag-handle').forEach(h=>h.remove());
+  page.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
   Array.from(page.children).forEach(child=>{
     if(child.classList.contains('ed-drag-handle')) return;
-    // Remove handle if already exists inside
-    child.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
     const handle = document.createElement('span');
     handle.className = 'ed-drag-handle';
     handle.setAttribute('contenteditable','false');
     handle.innerHTML = '⠿';
-    handle.draggable = true;
     handle.title = 'Arrastar bloco';
-    handle.addEventListener('dragstart', e=>{
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain','');
-      child._edDragging = true;
-      child.style.opacity = '.4';
+    handle.addEventListener('pointerdown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      _edDragEl = child; _edDragPage = page; _edDragStartY = e.clientY;
+      // Create placeholder
+      _edDragPlaceholder = document.createElement('div');
+      _edDragPlaceholder.style.cssText = `height:${child.offsetHeight}px;border:2px dashed var(--brand-mid);border-radius:6px;background:var(--brand-light,rgba(0,128,80,.06));margin:4px 0;pointer-events:none`;
+      child.after(_edDragPlaceholder);
+      child.style.cssText += ';opacity:.4;position:relative;z-index:100;pointer-events:none';
+      handle.setPointerCapture(e.pointerId);
     });
-    handle.addEventListener('dragend', ()=>{
-      child._edDragging = false;
-      child.style.opacity = '';
-      page.querySelectorAll('.ed-drag-over').forEach(el=>el.classList.remove('ed-drag-over'));
-    });
-    child.addEventListener('dragover', e=>{
-      e.preventDefault();
-      if(!child._edDragging) child.classList.add('ed-drag-over');
-    });
-    child.addEventListener('dragleave', ()=>child.classList.remove('ed-drag-over'));
-    child.addEventListener('drop', e=>{
-      e.preventDefault();
-      child.classList.remove('ed-drag-over');
-      const dragged = page.querySelector('[style*="opacity: .4"],[style*="opacity:.4"]') || Array.from(page.children).find(c=>c._edDragging);
-      if(dragged && dragged !== child){
-        page.insertBefore(dragged, child);
-        edAddDragHandles(page);
+    handle.addEventListener('pointermove', e=>{
+      if(!_edDragEl || _edDragEl !== child) return;
+      // Find sibling under pointer
+      const elems = Array.from(page.children).filter(c=>c!==child && !c.classList.contains('ed-drag-handle'));
+      let target = null;
+      for(const el of elems){
+        const r = el.getBoundingClientRect();
+        if(e.clientY < r.top + r.height/2){ target = el; break; }
       }
+      if(target && target !== _edDragPlaceholder) page.insertBefore(_edDragPlaceholder, target);
+      else if(!target) page.appendChild(_edDragPlaceholder);
+    });
+    handle.addEventListener('pointerup', ()=>{
+      if(!_edDragEl || _edDragEl !== child) return;
+      child.style.opacity = ''; child.style.position = ''; child.style.zIndex = ''; child.style.pointerEvents = '';
+      _edDragPlaceholder && _edDragPlaceholder.replaceWith(child);
+      edPushUndo();
+      edAddDragHandles(page);
+      _edDragEl = _edDragPlaceholder = _edDragPage = null;
     });
     child.insertBefore(handle, child.firstChild);
+  });
+}
+
+// ── Undo / Redo stack ────────────────────────────────────────────
+const _edUndoStack = [];
+const _edRedoStack = [];
+const ED_UNDO_MAX  = 60;
+let   _edUndoTimer = null;
+
+function edPushUndo(){
+  const page = document.querySelector('[data-editing="1"]');
+  if(!page) return;
+  const snap = page.innerHTML;
+  if(_edUndoStack.length && _edUndoStack[_edUndoStack.length-1] === snap) return;
+  _edUndoStack.push(snap);
+  if(_edUndoStack.length > ED_UNDO_MAX) _edUndoStack.shift();
+  _edRedoStack.length = 0;
+}
+function edScheduleUndo(){
+  clearTimeout(_edUndoTimer);
+  _edUndoTimer = setTimeout(edPushUndo, 600);
+}
+function edUndo(){
+  if(_edUndoStack.length < 2) return;
+  const page = document.querySelector('[data-editing="1"]');
+  if(!page) return;
+  _edRedoStack.push(_edUndoStack.pop());      // current → redo
+  page.innerHTML = _edUndoStack[_edUndoStack.length-1];
+  edAddDragHandles(page);
+  edRewireTableClicks(page);
+}
+function edRedo(){
+  if(!_edRedoStack.length) return;
+  const page = document.querySelector('[data-editing="1"]');
+  if(!page) return;
+  const snap = _edRedoStack.pop();
+  _edUndoStack.push(snap);
+  page.innerHTML = snap;
+  edAddDragHandles(page);
+  edRewireTableClicks(page);
+}
+// Wire Shift+click on all table cells inside the editable page
+function edRewireTableClicks(page){
+  if(!page) return;
+  page.querySelectorAll('td,th').forEach(cell=>{
+    cell.onclick = (e)=>edTableCellClick(e, cell);
   });
 }
 
@@ -4732,6 +4794,11 @@ function edShowTableCtx(cell){
   ctx.style.top  = (r.bottom + window.scrollY + 6) + 'px';
   ctx.style.left = Math.min(r.left + window.scrollX, window.innerWidth - (ctx.offsetWidth||300) - 12) + 'px';
 }
+function edRewireNewCells(table){
+  if(!table) return;
+  const page = table.closest('[data-editing="1"]');
+  if(page) edRewireTableClicks(page);
+}
 function edTableAddRow(){
   const cell = _edTableCtxCell; if(!cell) return;
   const row = cell.closest('tr');
@@ -4742,6 +4809,8 @@ function edTableAddRow(){
   });
   newRow.querySelectorAll('td').forEach(td=>td.innerHTML='&nbsp;');
   row.after(newRow);
+  edRewireNewCells(cell.closest('table'));
+  edPushUndo();
 }
 function edTableAddRowAbove(){
   const cell = _edTableCtxCell; if(!cell) return;
@@ -4749,6 +4818,8 @@ function edTableAddRowAbove(){
   const newRow = row.cloneNode(true);
   newRow.querySelectorAll('td,th').forEach(td=>td.innerHTML='&nbsp;');
   row.before(newRow);
+  edRewireNewCells(cell.closest('table'));
+  edPushUndo();
 }
 function edTableAddCol(){
   const cell = _edTableCtxCell; if(!cell) return;
@@ -4776,8 +4847,75 @@ function edTableDelCol(){
   table.querySelectorAll('tr').forEach(row => { if(row.cells[colIdx]) row.cells[colIdx].remove(); });
   edShowTableCtx(null);
 }
+// Cell selection for merge: Shift+click to add/remove cells
+let _edSelectedCells = new Set();
+function edTableCellClick(e, cell){
+  if(!document.body.classList.contains('edit-mode')) return;
+  if(e.shiftKey){
+    e.preventDefault();
+    if(_edSelectedCells.has(cell)){
+      _edSelectedCells.delete(cell);
+      cell.classList.remove('ed-cell-sel');
+    } else {
+      _edSelectedCells.add(cell);
+      cell.classList.add('ed-cell-sel');
+    }
+    const btn = document.getElementById('ed-merge-btn');
+    if(btn) btn.classList.toggle('on', _edSelectedCells.size > 1);
+  } else {
+    // Clear selection on normal click
+    _edSelectedCells.forEach(c=>c.classList.remove('ed-cell-sel'));
+    _edSelectedCells.clear();
+    const btn = document.getElementById('ed-merge-btn');
+    if(btn) btn.classList.remove('on');
+  }
+}
 function edTableMergeCells(){
-  alert('Selecione as células a mesclar manualmente usando Ctrl+clique não é suportado neste editor. Use o teclado para navegar e editar as células individualmente.');
+  const cells = [..._edSelectedCells];
+  if(cells.length < 2){ alert('Selecione 2 ou mais células com Shift+clique para mesclar.'); return; }
+  // Verify all cells are in the same table
+  const table = cells[0].closest('table');
+  if(!cells.every(c=>c.closest('table')===table)){ alert('Todas as células devem estar na mesma tabela.'); return; }
+  // Collect all content into first cell
+  const first = cells[0];
+  const combinedHTML = cells.map(c=>c.innerHTML.trim()).filter(h=>h&&h!=='&nbsp;').join(' ');
+  first.innerHTML = combinedHTML || '&nbsp;';
+  // Determine rowspan/colspan from bounding rows/cols
+  const rows = [...new Set(cells.map(c=>c.closest('tr')))];
+  const colIdxs = cells.map(c=>c.cellIndex);
+  const minCol = Math.min(...colIdxs), maxCol = Math.max(...colIdxs);
+  first.rowSpan = rows.length;
+  first.colSpan = maxCol - minCol + 1;
+  // Remove other selected cells
+  cells.slice(1).forEach(c=>c.remove());
+  // Clear selection
+  _edSelectedCells.forEach(c=>c.classList.remove('ed-cell-sel'));
+  _edSelectedCells.clear();
+  const btn = document.getElementById('ed-merge-btn');
+  if(btn) btn.classList.remove('on');
+  edPushUndo();
+}
+function edTableUnmergeCells(){
+  const cell = _edTableCtxCell; if(!cell) return;
+  const rs = cell.rowSpan||1, cs = cell.colSpan||1;
+  if(rs===1 && cs===1){ alert('Esta célula não está mesclada.'); return; }
+  const table = cell.closest('table');
+  const row = cell.closest('tr');
+  const rowIdx = row.rowIndex, colIdx = cell.cellIndex;
+  cell.rowSpan = 1; cell.colSpan = 1;
+  // Insert empty cells to fill the gap
+  for(let r=0; r<rs; r++){
+    const targetRow = table.rows[rowIdx+r]; if(!targetRow) continue;
+    const startC = r===0 ? 1 : 0;
+    for(let c=startC; c<cs; c++){
+      const td = document.createElement(cell.nodeName);
+      td.innerHTML = '&nbsp;'; td.style.cssText = cell.style.cssText;
+      const ref = targetRow.cells[colIdx + (r===0 ? c : c)];
+      if(ref) targetRow.insertBefore(td, ref);
+      else targetRow.appendChild(td);
+    }
+  }
+  edPushUndo();
 }
 function edTableStyle(){
   const cell = _edTableCtxCell; if(!cell) return;
