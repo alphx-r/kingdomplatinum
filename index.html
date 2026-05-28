@@ -6070,11 +6070,13 @@ function abrirLootModal(){
   const grid    = document.getElementById('loot-modal-grid');
   if(!overlay || !grid) return;
   const ev = eventoAtual;
-  // Usa pool ativa de pool_pools, ou fallback para pool_itens legado
+  // Tenta pool ativa do novo sistema, senão usa campos legados diretamente
   const poolAtiva = Array.isArray(ev?.pool_pools) ? ev.pool_pools.find(p=>p.ativa) : null;
-  const itens = poolAtiva ? (poolAtiva.itens||[]) : (ev?.pool_itens||[]);
-  const titulo = poolAtiva ? (poolAtiva.titulo||'Pool de Itens') : (ev?.pool_titulo||'Pool de Itens');
-  const obs    = poolAtiva ? (poolAtiva.obs||'') : (ev?.pool_obs||'');
+  const itens  = poolAtiva?.itens?.length ? poolAtiva.itens : (ev?.pool_itens||[]);
+  // título: poolAtiva > ev.pool_titulo > 'Pool de Itens'
+  const titulo = (poolAtiva?.titulo||'').trim() || (ev?.pool_titulo||'').trim() || 'Pool de Itens';
+  // obs: poolAtiva > ev.pool_obs
+  const obs    = (poolAtiva?.obs||'').trim() || (ev?.pool_obs||'').trim();
   if(!itens.length) return;
   const n = itens.length;
   grid.innerHTML = itens.map(function(nome, i){
@@ -8276,12 +8278,13 @@ async function criarEvento(){
     payload.dado_motivo = document.getElementById('ev-dado-motivo')?.value.trim()||'';
     payload.lock_dado   = document.getElementById('ev-lock-dado')?.checked||false;
     payload.lock_motivo = document.getElementById('ev-lock-motivo')?.checked||false;
-    payload.pool_pools  = _pools['ev'] || [];
-    const _ativaCriar = _pools['ev'].find(p=>p.ativa);
-    payload.pool_itens  = _ativaCriar ? _ativaCriar.itens : [];
-    payload.pool_titulo = _ativaCriar ? _ativaCriar.titulo : '';
-    payload.pool_obs    = _ativaCriar ? _ativaCriar.obs : '';
   }
+  // pool de itens salva para qualquer tipo de evento
+  payload.pool_pools  = _pools['ev'] || [];
+  const _ativaCriar = _pools['ev'].find(p=>p.ativa);
+  payload.pool_itens  = _ativaCriar ? _ativaCriar.itens : [];
+  payload.pool_titulo = _ativaCriar ? _ativaCriar.titulo : '';
+  payload.pool_obs    = _ativaCriar ? _ativaCriar.obs : '';
 
   try{
     const res = await dbPost('eventos', payload);
@@ -8436,18 +8439,17 @@ function abrirEditarEvento(id){
     document.getElementById('edit-ev-dado-motivo').value        = ev.dado_motivo||'';
     document.getElementById('edit-ev-lock-dado').checked        = !!ev.lock_dado;
     document.getElementById('edit-ev-lock-motivo').checked      = !!ev.lock_motivo;
-    // Carregar pools (novo formato) ou migrar legado
-    if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
-      _pools['edit-ev'] = ev.pool_pools.map(p=>({titulo:p.titulo||'', obs:p.obs||'', itens:[...( p.itens||[])], ativa:!!p.ativa}));
-    } else if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){
-      // migração legado: cria uma pool com os itens antigos
-      _pools['edit-ev'] = [{titulo:ev.pool_titulo||'Pool de Itens', obs:ev.pool_obs||'', itens:[...ev.pool_itens], ativa:true}];
-    } else {
-      _pools['edit-ev'] = [];
-    }
-    _poolAba['edit-ev'] = 0;
-    _poolHtml('edit-ev');
   }
+  // Carregar pools para qualquer tipo de evento
+  if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
+    _pools['edit-ev'] = ev.pool_pools.map(p=>({titulo:p.titulo||'', obs:p.obs||'', itens:[...(p.itens||[])], ativa:!!p.ativa}));
+  } else if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){
+    _pools['edit-ev'] = [{titulo:ev.pool_titulo||'Pool de Itens', obs:ev.pool_obs||'', itens:[...ev.pool_itens], ativa:true}];
+  } else {
+    _pools['edit-ev'] = [];
+  }
+  _poolAba['edit-ev'] = 0;
+  _poolHtml('edit-ev');
   document.getElementById('edit-ev-fb-ok').style.display='none';
   document.getElementById('edit-ev-fb-err').style.display='none';
   document.getElementById('modal-editar-evento-overlay').style.display='flex';
@@ -8488,13 +8490,13 @@ async function salvarEdicaoEvento(){
     payload.dado_motivo      = document.getElementById('edit-ev-dado-motivo').value.trim();
     payload.lock_dado        = document.getElementById('edit-ev-lock-dado').checked;
     payload.lock_motivo      = document.getElementById('edit-ev-lock-motivo').checked;
-    payload.pool_pools = _pools['edit-ev'] || [];
-    // compatibilidade: pool_itens = itens da pool ativa
-    const _ativaEdit = _pools['edit-ev'].find(p=>p.ativa);
-    payload.pool_itens  = _ativaEdit ? _ativaEdit.itens : [];
-    payload.pool_titulo = _ativaEdit ? _ativaEdit.titulo : '';
-    payload.pool_obs    = _ativaEdit ? _ativaEdit.obs : '';
   }
+  // pool de itens salva para qualquer tipo de evento
+  payload.pool_pools = _pools['edit-ev'] || [];
+  const _ativaEdit = _pools['edit-ev'].find(p=>p.ativa);
+  payload.pool_itens  = _ativaEdit ? _ativaEdit.itens : [];
+  payload.pool_titulo = _ativaEdit ? _ativaEdit.titulo : '';
+  payload.pool_obs    = _ativaEdit ? _ativaEdit.obs : '';
 
   try{
     await dbPatch('eventos',`id=eq.${id}`,payload);
@@ -8591,7 +8593,11 @@ async function iniciarPaginaEvento(slug){
     if(descEl){
       const hasItens = (Array.isArray(ev.pool_pools) && ev.pool_pools.some(p=>p.ativa && p.itens?.length)) || (ev.pool_itens && ev.pool_itens.length);
       descEl.innerHTML = (ev.descricao||'')
-        + (hasItens ? ' <span class="loot-desc-badge" onclick="abrirLootModal()">05/36</span>' : '');
+        + (hasItens ? (() => {
+          const _pa = Array.isArray(ev.pool_pools) ? ev.pool_pools.find(p=>p.ativa) : null;
+          const _bt = (_pa?.titulo||'').trim() || (ev.pool_titulo||'').trim() || 'Pool de Itens';
+          return ' <span class="loot-desc-badge" onclick="abrirLootModal()">' + _bt + '</span>';
+        })() : '');
     }
 
     // ── modo do evento (encontro / dados / ambos) ──
