@@ -1709,9 +1709,9 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-size:18px" id="loot-modal-icon">🎁</span>
           <div style="display:flex;align-items:center;gap:6px">
-            <span id="loot-modal-titulo" onclick="iniciarEdicaoTituloLoot()" title="Clique para editar" style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;text-transform:uppercase;cursor:pointer">Pool de Itens</span>
+            <span id="loot-modal-titulo" onclick="if(admLogado)iniciarEdicaoTituloLoot()" title="" style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;text-transform:uppercase">Pool de Itens</span>
             <input id="loot-modal-titulo-input" type="text" style="display:none;font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;border:none;border-bottom:1.5px solid var(--brand-mid);background:transparent;outline:none;padding:0 2px;width:180px" onblur="finalizarEdicaoTituloLoot()" onkeydown="if(event.key==='Enter')finalizarEdicaoTituloLoot();if(event.key==='Escape')cancelarEdicaoTituloLoot()"/>
-            <button onclick="iniciarEdicaoTituloLoot()" title="Editar título" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:2px 4px">✎</button>
+            <button id="loot-modal-titulo-edit-btn" onclick="iniciarEdicaoTituloLoot()" title="Editar título" style="display:none;background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:2px 4px">✎</button>
           </div>
         </div>
         <button onclick="fecharLootModal()" style="background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;padding:4px 6px;border-radius:6px;transition:color .15s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">✕</button>
@@ -5957,10 +5957,22 @@ function abrirLootModal(){
     +'</div>';
   }).join('');
   const tituloEl = document.getElementById('loot-modal-titulo');
-  if(tituloEl) tituloEl.textContent = ev?.pool_titulo || 'Pool de Itens';
+  if(tituloEl){
+    tituloEl.textContent = ev?.pool_titulo || 'Pool de Itens';
+    tituloEl.style.cursor = admLogado ? 'pointer' : 'default';
+    tituloEl.title = admLogado ? 'Clique para editar' : '';
+  }
+  const titEditBtn = document.getElementById('loot-modal-titulo-edit-btn');
+  if(titEditBtn) titEditBtn.style.display = admLogado ? 'inline-block' : 'none';
   const obsEl = document.getElementById('loot-modal-obs');
-  if(obsEl) obsEl.value = ev?.pool_obs || '';
-  obsEl && (obsEl.oninput = function(){ if(eventoAtual) eventoAtual.pool_obs = this.value; });
+  if(obsEl){
+    obsEl.value = ev?.pool_obs || '';
+    obsEl.readOnly = !admLogado;
+    obsEl.style.opacity = admLogado ? '1' : '.7';
+    obsEl.style.cursor = admLogado ? '' : 'default';
+    obsEl.placeholder = admLogado ? 'Adicione uma observação (ex: válido apenas em bioma floresta, limite de 1 por jogador...)' : '';
+  }
+  obsEl && (obsEl.oninput = function(){ if(eventoAtual && admLogado) eventoAtual.pool_obs = this.value; });
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
@@ -8757,7 +8769,7 @@ function renderHistoricoEvento(){
         <div style="display:flex;align-items:center;gap:16px;padding:8px 14px">
           <div style="font-family:var(--font-title);font-size:36px;font-weight:700;color:var(--brand);line-height:1;min-width:48px;text-align:center">${res}</div>
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:5px">${e.motivo||'—'}</div>
+            <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">${e.personagem} rolou <strong>1d${max}</strong> para <strong>#${e.motivo||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
             <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
               <div style="height:6px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .4s"></div>
             </div>
