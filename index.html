@@ -596,10 +596,10 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .loot-table-body{display:none;padding:14px 16px 16px;border-top:1.5px solid var(--border);background:var(--surface2)}
 .loot-table-wrap.open .loot-table-body{display:block}
 
-.loot-items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:8px 4px}
+.loot-items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px}
 .loot-item-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 2px;cursor:default}
 .loot-dice-badge{width:28px;height:28px;border-radius:50%;background:#4caf50;color:#fff;font-family:var(--font-title);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.18)}
-.loot-item-name{font-size:10px;font-weight:600;color:var(--text);line-height:1.3;text-align:center;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loot-item-name{font-size:11px;font-weight:600;color:var(--text);line-height:1.35;text-align:center;width:100%;word-break:break-word;white-space:normal}
 .loot-desc-badge{display:inline-block;font-family:var(--font-title);font-size:11px;font-weight:700;background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.2);letter-spacing:.5px;cursor:pointer;vertical-align:middle;margin-left:5px;transition:all .15s}
 .loot-desc-badge:hover{background:rgba(255,255,255,.22);color:#fff;border-color:rgba(255,255,255,.35)}
 /* Keep old tag styles for adm */
@@ -1708,12 +1708,20 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1.5px solid var(--border);flex-shrink:0">
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-size:18px" id="loot-modal-icon">🎁</span>
-          <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;text-transform:uppercase" id="loot-modal-titulo">Pool de Itens</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span id="loot-modal-titulo" onclick="iniciarEdicaoTituloLoot()" title="Clique para editar" style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;text-transform:uppercase;cursor:pointer">Pool de Itens</span>
+            <input id="loot-modal-titulo-input" type="text" style="display:none;font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.6px;border:none;border-bottom:1.5px solid var(--brand-mid);background:transparent;outline:none;padding:0 2px;width:180px" onblur="finalizarEdicaoTituloLoot()" onkeydown="if(event.key==='Enter')finalizarEdicaoTituloLoot();if(event.key==='Escape')cancelarEdicaoTituloLoot()"/>
+            <button onclick="iniciarEdicaoTituloLoot()" title="Editar título" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:2px 4px">✎</button>
+          </div>
         </div>
         <button onclick="fecharLootModal()" style="background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;padding:4px 6px;border-radius:6px;transition:color .15s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">✕</button>
       </div>
       <div style="padding:18px;overflow-y:auto;background:var(--surface2)">
         <div id="loot-modal-grid" class="loot-items-grid"></div>
+        <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px">Observação</label>
+          <textarea id="loot-modal-obs" placeholder="Adicione uma observação (ex: válido apenas em bioma floresta, limite de 1 por jogador...)" rows="2" style="width:100%;resize:vertical;font-size:13px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--font-body);box-sizing:border-box;line-height:1.5;transition:border .2s" onfocus="this.style.borderColor='var(--brand-mid)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+        </div>
       </div>
     </div>
   </div>
@@ -5948,10 +5956,37 @@ function abrirLootModal(){
       +'<span class="loot-item-name" title="'+nome+'">'+nome+'</span>'
     +'</div>';
   }).join('');
+  const tituloEl = document.getElementById('loot-modal-titulo');
+  if(tituloEl) tituloEl.textContent = ev?.pool_titulo || 'Pool de Itens';
+  const obsEl = document.getElementById('loot-modal-obs');
+  if(obsEl) obsEl.value = ev?.pool_obs || '';
+  obsEl && (obsEl.oninput = function(){ if(eventoAtual) eventoAtual.pool_obs = this.value; });
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
 
+let _lootTituloAnterior = '';
+function iniciarEdicaoTituloLoot(){
+  const span = document.getElementById('loot-modal-titulo');
+  const inp  = document.getElementById('loot-modal-titulo-input');
+  _lootTituloAnterior = span.textContent;
+  inp.value = span.textContent;
+  span.style.display = 'none';
+  inp.style.display  = 'inline-block';
+  inp.focus(); inp.select();
+}
+function finalizarEdicaoTituloLoot(){
+  const span = document.getElementById('loot-modal-titulo');
+  const inp  = document.getElementById('loot-modal-titulo-input');
+  span.textContent   = inp.value.trim() || _lootTituloAnterior;
+  inp.style.display  = 'none';
+  span.style.display = 'inline';
+  if(eventoAtual) eventoAtual.pool_titulo = span.textContent;
+}
+function cancelarEdicaoTituloLoot(){
+  document.getElementById('loot-modal-titulo-input').style.display = 'none';
+  document.getElementById('loot-modal-titulo').style.display = 'inline';
+}
 function fecharLootModal(e){
   const overlay = document.getElementById('loot-modal-overlay');
   if(overlay) overlay.style.display = 'none';
