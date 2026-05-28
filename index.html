@@ -6065,18 +6065,20 @@ function toggleLootTable(){
   if(acc) acc.classList.toggle('open');
 }
 
-function abrirLootModal(){
+function abrirLootModal(poolIdx){
   const overlay = document.getElementById('loot-modal-overlay');
   const grid    = document.getElementById('loot-modal-grid');
   if(!overlay || !grid) return;
   const ev = eventoAtual;
-  // Tenta pool ativa do novo sistema, senão usa campos legados diretamente
-  const poolAtiva = Array.isArray(ev?.pool_pools) ? ev.pool_pools.find(p=>p.ativa) : null;
-  const itens  = poolAtiva?.itens?.length ? poolAtiva.itens : (ev?.pool_itens||[]);
-  // título: poolAtiva > ev.pool_titulo > 'Pool de Itens'
-  const titulo = (poolAtiva?.titulo||'').trim() || (ev?.pool_titulo||'').trim() || 'Pool de Itens';
-  // obs: poolAtiva > ev.pool_obs
-  const obs    = (poolAtiva?.obs||'').trim() || (ev?.pool_obs||'').trim();
+  // Pega a pool pelo índice passado, ou a primeira ativa, ou fallback legado
+  let poolAlvo = null;
+  if(Array.isArray(ev?.pool_pools) && ev.pool_pools.length){
+    if(poolIdx !== undefined) poolAlvo = ev.pool_pools[poolIdx];
+    else poolAlvo = ev.pool_pools.find(p=>p.ativa);
+  }
+  const itens  = poolAlvo?.itens?.length ? poolAlvo.itens : (ev?.pool_itens||[]);
+  const titulo = (poolAlvo?.titulo||'').trim() || (ev?.pool_titulo||'').trim() || 'Pool de Itens';
+  const obs    = (poolAlvo?.obs||'').trim() || (ev?.pool_obs||'').trim();
   if(!itens.length) return;
   const n = itens.length;
   grid.innerHTML = itens.map(function(nome, i){
@@ -8591,13 +8593,22 @@ async function iniciarPaginaEvento(slug){
     if(emojiEl) emojiEl.textContent = ev.emoji||'🎪';
     const descEl = document.getElementById('evento-desc');
     if(descEl){
-      const hasItens = (Array.isArray(ev.pool_pools) && ev.pool_pools.some(p=>p.ativa && p.itens?.length)) || (ev.pool_itens && ev.pool_itens.length);
-      descEl.innerHTML = (ev.descricao||'')
-        + (hasItens ? (() => {
-          const _pa = Array.isArray(ev.pool_pools) ? ev.pool_pools.find(p=>p.ativa) : null;
-          const _bt = (_pa?.titulo||'').trim() || (ev.pool_titulo||'').trim() || 'Pool de Itens';
-          return ' <span class="loot-desc-badge" onclick="abrirLootModal()">' + _bt + '</span>';
-        })() : '');
+      // Um badge por pool ativa
+      let _badges = '';
+      if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
+        ev.pool_pools.forEach(function(p, i){
+          if(p.ativa && p.itens && p.itens.length){
+            const _bt = (p.titulo||'').trim() || 'Pool de Itens';
+            _badges += ' <span class="loot-desc-badge" onclick="abrirLootModal('+i+')" style="cursor:pointer">' + _bt + '</span>';
+          }
+        });
+      }
+      // fallback legado
+      if(!_badges && ev.pool_itens && ev.pool_itens.length){
+        const _bt = (ev.pool_titulo||'').trim() || 'Pool de Itens';
+        _badges = ' <span class="loot-desc-badge" onclick="abrirLootModal(0)">'+_bt+'</span>';
+      }
+      descEl.innerHTML = (ev.descricao||'') + _badges;
     }
 
     // ── modo do evento (encontro / dados / ambos) ──
