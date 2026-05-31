@@ -10730,17 +10730,56 @@ function filtrarNatures(){
 })();
 
 init();
+// Auto-refresh silencioso: atualiza o banco de dados interno sem recarregar a página.
+// A tela só reflete os novos dados quando o usuário troca de aba ou atualiza manualmente.
 (function(){
-  let idleTimer;
-  const IDLE_MS = 3 * 60 * 1000;
-  function resetIdle(){
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(()=>location.reload(), IDLE_MS);
+  const REFRESH_MS = 3 * 60 * 1000;
+
+  async function silentRefresh(){
+    try {
+      // Invalida o cache das abas já carregadas para que a próxima navegação
+      // busque dados frescos do banco, mas não renderiza nada agora.
+      const page = currentPage;
+
+      const refreshPromises = [];
+
+      // Sempre recarrega dados globais usados em múltiplas abas
+      refreshPromises.push(
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao')
+          .then(r=>{ if(r&&r.length) pokemonDB=r; }),
+        dbGet('biomas').then(r=>{ if(r) biomas=(r||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); }),
+        dbGet('personagens').then(r=>{ if(r) personagens=r||[]; }),
+        dbGet('players').then(r=>{ if(r) players=r||[]; }),
+        dbGet('config','chave=eq.estacao_ativa').then(r=>{ if(r&&r[0]) estacaoAtiva=r[0].valor; })
+      );
+
+      // Recarrega histórico e dados extras conforme abas já carregadas
+      if(loaded.rolagens || loaded.dados){
+        refreshPromises.push(
+          dbGet('historico','order=criado_em.desc&limit=1000').then(r=>{ if(r) historico=r||[]; }),
+          dbGet('historico_dados','order=criado_em.desc&limit=1000').then(r=>{ if(r) historicoDados=r||[]; })
+        );
+      }
+
+      if(loaded.adm){
+        refreshPromises.push(
+          dbGet('admins').then(r=>{ if(r) admins=r||[]; })
+        );
+      }
+
+      await Promise.allSettled(refreshPromises);
+
+      // Invalida o cache de todas as abas para forçar re-fetch na próxima navegação
+      Object.keys(loaded).forEach(k => { loaded[k] = false; });
+      // Re-marca a aba atual como não carregada para que, ao interagir,
+      // os dados frescos sejam usados na próxima renderização
+    } catch(e){
+      console.warn('[silentRefresh] erro:', e);
+    }
   }
-  ['click','scroll','keydown'].forEach(ev=>
-    document.addEventListener(ev, resetIdle, {passive:true})
-  );
-  resetIdle();
+
+  // Executa o refresh silencioso a cada REFRESH_MS
+  setInterval(silentRefresh, REFRESH_MS);
 })();
 
 </script>
