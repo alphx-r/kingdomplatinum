@@ -1311,7 +1311,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   </div>
 
   <!-- MOVIMENTOS ADAPTADOS -->
-  <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:8px">
+  <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:20px">
     <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:14px;letter-spacing:.4px">📜 MOVIMENTOS ADAPTADOS</div>
     <ul style="font-size:13px;color:var(--text);line-height:2;padding-left:18px;margin-bottom:12px">
       <li>Efeitos voláteis e não voláteis seguem a regra dos jogos (Bulbapedia).</li>
@@ -1323,7 +1323,533 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
       <li>Movimentos com turno de invulnerabilidade são <strong>de apenas um turno</strong>, tornando-se movimentos de mobilidade especial.</li>
     </ul>
   </div>
+  <!-- CALCULADORA DE DANO -->
+  <div style="background:var(--surface);border:2px solid var(--brand-mid);border-radius:14px;padding:24px 26px;margin-bottom:8px" id="calc-dano-box">
+    <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:4px;letter-spacing:.4px">🧮 CALCULADORA DE DANO</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Preencha os campos abaixo para calcular o Tier e o alcance de dano do turno.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Poder do Movimento</div>
+        <select id="calc-poder" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="0">— Não se aplica (0)</option>
+          <option value="1">5–60 (+1)</option>
+          <option value="2">61–120 (+2)</option>
+          <option value="3sem">100–120 sem efeito (+3)</option>
+          <option value="3">+120 (+3)</option>
+          <option value="4">+160 (+4)</option>
+          <option value="5">+200 (+5)</option>
+        </select>
+      </div>
+
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Efetividade por Tipo</div>
+        <select id="calc-efet" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="-3">Super Resistido 1/4 (−3)</option>
+          <option value="-1">Resistido 1/2 (−1)</option>
+          <option value="0" selected>Normal (0)</option>
+          <option value="1">Super Efetivo 2x (+1)</option>
+          <option value="3">Hiper Efetivo 4x (+3)</option>
+        </select>
+      </div>
+
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Diferença de Base Stats</div>
+        <select id="calc-stats" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="0">— Igual / sem diferença (0)</option>
+          <optgroup label="Ataque maior que Defesa">
+            <option value="1">+50 Atk &gt; Def (+1)</option>
+            <option value="2">+100 Atk &gt; Def (+2)</option>
+            <option value="3">+150 Atk &gt; Def (+3)</option>
+            <option value="4">+200 Atk &gt; Def (+4)</option>
+          </optgroup>
+          <optgroup label="Defesa maior que Ataque">
+            <option value="-1">+50 Def &gt; Atk (−1)</option>
+            <option value="-2">+100 Def &gt; Atk (−2)</option>
+            <option value="-3">+150 Def &gt; Atk (−3)</option>
+            <option value="-4">+200 Def &gt; Atk (−4)</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Situação de Combate</div>
+        <select id="calc-situacao" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="-2">Supressão (−2)</option>
+          <option value="-1">Raspão / Bloqueado (−1)</option>
+          <option value="0" selected>Ataque Limpo (0)</option>
+          <option value="1">Alvo no meio de uma ação (+1)</option>
+          <option value="1b">Alvo veloz sendo pego (+1)</option>
+          <option value="2">Alvo desprevenido (+2*)</option>
+          <option value="3">Ação Perfeita / Crítico (+3)</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Bônus Adicionais</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
+
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">STAB</div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0" checked onchange="calcDano()"/> Sem STAB</label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.20" onchange="calcDano()"/> STAB normal (+20%)</label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.40" onchange="calcDano()"/> Adaptability (+40%)</label>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Diferença de Estágios de Status</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada estágio = +4 de dano. Positivo = atacante buff, negativo = defensor buff.</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button onmousedown="event.preventDefault();calcStageAdj(-1)" style="width:28px;height:28px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:16px;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center">−</button>
+            <span id="calc-stage-val" style="font-family:var(--font-title);font-size:18px;font-weight:700;color:var(--brand);min-width:28px;text-align:center">0</span>
+            <button onmousedown="event.preventDefault();calcStageAdj(1)" style="width:28px;height:28px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:16px;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center">+</button>
+            <span id="calc-stage-bonus" style="font-size:11px;color:var(--muted)">(+0 dano)</span>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Modificadores Especiais</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-charge" onchange="calcDano()"/> Charge/Recharge (+25%)</label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-crit-stab" onchange="calcDano()"/> Desprevenido c/ +2 Crit (+3 em vez de +2)</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="calc-resultado" style="background:linear-gradient(135deg,var(--brand),var(--brand-mid));border-radius:12px;padding:20px 24px;color:#fff;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:20px;flex-wrap:wrap">
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Tier Final</div>
+        <div id="calc-tier-num" style="font-family:var(--font-title);font-size:44px;font-weight:900;line-height:1">T1</div>
+        <div id="calc-tier-soma" style="font-size:11px;opacity:.8;margin-top:4px">soma: 1</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Alcance de Dano</div>
+        <div id="calc-dano-range" style="font-family:var(--font-title);font-size:34px;font-weight:900;line-height:1">2–8</div>
+        <div id="calc-dano-detalhe" style="font-size:11px;opacity:.8;margin-top:4px">sem modificadores</div>
+      </div>
+      <div id="calc-breakdown" style="font-size:12px;opacity:.9;line-height:1.9;padding-left:12px;border-left:1.5px solid rgba(255,255,255,.25)"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;font-style:italic">* Tiers acima de 6 incrementam de 8 em 8 pontos. Tier mínimo é sempre 1.</div>
+  </div>
+
 </div>
+
+<script>
+(function(){
+  let _calcStage = 0;
+  window.calcStageAdj = function(delta){
+    _calcStage = Math.max(-6, Math.min(6, _calcStage + delta));
+    const el = document.getElementById('calc-stage-val');
+    const bonus = document.getElementById('calc-stage-bonus');
+    if(el) el.textContent = (_calcStage >= 0 ? '+' : '') + _calcStage;
+    if(bonus){ const d = _calcStage*4; bonus.textContent = '('+(d>=0?'+':'')+d+' dano)'; }
+    calcDano();
+  };
+  window.calcDano = function(){
+    const poderSel = document.getElementById('calc-poder')?.value || '0';
+    const poderVal = poderSel === '3sem' ? 3 : parseInt(poderSel);
+    const efetVal  = parseInt(document.getElementById('calc-efet')?.value || 0);
+    const statsVal = parseInt(document.getElementById('calc-stats')?.value || 0);
+    const situSel  = document.getElementById('calc-situacao')?.value || '0';
+    const critStab = document.getElementById('calc-crit-stab')?.checked;
+    let situVal = situSel === '1b' ? 1 : parseInt(situSel);
+    if(situSel === '2' && critStab) situVal = 3;
+
+    const somaTiers = poderVal + efetVal + statsVal + situVal;
+    const tierFinal = Math.max(1, somaTiers);
+
+    let danoMin, danoMax;
+    if(tierFinal <= 6){ danoMin = 1 + (tierFinal-1)*8; danoMax = danoMin+7; }
+    else { const ex = tierFinal-6; danoMin = 41+ex*8; danoMax = danoMin+7; }
+
+    const stageDmg = _calcStage * 4;
+    danoMin += stageDmg; danoMax += stageDmg;
+
+    const stabVal = parseFloat(document.querySelector('input[name="calc-stab"]:checked')?.value || 0);
+    if(stabVal > 0){ danoMin = Math.round(danoMin*(1+stabVal)); danoMax = Math.round(danoMax*(1+stabVal)); }
+
+    const charge = document.getElementById('calc-charge')?.checked;
+    if(charge){ danoMin = Math.round(danoMin*1.25); danoMax = Math.round(danoMax*1.25); }
+
+    danoMin = Math.max(1, danoMin); danoMax = Math.max(1, danoMax);
+
+    const lines = [];
+    if(poderVal  !== 0) lines.push('Poder: '+(poderVal>0?'+':'')+poderVal+(poderSel==='3sem'?' (sem efeito)':''));
+    if(efetVal   !== 0) lines.push('Efetividade: '+(efetVal>0?'+':'')+efetVal);
+    if(statsVal  !== 0) lines.push('Base Stats: '+(statsVal>0?'+':'')+statsVal);
+    if(situVal   !== 0) lines.push('Situação: '+(situVal>0?'+':'')+situVal);
+    lines.push('→ Tier '+tierFinal+(somaTiers<1?' (mín. 1)':' (soma '+somaTiers+')'));
+    if(stageDmg  !== 0) lines.push('Estágios: '+(stageDmg>0?'+':'')+stageDmg+' dano');
+    if(stabVal   >  0)  lines.push('STAB: +'+(stabVal*100)+'%');
+    if(charge)          lines.push('Charge: +25%');
+
+    const bgs = ['','linear-gradient(135deg,#1a7a1a,#2e9e50)','linear-gradient(135deg,#1a4a8a,#2563a8)','linear-gradient(135deg,#7a4a00,#c07a00)','linear-gradient(135deg,#8a1a1a,#c03030)','linear-gradient(135deg,#5a1a9a,#8a30d8)','linear-gradient(135deg,#0f1a3a,#1a3a6a)'];
+    const bg = tierFinal <= 6 ? bgs[tierFinal] : bgs[6];
+
+    const mods = [];
+    if(stageDmg !== 0) mods.push('estágios '+(stageDmg>0?'+':'')+stageDmg);
+    if(stabVal > 0) mods.push('STAB +'+(stabVal*100)+'%');
+    if(charge) mods.push('Charge +25%');
+
+    const res = document.getElementById('calc-resultado');
+    if(res) res.style.background = bg;
+    const numEl = document.getElementById('calc-tier-num'); if(numEl) numEl.textContent = 'T'+tierFinal;
+    const somaEl = document.getElementById('calc-tier-soma'); if(somaEl) somaEl.textContent = 'soma: '+somaTiers+(somaTiers<1?' → mín.1':'');
+    const rangeEl = document.getElementById('calc-dano-range'); if(rangeEl) rangeEl.textContent = danoMin+'–'+danoMax;
+    const detEl = document.getElementById('calc-dano-detalhe'); if(detEl) detEl.textContent = mods.length ? mods.join(' · ') : 'sem modificadores';
+    const bdEl = document.getElementById('calc-breakdown'); if(bdEl) bdEl.innerHTML = lines.map(l=>'• '+l).join('<br>');
+  };
+  document.addEventListener('DOMContentLoaded', ()=>{ if(document.getElementById('calc-poder')) window.calcDano(); });
+})();
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// CALCULADORA ADM — CRUD
+// Dados salvos na tabela `config` com chaves calc_poder, calc_efet, calc_stats, calc_situ, calc_tiers
+// ══════════════════════════════════════════════════════════
+
+// Defaults caso não haja nada no banco
+const CALC_DEFAULTS = {
+  poder: [
+    {desc:'5–60', tier:1}, {desc:'61–120', tier:2}, {desc:'100–120 (sem efeito)', tier:3},
+    {desc:'+120', tier:3}, {desc:'+160', tier:4}, {desc:'+200', tier:5}
+  ],
+  efet: [
+    {desc:'Super Resistido (¼)', tier:-3}, {desc:'Resistido (½)', tier:-1},
+    {desc:'Normal', tier:0}, {desc:'Super Efetivo (2×)', tier:1}, {desc:'Hiper Efetivo (4×)', tier:3}
+  ],
+  stats: [
+    {desc:'+50', tier:1, grupo:'atk'}, {desc:'+100', tier:2, grupo:'atk'},
+    {desc:'+150', tier:3, grupo:'atk'}, {desc:'+200', tier:4, grupo:'atk'},
+    {desc:'+50', tier:-1, grupo:'def'}, {desc:'+100', tier:-2, grupo:'def'},
+    {desc:'+150', tier:-3, grupo:'def'}, {desc:'+200', tier:-4, grupo:'def'}
+  ],
+  situ: [
+    {desc:'Supressão', tier:-2}, {desc:'Raspão/Bloqueado', tier:-1},
+    {desc:'Ataque Limpo', tier:0}, {desc:'Alvo no meio de uma ação', tier:1},
+    {desc:'Alvo veloz sendo pego', tier:1}, {desc:'Alvo desprevenido', tier:2},
+    {desc:'Ação Perfeita / Crítico', tier:3}
+  ],
+  tiers: [
+    {num:1,min:2,max:8},{num:2,min:9,max:16},{num:3,min:17,max:24},
+    {num:4,min:25,max:32},{num:5,min:33,max:40},{num:6,min:41,max:48}
+  ]
+};
+
+let _calcAdmData = null;
+
+async function calcAdmLoad(){
+  try {
+    const rows = await dbGet('config', 'chave=like.calc_%');
+    const map = {};
+    (rows||[]).forEach(r => { try { map[r.chave] = JSON.parse(r.valor); } catch(e){} });
+    _calcAdmData = {
+      poder: map['calc_poder'] || JSON.parse(JSON.stringify(CALC_DEFAULTS.poder)),
+      efet:  map['calc_efet']  || JSON.parse(JSON.stringify(CALC_DEFAULTS.efet)),
+      stats: map['calc_stats'] || JSON.parse(JSON.stringify(CALC_DEFAULTS.stats)),
+      situ:  map['calc_situ']  || JSON.parse(JSON.stringify(CALC_DEFAULTS.situ)),
+      tiers: map['calc_tiers'] || JSON.parse(JSON.stringify(CALC_DEFAULTS.tiers)),
+    };
+  } catch(e) {
+    _calcAdmData = JSON.parse(JSON.stringify(CALC_DEFAULTS));
+  }
+  calcAdmRender('poder');
+  calcAdmRender('efet');
+  calcAdmRender('stats');
+  calcAdmRender('situ');
+  calcAdmRender('tiers');
+  // Também atualiza os selects da calculadora pública
+  calcSyncSelects();
+}
+
+function calcAdmRender(tipo){
+  if(!_calcAdmData) return;
+  if(tipo === 'poder'){
+    const tb = document.getElementById('calc-adm-poder-body'); if(!tb) return;
+    tb.innerHTML = _calcAdmData.poder.map((r,i) => `
+      <tr>
+        <td><input type="text" value="${r.desc}" oninput="_calcAdmData.poder[${i}].desc=this.value" style="width:100%;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><input type="number" value="${r.tier}" oninput="_calcAdmData.poder[${i}].tier=parseInt(this.value)||0" style="width:60px;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><button class="btn btn-danger btn-sm" onclick="calcAdmRemove('poder',${i})">🗑</button></td>
+      </tr>`).join('');
+  }
+  if(tipo === 'efet'){
+    const tb = document.getElementById('calc-adm-efet-body'); if(!tb) return;
+    tb.innerHTML = _calcAdmData.efet.map((r,i) => `
+      <tr>
+        <td><input type="text" value="${r.desc}" oninput="_calcAdmData.efet[${i}].desc=this.value" style="width:100%;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><input type="number" value="${r.tier}" oninput="_calcAdmData.efet[${i}].tier=parseInt(this.value)||0" style="width:60px;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><button class="btn btn-danger btn-sm" onclick="calcAdmRemove('efet',${i})">🗑</button></td>
+      </tr>`).join('');
+  }
+  if(tipo === 'stats'){
+    const tb = document.getElementById('calc-adm-stats-body'); if(!tb) return;
+    const grupoLabel = g => g === 'atk' ? '⬆ Atk' : '⬆ Def';
+    tb.innerHTML = _calcAdmData.stats.map((r,i) => `
+      <tr>
+        <td><input type="text" value="${r.desc}" oninput="_calcAdmData.stats[${i}].desc=this.value" style="width:100%;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><input type="number" value="${r.tier}" oninput="_calcAdmData.stats[${i}].tier=parseInt(this.value)||0" style="width:60px;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><span style="font-size:11px;font-weight:700;color:var(--brand-mid)">${grupoLabel(r.grupo)}</span></td>
+        <td><button class="btn btn-danger btn-sm" onclick="calcAdmRemove('stats',${i})">🗑</button></td>
+      </tr>`).join('');
+  }
+  if(tipo === 'situ'){
+    const tb = document.getElementById('calc-adm-situ-body'); if(!tb) return;
+    tb.innerHTML = _calcAdmData.situ.map((r,i) => `
+      <tr>
+        <td><input type="text" value="${r.desc}" oninput="_calcAdmData.situ[${i}].desc=this.value" style="width:100%;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><input type="number" value="${r.tier}" oninput="_calcAdmData.situ[${i}].tier=parseInt(this.value)||0" style="width:60px;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><button class="btn btn-danger btn-sm" onclick="calcAdmRemove('situ',${i})">🗑</button></td>
+      </tr>`).join('');
+  }
+  if(tipo === 'tiers'){
+    const tb = document.getElementById('calc-adm-tiers-body'); if(!tb) return;
+    tb.innerHTML = _calcAdmData.tiers.map((r,i) => `
+      <tr>
+        <td><strong style="font-family:var(--font-title);color:var(--brand)">T${r.num}</strong></td>
+        <td><input type="number" value="${r.min}" oninput="_calcAdmData.tiers[${i}].min=parseInt(this.value)||1" style="width:70px;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><input type="number" value="${r.max}" oninput="_calcAdmData.tiers[${i}].max=parseInt(this.value)||1" style="width:70px;padding:5px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/></td>
+        <td><button class="btn btn-danger btn-sm" onclick="calcAdmRemove('tiers',${i})">🗑</button></td>
+      </tr>`).join('');
+  }
+}
+
+function calcAdmRemove(tipo, idx){
+  if(!_calcAdmData) return;
+  _calcAdmData[tipo].splice(idx, 1);
+  calcAdmRender(tipo);
+}
+
+async function calcAdmAdd(tipo){
+  if(!_calcAdmData) return;
+  if(tipo === 'poder'){
+    const desc = document.getElementById('calc-new-poder-desc').value.trim();
+    const tier = parseInt(document.getElementById('calc-new-poder-tier').value) || 0;
+    if(!desc){ (()=>{const _el=document.getElementById('calc-fb-poder-err');if(_el)_el.textContent='Preencha a descrição.';fb('calc-fb-poder-err');})();; return; }
+    _calcAdmData.poder.push({desc, tier});
+    document.getElementById('calc-new-poder-desc').value = '';
+  }
+  if(tipo === 'efet'){
+    const desc = document.getElementById('calc-new-efet-desc').value.trim();
+    const tier = parseInt(document.getElementById('calc-new-efet-tier').value) || 0;
+    if(!desc){ (()=>{const _el=document.getElementById('calc-fb-efet-err');if(_el)_el.textContent='Preencha a descrição.';fb('calc-fb-efet-err');})();; return; }
+    _calcAdmData.efet.push({desc, tier});
+    document.getElementById('calc-new-efet-desc').value = '';
+  }
+  if(tipo === 'stats'){
+    const desc  = document.getElementById('calc-new-stats-desc').value.trim();
+    const tier  = parseInt(document.getElementById('calc-new-stats-tier').value) || 0;
+    const grupo = document.getElementById('calc-new-stats-grupo').value;
+    if(!desc){ (()=>{const _el=document.getElementById('calc-fb-stats-err');if(_el)_el.textContent='Preencha a descrição.';fb('calc-fb-stats-err');})();; return; }
+    _calcAdmData.stats.push({desc, tier, grupo});
+    document.getElementById('calc-new-stats-desc').value = '';
+  }
+  if(tipo === 'situ'){
+    const desc = document.getElementById('calc-new-situ-desc').value.trim();
+    const tier = parseInt(document.getElementById('calc-new-situ-tier').value) || 0;
+    if(!desc){ (()=>{const _el=document.getElementById('calc-fb-situ-err');if(_el)_el.textContent='Preencha a descrição.';fb('calc-fb-situ-err');})();; return; }
+    _calcAdmData.situ.push({desc, tier});
+    document.getElementById('calc-new-situ-desc').value = '';
+  }
+  if(tipo === 'tier'){
+    const num = parseInt(document.getElementById('calc-new-tier-num').value) || 0;
+    const min = parseInt(document.getElementById('calc-new-tier-min').value) || 1;
+    const max = parseInt(document.getElementById('calc-new-tier-max').value) || 1;
+    if(!num){ (()=>{const _el=document.getElementById('calc-fb-tier-err');if(_el)_el.textContent='Informe o número do Tier.';fb('calc-fb-tier-err');})();; return; }
+    // Remove existing with same num if any
+    _calcAdmData.tiers = _calcAdmData.tiers.filter(t => t.num !== num);
+    _calcAdmData.tiers.push({num, min, max});
+    _calcAdmData.tiers.sort((a,b) => a.num - b.num);
+    tipo = 'tiers';
+  }
+  calcAdmRender(tipo === 'tiers' ? 'tiers' : tipo);
+  await calcAdmSave(tipo === 'tiers' ? 'tiers' : tipo);
+}
+
+// Save button per section (called from render via oninput change — also exposed globally)
+async function calcAdmSave(tipo){
+  if(!_calcAdmData) return;
+  const keyMap = {poder:'calc_poder', efet:'calc_efet', stats:'calc_stats', situ:'calc_situ', tiers:'calc_tiers'};
+  const fbOk   = {poder:'calc-fb-poder', efet:'calc-fb-efet', stats:'calc-fb-stats', situ:'calc-fb-situ', tiers:'calc-fb-tier'};
+  const fbErr  = {poder:'calc-fb-poder-err', efet:'calc-fb-efet-err', stats:'calc-fb-stats-err', situ:'calc-fb-situ-err', tiers:'calc-fb-tier-err'};
+  const chave = keyMap[tipo];
+  const valor = JSON.stringify(_calcAdmData[tipo]);
+  try {
+    // Upsert: try update first, then insert
+    const existing = await dbGet('config', `chave=eq.${chave}`);
+    if(existing && existing.length){
+      await dbPatch('config', `chave=eq.${chave}`, {valor});
+    } else {
+      await dbPost('config', {chave, valor});
+    }
+    const okEl = document.getElementById(fbOk[tipo]); if(okEl){ okEl.textContent='✓ Salvo!'; } fb(fbOk[tipo]);
+    calcSyncSelects();
+  } catch(e){
+    const errEl2 = document.getElementById(fbErr[tipo]); if(errEl2){ errEl2.textContent='Erro ao salvar: '+e; } fb(fbErr[tipo]);
+  }
+}
+
+// Expose save per section
+window.calcAdmSave = calcAdmSave;
+window.calcAdmAdd  = calcAdmAdd;
+window.calcAdmRemove = calcAdmRemove;
+window.calcAdmLoad = calcAdmLoad;
+
+// Add save buttons after each table
+function calcAdmAddSaveBtns(){
+  [
+    {tipo:'poder', label:'poder'}, {tipo:'efet', label:'efet'},
+    {tipo:'stats', label:'stats'}, {tipo:'situ', label:'situ'}, {tipo:'tiers', label:'tiers'}
+  ].forEach(({tipo, label})=>{
+    const fb = document.getElementById(`calc-fb-${label}`);
+    if(fb && !fb.previousElementSibling?.classList.contains('calc-save-btn-added')){
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-primary btn-sm calc-save-btn-added';
+      btn.style.marginTop = '10px';
+      btn.textContent = '💾 Salvar alterações';
+      btn.onmousedown = e => { e.preventDefault(); calcAdmSave(tipo); };
+      fb.parentNode.insertBefore(btn, fb);
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{ setTimeout(calcAdmAddSaveBtns, 1000); });
+
+// Sync public calculator selects from _calcAdmData (or defaults)
+function calcSyncSelects(){
+  const data = _calcAdmData || CALC_DEFAULTS;
+
+  const poderSel = document.getElementById('calc-poder');
+  if(poderSel){
+    const prev = poderSel.value;
+    poderSel.innerHTML = '<option value="0">— Não se aplica (0)</option>' +
+      data.poder.map((r,i) => `<option value="${r.tier}_${i}">${r.desc} (${r.tier >= 0 ? '+':''}${r.tier})</option>`).join('');
+    // restore closest
+  }
+
+  const efetSel = document.getElementById('calc-efet');
+  if(efetSel){
+    efetSel.innerHTML = data.efet.map((r,i) =>
+      `<option value="${r.tier}_${i}" ${r.tier===0?'selected':''}>${r.desc} (${r.tier >= 0 ? '+':''}${r.tier})</option>`
+    ).join('');
+  }
+
+  const statsSel = document.getElementById('calc-stats');
+  if(statsSel){
+    const atkRows = data.stats.filter(r=>r.grupo==='atk');
+    const defRows = data.stats.filter(r=>r.grupo==='def');
+    statsSel.innerHTML = '<option value="0">— Igual / sem diferença (0)</option>';
+    if(atkRows.length){
+      statsSel.innerHTML += '<optgroup label="Ataque maior que Defesa">' +
+        atkRows.map((r,i)=>`<option value="${r.tier}_atk_${i}">${r.desc} Atk &gt; Def (${r.tier>=0?'+':''}${r.tier})</option>`).join('') +
+        '</optgroup>';
+    }
+    if(defRows.length){
+      statsSel.innerHTML += '<optgroup label="Defesa maior que Ataque">' +
+        defRows.map((r,i)=>`<option value="${r.tier}_def_${i}">${r.desc} Def &gt; Atk (${r.tier>=0?'+':''}${r.tier})</option>`).join('') +
+        '</optgroup>';
+    }
+  }
+
+  const situSel = document.getElementById('calc-situacao');
+  if(situSel){
+    situSel.innerHTML = data.situ.map((r,i) =>
+      `<option value="${r.tier}_${i}" ${r.tier===0?'selected':''}>${r.desc} (${r.tier >= 0 ? '+':''}${r.tier})</option>`
+    ).join('');
+  }
+
+  // Patch calcDano to read tier values from option value prefix
+  window._calcTiersData = data.tiers;
+}
+
+// Override calcDano to read values from dynamic selects
+(function(){
+  const _origCalcDano = window.calcDano;
+  window.calcDano = function(){
+    const getVal = id => {
+      const el = document.getElementById(id);
+      if(!el) return 0;
+      const v = el.value;
+      if(v === '0') return 0;
+      // format: "tier_idx" or "tier_grupo_idx"
+      return parseInt(v.split('_')[0]) || 0;
+    };
+
+    const poderVal  = getVal('calc-poder');
+    const efetVal   = getVal('calc-efet');
+    const statsVal  = getVal('calc-stats');
+    const situVal_raw = document.getElementById('calc-situacao')?.value || '0';
+    const critStab  = document.getElementById('calc-crit-stab')?.checked;
+    let situVal = parseInt(situVal_raw.split('_')[0]) || 0;
+    // If it was "2" tier (alvo desprevenido) and crit-stab checked → 3
+    if(parseInt(situVal_raw.split('_')[0]) === 2 && critStab) situVal = 3;
+
+    const stageDmg_raw = parseInt(document.getElementById('calc-stage-val')?.textContent || 0) || 0;
+    const stageDmg = stageDmg_raw * 4;
+
+    const somaTiers = poderVal + efetVal + statsVal + situVal;
+    const tierFinal = Math.max(1, somaTiers);
+
+    // Tier ranges from _calcTiersData or defaults
+    const tiersData = window._calcTiersData || [{num:1,min:2,max:8},{num:2,min:9,max:16},{num:3,min:17,max:24},{num:4,min:25,max:32},{num:5,min:33,max:40},{num:6,min:41,max:48}];
+    const tierEntry = tiersData.find(t => t.num === tierFinal);
+    let danoMin, danoMax;
+    if(tierEntry){
+      danoMin = tierEntry.min; danoMax = tierEntry.max;
+    } else {
+      // Beyond defined tiers: extrapolate from last tier
+      const sorted = [...tiersData].sort((a,b)=>a.num-b.num);
+      const last = sorted[sorted.length-1] || {num:6,min:41,max:48};
+      const step = (last.max - last.min + 1) || 8;
+      const extra = tierFinal - last.num;
+      danoMin = last.min + extra * step;
+      danoMax = last.max + extra * step;
+    }
+
+    danoMin += stageDmg; danoMax += stageDmg;
+
+    const stabVal = parseFloat(document.querySelector('input[name="calc-stab"]:checked')?.value || 0);
+    if(stabVal > 0){ danoMin = Math.round(danoMin*(1+stabVal)); danoMax = Math.round(danoMax*(1+stabVal)); }
+
+    const charge = document.getElementById('calc-charge')?.checked;
+    if(charge){ danoMin = Math.round(danoMin*1.25); danoMax = Math.round(danoMax*1.25); }
+
+    danoMin = Math.max(1, danoMin); danoMax = Math.max(1, danoMax);
+
+    const lines = [];
+    if(poderVal  !== 0) lines.push('Poder: '+(poderVal>0?'+':'')+poderVal);
+    if(efetVal   !== 0) lines.push('Efetividade: '+(efetVal>0?'+':'')+efetVal);
+    if(statsVal  !== 0) lines.push('Base Stats: '+(statsVal>0?'+':'')+statsVal);
+    if(situVal   !== 0) lines.push('Situação: '+(situVal>0?'+':'')+situVal);
+    lines.push('→ Tier '+tierFinal+(somaTiers<1?' (mín. 1)':' (soma '+somaTiers+')'));
+    if(stageDmg  !== 0) lines.push('Estágios: '+(stageDmg>0?'+':'')+stageDmg+' dano');
+    if(stabVal   >  0)  lines.push('STAB: +'+(stabVal*100)+'%');
+    if(charge)          lines.push('Charge: +25%');
+
+    const bgs = ['','linear-gradient(135deg,#1a7a1a,#2e9e50)','linear-gradient(135deg,#1a4a8a,#2563a8)','linear-gradient(135deg,#7a4a00,#c07a00)','linear-gradient(135deg,#8a1a1a,#c03030)','linear-gradient(135deg,#5a1a9a,#8a30d8)','linear-gradient(135deg,#0f1a3a,#1a3a6a)'];
+    const bg = tierFinal <= 6 ? bgs[tierFinal] : bgs[6];
+
+    const mods = [];
+    if(stageDmg !== 0) mods.push('estágios '+(stageDmg>0?'+':'')+stageDmg);
+    if(stabVal > 0) mods.push('STAB +'+(stabVal*100)+'%');
+    if(charge) mods.push('Charge +25%');
+
+    const res = document.getElementById('calc-resultado');
+    if(res) res.style.background = bg;
+    const numEl = document.getElementById('calc-tier-num'); if(numEl) numEl.textContent = 'T'+tierFinal;
+    const somaEl = document.getElementById('calc-tier-soma'); if(somaEl) somaEl.textContent = 'soma: '+somaTiers+(somaTiers<1?' → mín.1':'');
+    const rangeEl = document.getElementById('calc-dano-range'); if(rangeEl) rangeEl.textContent = danoMin+'–'+danoMax;
+    const detEl = document.getElementById('calc-dano-detalhe'); if(detEl) detEl.textContent = mods.length ? mods.join(' · ') : 'sem modificadores';
+    const bdEl = document.getElementById('calc-breakdown'); if(bdEl) bdEl.innerHTML = lines.map(l=>'• '+l).join('<br>');
+  };
+})();
+</script>
 
 <!-- ROLADOR -->
 <div class="page active" id="page-roller">
@@ -2093,6 +2619,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
         <button class="adm-nav-btn" data-sec="estacao" onclick="admTab('estacao',this)">🌿 Estação</button>
         <button class="adm-nav-btn" data-sec="forcados" onclick="admTab('forcados',this)">🎯 Forçar Resultado</button>
+        <button class="adm-nav-btn" data-sec="calculadora-adm" onclick="admTab('calculadora-adm',this)">🧮 Calculadora</button>
 
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()">Sair</button>
@@ -2436,6 +2963,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
                 <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="eventos" style="margin:0"/> 🎉 Eventos</label>
                 <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="estacao" style="margin:0"/> 🌦️ Estação</label>
                 <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="paginas" style="margin:0"/> 📝 Páginas</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="calculadora-adm" style="margin:0"/> 🧮 Calculadora</label>
               </div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="adicionarAdmin()">+ Adicionar Admin</button>
@@ -2629,6 +3157,100 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
           </div>
         </div>
 
+
+        <!-- CALCULADORA DE DANO - ADM -->
+        <div class="adm-section" id="sec-calculadora-adm">
+          <div class="sec-title">🧮 Calculadora de Dano</div>
+          <div class="sec-sub">Gerencie as tabelas utilizadas na calculadora da página de Batalhas. As alterações são salvas no banco e aplicadas imediatamente para todos.</div>
+
+          <!-- PODER DO MOVIMENTO -->
+          <div class="box" style="margin-bottom:16px">
+            <div class="box-title">⚡ Poder do Movimento</div>
+            <div class="adm-table-wrap"><table class="adm-table" id="calc-adm-poder-table">
+              <thead><tr><th>Descrição</th><th style="width:80px">Tier (+)</th><th style="width:60px">Ações</th></tr></thead>
+              <tbody id="calc-adm-poder-body"></tbody>
+            </table></div>
+            <div style="display:grid;grid-template-columns:1fr 80px auto;gap:8px;margin-top:10px;align-items:end">
+              <div class="field" style="margin:0"><label>Descrição</label><input type="text" id="calc-new-poder-desc" placeholder="Ex: 5–60"/></div>
+              <div class="field" style="margin:0"><label>Tier</label><input type="number" id="calc-new-poder-tier" value="1" min="-10" max="10" style="width:100%"/></div>
+              <button class="btn btn-primary btn-sm" onclick="calcAdmAdd('poder')" style="height:38px;white-space:nowrap">+ Adicionar</button>
+            </div>
+            <div class="fb fb-ok" id="calc-fb-poder">✓ Salvo!</div>
+            <div class="fb fb-err" id="calc-fb-poder-err">Erro ao salvar.</div>
+          </div>
+
+          <!-- EFETIVIDADE -->
+          <div class="box" style="margin-bottom:16px">
+            <div class="box-title">🎯 Efetividade por Tipo</div>
+            <div class="adm-table-wrap"><table class="adm-table" id="calc-adm-efet-table">
+              <thead><tr><th>Descrição</th><th style="width:80px">Tier</th><th style="width:60px">Ações</th></tr></thead>
+              <tbody id="calc-adm-efet-body"></tbody>
+            </table></div>
+            <div style="display:grid;grid-template-columns:1fr 80px auto;gap:8px;margin-top:10px;align-items:end">
+              <div class="field" style="margin:0"><label>Descrição</label><input type="text" id="calc-new-efet-desc" placeholder="Ex: Super Efetivo 2x"/></div>
+              <div class="field" style="margin:0"><label>Tier</label><input type="number" id="calc-new-efet-tier" value="1" min="-10" max="10" style="width:100%"/></div>
+              <button class="btn btn-primary btn-sm" onclick="calcAdmAdd('efet')" style="height:38px;white-space:nowrap">+ Adicionar</button>
+            </div>
+            <div class="fb fb-ok" id="calc-fb-efet">✓ Salvo!</div>
+            <div class="fb fb-err" id="calc-fb-efet-err">Erro ao salvar.</div>
+          </div>
+
+          <!-- DIFERENÇA DE BASE STATS -->
+          <div class="box" style="margin-bottom:16px">
+            <div class="box-title">📊 Diferença de Base Stats</div>
+            <div class="adm-table-wrap"><table class="adm-table">
+              <thead><tr><th>Descrição</th><th style="width:80px">Tier</th><th style="width:80px">Grupo</th><th style="width:60px">Ações</th></tr></thead>
+              <tbody id="calc-adm-stats-body"></tbody>
+            </table></div>
+            <div style="display:grid;grid-template-columns:1fr 80px 120px auto;gap:8px;margin-top:10px;align-items:end">
+              <div class="field" style="margin:0"><label>Descrição</label><input type="text" id="calc-new-stats-desc" placeholder="Ex: +50"/></div>
+              <div class="field" style="margin:0"><label>Tier</label><input type="number" id="calc-new-stats-tier" value="1" min="-10" max="10" style="width:100%"/></div>
+              <div class="field" style="margin:0"><label>Grupo</label>
+                <select id="calc-new-stats-grupo" style="width:100%;padding:8px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px">
+                  <option value="atk">Atk &gt; Def</option>
+                  <option value="def">Def &gt; Atk</option>
+                </select>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="calcAdmAdd('stats')" style="height:38px;white-space:nowrap">+ Adicionar</button>
+            </div>
+            <div class="fb fb-ok" id="calc-fb-stats">✓ Salvo!</div>
+            <div class="fb fb-err" id="calc-fb-stats-err">Erro ao salvar.</div>
+          </div>
+
+          <!-- SITUAÇÕES DE COMBATE -->
+          <div class="box" style="margin-bottom:16px">
+            <div class="box-title">⚔️ Situações de Combate</div>
+            <div class="adm-table-wrap"><table class="adm-table">
+              <thead><tr><th>Descrição</th><th style="width:80px">Tier</th><th style="width:60px">Ações</th></tr></thead>
+              <tbody id="calc-adm-situ-body"></tbody>
+            </table></div>
+            <div style="display:grid;grid-template-columns:1fr 80px auto;gap:8px;margin-top:10px;align-items:end">
+              <div class="field" style="margin:0"><label>Descrição</label><input type="text" id="calc-new-situ-desc" placeholder="Ex: Ataque Limpo"/></div>
+              <div class="field" style="margin:0"><label>Tier</label><input type="number" id="calc-new-situ-tier" value="0" min="-10" max="10" style="width:100%"/></div>
+              <button class="btn btn-primary btn-sm" onclick="calcAdmAdd('situ')" style="height:38px;white-space:nowrap">+ Adicionar</button>
+            </div>
+            <div class="fb fb-ok" id="calc-fb-situ">✓ Salvo!</div>
+            <div class="fb fb-err" id="calc-fb-situ-err">Erro ao salvar.</div>
+          </div>
+
+          <!-- TIERS DE DANO -->
+          <div class="box">
+            <div class="box-title">🎖️ Tiers de Dano (alcance)</div>
+            <div class="sec-sub" style="margin:0 0 12px">Defina o dano mínimo e máximo de cada Tier. O Tier 1 começa em 1 (mín.) e cada tier subsequente avança automaticamente.</div>
+            <div class="adm-table-wrap"><table class="adm-table">
+              <thead><tr><th>Tier</th><th style="width:90px">Dano Mín.</th><th style="width:90px">Dano Máx.</th><th style="width:60px">Ações</th></tr></thead>
+              <tbody id="calc-adm-tiers-body"></tbody>
+            </table></div>
+            <div style="display:grid;grid-template-columns:60px 90px 90px auto;gap:8px;margin-top:10px;align-items:end">
+              <div class="field" style="margin:0"><label>Tier</label><input type="number" id="calc-new-tier-num" value="7" min="1" max="99" style="width:100%"/></div>
+              <div class="field" style="margin:0"><label>Dano Mín.</label><input type="number" id="calc-new-tier-min" value="49" min="1" style="width:100%"/></div>
+              <div class="field" style="margin:0"><label>Dano Máx.</label><input type="number" id="calc-new-tier-max" value="56" min="1" style="width:100%"/></div>
+              <button class="btn btn-primary btn-sm" onclick="calcAdmAdd('tier')" style="height:38px;white-space:nowrap">+ Adicionar</button>
+            </div>
+            <div class="fb fb-ok" id="calc-fb-tier">✓ Salvo!</div>
+            <div class="fb fb-err" id="calc-fb-tier-err">Erro ao salvar.</div>
+          </div>
+        </div>
         <!-- ESTAÇÃO -->
         <div class="adm-section" id="sec-estacao">
           <div class="sec-title">🌿 Estação do Ano</div>
@@ -3929,9 +4551,10 @@ function toggleRaridade(r){
 function admTab(sec,el){
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
+  if(sec==='calculadora-adm'){ setTimeout(()=>{ calcAdmLoad(); },0); }
   // verifica permissão
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
-  const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos'];
+  const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','calculadora-adm'];
   if(protegidas.includes(sec) && !perms.includes(sec) && !isSuperAdmin()){
     alert('Você não tem permissão para acessar esta seção.');return;
   }
@@ -4029,7 +4652,7 @@ async function restaurarSessaoAdm(){
 // ADMINS
 // ══════════════════════════════════════
 const SUPER_ADMIN = 'adm@nendo.ne';
-const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','estacao','forcados','paginas'];
+const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','estacao','forcados','paginas','calculadora-adm'];
 
 function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
 
@@ -4108,8 +4731,8 @@ async function salvarPermsAdmin(id, email){
 }
 function renderTbodyAdmins(){
   const superAdmin = isSuperAdmin();
-  const permIcons  = {personagens:'👥',biomas:'🗺️',pokemons:'⚡','npcs-adm':'🧑',editor:'🎨',historicos:'🗑️',eventos:'🎉',estacao:'🌦️',forcados:'🎯',paginas:'📝'};
-  const permNames  = {personagens:'Personagens',biomas:'Biomas',pokemons:'Pokémon','npcs-adm':'NPCs',editor:'Editor',historicos:'Históricos',eventos:'Eventos',estacao:'Estação',forcados:'Forçar Resultado',paginas:'Páginas'};
+  const permIcons  = {personagens:'👥',biomas:'🗺️',pokemons:'⚡','npcs-adm':'🧑',editor:'🎨',historicos:'🗑️',eventos:'🎉',estacao:'🌦️',forcados:'🎯',paginas:'📝','calculadora-adm':'🧮'};
+  const permNames  = {personagens:'Personagens',biomas:'Biomas',pokemons:'Pokémon','npcs-adm':'NPCs',editor:'Editor',historicos:'Históricos',eventos:'Eventos',estacao:'Estação',forcados:'Forçar Resultado',paginas:'Páginas','calculadora-adm':'Calculadora'};
   const tbody = document.getElementById('tbody-admins');
   if(!admins || admins.length === 0){
     tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);font-size:13px;padding:16px 10px">Nenhum administrador cadastrado.</td></tr>';
