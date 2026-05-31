@@ -4476,7 +4476,9 @@ function navegarPara(page, replace=false){
   if(page==='npcs') renderNpcs();
   currentPage = page;
   showEditBtnIfAdm();
-  if(EDITABLE_PAGES.includes(page)) carregarPaginaEditavel(page);
+  if(EDITABLE_PAGES.includes(page)) carregarPaginaEditavel(page).then(()=>{
+    if(page==='batalhas') _ensureCalcDano();
+  });
   // Highlight Guias dropdown btn when on a guias page
   const dropBtn = document.getElementById('nav-drop-btn');
   if(dropBtn) dropBtn.classList.toggle('active', ['ganhos','nature','batalhas'].includes(page));
@@ -6492,6 +6494,114 @@ async function salvarPaginaEditada(){
     alert('Erro ao salvar: '+e.message);
     if(btn){ btn.textContent='Salvar'; btn.disabled=false; }
   }
+}
+
+// Garante que a calculadora de dano esteja presente no final de #page-batalhas
+// mesmo quando o conteúdo da página for sobrescrito pelo banco (carregarPaginaEditavel)
+function _ensureCalcDano(){
+  if(document.getElementById('calc-dano-box')) { window.calcDano && window.calcDano(); return; }
+  const pageEl = document.getElementById('page-batalhas');
+  if(!pageEl) return;
+  const box = document.createElement('div');
+  box.innerHTML = `
+  <div style="background:var(--surface);border:2px solid var(--brand-mid);border-radius:14px;padding:24px 26px;margin-bottom:8px" id="calc-dano-box">
+    <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:4px;letter-spacing:.4px">🧮 CALCULADORA DE DANO</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Preencha os campos abaixo para calcular o Tier e o alcance de dano do turno.</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Poder do Movimento</div>
+        <select id="calc-poder" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="0">— Não se aplica (0)</option>
+          <option value="1">5–60 (+1)</option>
+          <option value="2">61–120 (+2)</option>
+          <option value="3sem">100–120 sem efeito (+3)</option>
+          <option value="3">+120 (+3)</option>
+          <option value="4">+160 (+4)</option>
+          <option value="5">+200 (+5)</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Efetividade por Tipo</div>
+        <select id="calc-efet" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="-3">Super Resistido 1/4 (−3)</option>
+          <option value="-1">Resistido 1/2 (−1)</option>
+          <option value="0" selected>Normal (0)</option>
+          <option value="1">Super Efetivo 2x (+1)</option>
+          <option value="3">Hiper Efetivo 4x (+3)</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Diferença de Base Stats</div>
+        <select id="calc-stats" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="0">— Igual / sem diferença (0)</option>
+          <optgroup label="Ataque maior que Defesa">
+            <option value="1">+50 Atk &gt; Def (+1)</option>
+            <option value="2">+100 Atk &gt; Def (+2)</option>
+            <option value="3">+150 Atk &gt; Def (+3)</option>
+            <option value="4">+200 Atk &gt; Def (+4)</option>
+          </optgroup>
+          <optgroup label="Defesa maior que Ataque">
+            <option value="-1">+50 Def &gt; Atk (−1)</option>
+            <option value="-2">+100 Def &gt; Atk (−2)</option>
+            <option value="-3">+150 Def &gt; Atk (−3)</option>
+            <option value="-4">+200 Def &gt; Atk (−4)</option>
+          </optgroup>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Situação de Combate</div>
+        <select id="calc-situacao" onchange="calcDano()" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)">
+          <option value="-2">Supressão (−2)</option>
+          <option value="-1">Raspão / Bloqueado (−1)</option>
+          <option value="0" selected>Ataque Limpo (0)</option>
+          <option value="1">Alvo no meio de uma ação (+1)</option>
+          <option value="1b">Alvo veloz sendo pego (+1)</option>
+          <option value="2">Alvo desprevenido (+2*)</option>
+          <option value="3">Ação Perfeita / Crítico (+3)</option>
+        </select>
+      </div>
+      <div style="grid-column:span 2;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">STAB</div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0" checked onchange="calcDano()"/> Sem STAB</label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.20" onchange="calcDano()"/> STAB normal (+20%)</label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.40" onchange="calcDano()"/> Adaptability (+40%)</label>
+          </div>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Estágios de Status</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Cada estágio = +4 dano</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button onmousedown="event.preventDefault();calcStageAdj(-1)" style="width:28px;height:28px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:16px;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center">−</button>
+            <span id="calc-stage-val" style="font-family:var(--font-title);font-size:18px;font-weight:700;color:var(--brand);min-width:28px;text-align:center">0</span>
+            <button onmousedown="event.preventDefault();calcStageAdj(1)" style="width:28px;height:28px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:16px;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center">+</button>
+            <span id="calc-stage-bonus" style="font-size:11px;color:var(--muted)">(+0 dano)</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;margin-top:10px">
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-charge" onchange="calcDano()"/> Charge/Recharge (+25%)</label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-crit-stab" onchange="calcDano()"/> Desprevenido c/ +2 Crit (+3)</label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="calc-resultado" style="background:linear-gradient(135deg,var(--brand),var(--brand-mid));border-radius:12px;padding:20px 24px;color:#fff;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:20px">
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Tier Final</div>
+        <div id="calc-tier-num" style="font-family:var(--font-title);font-size:44px;font-weight:900;line-height:1">T1</div>
+        <div id="calc-tier-soma" style="font-size:11px;opacity:.8;margin-top:4px">soma: 1</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Alcance de Dano</div>
+        <div id="calc-dano-range" style="font-family:var(--font-title);font-size:34px;font-weight:900;line-height:1">2–8</div>
+        <div id="calc-dano-detalhe" style="font-size:11px;opacity:.8;margin-top:4px">sem modificadores</div>
+      </div>
+      <div id="calc-breakdown" style="font-size:12px;opacity:.9;line-height:1.9;padding-left:12px;border-left:1.5px solid rgba(255,255,255,.25)"></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;font-style:italic">* Tiers acima de 6 incrementam de 8 em 8 pontos. Tier mínimo é sempre 1.</div>
+  </div>`;
+  pageEl.appendChild(box.firstElementChild);
+  window.calcDano && window.calcDano();
 }
 
 async function carregarPaginaEditavel(page){
