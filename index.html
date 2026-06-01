@@ -627,11 +627,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   font-size:12px;font-weight:700;border-radius:6px;
   padding:7px 12px;margin-top:8px;display:none;text-align:center;
 }
-#offline-badge{display:none;align-items:center;gap:5px;background:#7a2a00;border:1.5px solid #c05020;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;color:#ffd0a0;letter-spacing:.3px;animation:pulse-offline 2s infinite}
-#offline-badge.visible{display:flex}
-#sync-badge{display:none;align-items:center;gap:5px;background:#1a5a1a;border:1.5px solid #3a9a3a;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;color:#a0ffa0;letter-spacing:.3px}
-#sync-badge.visible{display:flex}
-@keyframes pulse-offline{0%,100%{opacity:1}50%{opacity:.6}}
+#nav-player-badge{
   display:none;align-items:center;gap:6px;
   background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.3);
   border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff;
@@ -771,8 +767,6 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <span></span><span></span><span></span>
   </button>
   <button class="nav-login" id="btn-adm" onclick="goToAdm()">ADM</button>
-  <div id="offline-badge">📵 Offline</div>
-  <div id="sync-badge">⟳ Sincronizando…</div>
   <div id="nav-player-badge">
     <span id="nav-player-name">—</span>
     <button class="player-logout-btn" onclick="fazerLogoutPlayer()" title="Sair">✕</button>
@@ -4643,7 +4637,6 @@ async function iniciarSessaoPlayer(){
     }
     renderPersonagensDatalist();
     mostrarBadgePlayer();
-    _aplicarBloqueioPersonagem();
     // Restaura último personagem para o player logado
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem')||'';
     const meus = personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase());
@@ -5090,7 +5083,6 @@ async function fazerLoginPlayer(){
   }
   renderPersonagensDatalist();
   mostrarBadgePlayer();
-  _aplicarBloqueioPersonagem();
   fecharLoginOverlay();
 }
 
@@ -5117,7 +5109,6 @@ async function fazerLogoutPlayer(){
   localStorage.removeItem('player_session');
   mostrarBadgePlayer();
   renderPersonagensDatalist();
-  _aplicarBloqueioPersonagem();
   ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.value='';
@@ -5133,98 +5124,6 @@ async function fazerLogoutPlayer(){
     document.getElementById('pl-sub').textContent='Entre com seu player para continuar';
   }
 }
-
-// ── Bloqueia inputs de personagem ao nome(s) do player logado ──
-function _aplicarBloqueioPersonagem(){
-  const IDS = ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'];
-  const meus = playerLogado
-    ? personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase())
-    : [];
-
-  IDS.forEach(id=>{
-    const el = document.getElementById(id);
-    if(!el) return;
-    const parent = el.parentElement;
-
-    if(!playerLogado){
-      // Sem login: garante input livre
-      if(el.tagName==='SELECT'){
-        const inp = document.createElement('input');
-        inp.type='text'; inp.id=id; inp.placeholder='Nome do personagem...';
-        inp.setAttribute('list','personagens-lista');
-        inp.setAttribute('autocomplete','off');
-        inp.oninput = function(){ if(this.value.trim()) localStorage.setItem('ultimo_personagem',this.value.trim()); };
-        parent.replaceChild(inp, el);
-      } else {
-        el.readOnly = false;
-        el.disabled = false;
-        el.style.opacity = '';
-        el.style.cursor = '';
-        el.removeAttribute('title');
-      }
-      return;
-    }
-
-    if(meus.length === 0){
-      // Player sem personagens: bloqueia vazio
-      el.value = '';
-      el.readOnly = true;
-      el.disabled = false;
-      el.style.opacity = '.5';
-      el.style.cursor = 'not-allowed';
-      el.title = 'Nenhum personagem vinculado ao seu perfil.';
-      return;
-    }
-
-    if(meus.length === 1){
-      // 1 personagem: input fixo
-      if(el.tagName==='SELECT'){
-        // Substitui de volta por input
-        const inp = document.createElement('input');
-        inp.type='text'; inp.id=id;
-        inp.setAttribute('autocomplete','off');
-        parent.replaceChild(inp, el);
-        const newEl = document.getElementById(id);
-        newEl.value = meus[0].nome;
-        newEl.readOnly = true;
-        newEl.style.opacity = '.7';
-        newEl.style.cursor = 'not-allowed';
-        newEl.title = 'Personagem vinculado ao seu perfil.';
-      } else {
-        el.value = meus[0].nome;
-        el.readOnly = true;
-        el.style.opacity = '.7';
-        el.style.cursor = 'not-allowed';
-        el.title = 'Personagem vinculado ao seu perfil.';
-      }
-      return;
-    }
-
-    // Múltiplos personagens: troca por select
-    const sel = document.createElement('select');
-    sel.id = id;
-    sel.setAttribute('autocomplete','off');
-    sel.style.cssText = el.style.cssText||'';
-    // copia classes e estilos do input original se for input
-    if(el.tagName==='SELECT'){
-      // já é select, apenas atualiza options
-      el.innerHTML = meus.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('');
-      // mantém valor anterior se válido
-      const prev = el.value;
-      if(meus.find(p=>p.nome===prev)) el.value=prev;
-      else el.value = meus[0].nome;
-      return;
-    }
-    const prevVal = el.value;
-    sel.innerHTML = meus.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('');
-    if(meus.find(p=>p.nome===prevVal)) sel.value=prevVal;
-    else sel.value=meus[0].nome;
-    // herda estilos básicos via classe
-    sel.className = el.className;
-    parent.replaceChild(sel, el);
-  });
-}
-
 
 async function restaurarSessaoPlayer(){
   try{
@@ -11438,94 +11337,6 @@ function filtrarNatures(){
     }));
   }).observe(document.body, {childList:true, subtree:true});
 })();
-
-// ══════════════════════════════════════
-// OFFLINE QUEUE — fila de rolagens para sync
-// ══════════════════════════════════════
-const OFFLINE_QUEUE_KEY = 'offline_queue';
-
-function _offlineQueueGet(){
-  try{ return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)||'[]'); }
-  catch(e){ return []; }
-}
-function _offlineQueueSave(q){ localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); }
-function _offlineQueueAdd(tabela, entry){
-  const q = _offlineQueueGet();
-  q.push({ tabela, entry, ts: Date.now() });
-  _offlineQueueSave(q);
-  _atualizarBadgeOffline();
-}
-
-async function _offlineSyncAll(){
-  const q = _offlineQueueGet();
-  if(!q.length) return;
-  const badge = document.getElementById('sync-badge');
-  if(badge) badge.classList.add('visible');
-  const falhou = [];
-  for(const item of q){
-    try{
-      await dbPost(item.tabela, item.entry);
-    } catch(e){
-      falhou.push(item);
-    }
-  }
-  _offlineQueueSave(falhou);
-  if(badge) badge.classList.remove('visible');
-  if(falhou.length === 0 && q.length > 0){
-    // sync completo — recarrega históricos
-    try{
-      const [_hist, _dados] = await Promise.all([
-        dbGet('historico','order=criado_em.desc&limit=1000'),
-        dbGet('historico_dados','order=criado_em.desc&limit=1000')
-      ]);
-      if(_hist) historico = _hist;
-      if(_dados) historicoDados = _dados;
-      renderHistorico();
-      renderHistDados();
-      if(loaded.rolagens) renderRolagens();
-    } catch(e){}
-  }
-  _atualizarBadgeOffline();
-}
-
-function _atualizarBadgeOffline(){
-  const q = _offlineQueueGet();
-  const badge = document.getElementById('offline-badge');
-  if(!badge) return;
-  if(!navigator.onLine){
-    badge.innerHTML = q.length
-      ? `📵 Offline &nbsp;<span style="background:rgba(255,255,255,.2);border-radius:10px;padding:1px 7px">${q.length}</span>`
-      : '📵 Offline';
-    badge.classList.add('visible');
-  } else {
-    badge.classList.remove('visible');
-  }
-}
-
-// Intercepta dbPost para rolagens — enfileira se offline
-const _dbPostOriginal = dbPost;
-window.dbPost = async function(tabela, body){
-  if(!navigator.onLine && (tabela==='historico'||tabela==='historico_dados')){
-    _offlineQueueAdd(tabela, body);
-    // retorna objeto simulado para o código continuar normalmente
-    return [{ ...body, id: 'offline_'+Date.now(), criado_em: new Date().toISOString(), _offline: true }];
-  }
-  return _dbPostOriginal(tabela, body);
-};
-
-// Monitora conexão
-window.addEventListener('online', ()=>{
-  _atualizarBadgeOffline();
-  _offlineSyncAll();
-});
-window.addEventListener('offline', ()=>{
-  _atualizarBadgeOffline();
-});
-
-// Registra Service Worker para cache do site
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('/sw.js').catch(()=>{});
-}
 
 init();
 // Auto-refresh silencioso: atualiza o banco de dados interno sem recarregar a página.
