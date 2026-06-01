@@ -572,6 +572,50 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .modal-pool-bioma-tab{padding:6px 14px;border-radius:20px 20px 0 0;border:1.5px solid var(--border);border-bottom:none;background:var(--surface2);font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;margin-bottom:-1px;position:relative;z-index:1}
 .modal-pool-bioma-tab.active{background:var(--surface);color:var(--brand-mid);border-color:var(--brand-mid)}
 
+/* PLAYER LOGIN OVERLAY */
+#player-login-overlay{
+  position:fixed;inset:0;z-index:99999;
+  background:rgba(10,20,40,.92);
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(6px);
+}
+.player-login-card{
+  background:var(--surface);
+  border:1.5px solid var(--border);
+  border-radius:16px;
+  padding:36px 32px 28px;
+  width:min(380px,94vw);
+  box-shadow:0 16px 60px rgba(0,0,0,.5);
+}
+.player-login-title{
+  font-family:var(--font-title);font-size:20px;color:var(--brand);
+  text-align:center;margin-bottom:4px;letter-spacing:.5px;
+}
+.player-login-sub{
+  font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px;
+}
+.player-login-btn{
+  width:100%;padding:12px;border-radius:10px;border:none;
+  background:var(--brand-mid);color:#fff;
+  font-family:var(--font-title);font-size:15px;letter-spacing:1px;
+  cursor:pointer;transition:background .2s;margin-top:8px;
+}
+.player-login-btn:hover{background:var(--brand)}
+#player-login-erro{
+  background:#fde8e8;color:var(--red);
+  font-size:12px;font-weight:700;border-radius:6px;
+  padding:7px 12px;margin-top:8px;display:none;text-align:center;
+}
+#nav-player-badge{
+  display:none;align-items:center;gap:6px;
+  background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.3);
+  border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff;
+}
+#nav-player-badge .player-logout-btn{
+  background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;
+  font-size:13px;padding:0 0 0 6px;line-height:1;transition:color .15s;
+}
+#nav-player-badge .player-logout-btn:hover{color:#fff}
 /* ESTACAO FAB */
 #estacao-fab{
   position:fixed;
@@ -652,6 +696,27 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   <div class="loading-text">Carregando Kingdom Platinum...</div>
 </div>
 
+<!-- PLAYER LOGIN OVERLAY -->
+<div id="player-login-overlay" style="display:none">
+  <div class="player-login-card">
+    <div style="display:flex;justify-content:center;margin-bottom:18px">
+      <img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" style="height:48px;object-fit:contain" alt="Kingdom Platinum"/>
+    </div>
+    <div class="player-login-title">Kingdom Platinum</div>
+    <div class="player-login-sub">Entre com seu player para continuar</div>
+    <div class="field">
+      <label>Player</label>
+      <input type="text" id="pl-player" placeholder="Seu nome de player" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('pl-senha').focus()"/>
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" id="pl-senha" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')fazerLoginPlayer()"/>
+    </div>
+    <div id="player-login-erro"></div>
+    <button class="player-login-btn" onclick="fazerLoginPlayer()">Entrar</button>
+  </div>
+</div>
+
 <nav class="nav">
   <div class="nav-logo"><img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" style="height:35px;object-fit:contain;" alt="Kingdom Platinum"></div>
   <div class="nav-links">
@@ -674,6 +739,10 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <span></span><span></span><span></span>
   </button>
   <button class="nav-login" id="btn-adm" onclick="goToAdm()">ADM</button>
+  <div id="nav-player-badge">
+    <span id="nav-player-name">—</span>
+    <button class="player-logout-btn" onclick="fazerLogoutPlayer()" title="Sair">✕</button>
+  </div>
 </nav>
 <!-- EDITOR TOOLBAR -->
 <div class="editor-toolbar" id="editor-toolbar">
@@ -2766,6 +2835,25 @@ function calcSyncSelects(){
             <button class="btn btn-primary btn-sm" onclick="adicionarPersonagem()">+ Adicionar</button>
             <div class="fb fb-ok" id="np-fb">✓ Personagem adicionado!</div>
           </div>
+          <div class="box" id="box-player-senhas">
+            <div class="box-title">🔑 Senhas dos Players</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Defina ou redefina a senha individual de cada player. Se um player ainda não tem senha, use esta área para criar a primeira.</div>
+            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+              <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
+                <label>Player</label>
+                <select id="adm-senha-player" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:14px;width:100%">
+                  <option value="">— Selecione —</option>
+                </select>
+              </div>
+              <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
+                <label>Nova senha</label>
+                <input type="text" id="adm-senha-nova" placeholder="Min. 4 caracteres" autocomplete="off"/>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="admAlterarSenhaPlayer()" style="margin-bottom:1px">Salvar</button>
+            </div>
+            <div class="fb fb-ok" id="adm-senha-fb" style="margin-top:8px">✓ Senha salva!</div>
+            <div class="fb fb-err" id="adm-senha-fb-err" style="margin-top:8px">—</div>
+          </div>
           <div class="box">
             <div class="box-title">Personagens cadastrados</div>
             <div id="tbody-personagens"></div>
@@ -4453,7 +4541,48 @@ async function init(){
     }
 
   } catch(e){ console.error('Erro no init:', e); }
-  finally{ loading(false); }
+  finally{
+    loading(false);
+    // Após carregar tudo, verifica sessão de player
+    await iniciarSessaoPlayer();
+  }
+}
+
+async function iniciarSessaoPlayer(){
+  // Carrega players se necessário
+  if(!players.length){
+    const p = await dbGet('players','select=*');
+    players = p||[];
+  }
+  const restaurado = await restaurarSessaoPlayer();
+  if(restaurado){
+    // Carrega personagens se necessário
+    if(!personagens.length){
+      const p = await dbGet('personagens');
+      personagens = p||[];
+    }
+    renderPersonagensDatalist();
+    mostrarBadgePlayer();
+    // Restaura último personagem para o player logado
+    const ultimoPersonagem = localStorage.getItem('ultimo_personagem')||'';
+    const meus = personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase());
+    if(ultimoPersonagem && meus.find(p=>p.nome===ultimoPersonagem)){
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el && !el.value) el.value=ultimoPersonagem;
+      });
+    } else if(meus.length===1){
+      // auto-preenche se só tem um personagem
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el && !el.value) el.value=meus[0].nome;
+      });
+    }
+  } else {
+    // Mostra overlay de login de player
+    const ov = document.getElementById('player-login-overlay');
+    if(ov) ov.style.display='flex';
+  }
 }
 
 async function carregarAba(page){
@@ -4575,6 +4704,7 @@ async function carregarAba(page){
       syncEventoBiomaSelect();
       renderTbodyPersonagens(); renderTbodyPlayers();
       aplicarPermissoesSidebar();
+      populateAdmSenhaSelect();
     }
     loaded[page] = true;
   } catch(e){ console.error('Erro ao carregar aba', page, e); }
@@ -4714,7 +4844,7 @@ function admTab(sec,el){
   document.getElementById('sec-'+sec).classList.add('active');
   document.querySelectorAll('.adm-nav-btn').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
-  if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();}
+  if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();}
   if(sec==='biomas')renderTbodyBiomas();
   if(sec==='pokemons'){syncBiomaSelects();}
   if(sec==='admins'){ if(!admins||admins.length===0){ dbGet('admins').then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
@@ -4782,6 +4912,111 @@ async function fazerLogout(){
   document.getElementById('adm-painel').style.display='none';
   document.getElementById('login-email').value='';
   document.getElementById('login-senha').value='';
+}
+
+// ══════════════════════════════════════
+// PLAYER LOGIN
+// ══════════════════════════════════════
+let playerLogado = null; // {nome, id}
+
+async function fazerLoginPlayer(){
+  const nome  = (document.getElementById('pl-player').value||'').trim();
+  const senha = (document.getElementById('pl-senha').value||'');
+  const errEl = document.getElementById('player-login-erro');
+  errEl.style.display='none';
+  if(!nome){ errEl.textContent='Informe seu nome de player.'; errEl.style.display='block'; return; }
+  if(!senha){ errEl.textContent='Informe a senha.'; errEl.style.display='block'; return; }
+  // Busca players no banco
+  const lista = await dbGet('players','select=*');
+  // Match case-insensitive no nome, case-sensitive na senha
+  const match = lista.find(p => p.nome.toLowerCase()===nome.toLowerCase() && p.senha===senha);
+  if(!match){ errEl.textContent='Player ou senha incorretos.'; errEl.style.display='block'; return; }
+  playerLogado = {nome: match.nome, id: match.id};
+  localStorage.setItem('player_session', JSON.stringify(playerLogado));
+  // Carrega personagens se ainda não carregados
+  if(!personagens.length){
+    const p = await dbGet('personagens');
+    personagens = p||[];
+  }
+  renderPersonagensDatalist();
+  mostrarBadgePlayer();
+  fecharLoginOverlay();
+}
+
+function fecharLoginOverlay(){
+  const ov = document.getElementById('player-login-overlay');
+  if(ov) ov.style.display='none';
+}
+
+function mostrarBadgePlayer(){
+  const badge = document.getElementById('nav-player-badge');
+  const nomeEl = document.getElementById('nav-player-name');
+  if(!badge||!nomeEl) return;
+  if(playerLogado){
+    nomeEl.textContent = '🎮 '+playerLogado.nome;
+    badge.style.display='flex';
+  } else {
+    badge.style.display='none';
+  }
+}
+
+async function fazerLogoutPlayer(){
+  playerLogado = null;
+  localStorage.removeItem('player_session');
+  mostrarBadgePlayer();
+  renderPersonagensDatalist();
+  // Limpa campos de personagem
+  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value='';
+  });
+  localStorage.removeItem('ultimo_personagem');
+  // Mostra tela de login novamente
+  const ov = document.getElementById('player-login-overlay');
+  if(ov){ ov.style.display='flex'; document.getElementById('pl-player').value=''; document.getElementById('pl-senha').value=''; }
+}
+
+async function restaurarSessaoPlayer(){
+  try{
+    const saved = localStorage.getItem('player_session');
+    if(!saved) return false;
+    const sess = JSON.parse(saved);
+    if(!sess?.nome) return false;
+    // Valida no banco
+    const lista = await dbGet('players','select=*');
+    const match = lista.find(p=>p.nome===sess.nome);
+    if(!match){ localStorage.removeItem('player_session'); playerLogado=null; return false; }
+    playerLogado = {nome:match.nome, id:match.id};
+    return true;
+  } catch(e){ playerLogado=null; return false; }
+}
+
+// Alterar senha de player pelo super ADM
+async function admAlterarSenhaPlayer(){
+  if(!isSuperAdmin()){ alert('Apenas o super admin pode alterar senhas de players.'); return; }
+  const selEl = document.getElementById('adm-senha-player');
+  const senhaEl = document.getElementById('adm-senha-nova');
+  const playerId = selEl.value;
+  const novaSenha = (senhaEl.value||'').trim();
+  const errEl = document.getElementById('adm-senha-fb-err');
+  document.getElementById('adm-senha-fb').style.display='none';
+  errEl.style.display='none';
+  if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
+  if(novaSenha.length<4){ errEl.textContent='A senha deve ter pelo menos 4 caracteres.'; errEl.style.display='block'; return; }
+  await dbPatch('players',`id=eq.${playerId}`,{senha:novaSenha});
+  const p = players.find(x=>x.id==playerId);
+  if(p) p.senha=novaSenha;
+  fb('adm-senha-fb');
+  senhaEl.value='';
+}
+
+function populateAdmSenhaSelect(){
+  const sel = document.getElementById('adm-senha-player');
+  if(!sel) return;
+  const box = document.getElementById('box-player-senhas');
+  if(box) box.style.display = isSuperAdmin() ? '' : 'none';
+  sel.innerHTML = '<option value="">— Selecione —</option>' +
+    players.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
 }
 
 async function restaurarSessaoAdm(){
@@ -7061,7 +7296,13 @@ function filtrarFichas(q){
   });
 }
 function renderPersonagensDatalist(){
-  document.getElementById('personagens-lista').innerHTML=personagens.map(p=>`<option value="${p.nome}"/>`).join('');
+  const lista = document.getElementById('personagens-lista');
+  if(!lista) return;
+  // Se há player logado, mostra apenas seus personagens
+  const filtrados = playerLogado
+    ? personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase())
+    : personagens;
+  lista.innerHTML=filtrados.map(p=>`<option value="${p.nome}"/>`).join('');
 }
 
 
