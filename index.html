@@ -3816,6 +3816,7 @@ function calcSyncSelects(){
             <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
               <button id="npc-adm-tipo-oficial" class="pk-tab-btn active" onclick="setNpcAdmTipo('oficial',this)" style="font-size:12px;padding:6px 14px">🏙️ Oficiais</button>
               <button id="npc-adm-tipo-evento" class="pk-tab-btn" onclick="setNpcAdmTipo('evento',this)" style="font-size:12px;padding:6px 14px">🎪 Eventos</button>
+              <button id="btn-desativar-npcs-evento" class="btn btn-sm" onclick="abrirModalDesativarNpcs()" style="display:none;background:#fff0e0;color:#7a4010;border:1px solid #e8c080;margin-left:auto">🔕 Ativar / Desativar</button>
             </div>
             <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
               <select id="npc-adm-cidade-sel" style="padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)" onchange="renderNpcAdmLista()">
@@ -9149,6 +9150,7 @@ function renderNpcs(filtro=''){
   } else {
     // ── ABA EVENTOS: NPCs sem cidade (modelo simples) ──
     const todosSimples=NPC_EVENTOS.filter(n=>{
+      if(n.ativo===false) return false; // oculta NPCs desativados
       if(!q) return true;
       return n.nome.toLowerCase().includes(q)||
         (n.photoplayer||'').toLowerCase().includes(q)||
@@ -9327,6 +9329,9 @@ function setNpcAdmTipo(tipo, btn){
   // Mostra/esconde o select de cidade conforme o tipo
   const sel = document.getElementById('npc-adm-cidade-sel');
   if(sel) sel.style.display = tipo === 'oficial' ? '' : 'none';
+  // Mostra/esconde botão de desativar NPCs de evento
+  const btnDesativar = document.getElementById('btn-desativar-npcs-evento');
+  if(btnDesativar) btnDesativar.style.display = tipo === 'evento' ? '' : 'none';
   renderNpcAdmLista();
 }
 
@@ -9350,13 +9355,126 @@ async function renderNpcAdmLista(){
       const fotoHtml=n.foto
         ?`<img src="${n.foto}" alt="${n.nome}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<span style=\\'font-size:24px\\'>${n.emoji||'👤'}</span>'">`
         :`<span style="font-size:24px">${n.emoji||'👤'}</span>`;
-      return`<div onclick="abrirModalNpc('${n.id}')" style="background:var(--surface);border:1.5px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .18s,border-color .18s,transform .18s;display:flex;flex-direction:column;align-items:center;text-align:center" onmouseover="this.style.borderColor='var(--brand-mid)';this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 14px rgba(37,99,168,.15)'" onmouseout="this.style.borderColor='';this.style.transform='';this.style.boxShadow=''">
-        <div style="height:4px;width:100%;background:${topbarCor};flex-shrink:0"></div>
+      const inativo = _npcAdmTipo==='evento' && n.ativo===false;
+      return`<div onclick="abrirModalNpc('${n.id}')" style="background:var(--surface);border:1.5px solid ${inativo?'var(--border)':'var(--border)'};border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .18s,border-color .18s,transform .18s;display:flex;flex-direction:column;align-items:center;text-align:center;opacity:${inativo?'.5':'1'}" onmouseover="this.style.borderColor='var(--brand-mid)';this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 14px rgba(37,99,168,.15)'" onmouseout="this.style.borderColor='';this.style.transform='';this.style.boxShadow=''">
+        <div style="height:4px;width:100%;background:${inativo?'#ccc':topbarCor};flex-shrink:0"></div>
         <div style="width:60px;height:60px;margin:10px auto 6px;border-radius:8px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex-shrink:0">${fotoHtml}</div>
-        <div style="font-family:var(--font-title);font-size:10px;font-weight:700;color:var(--text);letter-spacing:.3px;text-transform:uppercase;padding:0 6px 10px;line-height:1.3;word-break:break-word">${n.nome}</div>
-        ${_npcAdmTipo==='evento'&&n.cargo?`<div style="font-size:9px;color:var(--muted);padding:0 6px 8px;font-style:italic">${n.cargo}</div>`:''}
+        <div style="font-family:var(--font-title);font-size:10px;font-weight:700;color:var(--text);letter-spacing:.3px;text-transform:uppercase;padding:0 6px ${inativo?'4px':'10px'};line-height:1.3;word-break:break-word">${n.nome}</div>
+        ${_npcAdmTipo==='evento'&&n.cargo?`<div style="font-size:9px;color:var(--muted);padding:0 6px 6px;font-style:italic">${n.cargo}</div>`:''}
+        ${inativo?`<div style="font-size:8px;font-weight:800;color:#991b1b;background:#fee2e2;padding:2px 8px 4px;width:100%;text-align:center;letter-spacing:.4px;text-transform:uppercase">desativado</div>`:''}
       </div>`;
     }).join('') + `</div>`;
+}
+
+// ══════════════════════════════════════
+// MODAL DESATIVAR NPCs DE EVENTO
+// ══════════════════════════════════════
+let _desativarNpcsData = []; // cache dos NPCs de evento no modal
+let _desativarNpcsEstados = {}; // { [id]: bool } alterações pendentes
+
+async function abrirModalDesativarNpcs(){
+  const overlay = document.getElementById('modal-desativar-npcs-overlay');
+  if(!overlay) return;
+  document.getElementById('desativar-npcs-fb').style.display='none';
+  document.getElementById('desativar-npcs-fb-err').style.display='none';
+  _desativarNpcsEstados = {};
+  // Busca NPCs de evento frescos do banco
+  const npcs = await sb('npcs?modelo=eq.simples&order=nome.asc');
+  _desativarNpcsData = npcs || [];
+  // Popula filtro de evento
+  const sel = document.getElementById('desativar-npc-filtro-ev');
+  if(sel){
+    const eventos = [...new Set(_desativarNpcsData.map(n=>n.cargo||'Evento').filter(Boolean))];
+    sel.innerHTML = '<option value="">— Todos os eventos —</option>' +
+      eventos.map(e=>`<option value="${e}">${e}</option>`).join('');
+    sel.value = '';
+  }
+  renderListaDesativarNpcs();
+  overlay.style.display = 'flex';
+}
+
+function fecharModalDesativarNpcs(){
+  document.getElementById('modal-desativar-npcs-overlay').style.display='none';
+}
+
+function renderListaDesativarNpcs(){
+  const cont = document.getElementById('desativar-npcs-lista');
+  if(!cont) return;
+  const filtroEv = document.getElementById('desativar-npc-filtro-ev')?.value || '';
+  const lista = filtroEv
+    ? _desativarNpcsData.filter(n=>(n.cargo||'Evento')===filtroEv)
+    : _desativarNpcsData;
+  if(!lista.length){
+    cont.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:12px 0;text-align:center">Nenhum NPC de evento encontrado.</div>`;
+    return;
+  }
+  // Agrupa por evento (cargo)
+  const grupos = {};
+  lista.forEach(n=>{ const k=n.cargo||'Evento'; if(!grupos[k])grupos[k]=[]; grupos[k].push(n); });
+  cont.innerHTML = Object.entries(grupos).map(([ev, npcs])=>`
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:800;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;padding-bottom:4px;border-bottom:1.5px solid var(--border)">${ev}</div>
+      ${npcs.map(n=>{
+        const estadoPendente = _desativarNpcsEstados.hasOwnProperty(n.id);
+        const ativo = estadoPendente ? _desativarNpcsEstados[n.id] : n.ativo !== false;
+        const topbarCor = n.topbar_cor || 'var(--brand-mid)';
+        const fotoHtml = n.foto
+          ? `<img src="${n.foto}" alt="${n.nome}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+          : `<span style="font-size:20px">${n.emoji||'👤'}</span>`;
+        return`<label style="display:flex;align-items:center;gap:12px;padding:9px 12px;background:${ativo?'var(--surface)':'#fff8f8'};border:1.5px solid ${ativo?'var(--border)':'#f0c0c0'};border-radius:8px;cursor:pointer;transition:all .15s;user-select:none" onmouseover="this.style.borderColor='var(--brand-mid)'" onmouseout="this.style.borderColor='${ativo?'var(--border)':'#f0c0c0'}'">
+          <input type="checkbox" data-npc-id="${n.id}" ${ativo?'checked':''} onchange="_toggleDesativarNpc('${n.id}',this.checked)" style="width:16px;height:16px;accent-color:var(--brand-mid);flex-shrink:0"/>
+          <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;background:var(--surface2);border:2px solid ${topbarCor};display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:${ativo?'1':'.45'}">${fotoHtml}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--font-title);font-size:11px;font-weight:700;color:${ativo?'var(--text)':'var(--muted)'};text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.nome}</div>
+            ${n.photoplayer?`<div style="font-size:10px;color:var(--muted);font-style:italic">${n.photoplayer}</div>`:''}
+          </div>
+          <span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:10px;flex-shrink:0;${ativo?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${ativo?'Ativo':'Inativo'}</span>
+        </label>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function _toggleDesativarNpc(id, ativo){
+  _desativarNpcsEstados[id] = ativo;
+  // Atualiza visual imediatamente
+  renderListaDesativarNpcs();
+}
+
+function desativarNpcsMarcados(ativar){
+  const filtroEv = document.getElementById('desativar-npc-filtro-ev')?.value || '';
+  const lista = filtroEv
+    ? _desativarNpcsData.filter(n=>(n.cargo||'Evento')===filtroEv)
+    : _desativarNpcsData;
+  lista.forEach(n=>{ _desativarNpcsEstados[n.id] = ativar; });
+  renderListaDesativarNpcs();
+}
+
+async function salvarDesativarNpcs(){
+  const fbOk = document.getElementById('desativar-npcs-fb');
+  const fbErr = document.getElementById('desativar-npcs-fb-err');
+  fbOk.style.display='none'; fbErr.style.display='none';
+  const ids = Object.keys(_desativarNpcsEstados);
+  if(!ids.length){ fecharModalDesativarNpcs(); return; }
+  try{
+    // Salva em paralelo
+    await Promise.all(ids.map(id=>sbRaw('PATCH',`npcs?id=eq.${id}`,{ativo:_desativarNpcsEstados[id]})));
+    // Atualiza cache local
+    ids.forEach(id=>{
+      const n = _desativarNpcsData.find(x=>x.id===id||x.id==id);
+      if(n) n.ativo = _desativarNpcsEstados[id];
+      const nev = NPC_EVENTOS.find(x=>x.id===id||x.id==id);
+      if(nev) nev.ativo = _desativarNpcsEstados[id];
+    });
+    _desativarNpcsEstados = {};
+    fbOk.style.display='block';
+    renderListaDesativarNpcs();
+    renderNpcAdmLista();
+    renderNpcs();
+    setTimeout(()=>{ fbOk.style.display='none'; fecharModalDesativarNpcs(); }, 900);
+  } catch(e){
+    fbErr.textContent = 'Erro ao salvar: '+(e.message||e);
+    fbErr.style.display='block';
+  }
 }
 
 // ─── Modal Cidade ───
@@ -11276,5 +11394,33 @@ init();
 
 <!-- ESTAÇÃO FAB -->
 <div id="estacao-fab" style="display:none" onclick="toggleFab()"></div>
+
+<!-- MODAL DESATIVAR NPCs DE EVENTO -->
+<div class="modal-overlay" id="modal-desativar-npcs-overlay" onclick="fecharModalDesativarNpcs()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:540px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharModalDesativarNpcs()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:4px">🔕 Ativar / Desativar NPCs de Evento</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:18px">NPCs desativados ficam ocultos na página pública enquanto o evento não estiver acontecendo. Marque os que devem aparecer.</div>
+
+    <!-- Filtro por evento -->
+    <div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="desativar-npc-filtro-ev" style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)" onchange="renderListaDesativarNpcs()">
+        <option value="">— Todos os eventos —</option>
+      </select>
+      <button class="btn btn-sm" style="background:#e0f0e0;color:#1a6a1a;border:1px solid #8bc88b" onclick="desativarNpcsMarcados(true)">✓ Ativar todos</button>
+      <button class="btn btn-sm" style="background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="desativarNpcsMarcados(false)">✕ Desativar todos</button>
+    </div>
+
+    <div id="desativar-npcs-lista" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow-y:auto;padding-right:4px"></div>
+
+    <div class="fb fb-ok" id="desativar-npcs-fb" style="margin-top:12px">✓ Alterações salvas!</div>
+    <div class="fb fb-err" id="desativar-npcs-fb-err" style="margin-top:12px">—</div>
+
+    <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end">
+      <button class="btn" onclick="fecharModalDesativarNpcs()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarDesativarNpcs()">💾 Salvar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
