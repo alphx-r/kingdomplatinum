@@ -580,19 +580,27 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   backdrop-filter:blur(6px);
 }
 .player-login-card{
-  background:var(--surface);
-  border:1.5px solid var(--border);
+  background:#717171;
+  border:1.5px solid rgba(255,255,255,.15);
   border-radius:16px;
   padding:36px 32px 28px;
   width:min(380px,94vw);
   box-shadow:0 16px 60px rgba(0,0,0,.5);
 }
+.player-login-card .field label{color:rgba(255,255,255,.8)}
+.player-login-card .field input{
+  background:rgba(255,255,255,.12);
+  border-color:rgba(255,255,255,.25);
+  color:#fff;
+}
+.player-login-card .field input::placeholder{color:rgba(255,255,255,.4)}
+.player-login-card .field input:focus{border-color:rgba(255,255,255,.6);outline:none}
 .player-login-title{
-  font-family:var(--font-title);font-size:20px;color:var(--brand);
+  font-family:var(--font-title);font-size:20px;color:#fff;
   text-align:center;margin-bottom:4px;letter-spacing:.5px;
 }
 .player-login-sub{
-  font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px;
+  font-size:13px;color:rgba(255,255,255,.65);text-align:center;margin-bottom:24px;
 }
 .player-login-btn{
   width:100%;padding:12px;border-radius:10px;border:none;
@@ -602,7 +610,8 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 }
 .player-login-btn:hover{background:var(--brand)}
 #player-login-erro{
-  background:#fde8e8;color:var(--red);
+  background:rgba(255,80,80,.2);color:#ffcccc;
+  border:1px solid rgba(255,100,100,.35);
   font-size:12px;font-weight:700;border-radius:6px;
   padding:7px 12px;margin-top:8px;display:none;text-align:center;
 }
@@ -703,14 +712,21 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
       <img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" style="height:48px;object-fit:contain" alt="Kingdom Platinum"/>
     </div>
     <div class="player-login-title">Kingdom Platinum</div>
-    <div class="player-login-sub">Entre com seu player para continuar</div>
+    <div class="player-login-sub" id="pl-sub">Entre com seu player para continuar</div>
     <div class="field">
       <label>Player</label>
-      <input type="text" id="pl-player" placeholder="Seu nome de player" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('pl-senha').focus()"/>
+      <input type="text" id="pl-player" placeholder="Seu nome de player" autocomplete="username"
+        onkeydown="if(event.key==='Enter')document.getElementById('pl-senha').focus()"
+        oninput="verificarPrimeiroLogin()"/>
     </div>
     <div class="field">
       <label>Senha</label>
-      <input type="password" id="pl-senha" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')fazerLoginPlayer()"/>
+      <input type="password" id="pl-senha" placeholder="••••••••" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter'){const c=document.getElementById('pl-conf-wrap');if(c.style.display!=='none')document.getElementById('pl-senha-conf').focus();else fazerLoginPlayer();}"/>
+    </div>
+    <div class="field" id="pl-conf-wrap" style="display:none">
+      <label>Confirmar Senha <span style="font-size:10px;font-weight:400;opacity:.7">(primeiro acesso)</span></label>
+      <input type="password" id="pl-senha-conf" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')fazerLoginPlayer()"/>
     </div>
     <div id="player-login-erro"></div>
     <button class="player-login-btn" onclick="fazerLoginPlayer()">Entrar</button>
@@ -2836,8 +2852,31 @@ function calcSyncSelects(){
             <div class="fb fb-ok" id="np-fb">✓ Personagem adicionado!</div>
           </div>
           <div class="box" id="box-player-senhas">
-            <div class="box-title">🔑 Senhas dos Players</div>
-            <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Defina ou redefina a senha individual de cada player. Se um player ainda não tem senha, use esta área para criar a primeira.</div>
+            <div class="box-title">🔑 Gerenciar Players</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Renomeie players ou defina/redefina senhas. O campo de confirmação de senha aparece automaticamente no primeiro login do player (quando a senha ainda não foi definida).</div>
+
+            <!-- Renomear player -->
+            <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+              <div style="font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">✏️ Renomear Player</div>
+              <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+                <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
+                  <label>Player</label>
+                  <select id="adm-rename-player" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:14px;width:100%" onchange="adm_preencherNomeAtual()">
+                    <option value="">— Selecione —</option>
+                  </select>
+                </div>
+                <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
+                  <label>Novo nome</label>
+                  <input type="text" id="adm-rename-novo" placeholder="Novo nome do player" autocomplete="off"/>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="admRenomearPlayer()" style="margin-bottom:1px">Renomear</button>
+              </div>
+              <div class="fb fb-ok" id="adm-rename-fb" style="margin-top:8px">✓ Player renomeado!</div>
+              <div class="fb fb-err" id="adm-rename-fb-err" style="margin-top:8px">—</div>
+            </div>
+
+            <!-- Alterar senha -->
+            <div style="font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">🔒 Alterar Senha</div>
             <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
               <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
                 <label>Player</label>
@@ -4919,20 +4958,76 @@ async function fazerLogout(){
 // ══════════════════════════════════════
 let playerLogado = null; // {nome, id}
 
+// Normaliza string para comparação: remove acentos, espaços e converte para minúsculas
+function normalizarNome(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
+}
+
+// Cache dos players carregados na tela de login (evita múltiplas requisições enquanto o user digita)
+let _loginPlayerCache = null;
+
+async function _getPlayersLogin(){
+  if(!_loginPlayerCache){
+    _loginPlayerCache = await dbGet('players','select=*');
+  }
+  return _loginPlayerCache || [];
+}
+
+// Chamado ao digitar no campo Player: decide se exibe o campo de confirmação (primeiro login)
+let _verificarTimer = null;
+async function verificarPrimeiroLogin(){
+  clearTimeout(_verificarTimer);
+  _verificarTimer = setTimeout(async ()=>{
+    const nome = document.getElementById('pl-player').value;
+    if(!nome.trim()){ document.getElementById('pl-conf-wrap').style.display='none'; return; }
+    const lista = await _getPlayersLogin();
+    const match = lista.find(p => normalizarNome(p.nome) === normalizarNome(nome));
+    const isPrimeiro = match && !match.senha;
+    const confWrap = document.getElementById('pl-conf-wrap');
+    const sub = document.getElementById('pl-sub');
+    if(isPrimeiro){
+      confWrap.style.display='';
+      sub.textContent = 'Primeiro acesso — crie sua senha';
+    } else {
+      confWrap.style.display='none';
+      sub.textContent = 'Entre com seu player para continuar';
+    }
+  }, 400);
+}
+
 async function fazerLoginPlayer(){
-  const nome  = (document.getElementById('pl-player').value||'').trim();
+  const nomeDigitado = (document.getElementById('pl-player').value||'').trim();
   const senha = (document.getElementById('pl-senha').value||'');
+  const conf  = (document.getElementById('pl-senha-conf').value||'');
   const errEl = document.getElementById('player-login-erro');
   errEl.style.display='none';
-  if(!nome){ errEl.textContent='Informe seu nome de player.'; errEl.style.display='block'; return; }
+  if(!nomeDigitado){ errEl.textContent='Informe seu nome de player.'; errEl.style.display='block'; return; }
   if(!senha){ errEl.textContent='Informe a senha.'; errEl.style.display='block'; return; }
-  // Busca players no banco
-  const lista = await dbGet('players','select=*');
-  // Match case-insensitive no nome, case-sensitive na senha
-  const match = lista.find(p => p.nome.toLowerCase()===nome.toLowerCase() && p.senha===senha);
-  if(!match){ errEl.textContent='Player ou senha incorretos.'; errEl.style.display='block'; return; }
+
+  const lista = await _getPlayersLogin();
+  const match = lista.find(p => normalizarNome(p.nome) === normalizarNome(nomeDigitado));
+
+  if(!match){ errEl.textContent='Player não encontrado.'; errEl.style.display='block'; return; }
+
+  const isPrimeiro = !match.senha;
+
+  if(isPrimeiro){
+    // Primeiro login: define a senha agora
+    if(!conf){ errEl.textContent='Confirme sua senha.'; errEl.style.display='block'; return; }
+    if(senha !== conf){ errEl.textContent='As senhas não coincidem.'; errEl.style.display='block'; return; }
+    if(senha.length < 4){ errEl.textContent='A senha deve ter pelo menos 4 caracteres.'; errEl.style.display='block'; return; }
+    // Salva senha no banco
+    await dbPatch('players',`id=eq.${match.id}`,{senha});
+    match.senha = senha;
+    _loginPlayerCache = null; // invalida cache
+  } else {
+    // Login normal: valida senha
+    if(match.senha !== senha){ errEl.textContent='Senha incorreta.'; errEl.style.display='block'; return; }
+  }
+
   playerLogado = {nome: match.nome, id: match.id};
   localStorage.setItem('player_session', JSON.stringify(playerLogado));
+  _loginPlayerCache = null;
   // Carrega personagens se ainda não carregados
   if(!personagens.length){
     const p = await dbGet('personagens');
@@ -4962,18 +5057,24 @@ function mostrarBadgePlayer(){
 
 async function fazerLogoutPlayer(){
   playerLogado = null;
+  _loginPlayerCache = null;
   localStorage.removeItem('player_session');
   mostrarBadgePlayer();
   renderPersonagensDatalist();
-  // Limpa campos de personagem
   ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.value='';
   });
   localStorage.removeItem('ultimo_personagem');
-  // Mostra tela de login novamente
   const ov = document.getElementById('player-login-overlay');
-  if(ov){ ov.style.display='flex'; document.getElementById('pl-player').value=''; document.getElementById('pl-senha').value=''; }
+  if(ov){
+    ov.style.display='flex';
+    document.getElementById('pl-player').value='';
+    document.getElementById('pl-senha').value='';
+    document.getElementById('pl-senha-conf').value='';
+    document.getElementById('pl-conf-wrap').style.display='none';
+    document.getElementById('pl-sub').textContent='Entre com seu player para continuar';
+  }
 }
 
 async function restaurarSessaoPlayer(){
@@ -4982,13 +5083,60 @@ async function restaurarSessaoPlayer(){
     if(!saved) return false;
     const sess = JSON.parse(saved);
     if(!sess?.nome) return false;
-    // Valida no banco
     const lista = await dbGet('players','select=*');
     const match = lista.find(p=>p.nome===sess.nome);
     if(!match){ localStorage.removeItem('player_session'); playerLogado=null; return false; }
     playerLogado = {nome:match.nome, id:match.id};
     return true;
   } catch(e){ playerLogado=null; return false; }
+}
+
+// ── Renomear player (super ADM) ──
+async function admRenomearPlayer(){
+  if(!isSuperAdmin()){ alert('Apenas o super admin pode renomear players.'); return; }
+  const selEl   = document.getElementById('adm-rename-player');
+  const novoEl  = document.getElementById('adm-rename-novo');
+  const playerId= selEl.value;
+  const novoNome= (novoEl.value||'').trim();
+  const errEl   = document.getElementById('adm-rename-fb-err');
+  document.getElementById('adm-rename-fb').style.display='none';
+  errEl.style.display='none';
+  if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
+  if(!novoNome){ errEl.textContent='Informe o novo nome.'; errEl.style.display='block'; return; }
+  if(players.find(p=>String(p.id)!==String(playerId) && normalizarNome(p.nome)===normalizarNome(novoNome))){
+    errEl.textContent='Já existe um player com esse nome.'; errEl.style.display='block'; return;
+  }
+  const p = players.find(x=>String(x.id)===String(playerId));
+  const nomeAntigo = p?.nome;
+  // Atualiza tabela players
+  await dbPatch('players',`id=eq.${playerId}`,{nome:novoNome});
+  if(p) p.nome = novoNome;
+  // Atualiza personagens vinculados ao player
+  if(nomeAntigo){
+    const afetados = personagens.filter(x=>x.player===nomeAntigo);
+    for(const c of afetados){
+      await dbPatch('personagens',`id=eq.${c.id}`,{player:novoNome});
+      c.player = novoNome;
+    }
+  }
+  // Invalida cache de login e atualiza sessão se era esse player
+  _loginPlayerCache = null;
+  if(playerLogado && playerLogado.nome === nomeAntigo){
+    playerLogado.nome = novoNome;
+    localStorage.setItem('player_session', JSON.stringify(playerLogado));
+    mostrarBadgePlayer();
+  }
+  novoEl.value='';
+  fb('adm-rename-fb');
+  renderTbodyPersonagens(); renderFichario(); renderPersonagensDatalist();
+  populateAdmSenhaSelect();
+}
+
+function adm_preencherNomeAtual(){
+  const selEl = document.getElementById('adm-rename-player');
+  const novoEl = document.getElementById('adm-rename-novo');
+  const p = players.find(x=>String(x.id)===String(selEl.value));
+  if(p && novoEl) novoEl.value = p.nome;
 }
 
 // Alterar senha de player pelo super ADM
@@ -5004,19 +5152,22 @@ async function admAlterarSenhaPlayer(){
   if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
   if(novaSenha.length<4){ errEl.textContent='A senha deve ter pelo menos 4 caracteres.'; errEl.style.display='block'; return; }
   await dbPatch('players',`id=eq.${playerId}`,{senha:novaSenha});
-  const p = players.find(x=>x.id==playerId);
+  const p = players.find(x=>String(x.id)===String(playerId));
   if(p) p.senha=novaSenha;
+  _loginPlayerCache = null;
   fb('adm-senha-fb');
   senhaEl.value='';
 }
 
 function populateAdmSenhaSelect(){
-  const sel = document.getElementById('adm-senha-player');
-  if(!sel) return;
   const box = document.getElementById('box-player-senhas');
   if(box) box.style.display = isSuperAdmin() ? '' : 'none';
-  sel.innerHTML = '<option value="">— Selecione —</option>' +
+  const selS = document.getElementById('adm-senha-player');
+  const selR = document.getElementById('adm-rename-player');
+  const opts = '<option value="">— Selecione —</option>' +
     players.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+  if(selS) selS.innerHTML = opts;
+  if(selR) selR.innerHTML = opts;
 }
 
 async function restaurarSessaoAdm(){
