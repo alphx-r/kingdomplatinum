@@ -715,9 +715,9 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <div class="player-login-sub" id="pl-sub">Entre com seu player para continuar</div>
     <div class="field">
       <label>Player</label>
-      <input type="text" id="pl-player" placeholder="Seu nome de player" autocomplete="username"
+      <input type="text" id="pl-player" placeholder="Ex: joaosilva" autocomplete="username"
         onkeydown="if(event.key==='Enter')document.getElementById('pl-senha').focus()"
-        oninput="verificarPrimeiroLogin()"/>
+        oninput="sanitizarInputPlayer(this);verificarPrimeiroLogin()"/>
     </div>
     <div class="field">
       <label>Senha</label>
@@ -2833,7 +2833,7 @@ function calcSyncSelects(){
           <div class="box">
             <div class="box-title">Novo personagem</div>
             <div class="g2">
-              <div class="field"><label>Nome do Player</label><input type="text" id="np-player" placeholder="Ex: Lucas"/></div>
+              <div class="field"><label>Nome do Player</label><input type="text" id="np-player" placeholder="Ex: joaosilva" oninput="sanitizarInputPlayer(this)"/></div>
               <div class="field"><label>Nome do Personagem</label><input type="text" id="np-nome" placeholder="Ex: Ash Ketchum"/></div>
               <div class="field"><label>Photoplayer</label><input type="text" id="np-photoplayer" placeholder="Ex: Satoshi"/></div>
               <div class="field"><label>Cor do avatar</label><input type="color" id="np-cor" value="#2563a8"/></div>
@@ -2867,7 +2867,7 @@ function calcSyncSelects(){
                 </div>
                 <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
                   <label>Novo nome</label>
-                  <input type="text" id="adm-rename-novo" placeholder="Novo nome do player" autocomplete="off"/>
+                  <input type="text" id="adm-rename-novo" placeholder="Ex: joaosilva" autocomplete="off" oninput="sanitizarInputPlayer(this)"/>
                 </div>
                 <button class="btn btn-primary btn-sm" onclick="admRenomearPlayer()" style="margin-bottom:1px">Renomear</button>
               </div>
@@ -4588,6 +4588,10 @@ async function init(){
 }
 
 async function iniciarSessaoPlayer(){
+  // Não exibe login de player na área ADM
+  const path = location.pathname.replace(/^\//, '');
+  if(path === 'adm') return;
+
   // Carrega players se necessário
   if(!players.length){
     const p = await dbGet('players','select=*');
@@ -4958,9 +4962,22 @@ async function fazerLogout(){
 // ══════════════════════════════════════
 let playerLogado = null; // {nome, id}
 
-// Normaliza string para comparação: remove acentos, espaços e converte para minúsculas
+// Normaliza para comparação estrita: remove acentos e espaços, lowercase
+// O nome do player DEVE ser digitado sem espaços e sem acentos (ex: joaosilva)
 function normalizarNome(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
+}
+
+// Sanitiza input ao vivo: remove espaços e acentos enquanto o usuário digita
+function sanitizarInputPlayer(el){
+  const pos = el.selectionStart;
+  const original = el.value;
+  const sanitized = original.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
+  if(sanitized !== original){
+    el.value = sanitized;
+    // tenta restaurar posição do cursor
+    try{ el.setSelectionRange(Math.min(pos, sanitized.length), Math.min(pos, sanitized.length)); }catch(e){}
+  }
 }
 
 // Cache dos players carregados na tela de login (evita múltiplas requisições enquanto o user digita)
