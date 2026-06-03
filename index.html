@@ -2080,8 +2080,8 @@ function calcSyncSelects(){
       <label>Encontros</label>
       <input type="number" id="n-encontrar" value="3" min="1" max="20" oninput="verificarMotivoExtra()"/>
     </div>
-    <div class="ctrl-group">
-      <label>Motivo Extra <span id="motivo-obrigatorio" style="color:var(--red);display:none">*</span></label>
+    <div class="ctrl-group" id="motivo-extras-wrap" style="display:none">
+      <label>Motivo Extra <span id="motivo-obrigatorio" style="color:var(--red)">*</span></label>
       <input type="text" id="motivo-extras" placeholder="Habilidade, Item ou Skill"/>
     </div>
   </div>
@@ -2733,8 +2733,12 @@ function calcSyncSelects(){
       </div>
       <div class="ctrl-group" id="evento-adicionais-wrap">
         <label>Pokémon adicionais</label>
-        <input type="number" id="evento-adicionais" value="0" min="0" max="10"/>
+        <input type="number" id="evento-adicionais" value="0" min="0" max="10" oninput="verificarMotivoExtraEvento()"/>
       </div>
+    </div>
+    <div class="ctrl-group" id="evento-motivo-extras-wrap" style="display:none;margin-bottom:14px">
+      <label>Motivo Extra <span id="evento-motivo-obrigatorio" style="color:var(--red)">*</span></label>
+      <input type="text" id="evento-motivo-extras" placeholder="Habilidade, Item ou Skill"/>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="roll-btn" onclick="rolarEncontroEvento()">Rolar Encontro</button>
@@ -8118,16 +8122,30 @@ function buildCardHtml(pk,delay){
 
 function verificarMotivoExtra(){
   const nEncontrar=parseInt(document.getElementById('n-encontrar').value)||3;
-  const obrig=document.getElementById('motivo-obrigatorio');
+  const wrap=document.getElementById('motivo-extras-wrap');
   const input=document.getElementById('motivo-extras');
   if(nEncontrar>10&&!admLogado){
-    obrig.style.display='inline';
+    if(wrap) wrap.style.display='block';
     input.setAttribute('required','required');
     input.style.borderColor='var(--red)';
   } else {
-    obrig.style.display='none';
+    if(wrap) wrap.style.display='none';
     input.removeAttribute('required');
     input.style.borderColor='';
+  }
+}
+
+function verificarMotivoExtraEvento(){
+  const adicionais = Math.max(0, parseInt(document.getElementById('evento-adicionais')?.value)||0);
+  const total = 3 + adicionais;
+  const wrap  = document.getElementById('evento-motivo-extras-wrap');
+  const input = document.getElementById('evento-motivo-extras');
+  if(total > 10 && !admLogado){
+    if(wrap) wrap.style.display = 'block';
+    if(input){ input.setAttribute('required','required'); input.style.borderColor='var(--red)'; }
+  } else {
+    if(wrap) wrap.style.display = 'none';
+    if(input){ input.removeAttribute('required'); input.style.borderColor=''; }
   }
 }
 
@@ -10572,6 +10590,16 @@ async function rolarEncontroEvento(){
   if(!personagem){ alert('Preencha o nome do personagem!'); document.getElementById('evento-personagem').focus(); return; }
   const ev = eventoAtual;
   if(!ev){ alert('Evento não carregado.'); return; }
+
+  // Motivo obrigatório quando total > 10
+  const _adicCheck = ev.lock_adicionais ? (ev.adicionais||0) : Math.max(0,parseInt(document.getElementById('evento-adicionais')?.value)||0);
+  const _totalCheck = 3 + _adicCheck;
+  const _motivoExtrasEvento = (document.getElementById('evento-motivo-extras')?.value||'').trim();
+  if(_totalCheck > 10 && !_motivoExtrasEvento && !admLogado){
+    alert(`Você está rolando ${_totalCheck} Pokémon. Por favor, informe o motivo.`);
+    document.getElementById('evento-motivo-extras')?.focus();
+    return;
+  }
 
   // ── pool custom: usa pokémon configurados pelo admin ──
   if(ev.pool_modo==='custom' && _poolBiomasEvento.length){
