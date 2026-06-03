@@ -8184,12 +8184,20 @@ async function rolarEncontro(){
   if(forcadoIds && forcadoIds.length){
     // Usa os Pokémon forçados (na ordem definida, completando com sorteio se houver mais slots)
     for(let i=0;i<total;i++){
-      const pkId = forcadoIds[i];
+      const frcEntry = forcadoIds[i];
+      const pkId = frcEntry ? (frcEntry.id || frcEntry) : null;
       if(pkId){
         const pkData = pokemonDB.find(p=>p.id===pkId);
         if(pkData){
           const gender=rollGender(pkData.genero);
-          pokes.push({nome:pkData.nome,tipos:pkData.tipos||[],emoji:pkData.emoji||'❓',sprite:pkData.sprite||null,habilidade:pkData.habilidade,rarity:pkData.raridade,genderS:gender.s,genderC:gender.c,nature:rollNature(),_forcado:true});
+          // Aplica customizações salvas pelo admin
+          const customNome      = frcEntry.nome      || pkData.nome;
+          const customSprite    = frcEntry.sprite     !== undefined ? frcEntry.sprite    : pkData.sprite;
+          const customHab       = frcEntry.habilidade !== undefined ? frcEntry.habilidade: pkData.habilidade;
+          const customRaridade  = frcEntry.raridade   || pkData.raridade;
+          const customTipos     = frcEntry.tipos      || pkData.tipos || [];
+          const customGender = frcEntry.gender ? rollGender(frcEntry.gender) : gender;
+          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:rollNature()});
           continue;
         }
       }
@@ -8444,7 +8452,8 @@ async function salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar)
   const agora=new Date();
   const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data=agora.toLocaleDateString('pt-BR');
-  const entry={bioma,personagem,hora,data,pokes:pokes||[],n_encontrar:nEncontrar||3};
+  const pokesClean=(pokes||[]).map(pk=>{const c={...pk};delete c._forcado;return c;});
+  const entry={bioma,personagem,hora,data,pokes:pokesClean,n_encontrar:nEncontrar||3};
   if(motivoExtras) entry.motivo_extras=motivoExtras;
   try{
     const res=await dbPost('historico',entry);
@@ -11177,12 +11186,19 @@ function renderFrcSelecionados(){
   }
   wrap.style.display = 'block';
   if(count) count.textContent = `(${frcSelecionados.length})`;
-  container.innerHTML = frcSelecionados.map(p => `
-    <div style="display:flex;align-items:center;gap:6px;background:var(--brand-light);border:1.5px solid var(--brand-mid);border-radius:20px;padding:4px 10px 4px 6px">
-      <img src="${p.sprite||FALLBACK_SPRITE}" style="width:24px;height:24px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <span style="font-size:12px;font-weight:700;color:var(--brand)">${p.nome}</span>
+  container.innerHTML = frcSelecionados.map((p,idx) => {
+    const hasCustom = p._custom;
+    const editStyle = hasCustom
+      ? 'cursor:pointer;font-size:11px;color:var(--brand-mid);margin-left:2px;font-weight:700'
+      : 'cursor:pointer;font-size:11px;color:var(--muted);margin-left:2px';
+    return `<div style="display:flex;align-items:center;gap:6px;background:var(--brand-light);border:1.5px solid ${hasCustom?'var(--accent)':'var(--brand-mid)'};border-radius:20px;padding:4px 10px 4px 6px">
+      <img src="${p._customSprite||p.sprite||FALLBACK_SPRITE}" style="width:24px;height:24px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
+      <span style="font-size:12px;font-weight:700;color:var(--brand)">${p._customNome||p.nome}</span>
+      ${hasCustom?'<span style="font-size:9px;background:var(--accent-light);color:#7a5010;border:1px solid var(--accent);border-radius:6px;padding:1px 5px;font-weight:700">✏️</span>':''}
+      <span onclick="abrirModalFrcEdit(${idx})" style="${editStyle}" title="Editar">✏</span>
       <span onclick="toggleFrcPoke('${p.id}')" style="cursor:pointer;font-size:11px;color:var(--red);margin-left:2px" title="Remover">✕</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function salvarForcado(){
@@ -11195,7 +11211,17 @@ async function salvarForcado(){
   if(!frcSelecionados.length){ alert('Selecione ao menos 1 Pokémon.'); return; }
 
   const chave = 'forced_result_' + personagem.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
-  const valor = JSON.stringify({ personagem, pokemons: frcSelecionados.map(p=>p.id), nota, criadoEm: new Date().toISOString() });
+  const pokemonsData = frcSelecionados.map(p => {
+    const entry = { id: p.id };
+    if(p._customNome)       entry.nome = p._customNome;
+    if(p._customSprite !== undefined && p._customSprite !== p.sprite) entry.sprite = p._customSprite;
+    if(p._customHabilidade !== undefined && p._customHabilidade !== p.habilidade) entry.habilidade = p._customHabilidade;
+    if(p._customGender) entry.gender = p._customGender;
+    if(p._customRaridade && p._customRaridade !== p.raridade) entry.raridade = p._customRaridade;
+    if(p._customTipos)      entry.tipos = p._customTipos;
+    return entry;
+  });
+  const valor = JSON.stringify({ personagem, pokemons: pokemonsData, nota, criadoEm: new Date().toISOString() });
 
   // Verifica se já existe
   const existing = await dbGet('config', `chave=eq.${chave}`);
@@ -11237,8 +11263,14 @@ function renderFrcLista(){
     return;
   }
   container.innerHTML = forcadosAtivos.map(f => {
-    const pokes = (f.pokemons||[]).map(id => pokemonDB.find(p=>p.id===id)).filter(Boolean);
-    const sprites = pokes.map(p=>`<img src="${p.sprite||FALLBACK_SPRITE}" title="${p.nome}" style="width:36px;height:36px;object-fit:contain;border-radius:50%;border:1.5px solid var(--border);background:var(--surface)" onerror="this.src='${FALLBACK_SPRITE}'">`).join('');
+    const pokesRaw = (f.pokemons||[]);
+    const pokes = pokesRaw.map(entry => {
+      const id = entry.id || entry;
+      const base = pokemonDB.find(p=>p.id===id);
+      if(!base) return null;
+      return { ...base, nome: entry.nome||base.nome, sprite: entry.sprite!==undefined?entry.sprite:base.sprite, _hasCustom: !!(entry.nome||entry.sprite!==undefined||entry.habilidade!==undefined||entry.raridade||entry.tipos) };
+    }).filter(Boolean);
+    const sprites = pokes.map(p=>`<span style="position:relative;display:inline-block"><img src="${p.sprite||FALLBACK_SPRITE}" title="${p.nome}" style="width:36px;height:36px;object-fit:contain;border-radius:50%;border:1.5px solid ${p._hasCustom?'var(--accent)':'var(--border)'};background:var(--surface)" onerror="this.src='${FALLBACK_SPRITE}'">${p._hasCustom?'<span style="position:absolute;top:-3px;right:-3px;font-size:8px;background:var(--accent);border-radius:50%;width:13px;height:13px;display:flex;align-items:center;justify-content:center">✏</span>':''}</span><span style="font-size:9px;color:var(--text);display:block;text-align:center;max-width:40px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${p.nome}</span>`).join('');
     const dt = f.criadoEm ? new Date(f.criadoEm).toLocaleDateString('pt-BR') : '';
     return `<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
@@ -11254,6 +11286,75 @@ function renderFrcLista(){
   }).join('');
 }
 
+// ── Modal editar Pokémon forçado ──────────────────────────────
+const FRC_TIPOS_ALL = ['fire','water','grass','normal','electric','psychic','steel','fairy','ghost','dragon','ice','fighting','rock','ground','poison','bug','dark','flying','light','scent'];
+const FRC_TIPO_LABEL = {fire:'Fogo',water:'Água',grass:'Planta',normal:'Normal',electric:'Elétrico',psychic:'Psíquico',steel:'Aço',fairy:'Fada',ghost:'Fantasma',dragon:'Dragão',ice:'Gelo',fighting:'Lutador',rock:'Pedra',ground:'Terra',poison:'Veneno',bug:'Inseto',dark:'Sombrio',flying:'Voador',light:'Luz',scent:'Aroma'};
+
+function abrirModalFrcEdit(idx){
+  const p = frcSelecionados[idx];
+  if(!p) return;
+  document.getElementById('frc-edit-idx').value = idx;
+  document.getElementById('frc-edit-nome').value = p._customNome || p.nome || '';
+  document.getElementById('frc-edit-habilidade').value = p._customHabilidade !== undefined ? p._customHabilidade : (p.habilidade||'');
+  document.getElementById('frc-edit-raridade').value = p._customRaridade || p.raridade || 'comum';
+  document.getElementById('frc-edit-gender').value = p._customGender !== undefined ? p._customGender : '';
+  const spriteVal = p._customSprite !== undefined ? p._customSprite : (p.sprite||'');
+  document.getElementById('frc-edit-sprite').value = spriteVal;
+  document.getElementById('frc-edit-preview-img').src = spriteVal || FALLBACK_SPRITE;
+  const tiposAtivos = p._customTipos || p.tipos || [];
+  const grid = document.getElementById('frc-edit-tipos-grid');
+  grid.innerHTML = FRC_TIPOS_ALL.map(t => {
+    const sel = tiposAtivos.includes(t);
+    return '<span onclick="toggleFrcEditTipo(\''+t+'\')" id="frc-tipo-btn-'+t+'" class="type-pill t-'+t+'" style="cursor:pointer;opacity:'+(sel?1:.35)+';outline:'+(sel?'2px solid var(--brand-mid)':'none')+';outline-offset:1px;font-size:10px;padding:3px 9px">'+( {'fire':'Fogo','water':'Água','grass':'Planta','normal':'Normal','electric':'Elétrico','psychic':'Psíquico','steel':'Aço','fairy':'Fada','ghost':'Fantasma','dragon':'Dragão','ice':'Gelo','fighting':'Lutador','rock':'Pedra','ground':'Terra','poison':'Veneno','bug':'Inseto','dark':'Sombrio','flying':'Voador','light':'Luz','scent':'Aroma'}[t]||t )+'</span>';
+  }).join('');
+  document.getElementById('modal-frc-edit-overlay').style.display='flex';
+}
+
+function fecharModalFrcEdit(){
+  document.getElementById('modal-frc-edit-overlay').style.display='none';
+}
+
+function toggleFrcEditTipo(t){
+  const grid = document.getElementById('frc-edit-tipos-grid');
+  const ativos = [...grid.querySelectorAll('.type-pill')].filter(el=>parseFloat(el.style.opacity)===1).map(el=>el.id.replace('frc-tipo-btn-',''));
+  const btn = document.getElementById('frc-tipo-btn-'+t);
+  if(ativos.includes(t)){
+    btn.style.opacity='.35'; btn.style.outline='none';
+  } else {
+    if(ativos.length>=2){ alert('Máximo de 2 tipos.'); return; }
+    btn.style.opacity='1'; btn.style.outline='2px solid var(--brand-mid)';
+  }
+}
+
+function salvarFrcEdit(){
+  const idx = parseInt(document.getElementById('frc-edit-idx').value);
+  if(isNaN(idx)||!frcSelecionados[idx]) return;
+  const p = frcSelecionados[idx];
+  const nome = document.getElementById('frc-edit-nome').value.trim();
+  const habilidade = document.getElementById('frc-edit-habilidade').value.trim();
+  const raridade = document.getElementById('frc-edit-raridade').value;
+  const gender = document.getElementById('frc-edit-gender').value;
+  const sprite = document.getElementById('frc-edit-sprite').value.trim();
+  const grid = document.getElementById('frc-edit-tipos-grid');
+  const tipos = [...grid.querySelectorAll('.type-pill')].filter(el=>parseFloat(el.style.opacity)===1).map(el=>el.id.replace('frc-tipo-btn-',''));
+  const genderDiff = gender !== '';
+  const nomeDiff = nome && nome !== p.nome;
+  const habDiff  = habilidade !== (p.habilidade||'');
+  const rarDiff  = raridade !== (p.raridade||'comum');
+  const sprDiff  = sprite !== (p.sprite||'');
+  const tipDiff  = JSON.stringify(tipos.slice().sort()) !== JSON.stringify((p.tipos||[]).slice().sort());
+  if(nomeDiff) p._customNome = nome; else delete p._customNome;
+  if(habDiff)  p._customHabilidade = habilidade; else delete p._customHabilidade;
+  if(rarDiff)  p._customRaridade = raridade; else delete p._customRaridade;
+  if(sprDiff)  p._customSprite = sprite; else delete p._customSprite;
+  if(tipDiff)    p._customTipos = tipos; else delete p._customTipos;
+  if(genderDiff) p._customGender = gender; else delete p._customGender;
+  p._custom = !!(nomeDiff||habDiff||rarDiff||sprDiff||tipDiff||genderDiff);
+  renderFrcSelecionados();
+  fecharModalFrcEdit();
+}
+
+
 // Hook: consulta se há resultado forçado antes de sortear
 async function consumirForcado(personagem){
   const chave = 'forced_result_' + personagem.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
@@ -11265,7 +11366,7 @@ async function consumirForcado(personagem){
     await dbDel('config', `chave=eq.${chave}`);
     // Atualiza cache
     forcadosAtivos = forcadosAtivos.filter(f => f.chave !== chave);
-    return data.pokemons || [];
+    return (data.pokemons || []).map(p => typeof p === 'string' ? { id: p } : p);
   } catch(e){ return null; }
 }
 
@@ -11420,6 +11521,67 @@ init();
     <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end">
       <button class="btn" onclick="fecharModalDesativarNpcs()">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarDesativarNpcs()">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+<!-- MODAL EDITAR POKÉMON FORÇADO -->
+<div class="modal-overlay" id="modal-frc-edit-overlay" onclick="fecharModalFrcEdit()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:480px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharModalFrcEdit()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:4px">✏️ Editar informações do Pokémon</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:18px">Personalize como este Pokémon vai aparecer na rolagem forçada.</div>
+
+    <input type="hidden" id="frc-edit-idx"/>
+
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <div style="flex-shrink:0;width:72px;height:72px;border-radius:50%;background:var(--surface2);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden">
+        <img id="frc-edit-preview-img" src="" style="width:68px;height:68px;object-fit:contain" onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'"/>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px">URL do Sprite</div>
+        <input type="text" id="frc-edit-sprite" placeholder="https://..." style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px" oninput="document.getElementById('frc-edit-preview-img').src=this.value||''"/>
+      </div>
+    </div>
+
+    <div class="field" style="margin-bottom:12px">
+      <label>Nome</label>
+      <input type="text" id="frc-edit-nome" placeholder="Nome do Pokémon" style="width:100%"/>
+    </div>
+
+    <div class="field" style="margin-bottom:12px">
+      <label>Habilidade</label>
+      <input type="text" id="frc-edit-habilidade" placeholder="Ex: Intimidate" style="width:100%"/>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="field" style="margin-bottom:0">
+        <label>Raridade</label>
+        <select id="frc-edit-raridade" style="width:100%">
+          <option value="comum">Comum</option>
+          <option value="incomum">Incomum</option>
+          <option value="raro">Raro</option>
+          <option value="rarissimo">Raríssimo</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Gênero</label>
+        <select id="frc-edit-gender" style="width:100%">
+          <option value="">— Padrão (aleatório) —</option>
+          <option value="macho">♂ Macho</option>
+          <option value="femea">♀ Fêmea</option>
+          <option value="genderless">☼ Sem gênero</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Tipos (selecione até 2)</div>
+      <div id="frc-edit-tipos-grid" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="btn" onclick="fecharModalFrcEdit()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarFrcEdit()">✓ Confirmar</button>
     </div>
   </div>
 </div>
