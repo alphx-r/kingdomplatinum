@@ -8215,7 +8215,8 @@ async function rolarEncontro(){
           const customRaridade  = frcEntry.raridade   || pkData.raridade;
           const customTipos     = frcEntry.tipos      || pkData.tipos || [];
           const customGender = frcEntry.gender ? rollGender(frcEntry.gender) : gender;
-          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:rollNature()});
+          const customNature = frcEntry.nature || rollNature();
+          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:customNature});
           continue;
         }
       }
@@ -11247,6 +11248,7 @@ async function salvarForcado(){
     if(p._customGender) entry.gender = p._customGender;
     if(p._customRaridade && p._customRaridade !== p.raridade) entry.raridade = p._customRaridade;
     if(p._customTipos)      entry.tipos = p._customTipos;
+    if(p._customNature)     entry.nature = p._customNature;
     return entry;
   });
   const valor = JSON.stringify({ personagem, pokemons: pokemonsData, nota, criadoEm: new Date().toISOString() });
@@ -11329,6 +11331,16 @@ function abrirModalFrcEdit(idx){
   const spriteVal = p._customSprite !== undefined ? p._customSprite : (p.sprite||'');
   document.getElementById('frc-edit-sprite').value = spriteVal;
   document.getElementById('frc-edit-preview-img').src = spriteVal || FALLBACK_SPRITE;
+  // Popular e restaurar select de natureza
+  const natSel = document.getElementById('frc-edit-nature');
+  natSel.innerHTML = '<option value="">— Padrão (aleatória) —</option>';
+  NATURES_DATA.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n.en;
+    opt.textContent = `${n.en} (${n.pt})`;
+    natSel.appendChild(opt);
+  });
+  natSel.value = p._customNature?.en || '';
   const tiposAtivos = p._customTipos || p.tipos || [];
   const grid = document.getElementById('frc-edit-tipos-grid');
   grid.innerHTML = FRC_TIPOS_ALL.map(t => {
@@ -11363,9 +11375,12 @@ function salvarFrcEdit(){
   const raridade = document.getElementById('frc-edit-raridade').value;
   const gender = document.getElementById('frc-edit-gender').value;
   const sprite = document.getElementById('frc-edit-sprite').value.trim();
+  const natureEn = document.getElementById('frc-edit-nature').value;
+  const natureObj = natureEn ? (NATURES_DATA.find(n => n.en === natureEn) || null) : null;
   const grid = document.getElementById('frc-edit-tipos-grid');
   const tipos = [...grid.querySelectorAll('.type-pill')].filter(el=>parseFloat(el.style.opacity)===1).map(el=>el.id.replace('frc-tipo-btn-',''));
   const genderDiff = gender !== '';
+  const natureDiff = natureObj !== null;
   const nomeDiff = nome && nome !== p.nome;
   const habDiff  = habilidade !== (p.habilidade||'');
   const rarDiff  = raridade !== (p.raridade||'comum');
@@ -11377,7 +11392,8 @@ function salvarFrcEdit(){
   if(sprDiff)  p._customSprite = sprite; else delete p._customSprite;
   if(tipDiff)    p._customTipos = tipos; else delete p._customTipos;
   if(genderDiff) p._customGender = gender; else delete p._customGender;
-  p._custom = !!(nomeDiff||habDiff||rarDiff||sprDiff||tipDiff||genderDiff);
+  if(natureDiff) p._customNature = natureObj; else delete p._customNature;
+  p._custom = !!(nomeDiff||habDiff||rarDiff||sprDiff||tipDiff||genderDiff||natureDiff);
   renderFrcSelecionados();
   fecharModalFrcEdit();
 }
@@ -11600,6 +11616,13 @@ init();
           <option value="genderless">☼ Sem gênero</option>
         </select>
       </div>
+    </div>
+
+    <div class="field" style="margin-bottom:12px">
+      <label>Natureza</label>
+      <select id="frc-edit-nature" style="width:100%">
+        <option value="">— Padrão (aleatória) —</option>
+      </select>
     </div>
 
     <div style="margin-bottom:16px">
