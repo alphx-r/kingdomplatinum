@@ -11251,6 +11251,7 @@ async function salvarForcado(){
     if(p._customNature)     entry.nature = p._customNature;
     return entry;
   });
+  console.log('[salvarForcado] payload:', JSON.stringify({ personagem, pokemons: pokemonsData }, null, 2));
   const valor = JSON.stringify({ personagem, pokemons: pokemonsData, nota, criadoEm: new Date().toISOString() });
 
   // Verifica se já existe
@@ -11401,15 +11402,36 @@ function salvarFrcEdit(){
 
 // Hook: consulta se há resultado forçado antes de sortear
 async function consumirForcado(personagem){
+  // 1) Tenta chave exata
   const chave = 'forced_result_' + personagem.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
-  const rows = await dbGet('config', `chave=eq.${chave}`);
+  let rows = await dbGet('config', `chave=eq.${chave}`);
+
+  // 2) Se não achou, busca todos os forçados e tenta bater pelo primeiro token do nome salvo
+  if(!rows || !rows.length){
+    const todos = await dbGet('config', 'chave=like.forced_result_*');
+    if(todos && todos.length){
+      const nomeDigitado = personagem.trim().toLowerCase();
+      const match = todos.find(r => {
+        try {
+          const d = JSON.parse(r.valor);
+          const nomeSalvo = (d.personagem || '').trim().toLowerCase();
+          // bate se o nome digitado é prefixo do nome salvo (ex: "axl" bate "axl sterling boone")
+          return nomeSalvo === nomeDigitado || nomeSalvo.startsWith(nomeDigitado + ' ');
+        } catch(e){ return false; }
+      });
+      if(match) rows = [match];
+    }
+  }
+
   if(!rows || !rows.length) return null;
   try {
     const data = JSON.parse(rows[0].valor);
+    console.log('[consumirForcado] data do banco:', JSON.stringify(data, null, 2));
+    const chaveReal = rows[0].chave;
     // Consome (apaga) após ler
-    await dbDel('config', `chave=eq.${chave}`);
+    await dbDel('config', `chave=eq.${chaveReal}`);
     // Atualiza cache
-    forcadosAtivos = forcadosAtivos.filter(f => f.chave !== chave);
+    forcadosAtivos = forcadosAtivos.filter(f => f.chave !== chaveReal);
     return (data.pokemons || []).map(p => typeof p === 'string' ? { id: p } : p);
   } catch(e){ return null; }
 }
