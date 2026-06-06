@@ -757,6 +757,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <div class="nav-drop-wrap" id="nav-drop-wrap">
       <button class="nav-drop-btn" id="nav-drop-btn" onclick="toggleNavDrop(event)"><span style="font-size:11px">▾</span></button>
       <div class="nav-drop-menu" id="nav-drop-menu">
+        <button class="nav-drop-item" id="nav-drop-item-eventos-hub" onclick="goTo('eventos-hub',null);closeNavDrop()"> Eventos</button>
         <button class="nav-drop-item" onclick="goTo('ganhos',null);closeNavDrop()">Ganhos</button>
         <button class="nav-drop-item" onclick="goTo('nature',null);closeNavDrop()">Natures</button>
         <button class="nav-drop-item" onclick="goTo('batalhas',null);closeNavDrop()">Batalhas</button>
@@ -1108,14 +1109,23 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   <button class="nav-link" onclick="goTo('fichario',this);closeMobileMenu()">Fichário</button>
   <button class="nav-link" onclick="goTo('rolagens',this);closeMobileMenu()">Rolls</button>
   <button class="nav-link" onclick="goTo('npcs',this);closeMobileMenu()">NPCs</button>
+  <button class="nav-link" onclick="goTo('eventos-hub',this);closeMobileMenu()"> Eventos</button>
   <button class="nav-link" onclick="goTo('ganhos',this);closeMobileMenu()">Ganhos</button>
   <button class="nav-link" onclick="goTo('nature',this);closeMobileMenu()">Natures</button>
   <button class="nav-link" onclick="goTo('batalhas',this);closeMobileMenu()">Batalhas</button>
 </div>
 
+<!-- EVENTOS HUB -->
+<div class="page" id="page-eventos-hub" style="max-width:900px;margin:0 auto;padding:28px 16px 48px">
+  <div class="roller-header" style="margin-bottom:32px">
+    <h2>Eventos</h2>
+    <p>Eventos ativos do RPG — clique em um card para acessar</p>
+  </div>
+  <div id="eventos-hub-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px"></div>
+</div>
+
 <!-- BATALHAS -->
 <div class="page" id="page-batalhas" data-page-key="batalhas_v2" style="max-width:900px;margin:0 auto;padding:20px 16px 40px">
-
   <!-- HEADER -->
   <div class="roller-header">
     <h2>Sistema de Batalhas Pokémon</h2>
@@ -2073,8 +2083,9 @@ function calcSyncSelects(){
     <div class="ctrl-group"><label>Bioma</label><select id="bioma"></select></div>
     <div class="ctrl-group">
       <label>Personagem</label>
-      <input type="text" id="personagem" placeholder="Nome do personagem..." list="personagens-lista" required oninput="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())"/>
-      <datalist id="personagens-lista"></datalist>
+      <select id="personagem" required onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
+        <option value="">— Selecione o personagem —</option>
+      </select>
     </div>
     <div class="ctrl-group">
       <label>Encontros</label>
@@ -2138,7 +2149,10 @@ function calcSyncSelects(){
     <div class="dice-controls" style="grid-template-columns:1.8fr 1fr 1.8fr auto">
       <div class="ctrl-group">
         <label>Personagem</label>
-        <input type="text" id="dice-personagem" placeholder="Nome do personagem..." list="personagens-lista" oninput="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())"/>
+        <select id="dice-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
+          <option value="">— Selecione o personagem —</option>
+        </select>
+        <div id="dice-juiz-label" style="display:none;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:14px;color:var(--muted);font-style:italic">⚖️ Juiz de Batalha</div>
       </div>
       <div class="ctrl-group">
         <label>Lados do dado</label>
@@ -2729,7 +2743,9 @@ function calcSyncSelects(){
       </div>
       <div class="ctrl-group">
         <label>Personagem</label>
-        <input type="text" id="evento-personagem" placeholder="Nome do personagem..." list="personagens-lista" oninput="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())"/>
+        <select id="evento-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
+          <option value="">— Selecione o personagem —</option>
+        </select>
       </div>
       <div class="ctrl-group" id="evento-adicionais-wrap">
         <label>Pokémon adicionais</label>
@@ -2774,7 +2790,9 @@ function calcSyncSelects(){
       <div class="dice-controls">
         <div class="ctrl-group">
           <label>Personagem</label>
-          <input type="text" id="evento-dice-personagem" placeholder="Nome do personagem..." list="personagens-lista" oninput="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())"/>
+          <select id="evento-dice-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
+            <option value="">— Selecione o personagem —</option>
+          </select>
         </div>
         <div class="ctrl-group" id="evento-dado-lados-wrap">
           <label>Lados do dado</label>
@@ -4539,7 +4557,7 @@ function fb(id,ms=2500){const el=document.getElementById(id);if(!el)return;el.st
 // ══════════════════════════════════════
 // LAZY LOADING STATE
 // ══════════════════════════════════════
-const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false, npcs:false, evento:false};
+const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false, npcs:false, evento:false, 'eventos-hub':false};
 
 async function init(){
   loading(true);
@@ -4784,6 +4802,11 @@ async function carregarAba(page){
       aplicarPermissoesSidebar();
       populateAdmSenhaSelect();
     }
+    else if(page==='eventos-hub'){
+      const res = await sb('eventos?order=criado_em.desc');
+      eventos = res || [];
+      renderEventosHub();
+    }
     loaded[page] = true;
   } catch(e){ console.error('Erro ao carregar aba', page, e); }
   finally{ loading(false); }
@@ -4823,8 +4846,8 @@ function navegarPara(page, replace=false){
   });
   // Highlight Guias dropdown btn when on a guias page
   const dropBtn = document.getElementById('nav-drop-btn');
-  if(dropBtn) dropBtn.classList.toggle('active', ['ganhos','nature','batalhas'].includes(page));
-  const path = page==='roller' ? '/' : page==='rolagens' ? '/rolls' : '/'+page;
+  if(dropBtn) dropBtn.classList.toggle('active', ['ganhos','nature','batalhas','eventos-hub'].includes(page));
+  const path = page==='roller' ? '/' : page==='rolagens' ? '/rolls' : page==='eventos-hub' ? '/eventos' : '/'+page;
   if(replace) history.replaceState(null,'', path);
   else history.pushState(null,'', path);
 }
@@ -7506,13 +7529,24 @@ function filtrarFichas(q){
   });
 }
 function renderPersonagensDatalist(){
-  const lista = document.getElementById('personagens-lista');
-  if(!lista) return;
-  // Se há player logado, mostra apenas seus personagens
+  // Se há player logado, mostra apenas seus personagens; caso contrário, todos
   const filtrados = playerLogado
     ? personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase())
     : personagens;
-  lista.innerHTML=filtrados.map(p=>`<option value="${p.nome}"/>`).join('');
+
+  const opcoesHtml = '<option value="">— Selecione o personagem —</option>' +
+    filtrados.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('');
+
+  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const valorAtual = el.value;
+    el.innerHTML = opcoesHtml;
+    // Restaura o valor selecionado se ainda existir nas opções
+    if(valorAtual && filtrados.find(p=>p.nome===valorAtual)){
+      el.value = valorAtual;
+    }
+  });
 }
 
 
@@ -8152,7 +8186,7 @@ function verificarMotivoExtraEvento(){
 async function rolarEncontro(){
   const personagem=document.getElementById('personagem').value.trim();
   if(!personagem){
-    alert('Preencha o nome do personagem antes de rolar!');
+    alert('Selecione o personagem antes de rolar!');
     document.getElementById('personagem').focus();
     return;
   }
@@ -8702,34 +8736,30 @@ function toggleJuizMode(){
   const isJuiz=document.getElementById('dice-juiz').checked;
   const wrap=document.getElementById('dice-competidores-wrap');
   if(wrap) wrap.style.display=isJuiz?'block':'none';
-  // Atualiza o campo personagem para mostrar "Juiz de Batalha"
+  // Alterna entre o select de personagem e o label fixo de Juiz de Batalha
   const personagemEl=document.getElementById('dice-personagem');
+  const juizLabel=document.getElementById('dice-juiz-label');
   if(personagemEl){
     if(isJuiz){
       personagemEl.dataset.prevVal = personagemEl.value;
-      personagemEl.value = 'Juiz de Batalha';
-      personagemEl.disabled = true;
-      personagemEl.style.opacity = '.5';
-      personagemEl.style.cursor = 'not-allowed';
+      personagemEl.style.display = 'none';
+      if(juizLabel) juizLabel.style.display = 'block';
     } else {
+      personagemEl.style.display = '';
+      if(juizLabel) juizLabel.style.display = 'none';
       personagemEl.value = personagemEl.dataset.prevVal || '';
       delete personagemEl.dataset.prevVal;
-      personagemEl.disabled = false;
-      personagemEl.style.opacity = '';
-      personagemEl.style.cursor = '';
     }
   }
 }
 
 async function rolarDado(){
   const isJuiz=document.getElementById('dice-juiz')?.checked;
-  let personagem=document.getElementById('dice-personagem').value.trim();
+  let personagem=isJuiz?'Juiz de Batalha':document.getElementById('dice-personagem').value.trim();
   const lados=parseInt(document.getElementById('dice-lados').value);
   const motivo=document.getElementById('dice-motivo').value.trim();
 
-  // Modo Juiz: usa o nome do campo diretamente (já está como "Juiz de Batalha")
-
-  if(!personagem){alert('Preencha o nome do personagem!');document.getElementById('dice-personagem').focus();return;}
+  if(!personagem){alert('Selecione o personagem!');document.getElementById('dice-personagem').focus();return;}
   if(!lados||lados<2){alert('O dado precisa ter ao menos 2 lados.');return;}
   if(!motivo){alert('Preencha o motivo da rolagem!');document.getElementById('dice-motivo').focus();return;}
 
@@ -10068,6 +10098,62 @@ function slugify(str){
     .replace(/[^a-z0-9\s\-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-');
 }
 
+// ══════════════════════════════════════
+// EVENTOS HUB (página pública de eventos)
+// ══════════════════════════════════════
+function renderEventosHub(){
+  const grid = document.getElementById('eventos-hub-grid');
+  if(!grid) return;
+
+  const ativos = eventos.filter(ev => ev.ativo);
+
+  if(!ativos.length){
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px 24px;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">🎪</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Nenhum evento ativo no momento</div>
+      <div style="font-size:13px">Fique de olho! Os eventos aparecerão aqui quando estiverem ativos.</div>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = ativos.map(ev => {
+    const tipoLabel = ev.tipo==='ambos'
+      ? '⚡🎲 Pokémon & Dados'
+      : ev.tipo==='dados'
+        ? '🎲 Rolagem de Dados'
+        : '⚡ Encontro Pokémon';
+
+    const slug = ev.slug || '';
+    const temPagina = !!slug;
+    const href = temPagina ? `/evento/${slug}` : null;
+
+    const cardStyle = `background:var(--surface);border:2px solid ${ev.cor||'var(--brand-mid)'};border-radius:14px;overflow:hidden;display:flex;flex-direction:column;transition:transform .2s,box-shadow .2s;${temPagina?'cursor:pointer':''}`;
+    const topStyle  = `background:${ev.cor||'var(--brand)'};padding:20px 18px 16px;display:flex;align-items:center;gap:14px`;
+    const clickAttr = temPagina ? `onclick="window.location.href='${href}'"` : '';
+    const titleColor = '#fff';
+
+    return `<div style="${cardStyle}" ${clickAttr} onmouseenter="if(${temPagina})this.style.transform='translateY(-3px)',this.style.boxShadow='0 8px 28px rgba(0,0,0,.18)'" onmouseleave="this.style.transform='',this.style.boxShadow=''">
+      <div style="${topStyle}">
+        <div style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">${ev.emoji||'🎪'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--font-title);font-size:16px;font-weight:700;color:${titleColor};line-height:1.2;margin-bottom:4px;word-break:break-word">${ev.nome}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.75);font-weight:600">${tipoLabel}</div>
+        </div>
+      </div>
+      <div style="padding:14px 18px;flex:1;display:flex;flex-direction:column;gap:10px">
+        ${ev.descricao ? `<div style="font-size:13px;color:var(--text);line-height:1.65">${ev.descricao}</div>` : ''}
+        ${ev.bioma && ev.tipo!=='dados' ? `<div style="font-size:12px;color:var(--muted)">📍 ${ev.bioma}</div>` : ''}
+        <div style="margin-top:auto;padding-top:8px">
+          ${temPagina
+            ? `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:${ev.cor||'var(--brand-mid)'}">Acessar evento <span style="font-size:14px">→</span></div>`
+            : `<div style="font-size:11px;color:var(--muted);font-style:italic">Em breve...</div>`
+          }
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 async function carregarEventos(){
   try{
     const res = await sb('eventos?order=criado_em.desc');
@@ -10588,7 +10674,7 @@ async function iniciarPaginaEvento(slug){
 
 async function rolarEncontroEvento(){
   const personagem = document.getElementById('evento-personagem').value.trim();
-  if(!personagem){ alert('Preencha o nome do personagem!'); document.getElementById('evento-personagem').focus(); return; }
+  if(!personagem){ alert('Selecione o personagem!'); document.getElementById('evento-personagem').focus(); return; }
   const ev = eventoAtual;
   if(!ev){ alert('Evento não carregado.'); return; }
 
@@ -10707,7 +10793,7 @@ async function rolarDadoEvento(){
   const lados      = parseInt(ladosEl?.value) || 0;
   const motivo     = motivoEl?.value.trim() || '';
 
-  if(!personagem){ alert('Preencha o nome do personagem!'); personagemEl?.focus(); return; }
+  if(!personagem){ alert('Selecione o personagem!'); personagemEl?.focus(); return; }
   if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
   if(!motivo){ alert('Preencha o motivo da rolagem!'); motivoEl?.focus(); return; }
 
