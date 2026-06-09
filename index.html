@@ -4701,6 +4701,11 @@ async function carregarAba(page){
         dbGet('config','chave=eq.estacao_paginas'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
+      // Se condicao nao veio (schema cache antigo), busca de novo
+      if(pokemonDB.length && !('condicao' in pokemonDB[0])){
+        const _fresh=await dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,condicao');
+        if(_fresh&&_fresh.length) pokemonDB=_fresh;
+      }
       estacaoAtiva = (_cfg&&_cfg[0]) ? _cfg[0].valor : null;
       if(_cfgPag&&_cfgPag[0]){ try{ estacaoPaginas=JSON.parse(_cfgPag[0].valor); }catch(e){} }
       else { dbPost('config',{chave:'estacao_paginas',valor:JSON.stringify(estacaoPaginas)}).catch(()=>{}); }
@@ -8226,6 +8231,15 @@ async function rolarEncontro(){
 
   const bioma=document.getElementById('bioma').value;
 
+  // Recarrega condicao se nao estiver no pokemonDB (schema cache antigo)
+  if(pokemonDB.length && !('condicao' in pokemonDB[0])){
+    const _fresh=await dbGetAll('pokemons','select=id,condicao');
+    if(_fresh&&_fresh.length){
+      const _map={}; _fresh.forEach(p=>{_map[p.id]=p.condicao||null;});
+      pokemonDB.forEach(p=>{p.condicao=_map[p.id]||null;});
+    }
+  }
+
   // Monta os pools por raridade para este bioma (aplica filtro de estação)
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={};
@@ -8289,6 +8303,13 @@ async function rolarEncontro(){
     }
   }
 
+  // Enriquece com condicao caso pokemonDB tenha sido carregado sem o campo
+  pokes.forEach(pk=>{
+    if(pk.condicao===undefined){
+      const base=pokemonDB.find(p=>p.nome===pk.nome&&p.bioma===bioma);
+      if(base) pk.condicao=base.condicao||null;
+    }
+  });
   const section=document.getElementById('results-section');
   section.innerHTML='';
 
