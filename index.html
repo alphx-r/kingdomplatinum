@@ -4733,15 +4733,19 @@ async function carregarAba(page){
       renderNatures(NATURES_DATA);
     }
     else if(page==='bioma'){
-      if(!loaded.roller || !pokemonDB.length || !biomas.length){
-        const [_biomas,_pokemons] = await Promise.all([
-          dbGet('biomas'),
-          dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,condicao'),
-        ]);
-        biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
-        if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
-        syncBiomaSelect();
-      }
+      const [_biomas,_pokemons] = await Promise.all([
+        dbGet('biomas'),
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,condicao'),
+      ]);
+      biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+      // Mescla condicao nos objetos já em memória (preserva estacao/outros campos do roller)
+      const mapaCondicao={};
+      (_pokemons||[]).forEach(p=>{ mapaCondicao[p.id]=p.condicao||null; });
+      pokemonDB.forEach(p=>{ if(p.id in mapaCondicao) p.condicao=mapaCondicao[p.id]; });
+      // Se pokemonDB estava vazio, usa o resultado direto
+      if(!pokemonDB.length) pokemonDB=_pokemons||[];
+      if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
+      syncBiomaSelect();
     }
     else if(page==='ganhos'){
       // ganhos é estático — sem dados do Supabase
@@ -5852,10 +5856,12 @@ async function salvarEdicaoPokemon(){
     loading(false);
     if(url) spriteUrl=url;
   }
-  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost,condicao});
-  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost,condicao});
+  const patchRes = await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost,condicao});
+  const updated = (Array.isArray(patchRes) && patchRes[0]) ? patchRes[0] : {nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost,condicao};
+  Object.assign(p, updated);
   fb('modal-pk-fb');
   renderTbodyPokemons();renderTbodyBiomas();
+  if(currentPage==='bioma') renderBiomaPage();
 }
 async function removerPokemonModal(){
   const id=document.getElementById('modal-pk-id').value;
