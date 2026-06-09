@@ -3032,6 +3032,10 @@ function calcSyncSelects(){
                 <option value="inverno">❄️ Inverno</option>
               </select>
             </div>
+            <div class="field">
+              <label>Condição de captura <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional — ex: "Apenas com Pokéflauta", "Somente à noite", "Local: Caverna")</span></label>
+              <input type="text" id="pk-condicao" placeholder="Ex: Apenas com Pokéflauta equipada"/>
+            </div>
             <div class="field"><label>Sprite do Pokémon</label>
               <input type="file" id="pk-sprite-file" accept="image/*" onchange="previewPokeSprite(this)" style="font-size:13px"/>
               <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
@@ -4107,6 +4111,10 @@ function calcSyncSelects(){
         </select>
       </div>
     </div>
+    <div class="field" style="margin-top:4px;grid-column:1/-1">
+      <label>Condição de captura <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional — ex: "Apenas com Pokéflauta", "Somente à noite")</span></label>
+      <input type="text" id="modal-pk-condicao" placeholder="Ex: Apenas com Pokéflauta equipada" style="width:100%"/>
+    </div>
     <div class="field" style="margin-top:4px">
       <label>Tipos</label>
       <div class="tipos-wrap" id="modal-pk-tipos-wrap">
@@ -4688,7 +4696,7 @@ async function carregarAba(page){
     if(page==='roller'){
       const [_biomas,_pokemons,_cfg,_cfgPag] = await Promise.all([
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao'),
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,condicao'),
         dbGet('config','chave=eq.estacao_ativa'),
         dbGet('config','chave=eq.estacao_paginas'),
       ]);
@@ -4728,7 +4736,7 @@ async function carregarAba(page){
       if(!loaded.roller || !pokemonDB.length || !biomas.length){
         const [_biomas,_pokemons] = await Promise.all([
           dbGet('biomas'),
-          dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+          dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,condicao'),
         ]);
         biomas=(_biomas||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); pokemonDB=_pokemons||[];
         if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
@@ -4789,7 +4797,7 @@ async function carregarAba(page){
         dbGet('players'),
         dbGet('personagens'),
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma'),
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,condicao'),
         sb('npc_cidades?order=nome.asc'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
@@ -4916,6 +4924,7 @@ function renderBiomaConteudo(){
         <div class="bioma-poke-tipos">
           ${(p.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}
         </div>
+        ${p.condicao?`<div style="font-size:9px;font-weight:700;color:#7a4a00;background:#fff3d4;border:1px solid #e8c86a;border-radius:6px;padding:2px 6px;margin-top:3px;text-align:center;line-height:1.3">🔒 ${p.condicao}</div>`:''}
       </div>`).join('');
     return `<div class="bioma-raridade-section" id="acc-${r}">
       <div class="bioma-raridade-title" onclick="toggleRaridade('${r}')">
@@ -5753,6 +5762,7 @@ async function adicionarPokemon(){
   const genero        =document.getElementById('pk-genero').value;
   const estacao       =document.getElementById('pk-estacao').value||null;
   const estacaoBoost  =document.getElementById('pk-estacao-boost').value||null;
+  const condicao      =document.getElementById('pk-condicao').value.trim()||null;
   const biomasSel     =[...document.querySelectorAll('#pk-biomas-wrap .pk-bioma-tag.sel')].map(t=>t.dataset.bioma);
   const tipos         =[...document.querySelectorAll('#tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev          =document.getElementById('pk-sprite-preview');
@@ -5760,7 +5770,7 @@ async function adicionarPokemon(){
   if(!nome||tipos.length===0){alert('Preencha o nome e selecione ao menos 1 tipo.');return;}
   if(biomasSel.length===0){alert('Selecione ao menos 1 bioma.');return;}
   for(const bioma of biomasSel){
-    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite:null,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,estacao_boost:estacaoBoost});
+    const res=await dbPost('pokemons',{nome,emoji:'❓',sprite:null,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,estacao_boost:estacaoBoost,condicao});
     if(!res||!res[0]) continue;
     const novo=res[0];
     if(b64&&b64.startsWith('data:')){
@@ -5776,6 +5786,7 @@ async function adicionarPokemon(){
   document.getElementById('pk-nome').value='';
   document.getElementById('pk-habilidade').value='';
   document.getElementById('pk-habilidade2').value='';
+  document.getElementById('pk-condicao').value='';
   document.getElementById('pk-sprite-file').value='';
   prev.innerHTML=`<img class="unown-fallback-img" src="${FALLBACK_SPRITE}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
   delete prev.dataset.b64;
@@ -5797,6 +5808,7 @@ function abrirModalPk(id){
   document.getElementById('modal-pk-estacao').value=p.estacao||'';
   document.getElementById('modal-pk-estacao-boost').value=p.estacao_boost||'';
   document.getElementById('modal-pk-hab2').value=p.habilidade2||'';
+  document.getElementById('modal-pk-condicao').value=p.condicao||'';
   document.getElementById('modal-pk-raridade').value=p.raridade;
   document.getElementById('modal-pk-genero').value=p.genero||'aleatorio';
   // bioma
@@ -5827,6 +5839,7 @@ async function salvarEdicaoPokemon(){
   const habilidade2=document.getElementById('modal-pk-hab2').value.trim();
   const estacao=document.getElementById('modal-pk-estacao').value||null;
   const estacaoBoost=document.getElementById('modal-pk-estacao-boost').value||null;
+  const condicao=document.getElementById('modal-pk-condicao').value.trim()||null;
   const tipos=[...document.querySelectorAll('#modal-pk-tipos-wrap .tipo-tag.sel')].map(t=>t.dataset.tipo);
   const prev=document.getElementById('modal-pk-sprite-preview');
   const b64=prev.dataset.b64||null;
@@ -5839,8 +5852,8 @@ async function salvarEdicaoPokemon(){
     loading(false);
     if(url) spriteUrl=url;
   }
-  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost});
-  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost});
+  await dbPatch('pokemons',`id=eq.${id}`,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost,condicao});
+  Object.assign(p,{nome,bioma,raridade,genero,habilidade,habilidade2,tipos,sprite:spriteUrl,estacao,estacao_boost:estacaoBoost,condicao});
   fb('modal-pk-fb');
   renderTbodyPokemons();renderTbodyBiomas();
 }
@@ -8132,7 +8145,7 @@ function pickFromPool(pool, usedIds, rarity){
   const p=available[Math.floor(Math.random()*available.length)];
   usedIds.add(p.id);
   const gender=rollGender(p.genero);
-  return{nome:p.nome,tipos:p.tipos||[],emoji:p.emoji||'❓',sprite:p.sprite||null,habilidade:p.habilidade,rarity,genderS:gender.s,genderC:gender.c,nature:rollNature()};
+  return{nome:p.nome,tipos:p.tipos||[],emoji:p.emoji||'❓',sprite:p.sprite||null,habilidade:p.habilidade,condicao:p.condicao||null,rarity,genderS:gender.s,genderC:gender.c,nature:rollNature()};
 }
 
 function buildCardHtml(pk,delay){
@@ -8150,6 +8163,7 @@ function buildCardHtml(pk,delay){
       <div><span class="poke-rarity ${rcls[pk.rarity]}">${rlbl[pk.rarity]}</span></div>
       <div class="poke-hab">Hab: ${pk.habilidade}</div>
       ${natureHtml}
+      ${pk.condicao?`<div style="font-size:9px;font-weight:700;color:#7a4a00;background:#fff3d4;border:1px solid #e8c86a;border-radius:6px;padding:2px 6px;text-align:center;line-height:1.3;margin-top:2px">🔒 ${pk.condicao}</div>`:''}
     </div>
   </div>`;
 }
@@ -10517,7 +10531,7 @@ async function iniciarPaginaEvento(slug){
 
     // garante que biomas e pokemonDB estão carregados
     if(!loaded.roller){
-      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma')]);
+      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,condicao')]);
       biomas = (_b||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
       pokemonDB = _p||[];
       syncBiomaSelect();
@@ -11607,7 +11621,7 @@ init();
 
       // Sempre recarrega dados globais usados em múltiplas abas
       refreshPromises.push(
-        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao')
+        dbGetAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,condicao')
           .then(r=>{ if(r&&r.length) pokemonDB=r; }),
         dbGet('biomas').then(r=>{ if(r) biomas=(r||[]).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')); }),
         dbGet('personagens').then(r=>{ if(r) personagens=r||[]; }),
