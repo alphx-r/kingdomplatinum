@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NationalDex — PKMN Kingdom Platinum</title>
+<link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+/* ── Reset & Base ── */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
+  --accent:#e8a020;--accent-light:#fdf3dc;
+  --bg:#808080;--surface:#fff;--surface2:#f0f3f8;
+  --border:#dde3ee;--border2:#c8d0e0;
+  --text:#1a1f2e;--muted:#6b7a99;
+  --red:#c03030;--green:#1a7a1a;
+  --r:10px;
+  --font-title:'Cinzel',serif;
+  --font-body:'Nunito',sans-serif;
+}
+html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);color:var(--text);-webkit-tap-highlight-color:transparent}
+
+/* ── Nav ── */
+.nav{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;background:var(--brand);position:sticky;top:0;z-index:900;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.nav-logo img{height:32px;object-fit:contain;display:block}
+.nav-back{margin-left:auto;font-size:12px;font-weight:700;font-family:var(--font-body);padding:6px 16px;border-radius:20px;border:1.5px solid rgba(255,255,255,.45);background:transparent;color:#fff;cursor:pointer;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.nav-back:hover{background:rgba(255,255,255,.15)}
+.nav-title{font-family:var(--font-title);font-size:13px;font-weight:700;color:rgba(255,255,255,.6);letter-spacing:1.5px;text-transform:uppercase}
+
+/* ── Loading overlay ── */
+.loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .4s}
+.loading-overlay.hidden{opacity:0;pointer-events:none}
+.loading-spinner{width:38px;height:38px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:13px;color:rgba(255,255,255,.7);font-weight:600;font-family:var(--font-title);letter-spacing:1px}
+.loading-count{font-size:11px;color:rgba(255,255,255,.45);font-weight:600}
+
+/* ── Page wrapper ── */
+.dex-wrap{max-width:1100px;margin:0 auto;padding:22px 16px 48px}
+
+/* ── Header ── */
+.dex-header{text-align:center;margin-bottom:28px}
+.dex-header h1{font-family:var(--font-title);font-size:26px;font-weight:700;color:var(--brand);letter-spacing:2px;line-height:1.2}
+.dex-header p{font-size:13px;color:var(--muted);margin-top:6px}
+.dex-count-badge{display:inline-flex;align-items:center;gap:5px;background:var(--brand-light);color:var(--brand-mid);border:1.5px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;margin-top:10px}
+
+/* ── Search & Filters ── */
+.dex-filters{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:20px;display:flex;flex-direction:column;gap:12px}
+.dex-search-row{display:flex;gap:8px;align-items:center}
+.dex-search{flex:1;padding:10px 16px 10px 40px;border-radius:24px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:14px;color:var(--text);transition:border .2s;outline:none}
+.dex-search:focus{border-color:var(--brand-mid);background:#fff}
+.dex-search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;pointer-events:none;color:var(--muted)}
+.dex-search-wrap{position:relative;flex:1}
+.dex-clear-btn{padding:8px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;display:none}
+.dex-clear-btn.visible{display:block}
+.dex-clear-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
+
+/* Rarity filter */
+.dex-rarity-row{display:flex;gap:6px;flex-wrap:wrap}
+.dex-rar-btn{padding:5px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.4px}
+.dex-rar-btn:hover{border-color:var(--brand-mid)}
+.dex-rar-btn.active-all{background:var(--brand-mid);color:#fff;border-color:var(--brand-mid)}
+.dex-rar-btn.active-comum{background:#e0f0e0;color:#1a6a1a;border-color:#8bc88b}
+.dex-rar-btn.active-incomum{background:#dde8f8;color:#1a4a8a;border-color:#9ab8e8}
+.dex-rar-btn.active-raro{background:#f0e8ff;color:#5a1a9a;border-color:#b898e8}
+.dex-rar-btn.active-rarissimo{background:#fff0d8;color:#8a4a00;border-color:#e8c878}
+
+/* Type filter row */
+.dex-type-row{display:flex;gap:5px;flex-wrap:wrap}
+.dex-type-btn{padding:4px 10px;border-radius:6px;border:2px solid transparent;font-size:10px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;cursor:pointer;transition:all .15s;opacity:.5}
+.dex-type-btn.active{opacity:1;transform:scale(1.06)}
+.dex-type-btn.inactive{opacity:.35}
+
+/* ── Tabs (View mode) ── */
+.dex-view-row{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.dex-view-btn{padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s}
+.dex-view-btn.active{background:var(--brand-mid);color:#fff;border-color:var(--brand-mid)}
+.dex-sort-select{padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text);cursor:pointer;outline:none}
+.dex-sort-select:focus{border-color:var(--brand-mid)}
+
+/* ── Grid view ── */
+.dex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.dex-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:all .22s;animation:fadeUp .3s both;position:relative;overflow:hidden}
+.dex-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08),transparent);pointer-events:none}
+.dex-card:hover{border-color:var(--brand-mid);transform:translateY(-3px);box-shadow:0 6px 20px rgba(37,99,168,.15)}
+.dex-card:active{transform:translateY(-1px)}
+.dex-card-sprite{width:84px;height:84px;display:flex;align-items:center;justify-content:center}
+.dex-card-sprite img{width:84px;height:84px;object-fit:contain;image-rendering:crisp-edges}
+.dex-card-name{font-family:var(--font-title);font-size:11px;font-weight:700;color:var(--text);text-align:center;line-height:1.3;letter-spacing:.2px;min-height:28px;display:flex;align-items:center;justify-content:center}
+.dex-card-types{display:flex;flex-wrap:wrap;gap:3px;justify-content:center}
+.dex-card-rarity{margin-top:2px}
+
+/* ── List view ── */
+.dex-list{display:flex;flex-direction:column;gap:6px}
+.dex-list-item{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .18s;animation:fadeUp .25s both}
+.dex-list-item:hover{border-color:var(--brand-mid);box-shadow:0 3px 12px rgba(37,99,168,.1);transform:translateX(3px)}
+.dex-list-sprite{width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.dex-list-sprite img{width:52px;height:52px;object-fit:contain}
+.dex-list-info{flex:1;min-width:0}
+.dex-list-name{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dex-list-sub{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dex-list-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+.dex-list-types{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end}
+
+/* ── Rarity section headers (grouped view) ── */
+.dex-section{margin-bottom:28px;animation:fadeUp .3s both}
+.dex-section-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+.dex-section-title{font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--text);letter-spacing:.8px}
+.dex-section-count{font-size:11px;font-weight:600;color:var(--muted)}
+
+/* ── Type pills (shared) ── */
+.type-pill{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.3px}
+.t-fire{background:#ff9b4a;color:#7a2a00}.t-water{background:#6ab8ff;color:#003a6a}
+.t-grass{background:#78d878;color:#1a5a1a}.t-normal{background:#c8c8a0;color:#4a4a2a}
+.t-electric{background:#ffe030;color:#5a4a00}.t-psychic{background:#ff8fb0;color:#6a0030}
+.t-steel{background:#aababb;color:#2a3a3a}.t-fairy{background:#ffaad8;color:#6a0050}
+.t-ghost{background:#9090c0;color:#1a1a4a}.t-dragon{background:#7060f0;color:#fff}
+.t-ice{background:#96d8d8;color:#1a4a4a}.t-fighting{background:#c03030;color:#fff}
+.t-rock{background:#b8a050;color:#3a2a00}.t-ground{background:#e0c060;color:#3a2a00}
+.t-poison{background:#a060c0;color:#fff}.t-bug{background:#a0c020;color:#2a3a00}
+.t-dark{background:#705040;color:#fff}.t-flying{background:#88aaee;color:#1a1a5a}
+.t-light{background:#e8c832;color:#5a3d00}.t-scent{background:#3cb87a;color:#fff}
+
+/* ── Rarity badges ── */
+.poke-rarity{display:inline-block;font-size:9px;font-weight:800;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
+.rc{background:#e0f0e0;color:#1a6a1a}.ri{background:#dde8f8;color:#1a4a8a}
+.rr{background:#f0e8ff;color:#5a1a9a}.rrr{background:#fff0d8;color:#8a4a00}
+
+/* ── Detail Modal ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)}
+.modal-bg.open{display:flex}
+.modal-box{background:var(--surface);border-radius:16px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.3);animation:popIn .25s both;position:relative}
+@keyframes popIn{from{opacity:0;transform:scale(.94) translateY(12px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.modal-close{position:absolute;top:14px;right:16px;width:30px;height:30px;border:none;background:rgba(0,0,0,.08);border-radius:50%;font-size:16px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .15s;z-index:10;line-height:1}
+.modal-close:hover{background:rgba(0,0,0,.15);color:var(--text)}
+.modal-hero{padding:28px 24px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;border-bottom:1.5px solid var(--border);background:linear-gradient(160deg,var(--brand-light),var(--surface))}
+.modal-sprite-wrap{width:110px;height:110px;border-radius:50%;background:var(--surface);border:2.5px solid var(--border);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+.modal-sprite{width:100px;height:100px;object-fit:contain}
+.modal-name{font-family:var(--font-title);font-size:20px;font-weight:700;color:var(--brand);text-align:center;letter-spacing:.5px}
+.modal-types{display:flex;gap:5px;flex-wrap:wrap;justify-content:center}
+.modal-types .type-pill{font-size:11px;padding:3px 10px;border-radius:7px}
+.modal-rarity .poke-rarity{font-size:11px;padding:3px 12px}
+.modal-body{padding:20px 24px}
+.modal-row{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--border)}
+.modal-row:last-child{border-bottom:none}
+.modal-row-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.modal-row-val{font-size:13px;font-weight:600;color:var(--text);text-align:right}
+.modal-cond{margin:12px 0 0;background:#fff3d4;border:1px solid #e8c86a;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:#7a4a00;text-align:center}
+.modal-biomas{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;justify-content:flex-end}
+.bioma-tag{background:var(--brand-light);color:var(--brand-mid);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
+
+/* ── Empty state ── */
+.dex-empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.dex-empty-icon{font-size:48px;margin-bottom:14px;opacity:.5}
+.dex-empty h3{font-family:var(--font-title);font-size:16px;color:var(--text);margin-bottom:6px}
+.dex-empty p{font-size:13px}
+
+/* ── Animations ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Mobile ── */
+@media(max-width:600px){
+  .dex-wrap{padding:14px 10px 40px}
+  .dex-header h1{font-size:20px}
+  .dex-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+  .dex-card{padding:12px 8px 10px}
+  .dex-card-sprite{width:70px;height:70px}
+  .dex-card-sprite img{width:70px;height:70px}
+  .dex-card-name{font-size:10px}
+  .dex-view-row{justify-content:space-between}
+  .dex-search{font-size:13px}
+  .modal-box{border-radius:14px}
+  .modal-hero{padding:22px 16px 16px}
+  .modal-body{padding:16px}
+  .nav-title{display:none}
+}
+@media(max-width:400px){
+  .dex-grid{grid-template-columns:repeat(3,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">NationalDex</div>
+  <div class="loading-count" id="loading-count">Carregando Pokémon…</div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-logo">
+    <img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" alt="Kingdom Platinum"/>
+  </div>
+  <span class="nav-title">NationalDex</span>
+  <a href="index.html" class="nav-back">← Início</a>
+</nav>
+
+<!-- MAIN -->
+<main class="dex-wrap">
+
+  <!-- Header -->
+  <div class="dex-header">
+    <h1>⚔ NationalDex</h1>
+    <p>Todos os Pokémon disponíveis no mundo de Kingdom Platinum</p>
+    <div class="dex-count-badge" id="dex-count-badge">
+      <span id="dex-count-visible">—</span> de <span id="dex-count-total">—</span> Pokémon
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="dex-filters">
+    <!-- Search -->
+    <div class="dex-search-row">
+      <div class="dex-search-wrap">
+        <span class="dex-search-icon">🔍</span>
+        <input class="dex-search" id="dex-search" type="search" placeholder="Buscar por nome…" oninput="applyFilters()" autocomplete="off"/>
+      </div>
+      <button class="dex-clear-btn" id="dex-clear-btn" onclick="clearSearch()">✕ Limpar</button>
+    </div>
+
+    <!-- Rarity filter -->
+    <div class="dex-rarity-row" id="dex-rarity-row">
+      <button class="dex-rar-btn active-all" data-rar="all" onclick="setRarFilter('all',this)">Todos</button>
+      <button class="dex-rar-btn" data-rar="comum" onclick="setRarFilter('comum',this)">Comum</button>
+      <button class="dex-rar-btn" data-rar="incomum" onclick="setRarFilter('incomum',this)">Incomum</button>
+      <button class="dex-rar-btn" data-rar="raro" onclick="setRarFilter('raro',this)">Raro</button>
+      <button class="dex-rar-btn" data-rar="rarissimo" onclick="setRarFilter('rarissimo',this)">Raríssimo</button>
+    </div>
+
+    <!-- Type filter -->
+    <div class="dex-type-row" id="dex-type-row"></div>
+
+    <!-- View + Sort row -->
+    <div class="dex-view-row">
+      <select class="dex-sort-select" id="dex-sort" onchange="applyFilters()">
+        <option value="nome">A–Z</option>
+        <option value="nome-desc">Z–A</option>
+        <option value="raridade">Por raridade</option>
+        <option value="tipo">Por tipo</option>
+        <option value="bioma">Por bioma</option>
+      </select>
+      <div style="display:flex;gap:4px">
+        <button class="dex-view-btn active" id="view-grid" onclick="setView('grid',this)" title="Grade">⊞</button>
+        <button class="dex-view-btn" id="view-list" onclick="setView('list',this)" title="Lista">☰</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pokemon output -->
+  <div id="dex-output"></div>
+
+</main>
+
+<!-- DETAIL MODAL -->
+<div class="modal-bg" id="detail-modal" onclick="closeModal(event)">
+  <div class="modal-box" id="modal-inner">
+    <button class="modal-close" onclick="document.getElementById('detail-modal').classList.remove('open')">✕</button>
+    <div class="modal-hero">
+      <div class="modal-sprite-wrap">
+        <img class="modal-sprite" id="modal-sprite" src="" alt="" onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'"/>
+      </div>
+      <div class="modal-name" id="modal-name"></div>
+      <div class="modal-types" id="modal-types"></div>
+      <div class="modal-rarity" id="modal-rarity"></div>
+    </div>
+    <div class="modal-body">
+      <div id="modal-rows"></div>
+      <div class="modal-cond" id="modal-cond" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════
+// SUPABASE CONFIG (mesma do index.html)
+// ══════════════════════════════════════
+const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+
+// ══════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════
+const FALLBACK = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png';
+
+const tcls = {
+  fire:'t-fire',water:'t-water',grass:'t-grass',normal:'t-normal',
+  electric:'t-electric',psychic:'t-psychic',steel:'t-steel',fairy:'t-fairy',
+  ghost:'t-ghost',dragon:'t-dragon',ice:'t-ice',fighting:'t-fighting',
+  rock:'t-rock',ground:'t-ground',poison:'t-poison',bug:'t-bug',
+  dark:'t-dark',flying:'t-flying',light:'t-light',scent:'t-scent'
+};
+
+const TYPE_LABELS = {
+  fire:'Fogo',water:'Água',grass:'Planta',normal:'Normal',electric:'Elétrico',
+  psychic:'Psíquico',steel:'Aço',fairy:'Fada',ghost:'Fantasma',dragon:'Dragão',
+  ice:'Gelo',fighting:'Lutador',rock:'Pedra',ground:'Terra',poison:'Veneno',
+  bug:'Inseto',dark:'Sombrio',flying:'Voador',light:'Luz',scent:'Aroma'
+};
+
+const rlbl  = {comum:'Comum',incomum:'Incomum',raro:'Raro',rarissimo:'Raríssimo'};
+const rcls  = {comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
+const RARITY_ORDER = ['comum','incomum','raro','rarissimo'];
+
+// ══════════════════════════════════════
+// STATE
+// ══════════════════════════════════════
+let allPokemon = [];
+let activeRar  = 'all';
+let activeType = '';     // '' = all types
+let currentView = 'grid';
+
+// ══════════════════════════════════════
+// SUPABASE FETCH (paginated)
+// ══════════════════════════════════════
+async function fetchAll(tabela, query = '', pageSize = 200) {
+  let all = [], offset = 0, tries = 0;
+  while (tries < 50) {
+    const sep = query ? '&' : '?';
+    const url = `${SUPA_URL}/rest/v1/${tabela}${query ? '?' + query : ''}${query ? '&' : '?'}limit=${pageSize}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'count=none',
+      }
+    });
+    if (!res.ok) break;
+    const text = await res.text();
+    if (!text) break;
+    let page;
+    try { page = JSON.parse(text); } catch (e) { break; }
+    if (!Array.isArray(page) || !page.length) break;
+    all = all.concat(page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+    tries++;
+    document.getElementById('loading-count').textContent = `${all.length} Pokémon carregados…`;
+  }
+  return all;
+}
+
+async function fetchStyle() {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/configuracoes?chave=eq.estilo&select=valor&limit=1`, {
+      headers: {'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`}
+    });
+    const data = await res.json();
+    if (data && data[0] && data[0].valor) return data[0].valor;
+  } catch(e) {}
+  return null;
+}
+
+async function fetchEstacao() {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/config?chave=eq.estacao_ativa&select=valor&limit=1`, {
+      headers: {'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`}
+    });
+    const data = await res.json();
+    if (data && data[0]) return data[0].valor;
+  } catch(e) {}
+  return null;
+}
+
+// ══════════════════════════════════════
+// THEME
+// ══════════════════════════════════════
+const ESTILO_DEFAULT = {
+  brand:'#000000',brandMid:'#000000',accent:'#b22a2a',bg:'#f4f6fa',
+  surface:'#ffffff',text:'#1a1f2e',
+  fontTitle:"'Cinzel',serif",fontBody:"'Nunito',sans-serif",radius:'10px',customCss:''
+};
+const TEMAS_SAZONAIS = {
+  primavera:{brand:'#1a4a2a',brandMid:'#2e9e50',accent:'#80d880',bg:'#f0fbf2',surface:'#ffffff',text:'#0a1e0e',fontTitle:"'Cinzel',serif",fontBody:"'Nunito',sans-serif",radius:'10px',customCss:''},
+  verao:{brand:'#7a3a00',brandMid:'#e07a10',accent:'#f0c840',bg:'#fffbf0',surface:'#ffffff',text:'#2a1500',fontTitle:"'Cinzel',serif",fontBody:"'Nunito',sans-serif",radius:'10px',customCss:''},
+  outono:{brand:'#3a1800',brandMid:'#a05020',accent:'#d08030',bg:'#fff8f0',surface:'#ffffff',text:'#1e0e00',fontTitle:"'Cinzel',serif",fontBody:"'Nunito',sans-serif",radius:'10px',customCss:''},
+  inverno:{brand:'#0a1e3a',brandMid:'#3a80c8',accent:'#90c8f0',bg:'#f0f6ff',surface:'#ffffff',text:'#0a1428',fontTitle:"'Cinzel',serif",fontBody:"'Nunito',sans-serif",radius:'10px',customCss:''},
+};
+
+function applyVars(e) {
+  const r = document.documentElement;
+  if(e.brand)    r.style.setProperty('--brand', e.brand);
+  if(e.brandMid) r.style.setProperty('--brand-mid', e.brandMid);
+  if(e.accent)   r.style.setProperty('--accent', e.accent);
+  if(e.bg)       r.style.setProperty('--bg', e.bg);
+  if(e.surface)  r.style.setProperty('--surface', e.surface);
+  if(e.text)     r.style.setProperty('--text', e.text);
+  if(e.fontTitle)r.style.setProperty('--font-title', e.fontTitle);
+  if(e.fontBody) r.style.setProperty('--font-body', e.fontBody);
+  if(e.radius)   r.style.setProperty('--r', e.radius);
+  let tag = document.getElementById('custom-css-tag');
+  if (!tag) { tag = document.createElement('style'); tag.id = 'custom-css-tag'; document.head.appendChild(tag); }
+  tag.textContent = e.customCss || '';
+}
+
+// ══════════════════════════════════════
+// TYPE FILTER UI
+// ══════════════════════════════════════
+function buildTypeFilters() {
+  const usedTypes = new Set(allPokemon.flatMap(p => p.tipos || []));
+  const row = document.getElementById('dex-type-row');
+  if (!usedTypes.size) { row.style.display = 'none'; return; }
+  const allBtn = `<button class="dex-type-btn active" data-type="" onclick="setTypeFilter('',this)" style="background:var(--surface2);border-color:var(--border2);color:var(--muted);padding:4px 10px;opacity:1">Todos</button>`;
+  const typeBtns = [...usedTypes].sort().map(t => {
+    const cls = tcls[t] || 't-normal';
+    // Extract bg from CSS (we'll apply inline style from a simple map)
+    const bgMap = {fire:'#ff9b4a',water:'#6ab8ff',grass:'#78d878',normal:'#c8c8a0',electric:'#ffe030',psychic:'#ff8fb0',steel:'#aababb',fairy:'#ffaad8',ghost:'#9090c0',dragon:'#7060f0',ice:'#96d8d8',fighting:'#c03030',rock:'#b8a050',ground:'#e0c060',poison:'#a060c0',bug:'#a0c020',dark:'#705040',flying:'#88aaee',light:'#e8c832',scent:'#3cb87a'};
+    const fgMap = {fire:'#7a2a00',water:'#003a6a',grass:'#1a5a1a',normal:'#4a4a2a',electric:'#5a4a00',psychic:'#6a0030',steel:'#2a3a3a',fairy:'#6a0050',ghost:'#1a1a4a',dragon:'#fff',ice:'#1a4a4a',fighting:'#fff',rock:'#3a2a00',ground:'#3a2a00',poison:'#fff',bug:'#2a3a00',dark:'#fff',flying:'#1a1a5a',light:'#5a3d00',scent:'#fff'};
+    return `<button class="dex-type-btn active" data-type="${t}" onclick="setTypeFilter('${t}',this)" style="background:${bgMap[t]||'#ccc'};color:${fgMap[t]||'#000'}">${TYPE_LABELS[t]||t}</button>`;
+  }).join('');
+  row.innerHTML = allBtn + typeBtns;
+}
+
+function setTypeFilter(type, btn) {
+  activeType = type;
+  document.querySelectorAll('.dex-type-row .dex-type-btn').forEach(b => {
+    if (type === '') {
+      b.classList.remove('inactive');
+      b.classList.add('active');
+    } else {
+      const bt = b.dataset.type;
+      if (bt === type) { b.classList.add('active'); b.classList.remove('inactive'); }
+      else { b.classList.remove('active'); b.classList.add('inactive'); }
+    }
+  });
+  applyFilters();
+}
+
+// ══════════════════════════════════════
+// RARITY FILTER
+// ══════════════════════════════════════
+function setRarFilter(rar, btn) {
+  activeRar = rar;
+  document.querySelectorAll('.dex-rar-btn').forEach(b => {
+    b.className = 'dex-rar-btn';
+    if (b.dataset.rar === rar) {
+      b.classList.add(rar === 'all' ? 'active-all' : `active-${rar}`);
+    }
+  });
+  applyFilters();
+}
+
+// ══════════════════════════════════════
+// SEARCH
+// ══════════════════════════════════════
+function clearSearch() {
+  document.getElementById('dex-search').value = '';
+  document.getElementById('dex-clear-btn').classList.remove('visible');
+  applyFilters();
+}
+
+// ══════════════════════════════════════
+// VIEW
+// ══════════════════════════════════════
+function setView(v, btn) {
+  currentView = v;
+  document.querySelectorAll('.dex-view-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+// ══════════════════════════════════════
+// FILTER + RENDER
+// ══════════════════════════════════════
+function applyFilters() {
+  const query = (document.getElementById('dex-search').value || '').trim().toLowerCase();
+  const sortVal = document.getElementById('dex-sort').value;
+
+  // Show/hide clear button
+  document.getElementById('dex-clear-btn').classList.toggle('visible', query.length > 0);
+
+  let filtered = allPokemon.filter(p => {
+    if (activeRar !== 'all' && p.raridade !== activeRar) return false;
+    if (activeType && !(p.tipos || []).includes(activeType)) return false;
+    if (query && !p.nome.toLowerCase().includes(query)) return false;
+    return true;
+  });
+
+  // Sort
+  const rarOrder = {comum:0,incomum:1,raro:2,rarissimo:3};
+  if (sortVal === 'nome') filtered.sort((a,b) => a.nome.localeCompare(b.nome,'pt-BR'));
+  else if (sortVal === 'nome-desc') filtered.sort((a,b) => b.nome.localeCompare(a.nome,'pt-BR'));
+  else if (sortVal === 'raridade') filtered.sort((a,b) => (rarOrder[a.raridade]??4)-(rarOrder[b.raridade]??4) || a.nome.localeCompare(b.nome,'pt-BR'));
+  else if (sortVal === 'tipo') filtered.sort((a,b) => ((a.tipos||[])[0]||'').localeCompare((b.tipos||[])[0]||'','pt-BR') || a.nome.localeCompare(b.nome,'pt-BR'));
+  else if (sortVal === 'bioma') filtered.sort((a,b) => (a.bioma||'').localeCompare(b.bioma||'','pt-BR') || a.nome.localeCompare(b.nome,'pt-BR'));
+
+  // Update counter
+  document.getElementById('dex-count-visible').textContent = filtered.length;
+  document.getElementById('dex-count-total').textContent = allPokemon.length;
+
+  const out = document.getElementById('dex-output');
+
+  if (!filtered.length) {
+    out.innerHTML = `<div class="dex-empty"><div class="dex-empty-icon">🔍</div><h3>Nenhum Pokémon encontrado</h3><p>Tente ajustar os filtros de busca.</p></div>`;
+    return;
+  }
+
+  if (sortVal === 'raridade' && activeRar === 'all') {
+    // Grouped by rarity
+    out.innerHTML = RARITY_ORDER.map(r => {
+      const group = filtered.filter(p => p.raridade === r);
+      if (!group.length) return '';
+      return `<div class="dex-section" style="animation-delay:${RARITY_ORDER.indexOf(r)*0.05}s">
+        <div class="dex-section-header">
+          <span class="poke-rarity ${rcls[r]}" style="font-size:12px;padding:3px 12px">${rlbl[r]}</span>
+          <span class="dex-section-count">${group.length} Pokémon</span>
+        </div>
+        ${currentView === 'grid' ? renderGrid(group) : renderList(group)}
+      </div>`;
+    }).join('');
+  } else {
+    out.innerHTML = currentView === 'grid' ? renderGrid(filtered) : renderList(filtered);
+  }
+}
+
+function renderGrid(list) {
+  return `<div class="dex-grid">${list.map((p,i) => `
+    <div class="dex-card" onclick="openModal(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="animation-delay:${Math.min(i*0.02,0.4)}s">
+      <div class="dex-card-sprite">
+        <img src="${p.sprite||FALLBACK}" alt="${p.nome}" loading="lazy" onerror="this.src='${FALLBACK}'"/>
+      </div>
+      <div class="dex-card-name">${p.nome}</div>
+      <div class="dex-card-types">${(p.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${TYPE_LABELS[t]||t}</span>`).join('')}</div>
+      <div class="dex-card-rarity"><span class="poke-rarity ${rcls[p.raridade]||'rc'}">${rlbl[p.raridade]||p.raridade}</span></div>
+    </div>`).join('')}</div>`;
+}
+
+function renderList(list) {
+  return `<div class="dex-list">${list.map((p,i) => `
+    <div class="dex-list-item" onclick="openModal(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="animation-delay:${Math.min(i*0.015,0.3)}s">
+      <div class="dex-list-sprite">
+        <img src="${p.sprite||FALLBACK}" alt="${p.nome}" loading="lazy" onerror="this.src='${FALLBACK}'"/>
+      </div>
+      <div class="dex-list-info">
+        <div class="dex-list-name">${p.nome}</div>
+        <div class="dex-list-sub">${p.habilidade||''}${p.habilidade2?' / '+p.habilidade2:''}</div>
+      </div>
+      <div class="dex-list-right">
+        <div class="dex-list-types">${(p.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${TYPE_LABELS[t]||t}</span>`).join('')}</div>
+        <span class="poke-rarity ${rcls[p.raridade]||'rc'}" style="font-size:9px">${rlbl[p.raridade]||p.raridade}</span>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+// ══════════════════════════════════════
+// MODAL
+// ══════════════════════════════════════
+function openModal(p) {
+  if (typeof p === 'string') p = JSON.parse(p);
+  document.getElementById('modal-sprite').src = p.sprite || FALLBACK;
+  document.getElementById('modal-sprite').alt = p.nome;
+  document.getElementById('modal-name').textContent = p.nome;
+  document.getElementById('modal-types').innerHTML = (p.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}" style="font-size:11px;padding:3px 10px">${TYPE_LABELS[t]||t}</span>`).join('');
+  document.getElementById('modal-rarity').innerHTML = `<span class="poke-rarity ${rcls[p.raridade]||'rc'}" style="font-size:11px;padding:3px 12px">${rlbl[p.raridade]||p.raridade}</span>`;
+
+  const rows = [];
+  if (p.habilidade)  rows.push(['Habilidade 1', p.habilidade]);
+  if (p.habilidade2) rows.push(['Habilidade 2', p.habilidade2]);
+  if (p.genero)      rows.push(['Gênero', generoLabel(p.genero)]);
+  if (p.estacao)     rows.push(['Estação', p.estacao]);
+  if (p.bioma) {
+    const biomas = Array.isArray(p.bioma) ? p.bioma : [p.bioma];
+    rows.push(['Bioma', `<div class="modal-biomas">${biomas.map(b=>`<span class="bioma-tag">${b}</span>`).join('')}</div>`]);
+  }
+
+  document.getElementById('modal-rows').innerHTML = rows.map(([l,v])=>`
+    <div class="modal-row">
+      <span class="modal-row-label">${l}</span>
+      <span class="modal-row-val">${v}</span>
+    </div>`).join('');
+
+  const cond = document.getElementById('modal-cond');
+  if (p.condicao) { cond.style.display='block'; cond.textContent = '⚠ ' + p.condicao; }
+  else { cond.style.display='none'; }
+
+  document.getElementById('detail-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('detail-modal')) return;
+  document.getElementById('detail-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('modal-inner').addEventListener('click', e => e.stopPropagation());
+document.addEventListener('keydown', e => { if(e.key==='Escape') { document.getElementById('detail-modal').classList.remove('open'); document.body.style.overflow=''; } });
+
+function generoLabel(g) {
+  if (!g || g === '1d2') return '♂ / ♀ (aleatório)';
+  if (g === 'macho')     return '♂ Macho';
+  if (g === 'femea')     return '♀ Fêmea';
+  if (g === 'genderless')return '☼ Sem gênero';
+  return g;
+}
+
+// ══════════════════════════════════════
+// INIT
+// ══════════════════════════════════════
+async function init() {
+  // Load theme
+  const [style, estacao] = await Promise.all([fetchStyle(), fetchEstacao()]);
+  const baseStyle = style ? {...ESTILO_DEFAULT, ...style} : ESTILO_DEFAULT;
+  const temaSazonal = estacao && TEMAS_SAZONAIS[estacao];
+  if (temaSazonal) {
+    applyVars({...baseStyle, brand:temaSazonal.brand, brandMid:temaSazonal.brandMid, accent:temaSazonal.accent, bg:temaSazonal.bg, surface:temaSazonal.surface, text:temaSazonal.text});
+  } else {
+    applyVars(baseStyle);
+  }
+
+  // Load Pokémon
+  allPokemon = await fetchAll('pokemons', 'select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,condicao');
+  allPokemon.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  // Build type filter buttons
+  buildTypeFilters();
+
+  // Initial render
+  applyFilters();
+
+  // Hide loading
+  const ov = document.getElementById('loading-overlay');
+  ov.classList.add('hidden');
+  setTimeout(() => ov.remove(), 500);
+}
+
+init().catch(e => {
+  console.error(e);
+  document.getElementById('loading-count').textContent = 'Erro ao carregar. Tente recarregar a página.';
+});
+</script>
+</body>
+</html>
