@@ -54,7 +54,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .rtab{flex:1;min-width:74px;padding:9px 4px 7px;border:none;border-radius:7px;background:transparent;font-family:var(--font-title);font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .18s;letter-spacing:.3px;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:2px}
 .rtab:hover{background:var(--surface2);color:var(--brand)}
 .rtab.active{background:var(--brand);color:#fff}
-.rtab .rnum{font-size:8px;opacity:.65;font-family:var(--font-body);font-weight:400;letter-spacing:0}
+
 
 /* Barra de busca */
 .search-bar{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 18px;margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -196,6 +196,16 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .move-name{font-weight:700}
 .no-moves{text-align:center;padding:20px;font-family:var(--font-title);font-size:11px;color:var(--muted);letter-spacing:.3px}
 
+/* Type icons abaixo da artwork */
+.hero-type-icons{display:flex;gap:8px;justify-content:center;margin-top:4px}
+.type-icon{width:36px;height:36px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18));transition:transform .2s}
+.type-icon:hover{transform:scale(1.12)}
+
+/* Evo branch */
+.evo-branch-wrap{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;width:100%}
+.evo-branch-col{display:flex;flex-direction:column;align-items:center;gap:8px}
+.evo-branch-row{display:flex;align-items:center;gap:4px}
+
 /* ════════════════════════════════
    TYPE PILLS (compartilhado)
 ════════════════════════════════ */
@@ -234,10 +244,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 <nav class="nav">
   <span class="nav-logo" onclick="goList()">PKMN <span>Kingdom Platinum</span></span>
   <div class="nav-center">
-    <a class="nav-link" href="#">UWAdex</a>
     <a class="nav-link active" href="#">NationalDex</a>
-    <a class="nav-link" href="#">ABILITYdex</a>
-    <a class="nav-link" href="#">MOVEdex</a>
   </div>
   <button class="nav-btn" id="nav-back-btn" onclick="goList()">← Pokédex</button>
 </nav>
@@ -251,16 +258,16 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     </div>
 
     <div class="region-tabs" id="region-tabs">
-      <button class="rtab active" data-gen="0">Todas<span class="rnum">1025</span></button>
-      <button class="rtab" data-gen="1">Kanto<span class="rnum">1–151</span></button>
-      <button class="rtab" data-gen="2">Johto<span class="rnum">152–251</span></button>
-      <button class="rtab" data-gen="3">Hoenn<span class="rnum">252–386</span></button>
-      <button class="rtab" data-gen="4">Sinnoh<span class="rnum">387–493</span></button>
-      <button class="rtab" data-gen="5">Unova<span class="rnum">494–649</span></button>
-      <button class="rtab" data-gen="6">Kalos<span class="rnum">650–721</span></button>
-      <button class="rtab" data-gen="7">Alola<span class="rnum">722–809</span></button>
-      <button class="rtab" data-gen="8">Galar<span class="rnum">810–905</span></button>
-      <button class="rtab" data-gen="9">Paldea<span class="rnum">906–1025</span></button>
+      <button class="rtab active" data-gen="1">Kanto</button>
+      <button class="rtab" data-gen="2">Johto</button>
+      <button class="rtab" data-gen="3">Hoenn</button>
+      <button class="rtab" data-gen="4">Sinnoh</button>
+      <button class="rtab" data-gen="5">Unova</button>
+      <button class="rtab" data-gen="6">Kalos</button>
+      <button class="rtab" data-gen="7">Alola</button>
+      <button class="rtab" data-gen="8">Galar</button>
+      <button class="rtab" data-gen="9">Paldea</button>
+      <button class="rtab" data-gen="nendo">Nendo</button>
     </div>
 
     <div class="search-bar">
@@ -366,7 +373,9 @@ window.addEventListener('popstate',e=>{
 /* ═══════════════════════════════════════
    LISTA — carregamento
 ═══════════════════════════════════════ */
-let all=[],filtered=[],typeCache={},listView='grid',curGen=0;
+let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
+// Pokémon do Nendo (fakemon do Kingdom Platinum) — IDs a definir; por ora exibe tudo
+const NENDO_IDS=new Set([]);// preencher com os IDs dos fakemon
 
 async function initList(){
   const r=await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
@@ -423,10 +432,15 @@ function batchTypes(ids){
 function applyFilters(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const tp=document.getElementById('type-filter').value;
-  const[gMin,gMax]=curGen===0?[1,9999]:GR[curGen];
   filtered=all.filter(p=>{
     const nm=!q||p.name.includes(q)||String(p.id).includes(q);
-    const gm=p.id>=gMin&&p.id<=gMax;
+    let gm=true;
+    if(curGen==='nendo'){
+      gm=NENDO_IDS.size===0?true:NENDO_IDS.has(p.id);
+    } else {
+      const[gMin,gMax]=GR[curGen];
+      gm=p.id>=gMin&&p.id<=gMax;
+    }
     const tm=!tp||(typeCache[p.id]&&typeCache[p.id].includes(tp));
     return nm&&gm&&tm;
   });
@@ -438,7 +452,10 @@ document.getElementById('search').addEventListener('input',applyFilters);
 document.getElementById('type-filter').addEventListener('change',applyFilters);
 document.querySelectorAll('.rtab').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.rtab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');curGen=parseInt(btn.dataset.gen);applyFilters();
+  btn.classList.add('active');
+  const g=btn.dataset.gen;
+  curGen=g==='nendo'?'nendo':parseInt(g);
+  applyFilters();
 }));
 function setView(v){listView=v;document.getElementById('btn-grid').classList.toggle('active',v==='grid');document.getElementById('btn-list-btn').classList.toggle('active',v==='list');renderList();}
 
@@ -515,6 +532,7 @@ async function renderDetail(p,s,container){
   // Evo
   let evoHtml='';
   try{const cr=await fetch(s.evolution_chain.url);const cd=await cr.json();evoHtml=buildEvo(cd.chain);}catch{}
+  const _speciesName=p.name;
 
   // Prev / Next
   let prevHtml='',nextHtml='';
@@ -551,6 +569,9 @@ async function renderDetail(p,s,container){
         <img class="hero-art" id="main-art"
           src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
           onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${p.name}">
+        <div class="hero-type-icons">
+          ${types.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${(TL[t]||t)}">`).join('')}
+        </div>
         <div class="shiny-row">
           <img class="shiny-thumb" id="shiny-thumb"
             src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png"
@@ -564,7 +585,6 @@ async function renderDetail(p,s,container){
         <div class="hero-header">
           <div class="hero-name">${cap(p.name)}</div>
           <div class="hero-genus">${genus}</div>
-          <div class="hero-types-row">${types.map(t=>pill(t,true)).join('')}</div>
         </div>
         <div class="stats-row">
           ${p.stats.map(st=>`<div class="stat-cell">
@@ -577,12 +597,11 @@ async function renderDetail(p,s,container){
           </div>
         </div>
         <table class="info-table">
-          <tr><td class="lbl">Classificação</td><td>${genus}</td></tr>
-          <tr><td class="lbl">Altura</td><td>${p.height*10} cm</td></tr>
-          <tr><td class="lbl">Peso</td><td>${p.weight/10} kg</td></tr>
-          <tr><td class="lbl">Gênero</td><td>${genderHtml}</td></tr>
-          <tr><td class="lbl">Grupos de Ovo</td><td>${eggs}</td></tr>
-          <tr><td class="lbl">Habilidades</td><td style="padding:0 16px">${abHtml.join('')}</td></tr>
+          <tr><td class="lbl">Height</td><td>${p.height*10} cm</td></tr>
+          <tr><td class="lbl">Weight</td><td>${p.weight/10} kg</td></tr>
+          <tr><td class="lbl">Gender</td><td>${genderHtml}</td></tr>
+          <tr><td class="lbl">Egg Groups</td><td>${eggs}</td></tr>
+          <tr><td class="lbl">Abilities</td><td style="padding:0 16px">${abHtml.join('')}</td></tr>
         </table>
       </div>
     </div>
@@ -590,32 +609,24 @@ async function renderDetail(p,s,container){
 
   <div class="section">
     <div class="sec-header"><div class="sec-title">Damage Taken</div></div>
-    <div class="sec-body">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">Sem modificadores</div>'}</div>
+    <div class="sec-body">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">No modifiers</div>'}</div>
   </div>
 
   ${flavorText?`<div class="section">
     <div class="sec-header"><div class="sec-title">Biology</div></div>
     <div class="sec-body">
-      <div class="bio-layout">
-        <div class="bio-sprites">
-          <img class="bio-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png" alt="${p.name}">
-          <div class="bio-sprite-lbl">Normal</div>
-          <img class="bio-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png" alt="shiny">
-          <div class="bio-shiny-lbl">✦ Shiny</div>
-        </div>
-        <div class="bio-text"><strong>${cap(p.name)}, o ${genus}.</strong> ${flavorText}</div>
-      </div>
+      <div class="bio-text"><strong>${cap(p.name)}, o ${genus}.</strong> ${flavorText}</div>
     </div>
   </div>`:''}
 
   ${evoHtml?`<div class="section">
     <div class="sec-header"><div class="sec-title">Evolutionary Chain</div></div>
-    <div class="sec-body"><div class="evo-chain">${evoHtml}</div></div>
+    <div class="sec-body"><div class="evo-chain" id="evo-chain-wrap">${evoHtml}</div></div>
   </div>`:''}
 
   <div class="section">
     <div class="moves-tabs">
-      <button class="move-tab active" onclick="showMoves('level',this)">Moves por Nível</button>
+      <button class="move-tab active" onclick="showMoves('level',this)">Level-Up Moves</button>
       <button class="move-tab" onclick="showMoves('egg',this)">Egg Moves</button>
       <button class="move-tab" onclick="showMoves('tutor',this)">Tutor Moves</button>
     </div>
@@ -623,6 +634,8 @@ async function renderDetail(p,s,container){
     <div id="mv-egg" style="display:none">${movesTable(eggMoves)}</div>
     <div id="mv-tutor" style="display:none">${movesTable(tutorMoves)}</div>
   </div>`;
+  // Append megas after DOM is set
+  if(evoHtml) appendMegas(_speciesName, container);
 }
 
 function toggleShiny(id){
@@ -639,27 +652,112 @@ function showMoves(tab,btn){
   btn.classList.add('active');
 }
 
-function buildEvo(chain,nodes=[]){
-  const name=chain.species.name;
-  const id=chain.species.url.split('/').filter(Boolean).pop();
-  const det=chain.evolution_details?.[0];
-  nodes.push({name,id,det});
-  if(!chain.evolves_to.length){
-    return nodes.map((n,i)=>{
-      let arrow='';
-      if(i>0&&n.det){
-        const d=n.det;
-        let m=d.min_level?`Nv. ${d.min_level}`:d.item?cap(d.item.name):d.trigger?.name==='trade'?'Troca':d.min_happiness?`Ami. ${d.min_happiness}`:d.trigger?.name?cap(d.trigger.name):'';
-        arrow=`<div class="evo-arrow"><span class="evo-arrow-icon">›</span><span class="evo-method">${m}</span></div>`;
-      }
-      return `${arrow}<button class="evo-node" onclick="goDetail('${n.name}')">
-        <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${n.id}.png" alt="${n.name}">
-        <span class="evo-node-name">${cap(n.name)}</span>
-        <span class="evo-node-num">#${String(n.id).padStart(3,'0')}</span>
-      </button>`;
-    }).join('');
+function evoMethod(det){
+  if(!det)return'';
+  const d=det;
+  if(d.min_level)return`Lv. ${d.min_level}`;
+  if(d.item)return cap(d.item.name);
+  if(d.trigger?.name==='trade')return'Trade';
+  if(d.min_happiness)return`Friendship`;
+  if(d.known_move)return`Know ${cap(d.known_move.name)}`;
+  if(d.min_beauty)return`Beauty`;
+  if(d.time_of_day)return cap(d.time_of_day);
+  if(d.trigger?.name)return cap(d.trigger.name);
+  return'';
+}
+
+function evoNode(name,id,det,isFirst){
+  const method=evoMethod(det);
+  const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
+  return `${arrow}<button class="evo-node" onclick="goDetail('${name}')">
+    <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
+         onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${name}">
+    <span class="evo-node-name">${cap(name)}</span>
+    <span class="evo-node-num">#${String(id).padStart(3,'0')}</span>
+  </button>`;
+}
+
+function buildEvo(chain){
+  // Flatten full tree respecting branches
+  function flatten(node,depth,parentDet,result){
+    const name=node.species.name;
+    const id=node.species.url.split('/').filter(Boolean).pop();
+    const det=node.evolution_details?.[0]||null;
+    result.push({name,id,det,depth,parentDet,branches:node.evolves_to.length});
+    for(const child of node.evolves_to) flatten(child,depth+1,det,result);
+    return result;
   }
-  return buildEvo(chain.evolves_to[0],nodes);
+  const nodes=flatten(chain,0,null,[]);
+
+  // Build HTML — group by depth columns
+  const maxDepth=Math.max(...nodes.map(n=>n.depth));
+  let html='';
+  // Simple linear chain (no branches)
+  const hasBranch=nodes.some(n=>n.branches>1)||nodes.filter(n=>n.depth===1).length>1;
+  if(!hasBranch){
+    html=nodes.map((n,i)=>evoNode(n.name,n.id,n.det,i===0)).join('');
+  } else {
+    // Branched: render base, then each branch on its own row
+    const base=nodes.find(n=>n.depth===0);
+    const mid=nodes.filter(n=>n.depth===1);
+    const finals=nodes.filter(n=>n.depth===2);
+    html=`<div class="evo-branch-wrap">`;
+    // Base
+    html+=`<div class="evo-branch-col">${evoNode(base.name,base.id,null,true)}</div>`;
+    // Mid + finals
+    if(mid.length){
+      html+=`<div class="evo-branch-col">`;
+      for(const m of mid){
+        const mFinals=finals.filter(f=>nodes.find(n=>n.name===f.name&&n.depth===2));
+        html+=`<div class="evo-branch-row">${evoNode(m.name,m.id,m.det,false)}`;
+        const myFinals=nodes.filter(n=>n.depth===2);// simplified
+        if(myFinals.length&&mid.length===1){
+          for(const f of myFinals) html+=evoNode(f.name,f.id,f.det,false);
+        }
+        html+=`</div>`;
+      }
+      html+=`</div>`;
+    } else {
+      // Only final evolutions branching from base
+      for(const f of finals) html+=evoNode(f.name,f.id,f.det,false);
+    }
+    html+=`</div>`;
+  }
+
+  // Mega evolutions — fetch from pokemon forms
+  return html;
+}
+
+async function appendMegas(speciesName, container){
+  try{
+    const r=await fetch(`https://pokeapi.co/api/v2/pokemon-species/${speciesName}`);
+    const s=await r.json();
+    const megaVarieties=s.varieties.filter(v=>v.pokemon.name.includes('-mega')||v.pokemon.name.includes('-primal'));
+    if(!megaVarieties.length)return;
+    const megaNodes=await Promise.all(megaVarieties.map(async v=>{
+      try{
+        const pr=await fetch(v.pokemon.url);
+        const pd=await pr.json();
+        const formId=pd.id;
+        return `<button class="evo-node" onclick="goDetail('${v.pokemon.name}')">
+          <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${formId}.png"
+               onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${formId}.png'" alt="${v.pokemon.name}">
+          <span class="evo-node-name">${cap(v.pokemon.name)}</span>
+          <span class="evo-node-num" style="color:var(--accent);font-weight:700">MEGA</span>
+        </button>`;
+      }catch{return'';}
+    }));
+    const validMegas=megaNodes.filter(Boolean);
+    if(!validMegas.length)return;
+    const wrap=document.getElementById('evo-chain-wrap');
+    if(wrap){
+      wrap.insertAdjacentHTML('beforeend',`
+        <div style="width:100%;border-top:1px solid var(--border);margin-top:12px;padding-top:12px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px">
+          <div style="font-family:var(--font-title);font-size:9px;color:var(--accent);letter-spacing:.5px;margin-right:8px;text-transform:uppercase">Mega</div>
+          ${validMegas.join('')}
+        </div>`);
+    }
+  }catch{}
 }
 
 /* ═══════════════════════════════════════
