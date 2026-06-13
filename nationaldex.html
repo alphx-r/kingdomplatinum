@@ -1,1 +1,833 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NationalDex — PKMN Kingdom Platinum</title>
+<link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+/* ── Reset ── */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
+  --accent:#e8a020;--accent-light:#fdf3dc;
+  --bg:#808080;--surface:#fff;--surface2:#f0f3f8;
+  --border:#dde3ee;--border2:#c8d0e0;
+  --text:#1a1f2e;--muted:#6b7a99;
+  --red:#c03030;--green:#1a7a1a;
+  --r:10px;--font-title:'Cinzel',serif;--font-body:'Nunito',sans-serif;
+}
+html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);color:var(--text);-webkit-tap-highlight-color:transparent}
 
+/* ── NAV ── */
+.nav{display:flex;align-items:center;gap:10px;padding:0 20px;height:56px;background:var(--brand);position:sticky;top:0;z-index:900;box-shadow:0 2px 12px rgba(0,0,0,.3);transition:background .4s}
+.nav-logo img{height:30px;object-fit:contain;display:block}
+.nav-title{font-family:var(--font-title);font-size:12px;font-weight:700;color:rgba(255,255,255,.55);letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap}
+.nav-back{margin-left:auto;font-size:12px;font-weight:700;font-family:var(--font-body);padding:6px 14px;border-radius:20px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:#fff;cursor:pointer;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.nav-back:hover{background:rgba(255,255,255,.15)}
+
+/* ── Loading ── */
+.loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .4s}
+.loading-overlay.hidden{opacity:0;pointer-events:none}
+.loading-spinner{width:38px;height:38px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:13px;color:rgba(255,255,255,.7);font-weight:600;font-family:var(--font-title);letter-spacing:1px}
+
+/* ── Views ── */
+.view{display:none}.view.active{display:block}
+
+/* ═══════════ LIST VIEW ═══════════ */
+.list-wrap{max-width:1100px;margin:0 auto;padding:22px 16px 60px}
+
+/* Header */
+.dex-header{text-align:center;margin-bottom:24px}
+.dex-header h1{font-family:var(--font-title);font-size:24px;font-weight:700;color:var(--brand);letter-spacing:2px}
+.dex-header p{font-size:13px;color:var(--muted);margin-top:5px}
+.dex-count-badge{display:inline-flex;align-items:center;gap:5px;background:var(--brand-light);color:var(--brand-mid);border:1.5px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;margin-top:8px}
+
+/* Region tabs */
+.region-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px;padding:12px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);position:sticky;top:56px;z-index:100}
+.region-tab{padding:5px 13px;border-radius:16px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.region-tab:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
+.region-tab.active{background:var(--brand-mid);border-color:var(--brand-mid);color:#fff}
+.region-tab.custom{border-color:var(--accent);color:var(--accent)}
+.region-tab.custom.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* Search + filters */
+.dex-filters{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:18px;display:flex;flex-direction:column;gap:10px}
+.dex-search-wrap{position:relative}
+.dex-search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none}
+.dex-search{width:100%;padding:9px 14px 9px 36px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:13px;color:var(--text);outline:none;transition:border .2s}
+.dex-search:focus{border-color:var(--brand-mid);background:#fff}
+
+
+/* Section header */
+.dex-section{margin-bottom:28px;animation:fadeUp .3s both}
+.dex-section-hd{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+.dex-section-title{font-family:var(--font-title);font-size:14px;font-weight:700;color:var(--brand);letter-spacing:.8px}
+.dex-section-count{font-size:11px;font-weight:600;color:var(--muted)}
+
+/* Card grid */
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.pk-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 8px 10px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;transition:all .2s;animation:fadeUp .3s both;position:relative;overflow:hidden}
+.pk-card:hover{border-color:var(--brand-mid);transform:translateY(-3px);box-shadow:0 6px 20px rgba(37,99,168,.14)}
+.pk-card:active{transform:translateY(-1px)}
+.pk-card-num{font-size:9px;font-weight:700;color:var(--muted);font-family:var(--font-title);letter-spacing:.5px}
+.pk-card-sprite{width:80px;height:80px;object-fit:contain}
+.pk-card-name{font-family:var(--font-title);font-size:10px;font-weight:600;color:var(--text);text-align:center;line-height:1.3;min-height:24px;display:flex;align-items:center;justify-content:center}
+.pk-card-types{display:flex;gap:3px;flex-wrap:wrap;justify-content:center}
+.pk-card-rarity{position:absolute;top:6px;right:6px}
+
+/* Type pills */
+.type-pill{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.3px}
+.t-fire{background:#ff9b4a;color:#7a2a00}.t-water{background:#6ab8ff;color:#003a6a}.t-grass{background:#78d878;color:#1a5a1a}
+.t-normal{background:#c8c8a0;color:#4a4a2a}.t-electric{background:#ffe030;color:#5a4a00}.t-psychic{background:#ff8fb0;color:#6a0030}
+.t-steel{background:#aababb;color:#2a3a3a}.t-fairy{background:#ffaad8;color:#6a0050}.t-ghost{background:#9090c0;color:#1a1a4a}
+.t-dragon{background:#7060f0;color:#fff}.t-ice{background:#96d8d8;color:#1a4a4a}.t-fighting{background:#c03030;color:#fff}
+.t-rock{background:#b8a050;color:#3a2a00}.t-ground{background:#e0c060;color:#3a2a00}.t-poison{background:#a060c0;color:#fff}
+.t-bug{background:#a0c020;color:#2a3a00}.t-dark{background:#705040;color:#fff}.t-flying{background:#88aaee;color:#1a1a5a}
+.t-light{background:#e8c832;color:#5a3d00}.t-scent{background:#3cb87a;color:#fff}
+
+/* Rarity badges */
+.poke-rarity{display:inline-block;font-size:8px;font-weight:800;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px}
+.rc{background:#e0f0e0;color:#1a6a1a}.ri{background:#dde8f8;color:#1a4a8a}.rr{background:#f0e8ff;color:#5a1a9a}.rrr{background:#fff0d8;color:#8a4a00}
+
+/* Empty */
+.dex-empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.dex-empty-icon{font-size:44px;margin-bottom:12px}
+.dex-empty h3{font-family:var(--font-title);font-size:15px;color:var(--text);margin-bottom:6px}
+.dex-empty p{font-size:13px}
+
+/* ═══════════ DETAIL VIEW ═══════════ */
+.detail-wrap{max-width:900px;margin:0 auto;padding:22px 16px 60px}
+
+.detail-back{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:rgba(255,255,255,.8);background:rgba(255,255,255,.12);border:none;cursor:pointer;padding:7px 14px;border-radius:20px;margin-bottom:20px;font-family:var(--font-body);transition:all .2s}
+.detail-back:hover{background:rgba(255,255,255,.22)}
+
+/* Main block */
+.detail-main{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden;display:grid;grid-template-columns:220px 1fr}
+.detail-sprite-col{background:var(--surface2);display:flex;flex-direction:column;align-items:center;padding:20px 16px 24px;gap:10px;border-right:1.5px solid var(--border)}
+.detail-num{font-family:var(--font-title);font-size:12px;color:var(--muted);letter-spacing:1px}
+.detail-sprite{width:180px;height:180px;object-fit:contain;image-rendering:auto}
+.detail-type-icons{display:flex;gap:8px;justify-content:center;align-items:center}
+.detail-type-icon{width:24px;height:24px;object-fit:contain}
+.detail-info-col{display:flex;flex-direction:column}
+.detail-name-bar{background:var(--brand);color:#fff;font-family:var(--font-title);font-size:19px;font-weight:700;letter-spacing:1.5px;padding:14px 20px;text-align:center;display:flex;align-items:center;justify-content:center;gap:0;position:relative}
+.det-nav-btn{position:absolute;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 7px;background:none;border:none;border-radius:6px;font-family:var(--font-body);font-size:9px;font-weight:700;color:rgba(255,255,255,.75);cursor:pointer;transition:all .2s;min-width:42px}
+.det-nav-btn:first-of-type{left:8px}.det-nav-btn:last-of-type{right:8px}
+.det-nav-btn:hover{background:rgba(255,255,255,.18);color:#fff}
+.det-nav-btn .nav-arrow{font-size:16px;line-height:1}
+.det-nav-btn .nav-num{font-family:var(--font-title);font-size:8px;color:rgba(255,255,255,.6)}
+.det-nav-btn .nav-name{font-size:8px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48px;text-align:center}
+.detail-info-table{width:100%;border-collapse:collapse}
+.detail-info-table tr{border-bottom:1px solid var(--border)}
+.detail-info-table tr:last-child{border-bottom:none}
+.detail-info-table td{padding:8px 16px;font-size:13px;vertical-align:middle}
+.detail-info-table td:first-child{font-weight:700;color:var(--muted);width:38%;font-size:11px;letter-spacing:.4px;text-transform:uppercase}
+
+/* Section blocks */
+.detail-block{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
+.detail-block-title{background:var(--brand);color:#fff;text-align:center;font-family:var(--font-title);font-size:10px;letter-spacing:1.5px;padding:8px;font-weight:600}
+
+/* Stats */
+.stats-row{display:flex}
+.stat-cell{flex:1;text-align:center;padding:14px 4px;border-right:1px solid var(--border)}
+.stat-cell:last-child{border-right:none}
+.stat-label{font-size:9px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.stat-val{font-family:var(--font-title);font-size:16px;font-weight:700;color:var(--brand-mid)}
+.stat-bar{height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden}
+.stat-bar-fill{height:100%;border-radius:2px;background:var(--brand-mid);transition:width .6s}
+
+/* Damage table */
+.dmg-table{width:100%;border-collapse:collapse}
+.dmg-table th{padding:5px 3px;text-align:center;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;border-right:1px solid var(--border)}
+.dmg-table td{padding:5px 3px;text-align:center;font-size:11px;font-weight:700;border-right:1px solid var(--border)}
+.dmg-table th:last-child,.dmg-table td:last-child{border-right:none}
+.dmg-0{color:#aaa}.dmg-half{color:#1a7a1a;background:#e0f0e0}.dmg-2{color:#c03030;background:#fde8e8}.dmg-4{color:#7a0000;background:#f8b0b0}.dmg-1{color:var(--muted)}
+
+/* Evo chain */
+.evo-inner{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:0;padding:20px;row-gap:8px}
+.evo-stage{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 14px;cursor:pointer;transition:transform .2s}
+.evo-stage:hover{transform:scale(1.06)}
+.evo-stage img{width:80px;height:80px;object-fit:contain}
+.evo-stage-name{font-family:var(--font-title);font-size:10px;color:var(--text);text-align:center}
+.evo-stage.current img{filter:drop-shadow(0 0 6px rgba(37,99,168,.5))}
+.evo-stage.current .evo-stage-name{color:var(--brand-mid)}
+.evo-arrow{display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 8px}
+.evo-arrow-icon{font-size:20px;color:var(--muted)}
+.evo-arrow-label{font-size:9px;color:var(--muted);font-weight:700;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 7px;white-space:nowrap}
+
+/* Biology */
+.bio-inner{display:flex;gap:16px;padding:16px 20px;align-items:flex-start}
+.bio-sprite{width:80px;height:80px;object-fit:contain;flex-shrink:0}
+.bio-text{font-size:13px;color:var(--text);line-height:1.75}
+.flavor-box{background:var(--surface2);border-left:3px solid var(--brand-mid);padding:10px 14px;border-radius:0 6px 6px 0;font-style:italic;font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:8px}
+
+/* RPG stats */
+.rpg-row{display:flex}
+.rpg-cell{flex:1;text-align:center;padding:14px 4px;border-right:1px solid var(--border)}
+.rpg-cell:last-child{border-right:none}
+.rpg-label{font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.rpg-val{font-family:var(--font-title);font-size:14px;font-weight:700;color:var(--brand-mid)}
+
+/* Moves */
+.moves-tabs{display:flex;border-bottom:1.5px solid var(--border)}
+.moves-tab{flex:1;padding:9px;text-align:center;font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--muted);background:var(--surface2);border:none;cursor:pointer;transition:all .15s;border-right:1px solid var(--border)}
+.moves-tab:last-child{border-right:none}
+.moves-tab.active{background:var(--surface);color:var(--brand-mid)}
+.moves-panel{display:none}.moves-panel.active{display:block}
+.moves-table{width:100%;border-collapse:collapse;font-size:12px}
+.moves-table th{background:var(--surface2);font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:7px 10px;text-align:left;border-bottom:1.5px solid var(--border);position:sticky;top:0}
+.moves-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+.moves-table tr:last-child td{border-bottom:none}
+.moves-table tr:hover td{background:var(--surface2)}
+.moves-table td.lvl{font-family:var(--font-title);font-weight:700;color:var(--brand-mid);text-align:center;width:50px}
+.moves-table td.move-name{font-weight:700}
+.moves-empty{padding:20px;text-align:center;color:var(--muted);font-size:13px}
+.inline-load{display:flex;align-items:center;gap:10px;padding:30px 20px;color:var(--muted);font-size:13px;font-weight:600}
+.inline-spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--brand-mid);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+/* Animations */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.94) translateY(12px)}to{opacity:1;transform:scale(1) translateY(0)}}
+
+/* ── Mobile ── */
+@media(max-width:600px){
+  .detail-main{grid-template-columns:1fr}
+  .detail-sprite-col{border-right:none;border-bottom:1.5px solid var(--border)}
+  .detail-wrap{padding:14px 10px 50px}
+  .list-wrap{padding:12px 8px 50px}
+  .card-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:7px}
+  .pk-card-sprite{width:66px;height:66px}
+  .pk-card-name{font-size:9px}
+  .region-tabs{top:56px;padding:8px 10px;gap:5px}
+  .nav-title{display:none}
+  .bio-inner{flex-direction:column}
+}
+@media(max-width:380px){
+  .card-grid{grid-template-columns:repeat(3,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">NationalDex</div>
+  <div id="loading-msg" style="font-size:12px;color:rgba(255,255,255,.5);font-weight:600">Carregando…</div>
+</div>
+
+<!-- NAV -->
+<nav class="nav" id="main-nav">
+  <div class="nav-logo">
+    <img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" alt="Kingdom Platinum"/>
+  </div>
+  <span class="nav-title">NationalDex</span>
+  <a href="index.html" class="nav-back">← Início</a>
+</nav>
+
+<!-- LIST VIEW -->
+<div class="view active" id="view-list">
+  <div class="list-wrap">
+    <div class="dex-header">
+      <h1>⚔ NationalDex</h1>
+      <p>Todos os Pokémon disponíveis em Kingdom Platinum</p>
+      <div class="dex-count-badge">
+        <span id="count-visible">—</span> de <span id="count-total">—</span> Pokémon
+      </div>
+    </div>
+
+    <!-- Region tabs -->
+    <div class="region-tabs" id="region-tabs"></div>
+
+    <!-- Filters -->
+    <div class="dex-filters">
+      <div class="dex-search-wrap">
+        <span class="dex-search-icon">🔍</span>
+        <input class="dex-search" id="dex-search" type="search" placeholder="Buscar por nome…" oninput="applyFilters()" autocomplete="off"/>
+      </div>
+
+    </div>
+
+    <div id="dex-output"></div>
+  </div>
+</div>
+
+<!-- DETAIL VIEW -->
+<div class="view" id="view-detail">
+  <div class="detail-wrap">
+    <button class="detail-back" onclick="backToList()">← Voltar</button>
+    <div id="detail-content">
+      <div class="inline-load"><div class="inline-spin"></div>Carregando…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════
+const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+const FALLBACK = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png';
+
+// Region definitions
+// Official regions: by Pokémon number range
+// Custom RPG regions: by name prefix (override takes priority)
+const OFFICIAL_REGIONS = [
+  {id:'kanto',   label:'Kanto',   min:1,   max:151},
+  {id:'johto',   label:'Johto',   min:152, max:251},
+  {id:'hoenn',   label:'Hoenn',   min:252, max:386},
+  {id:'sinnoh',  label:'Sinnoh',  min:387, max:493},
+  {id:'unova',   label:'Unova',   min:494, max:649},
+  {id:'kalos',   label:'Kalos',   min:650, max:721},
+  {id:'alola',   label:'Alola',   min:722, max:809},
+  {id:'galar',   label:'Galar',   min:810, max:905},
+  {id:'paldea',  label:'Paldea',  min:906, max:1025},
+];
+// Custom RPG regions by name prefix — override official region
+const CUSTOM_PREFIX_REGIONS = [
+  {id:'alola_custom',  label:'Alola',  prefix:'(a)'},
+  {id:'nendo',         label:'Nendo',  prefix:'(n)'},
+  {id:'galar_custom',  label:'Galar',  prefix:'(g)'},
+  {id:'paldea_custom', label:'Paldea', prefix:'(p)'},
+];
+
+function getRegionId(p) {
+  const name = (p.nome||'').toLowerCase().trim();
+  // Check custom prefix first
+  for(const cr of CUSTOM_PREFIX_REGIONS){
+    if(name.startsWith(cr.prefix)) return cr.id;
+  }
+  // Then official by number
+  const num = p.numero;
+  if(num){
+    for(const or of OFFICIAL_REGIONS){
+      if(num >= or.min && num <= or.max) return or.id;
+    }
+  }
+  return 'outros';
+}
+
+// All tabs in display order
+const REGIONS_ORDER = [
+  {id:'all',          label:'Todos',  custom:false},
+  ...OFFICIAL_REGIONS.map(r=>({...r, custom:false})),
+  {id:'nendo',        label:'Nendo',  custom:true},
+  {id:'outros',       label:'Outros', custom:false},
+];
+
+// ── Type colors
+const TCLS={fire:'t-fire',water:'t-water',grass:'t-grass',normal:'t-normal',electric:'t-electric',psychic:'t-psychic',steel:'t-steel',fairy:'t-fairy',ghost:'t-ghost',dragon:'t-dragon',ice:'t-ice',fighting:'t-fighting',rock:'t-rock',ground:'t-ground',poison:'t-poison',bug:'t-bug',dark:'t-dark',flying:'t-flying',light:'t-light',scent:'t-scent'};
+const TLB={fire:'Fogo',water:'Água',grass:'Planta',normal:'Normal',electric:'Elétrico',psychic:'Psíquico',steel:'Aço',fairy:'Fada',ghost:'Fantasma',dragon:'Dragão',ice:'Gelo',fighting:'Lutador',rock:'Pedra',ground:'Terra',poison:'Veneno',bug:'Inseto',dark:'Sombrio',flying:'Voador',light:'Luz',scent:'Aroma'};
+const RCLS={comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
+const RLBL={comum:'C',incomum:'I',raro:'R',rarissimo:'RR'};
+const RLBL_FULL={comum:'Comum',incomum:'Incomum',raro:'Raro',rarissimo:'Raríssimo'};
+
+// ── Type effectiveness chart
+const TYPE_CHART={normal:{fighting:2,ghost:0},fire:{fire:.5,water:2,grass:.5,ice:.5,ground:2,bug:.5,rock:2,steel:.5,fairy:.5},water:{fire:.5,water:.5,grass:2,electric:2},grass:{fire:2,water:.5,grass:.5,electric:.5,ground:.5,bug:2,rock:.5,flying:2,ice:2,poison:2},electric:{electric:.5,flying:.5,steel:.5,ground:0},ice:{fire:2,ice:.5,steel:2,rock:2,fighting:2},fighting:{bug:.5,rock:.5,dark:.5,flying:2,psychic:2,fairy:2},poison:{poison:.5,ground:2,grass:.5,fighting:.5,bug:.5,fairy:.5,psychic:2},ground:{grass:2,electric:0,rock:.5,steel:.5,water:2,ice:2,poison:.5},flying:{electric:2,grass:.5,fighting:.5,rock:2,bug:.5,ice:2,ground:0},psychic:{psychic:.5,dark:2,bug:2,ghost:2,steel:.5},bug:{fire:2,flying:2,rock:2,ghost:.5,fighting:.5,grass:.5,ground:.5},rock:{fighting:2,ground:2,steel:2,fire:.5,normal:.5,poison:.5,flying:.5,water:2,grass:2,ice:.5},ghost:{normal:0,fighting:0,poison:.5,bug:.5,ghost:2,dark:2},dragon:{dragon:2,ice:2,fairy:2,fire:.5,water:.5,grass:.5,electric:.5},dark:{fighting:2,bug:2,fairy:2,ghost:.5,dark:.5,psychic:0},steel:{fire:2,ground:2,fighting:2,steel:.5,normal:.5,grass:.5,ice:.5,flying:.5,psychic:.5,bug:.5,rock:.5,dragon:.5,fairy:.5,electric:.5,dark:.5,water:.5,poison:0},fairy:{steel:2,poison:2,fire:.5,fighting:.5,bug:.5,dragon:0,dark:.5}};
+function calcDmg(types){const r={};['normal','fire','water','grass','electric','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'].forEach(att=>{let m=1;types.forEach(def=>{const d=TYPE_CHART[def]||{};if(d[att]!==undefined)m*=d[att];});r[att]=m;});return r;}
+
+// ══════════════════════════════════════
+// STATE
+// ══════════════════════════════════════
+let allPokemon=[];
+let activeRegion='all';
+
+let currentDetailSlug=null;
+let navColor='#1a3a5c';
+
+// ══════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════
+function slugify(s){return(s||'').toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');}
+function typePill(t){return`<span class="type-pill ${TCLS[t]||'t-normal'}">${TLB[t]||t}</span>`;}
+function rarBadge(r){return r?`<span class="poke-rarity ${RCLS[r]||'rc'}">${RLBL[r]||r}</span>`:'';}
+function loading(msg){document.getElementById('loading-msg').textContent=msg||'Carregando…';}
+
+// ══════════════════════════════════════
+// SUPABASE FETCH (paginated)
+// ══════════════════════════════════════
+async function fetchAll(table, query='', pageSize=200){
+  let all=[],offset=0,tries=0;
+  while(tries<50){
+    const url=`${SUPA_URL}/rest/v1/${table}${query?'?'+query:''}${query?'&':'?'}limit=${pageSize}&offset=${offset}`;
+    const res=await fetch(url,{headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'count=none'}});
+    if(!res.ok)break;
+    const text=await res.text();
+    if(!text)break;
+    let page;try{page=JSON.parse(text);}catch(e){break;}
+    if(!Array.isArray(page)||!page.length)break;
+    all=all.concat(page);
+    if(page.length<pageSize)break;
+    offset+=pageSize;tries++;
+    loading(`${all.length} Pokémon carregados…`);
+  }
+  return all;
+}
+
+async function fetchStyle(){
+  try{
+    const res=await fetch(`${SUPA_URL}/rest/v1/configuracoes?chave=eq.estilo&select=valor&limit=1`,{headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`}});
+    const d=await res.json();
+    if(d&&d[0]&&d[0].valor)return d[0].valor;
+  }catch(e){}
+  return null;
+}
+async function fetchEstacao(){
+  try{
+    const res=await fetch(`${SUPA_URL}/rest/v1/config?chave=eq.estacao_ativa&select=valor&limit=1`,{headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`}});
+    const d=await res.json();
+    if(d&&d[0])return d[0].valor;
+  }catch(e){}
+  return null;
+}
+
+// ══════════════════════════════════════
+// THEME
+// ══════════════════════════════════════
+const ESTILO_DEFAULT={brand:'#1a3a5c',brandMid:'#2563a8',accent:'#e8a020',bg:'#808080',surface:'#fff',text:'#1a1f2e',fontTitle:"'Cinzel',serif",fontBody:"'Nunito',sans-serif",radius:'10px',customCss:''};
+const TEMAS_SAZONAIS={primavera:{brand:'#1a4a2a',brandMid:'#2e9e50',accent:'#80d880',bg:'#f0fbf2',surface:'#ffffff',text:'#0a1e0e'},verao:{brand:'#7a3a00',brandMid:'#e07a10',accent:'#f0c840',bg:'#fffbf0',surface:'#ffffff',text:'#2a1500'},outono:{brand:'#3a1800',brandMid:'#a05020',accent:'#d08030',bg:'#fff8f0',surface:'#ffffff',text:'#1e0e00'},inverno:{brand:'#0a1e3a',brandMid:'#3a80c8',accent:'#90c8f0',bg:'#f0f6ff',surface:'#ffffff',text:'#0a1428'}};
+function applyVars(e){
+  const r=document.documentElement;
+  if(e.brand){r.style.setProperty('--brand',e.brand);navColor=e.brand;}
+  if(e.brandMid)r.style.setProperty('--brand-mid',e.brandMid);
+  if(e.accent)r.style.setProperty('--accent',e.accent);
+  if(e.bg)r.style.setProperty('--bg',e.bg);
+  if(e.surface)r.style.setProperty('--surface',e.surface);
+  if(e.text)r.style.setProperty('--text',e.text);
+  if(e.fontTitle)r.style.setProperty('--font-title',e.fontTitle);
+  if(e.fontBody)r.style.setProperty('--font-body',e.fontBody);
+  if(e.radius)r.style.setProperty('--r',e.radius);
+  let tag=document.getElementById('custom-css-tag');
+  if(!tag){tag=document.createElement('style');tag.id='custom-css-tag';document.head.appendChild(tag);}
+  tag.textContent=e.customCss||'';
+}
+function setNavTheme(col){document.getElementById('main-nav').style.background=col||navColor;}
+
+// Type-based nav color
+const TYPE_NAV_COLOR={fire:'#8a3800',water:'#1a5a8a',grass:'#1a6a20',electric:'#8a6a00',psychic:'#7a1a5a',ghost:'#2a1a5a',dragon:'#3a1a9a',ice:'#1a5a6a',fighting:'#7a1a1a',dark:'#2a2018',steel:'#3a4a5a',poison:'#5a1a7a',ground:'#6a4a10',rock:'#4a3a10',bug:'#3a5a00',fairy:'#7a1a5a',flying:'#1a3a7a',normal:'#3a3a2a'};
+
+// ══════════════════════════════════════
+// DEDUPLICATION
+// ══════════════════════════════════════
+function deduplicate(pokes){
+  // Primary key: exact nome (lowercased + trimmed).
+  // A Pokémon that appears in multiple biomes produces identical names
+  // with different row IDs — keep only the best single entry per name.
+  // "Best" = has sprite > has numero > first seen.
+  const byName = new Map();
+  pokes.forEach(p => {
+    const key = (p.nome || '').toLowerCase().trim();
+    if (!key || key === '???') return;
+    if (!byName.has(key)) { byName.set(key, p); return; }
+    const ex = byName.get(key);
+    if ((!ex.sprite && p.sprite) || (!ex.numero && p.numero)) byName.set(key, p);
+  });
+  return Array.from(byName.values());
+}
+
+// ══════════════════════════════════════
+// ══════════════════════════════════════
+// REGION ASSIGNMENT (see getRegionId above)
+// ══════════════════════════════════════
+
+// ══════════════════════════════════════
+// BUILD REGION TABS
+// ══════════════════════════════════════
+function buildRegionTabs(){
+  const tabsEl=document.getElementById('region-tabs');
+  const counts={all:allPokemon.length};
+  allPokemon.forEach(p=>{ const rid=getRegionId(p); counts[rid]=(counts[rid]||0)+1; });
+  let html='';
+  REGIONS_ORDER.forEach(reg=>{
+    const c=counts[reg.id]||0;
+    if(reg.id!=='all'&&c===0)return;
+    const isActive=activeRegion===reg.id;
+    const cls=`region-tab${isActive?' active':''}${reg.custom?' custom':''}";
+    html+=`<button class="${cls}" data-region="${reg.id}" onclick="setRegion('${reg.id}',this)">${reg.label}<span style="opacity:.6;font-size:10px;margin-left:3px">(${c})</span></button>`;
+  });
+  tabsEl.innerHTML=html;
+}
+
+// ══════════════════════════════════════
+// FILTERS
+// ══════════════════════════════════════
+function setRegion(r,btn){
+  activeRegion=r;
+  document.querySelectorAll('.region-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+);
+
+function applyFilters(){
+  const query=(document.getElementById('dex-search').value||'').toLowerCase().trim();
+  let filtered=allPokemon.filter(p=>{
+    if(query&&!p.nome.toLowerCase().includes(query))return false;
+    if(activeRegion==='all')return true;
+    return getRegionId(p)===activeRegion;
+  });
+  renderCards(filtered);
+}
+
+// ══════════════════════════════════════
+// RENDER CARDS
+// ══════════════════════════════════════
+const RARITY_ORDER=['comum','incomum','raro','rarissimo'];
+function renderCards(list){
+  const out=document.getElementById('dex-output');
+  document.getElementById('count-visible').textContent=list.length;
+  if(!list.length){
+    out.innerHTML=`<div class="dex-empty"><div class="dex-empty-icon">🔍</div><h3>Nenhum Pokémon encontrado</h3><p>Tente ajustar os filtros.</p></div>`;
+    return;
+  }
+  // Group by rarity
+  const byRar={};
+  RARITY_ORDER.forEach(r=>{byRar[r]=[];});
+  byRar['outro']=[];
+  list.forEach(p=>{
+    if(byRar[p.raridade])byRar[p.raridade].push(p);
+    else byRar['outro'].push(p);
+  });
+  let html='';
+  RARITY_ORDER.forEach((r,ri)=>{
+    const group=byRar[r];
+    if(!group.length)return;
+    group.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    html+=`<div class="dex-section" style="animation-delay:${ri*0.04}s">
+      <div class="dex-section-hd">
+        <span class="poke-rarity ${RCLS[r]}" style="font-size:11px;padding:3px 10px">${RLBL_FULL[r]}</span>
+        <span class="dex-section-count">${group.length} Pokémon</span>
+      </div>
+      <div class="card-grid">${group.map((p,ci)=>cardHTML(p,ci)).join('')}</div>
+    </div>`;
+  });
+  if(byRar['outro'].length){
+    const group=byRar['outro'];
+    group.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    html+=`<div class="dex-section">
+      <div class="dex-section-hd"><span class="dex-section-title">Outros</span><span class="dex-section-count">${group.length}</span></div>
+      <div class="card-grid">${group.map((p,ci)=>cardHTML(p,ci)).join('')}</div>
+    </div>`;
+  }
+  out.innerHTML=html;
+}
+function cardHTML(p,ci){
+  const num=p.numero?'#'+String(p.numero).padStart(3,'0'):'';
+  const types=(p.tipos||[]).map(t=>typePill(t)).join('');
+  const spr=p.sprite||FALLBACK;
+  const slug=slugify(p.nome);
+  return `<div class="pk-card" onclick="openDetail('${slug}')" style="animation-delay:${Math.min(ci*0.015,0.3)}s">
+    ${num?`<div class="pk-card-num">${num}</div>`:''}
+    ${RLBL[p.raridade]?`<div class="pk-card-rarity">${rarBadge(p.raridade)}</div>`:''}
+    <img class="pk-card-sprite" src="${spr}" alt="${p.nome}" loading="lazy" onerror="this.src='${FALLBACK}'"/>
+    <div class="pk-card-name">${p.nome}</div>
+    <div class="pk-card-types">${types}</div>
+  </div>`;
+}
+
+// ══════════════════════════════════════
+// ROUTING
+// ══════════════════════════════════════
+function showView(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function openDetail(slug){
+  currentDetailSlug=slug;
+  history.pushState({slug},'',`?pokemon=${slug}`);
+  showView('view-detail');
+  renderDetail(slug);
+  setNavTheme(null);
+  window.scrollTo(0,0);
+}
+function backToList(){
+  history.pushState({},'',location.pathname);
+  showView('view-list');
+  setNavTheme(navColor);
+  window.scrollTo(0,0);
+}
+window.addEventListener('popstate',e=>{
+  if(e.state&&e.state.slug){showView('view-detail');renderDetail(e.state.slug);}
+  else{showView('view-list');setNavTheme(navColor);}
+});
+
+// ══════════════════════════════════════
+// DETAIL — render from local + PokéAPI
+// ══════════════════════════════════════
+async function renderDetail(slug){
+  const root=document.getElementById('detail-content');
+  root.innerHTML=`<div class="inline-load"><div class="inline-spin"></div>Carregando dados…</div>`;
+  const p=allPokemon.find(x=>slugify(x.nome)===slug);
+  if(!p){root.innerHTML=`<div class="dex-empty"><div class="dex-empty-icon">❓</div><h3>Pokémon não encontrado</h3></div>`;return;}
+  document.title=`${p.nome} — NationalDex`;
+  const tipos=(p.tipos||[]).map(t=>t.toLowerCase());
+  const primaryType=tipos[0]||'normal';
+  setNavTheme(TYPE_NAV_COLOR[primaryType]||navColor);
+
+  // PokéAPI slug: strip region prefix and clean
+  let apiSlug=p.nome.replace(/^\([a-zA-Z]+\)\s*/,'').toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+  // Try to use numero if available
+  const apiId=p.numero||null;
+
+  // Fetch from PokéAPI (non-blocking)
+  let pokeData=null,speciesData=null,evoData=null;
+  try{
+    const pdRes=await fetch(`https://pokeapi.co/api/v2/pokemon/${apiId||apiSlug}`);
+    if(pdRes.ok)pokeData=await pdRes.json();
+  }catch(e){}
+  if(pokeData&&pokeData.species&&pokeData.species.url){
+    try{
+      const spRes=await fetch(pokeData.species.url);
+      if(spRes.ok)speciesData=await spRes.json();
+    }catch(e){}
+    if(speciesData&&speciesData.evolution_chain&&speciesData.evolution_chain.url){
+      try{
+        const evRes=await fetch(speciesData.evolution_chain.url);
+        if(evRes.ok)evoData=await evRes.json();
+      }catch(e){}
+    }
+  }
+
+  // Basic info
+  const num=p.numero?'#'+String(p.numero).padStart(3,'0'):'';
+  const altura=pokeData?Math.round(pokeData.height*10)+' cm':'—';
+  const peso=pokeData?Math.round(pokeData.weight/10*10)/10+' kg':'—';
+  const genus=speciesData?(speciesData.genera||[]).find(g=>g.language.name==='en')?.genus||'':'';
+  const flavorArr=speciesData?(speciesData.flavor_text_entries||[]).filter(f=>f.language.name==='en'):[];
+  const flavor=flavorArr.length?flavorArr[flavorArr.length-1].flavor_text.replace(/\f/g,' '):'';
+  const genderRate=speciesData?(speciesData.gender_rate??-1):-1;
+  let genderStr='—';
+  if(genderRate===-1)genderStr='Genderless';
+  else if(genderRate===0)genderStr='100% Macho';
+  else if(genderRate===8)genderStr='100% Fêmea';
+  else{const f=Math.round(genderRate/8*100);genderStr=`${100-f}% Macho / ${f}% Fêmea`;}
+  const eggGroups=speciesData?(speciesData.egg_groups||[]).map(g=>g.name.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())).join(', '):'';
+
+  // Stats
+  const statsMap={};
+  (pokeData?.stats||[]).forEach(s=>{statsMap[s.stat.name]=s.base_stat;});
+  const statDef=[
+    {key:'hp',label:'HP'},
+    {key:'attack',label:'Atk'},
+    {key:'defense',label:'Def'},
+    {key:'special-attack',label:'SpA'},
+    {key:'special-defense',label:'SpD'},
+    {key:'speed',label:'Vel'},
+  ];
+  const statsHTML=pokeData?`<div class="detail-block">
+    <div class="detail-block-title">BASE STATS</div>
+    <div class="stats-row">${statDef.map(s=>{
+      const v=statsMap[s.key]||0;
+      const pct=Math.round(v/255*100);
+      return`<div class="stat-cell">
+        <div class="stat-label">${s.label}</div>
+        <div class="stat-val">${v}</div>
+        <div class="stat-bar"><div class="stat-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('')}</div>
+  </div>`:'';
+
+  // RPG stats
+  const rpg=p;
+  const rpgHTML=(rpg.dado||rpg.ca!=null||rpg.pv!=null)?`<div class="detail-block">
+    <div class="detail-block-title">RPG</div>
+    <div class="rpg-row">
+      ${rpg.dado?`<div class="rpg-cell"><div class="rpg-label">Dado</div><div class="rpg-val">${rpg.dado}</div></div>`:''}
+      ${rpg.ca!=null?`<div class="rpg-cell"><div class="rpg-label">CA</div><div class="rpg-val">${rpg.ca}</div></div>`:''}
+      ${rpg.pv!=null?`<div class="rpg-cell"><div class="rpg-label">PV</div><div class="rpg-val">${rpg.pv}</div></div>`:''}
+    </div>
+  </div>`:'';
+
+  // Damage taken
+  const dmgTaken=calcDmg(tipos);
+  const dmgTypes=['normal','fire','water','grass','electric','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'];
+  const dmgCls={0:'dmg-0',0.25:'dmg-half',0.5:'dmg-half',1:'dmg-1',2:'dmg-2',4:'dmg-4'};
+  const dmgLbl={0:'0',0.25:'¼',0.5:'½',1:'1',2:'2',4:'4'};
+  const dmgHTML=`<div class="detail-block">
+    <div class="detail-block-title">DAMAGE TAKEN</div>
+    <table class="dmg-table">
+      <tr>${dmgTypes.map(t=>`<th>${TLB[t]||t}</th>`).join('')}</tr>
+      <tr>${dmgTypes.map(t=>{const v=dmgTaken[t]||1;const c=dmgCls[v]||'dmg-1';const l=dmgLbl[v]||v;return`<td class="${c}">${l}</td>`;}).join('')}</tr>
+    </table>
+  </div>`;
+
+  // Evolution chain
+  let evoHTML='';
+  if(evoData){
+    const chain=evoData.chain;
+    const stages=[];
+    function parseChain(node,trigger=''){
+      const name=node.species.name;
+      const evoDetails=node.evolution_details&&node.evolution_details[0];
+      let trig=trigger;
+      if(evoDetails){
+        if(evoDetails.min_level)trig=`Nv. ${evoDetails.min_level}`;
+        else if(evoDetails.item)trig=evoDetails.item.name.replace(/-/g,' ');
+        else if(evoDetails.trigger&&evoDetails.trigger.name)trig=evoDetails.trigger.name.replace(/-/g,' ');
+      }
+      // Find local pokemon by slug match
+      const localPoke=allPokemon.find(x=>slugify(x.nome)===name||(x.numero&&speciesData&&x.numero===speciesData.id));
+      const spriteId=localPoke?.numero||node.species.url.match(/\/(\d+)\/$/)?.[1];
+      const spr=localPoke?.sprite||`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${spriteId}.png`;
+      stages.push({name,spr,trig,slug:name,localSlug:localPoke?slugify(localPoke.nome):null});
+      node.evolves_to.forEach(child=>parseChain(child,trig));
+    }
+    parseChain(chain);
+    if(stages.length>1){
+      let stagesH='';
+      stages.forEach((st,i)=>{
+        const isCurr=(st.localSlug===slug||st.name===apiSlug);
+        stagesH+=`<div class="evo-stage${isCurr?' current':''}" onclick="if('${st.localSlug}')openDetail('${st.localSlug||st.name}')">
+          <img src="${st.spr}" alt="${st.name}" onerror="this.src='${FALLBACK}'" width="80" height="80"/>
+          <div class="evo-stage-name">${st.name.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</div>
+        </div>`;
+        if(i<stages.length-1){
+          stagesH+=`<div class="evo-arrow"><div class="evo-arrow-icon">›</div>${stages[i+1].trig?`<div class="evo-arrow-label">${stages[i+1].trig}</div>`:''}</div>`;
+        }
+      });
+      evoHTML=`<div class="detail-block"><div class="detail-block-title">EVOLUTIONARY CHAIN</div><div class="evo-inner">${stagesH}</div></div>`;
+    }
+  }
+
+  // Biology
+  const shinyUrl=pokeData?.sprites?.other?.['official-artwork']?.front_shiny||null;
+  const bioHTML=(flavor||shinyUrl)?`<div class="detail-block">
+    <div class="detail-block-title">BIOLOGY</div>
+    <div class="bio-inner">
+      ${shinyUrl?`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
+        <img class="bio-sprite" src="${shinyUrl}" alt="shiny" onerror="this.style.display='none'" style="filter:drop-shadow(0 0 6px rgba(192,144,224,.5))"/>
+        <span style="font-size:9px;font-weight:700;color:#c090e0;text-transform:uppercase;letter-spacing:.4px">✨ Shiny</span>
+      </div>`:''}
+      <div>
+        ${flavor?`<div class="flavor-box">${flavor}</div>`:''}
+      </div>
+    </div>
+  </div>`:'';
+
+  // Moves
+  const lvlMoves=(pokeData?.moves||[]).filter(m=>m.version_group_details.some(v=>v.move_learn_method.name==='level-up'))
+    .map(m=>{const lvl=m.version_group_details.filter(v=>v.move_learn_method.name==='level-up').sort((a,b)=>a.level_learned_at-b.level_learned_at)[0];return{name:m.move.name.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),lvl:lvl?.level_learned_at||0};}).sort((a,b)=>a.lvl-b.lvl);
+  const eggMoves=(pokeData?.moves||[]).filter(m=>m.version_group_details.some(v=>v.move_learn_method.name==='egg'))
+    .map(m=>m.move.name.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+  const tutorMoves=(pokeData?.moves||[]).filter(m=>m.version_group_details.some(v=>v.move_learn_method.name==='tutor'))
+    .map(m=>m.move.name.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+
+  const lvlH=lvlMoves.length?lvlMoves.map(m=>`<tr><td class="lvl">${m.lvl||'—'}</td><td class="move-name">${m.name}</td></tr>`).join(''):`<tr><td colspan="2" class="moves-empty">—</td></tr>`;
+  const eggH=eggMoves.length?eggMoves.map(m=>`<tr><td class="move-name" colspan="2">${m}</td></tr>`).join(''):`<tr><td colspan="2" class="moves-empty">—</td></tr>`;
+  const tutH=tutorMoves.length?tutorMoves.map(m=>`<tr><td class="move-name" colspan="2">${m}</td></tr>`).join(''):`<tr><td colspan="2" class="moves-empty">—</td></tr>`;
+
+  const movesHTML=`<div class="detail-block">
+    <div class="moves-tabs">
+      <button class="moves-tab active" onclick="switchMvTab(this,'mv-lvl')">Por Nível</button>
+      <button class="moves-tab" onclick="switchMvTab(this,'mv-egg')">Egg Moves</button>
+      <button class="moves-tab" onclick="switchMvTab(this,'mv-tutor')">Tutor</button>
+    </div>
+    <div class="moves-panel active" id="mv-lvl">
+      <table class="moves-table"><thead><tr><th style="width:54px">Nv.</th><th>Move</th></tr></thead><tbody>${lvlH}</tbody></table>
+    </div>
+    <div class="moves-panel" id="mv-egg">
+      <table class="moves-table"><thead><tr><th colspan="2">Egg Move</th></tr></thead><tbody>${eggH}</tbody></table>
+    </div>
+    <div class="moves-panel" id="mv-tutor">
+      <table class="moves-table"><thead><tr><th colspan="2">Tutor Move</th></tr></thead><tbody>${tutH}</tbody></table>
+    </div>
+  </div>`;
+
+  // Nav buttons
+  const sorted=[...allPokemon].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const idx=sorted.findIndex(x=>slugify(x.nome)===slug);
+  const prev=idx>0?sorted[idx-1]:null;
+  const next=idx<sorted.length-1?sorted[idx+1]:null;
+  const navPrev=prev?`<button class="det-nav-btn" onclick="openDetail('${slugify(prev.nome)}')"><span class="nav-arrow">‹</span><span class="nav-num">${prev.numero?'#'+String(prev.numero).padStart(3,'0'):''}</span><span class="nav-name">${prev.nome}</span></button>`:'';
+  const navNext=next?`<button class="det-nav-btn" onclick="openDetail('${slugify(next.nome)}')"><span class="nav-arrow">›</span><span class="nav-num">${next.numero?'#'+String(next.numero).padStart(3,'0'):''}</span><span class="nav-name">${next.nome}</span></button>`:'';
+
+  const spriteUrl=p.sprite||pokeData?.sprites?.other?.['official-artwork']?.front_default||FALLBACK;
+
+  root.innerHTML=`
+    <div class="detail-main">
+      <div class="detail-sprite-col">
+        ${num?`<div class="detail-num">${num}</div>`:''}
+        <img class="detail-sprite" src="${spriteUrl}" alt="${p.nome}" onerror="this.src='${FALLBACK}'"/>
+        <div class="detail-type-icons">${tipos.map(t=>`<img class="detail-type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" onerror="this.style.display='none'"/>`).join('')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">${(p.tipos||[]).map(t=>typePill(t)).join('')}</div>
+        ${rarBadge(p.raridade)?`<div style="margin-top:2px">${rarBadge(p.raridade)}</div>`:''}
+      </div>
+      <div class="detail-info-col">
+        <div class="detail-name-bar">
+          ${navPrev}
+          <span>${p.nome}</span>
+          ${navNext}
+        </div>
+        <table class="detail-info-table">
+          ${genus?`<tr><td>Classificação</td><td>${genus}</td></tr>`:''}
+          <tr><td>Altura</td><td>${altura}</td></tr>
+          <tr><td>Peso</td><td>${peso}</td></tr>
+          <tr><td>Gênero</td><td>${genderStr}</td></tr>
+          ${eggGroups?`<tr><td>Egg Groups</td><td>${eggGroups}</td></tr>`:''}
+          ${p.habilidade?`<tr><td>Habilidade 1</td><td>${p.habilidade}</td></tr>`:''}
+          ${p.habilidade2?`<tr><td>Habilidade 2</td><td>${p.habilidade2}</td></tr>`:''}
+          ${p.estacao?`<tr><td>Estação</td><td>${p.estacao}</td></tr>`:''}
+          ${p.bioma?`<tr><td>Bioma</td><td>${Array.isArray(p.bioma)?p.bioma.join(', '):p.bioma}</td></tr>`:''}
+          ${p.condicao?`<tr><td>Condição</td><td style="color:#7a4a00;font-weight:700">${p.condicao}</td></tr>`:''}
+        </table>
+      </div>
+    </div>
+    ${rpgHTML}
+    ${statsHTML}
+    ${dmgHTML}
+    ${bioHTML}
+    ${evoHTML}
+    ${movesHTML}
+  `;
+}
+
+function switchMvTab(btn,panelId){
+  btn.closest('.detail-block').querySelectorAll('.moves-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  btn.closest('.detail-block').querySelectorAll('.moves-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(panelId).classList.add('active');
+}
+
+// ══════════════════════════════════════
+// INIT
+// ══════════════════════════════════════
+async function init(){
+  // Apply theme
+  const [style,estacao]=await Promise.all([fetchStyle(),fetchEstacao()]);
+  const base=style?{...ESTILO_DEFAULT,...style}:ESTILO_DEFAULT;
+  const saz=estacao&&TEMAS_SAZONAIS[estacao];
+  applyVars(saz?{...base,...saz}:base);
+
+  // Load pokemon
+  const raw=await fetchAll('pokemons','select=id,nome,emoji,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma,estacao,condicao,numero,dado,ca,pv');
+  allPokemon=deduplicate(raw.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')));
+
+  document.getElementById('count-total').textContent=allPokemon.length;
+  buildRegionTabs();
+  applyFilters();
+
+  // Route
+  const params=new URLSearchParams(location.search);
+  const pokemonSlug=params.get('pokemon');
+  if(pokemonSlug){showView('view-detail');renderDetail(pokemonSlug);}
+  else{showView('view-list');}
+
+  // Hide loading
+  const ov=document.getElementById('loading-overlay');
+  ov.classList.add('hidden');
+  setTimeout(()=>ov.remove(),500);
+}
+
+init().catch(e=>{
+  console.error(e);
+  document.getElementById('loading-msg').textContent='Erro ao carregar. Tente recarregar a página.';
+});
+</script>
+</body>
+</html>
