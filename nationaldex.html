@@ -428,15 +428,24 @@ const TYPE_NAV_COLOR={fire:'#8a3800',water:'#1a5a8a',grass:'#1a6a20',electric:'#
 // DEDUPLICATION
 // ══════════════════════════════════════
 function deduplicate(pokes){
-  // Group by nome (case-insensitive), keep the first occurrence
-  const seen=new Set();
-  return pokes.filter(p=>{
-    const key=(p.nome||'').toLowerCase().trim();
-    if(!key||key==='???')return false;
-    if(seen.has(key))return false;
-    seen.add(key);
-    return true;
+  // Keep only one entry per exact name (case-insensitive, trimmed).
+  // If the same Pokémon appears in multiple biomes it will have
+  // different row IDs but the same nome — we keep the first one found.
+  const seen = new Map(); // key: nome_lower → best entry
+  pokes.forEach(p => {
+    const key = (p.nome || '').toLowerCase().trim();
+    if (!key || key === '???') return;
+    if (seen.has(key)) {
+      // Prefer the entry that has a sprite, then a number, then just first
+      const existing = seen.get(key);
+      const betterSprite = !existing.sprite && p.sprite;
+      const betterNum    = !existing.numero  && p.numero;
+      if (betterSprite || betterNum) seen.set(key, p);
+    } else {
+      seen.set(key, p);
+    }
   });
+  return Array.from(seen.values());
 }
 
 // ══════════════════════════════════════
