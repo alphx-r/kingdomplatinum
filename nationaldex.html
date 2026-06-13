@@ -566,7 +566,7 @@ async function renderDetail(p,s,container){
   // Abilities
   const abHtml=await Promise.all(p.abilities.map(async(a,idx)=>{
     let desc='';
-    try{const ar=await fetch(a.ability.url);const ad=await ar.json();const en=ad.effect_entries.find(e=>e.language.name==='en');desc=en?en.short_effect:'';}catch{}
+    try{const ar=await fetch(a.ability.url);const ad=await ar.json();const pt=getPtBR('ability',a.ability.name);const en=ad.effect_entries.find(e=>e.language.name==='en');desc=pt||(en?en.short_effect:'');}catch{}
     const ha=a.is_hidden;
     return `<div class="ability-entry">
       <div class="ability-idx">${ha?'':idx+1+'.'}</div>
@@ -615,16 +615,22 @@ async function renderDetail(p,s,container){
       const CONTEST_STYLE={cool:'Cool',beauty:'Beauty',cute:'Cute',smart:'Clever',tough:'Tough'};
       const CAT_PT={physical:'Physical',special:'Special',status:'Status'};
       const desc=d.effect_entries?.find(e=>e.language.name==='en')?.short_effect||d.flavor_text_entries?.find(e=>e.language.name==='en')?.flavor_text||'';
+      const ptDesc=getPtBR('move',name);
       const data={
         power:d.power||null,
         type:d.type?.name||null,
         category:d.damage_class?.name||null,
         style:d.contest_type?.name||null,
-        desc:desc.replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' ')
+        desc:(ptDesc||desc).replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' ')
       };
       moveDataCache[name]=data;
       return data;
     }catch{return null;}
+  }
+
+  /* ── Traduções pt-BR do ADM ── */
+  function getPtBR(type,name){
+    try{const s=JSON.parse(localStorage.getItem(type==='ability'?'kdex_abilities_pt':'kdex_moves_pt'))||{};return s[name]||null;}catch{return null;}
   }
 
   async function movesTable(moves,showLvl=false){
