@@ -206,6 +206,14 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .evo-branch-col{display:flex;flex-direction:column;align-items:center;gap:8px}
 .evo-branch-row{display:flex;align-items:center;gap:4px}
 
+/* Mega badge */
+.mega-badge{position:absolute;top:6px;right:6px;width:22px;height:22px;background:linear-gradient(135deg,#c060ff,#7030d0);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(120,0,200,.4);z-index:2}
+.mega-badge svg{width:13px;height:13px;fill:#fff}
+.evo-node{position:relative}
+
+/* Alpha Forces label */
+.alpha-forces-lbl{font-family:var(--font-title);font-size:9px;color:#00d4c8;letter-spacing:.6px;margin-right:8px;text-transform:uppercase;font-weight:700;text-shadow:0 0 8px rgba(0,212,200,.4)}
+
 /* ════════════════════════════════
    TYPE PILLS (compartilhado)
 ════════════════════════════════ */
@@ -832,13 +840,16 @@ function buildEvo(chain){
   return html;
 }
 
+const MEGA_BADGE_SVG=`<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 1L12.5 7H19L13.5 11L15.5 17L10 13L4.5 17L6.5 11L1 7H7.5L10 1Z"/><circle cx="10" cy="10" r="3" fill="rgba(255,255,255,0.3)"/><text x="10" y="14" text-anchor="middle" font-size="7" font-weight="900" fill="white" font-family="sans-serif">M</text></svg>`;
+
 async function appendMegas(speciesName, container){
   try{
     const r=await fetch(`https://pokeapi.co/api/v2/pokemon-species/${speciesName}`);
     const s=await r.json();
     const megaVarieties=s.varieties.filter(v=>v.pokemon.name.includes('-mega')||v.pokemon.name.includes('-primal'));
     if(!megaVarieties.length)return;
-    const megaNodes=await Promise.all(megaVarieties.map(async v=>{
+
+    const megaData=await Promise.all(megaVarieties.map(async v=>{
       try{
         const pr=await fetch(v.pokemon.url);
         const pd=await pr.json();
@@ -857,24 +868,106 @@ async function appendMegas(speciesName, container){
         } else {
           displayName=cap(rawName);
         }
-        return `<button class="evo-node" onclick="goDetail('${rawName}')">
-          <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${formId}.png"
-               onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${formId}.png'" alt="${rawName}">
-          <span class="evo-node-name">${displayName}</span>
-        </button>`;
-      }catch{return'';}
+
+        // Fetch stats for inline display
+        const megaTypes=pd.types.map(t=>t.type.name);
+        const megaBst=pd.stats.reduce((a,b)=>a+b.base_stat,0);
+        const STAT_N={hp:'PV',attack:'Ataque',defense:'Defesa','special-attack':'At.Esp','special-defense':'Def.Esp',speed:'Veloc.'};
+        const STAT_C={hp:'#e05050',attack:'#e07030',defense:'#e0b030','special-attack':'#7070e0','special-defense':'#4aaa6a',speed:'#e04aaa'};
+
+        // Mega abilities
+        let megaAbHtml='';
+        for(const a of pd.abilities){
+          let desc='';
+          try{const ar=await fetch(a.ability.url);const ad=await ar.json();const en=ad.effect_entries.find(e=>e.language.name==='en');desc=en?en.short_effect:'';}catch{}
+          megaAbHtml+=`<div style="padding:4px 0;border-bottom:1px solid var(--border)">
+            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:#7030d0">${a.ability.name.toUpperCase().replace(/-/g,' ')}</span>
+            ${desc?`<div style="font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4">${desc}</div>`:''}
+          </div>`;
+        }
+
+        const statsHtml=pd.stats.map(st=>`<span style="display:inline-flex;flex-direction:column;align-items:center;background:#f5eaff;border:1px solid #c090e080;border-radius:6px;padding:4px 8px;min-width:44px">
+          <span style="font-family:var(--font-title);font-size:8px;color:#7030d0;text-transform:uppercase;letter-spacing:.3px">${STAT_N[st.stat.name]||st.stat.name}</span>
+          <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${STAT_C[st.stat.name]||'#888'}">${st.base_stat}</span>
+        </span>`).join('');
+
+        const typeIconsHtml=megaTypes.map(t=>`<img style="width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18))" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}">`).join('');
+
+        const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
+          <div style="position:relative;display:inline-block">
+            <span class="mega-badge" title="Mega Evolução">${MEGA_BADGE_SVG}</span>
+            <img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))"
+              src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${formId}.png"
+              onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${formId}.png'" alt="${rawName}">
+          </div>
+          <span style="font-family:var(--font-title);font-size:10px;font-weight:600;color:#5020a0;text-transform:uppercase;letter-spacing:.3px;text-align:center">${displayName}</span>
+        </div>`;
+
+        const infoHtml=`
+        <div id="mega-info-${rawName}" style="display:none;margin-top:16px;padding:16px;background:#f8f0ff;border:1.5px solid #c090e0;border-radius:10px;animation:fadeUp .3s both">
+          <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px">
+              <div style="position:relative;display:inline-block">
+                <span class="mega-badge" title="Mega Evolução">${MEGA_BADGE_SVG}</span>
+                <img style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(100,0,200,.2))"
+                  src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${formId}.png"
+                  onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${formId}.png'" alt="${rawName}">
+              </div>
+              <div style="display:flex;gap:6px">${typeIconsHtml}</div>
+            </div>
+            <div style="flex:1;min-width:200px">
+              <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#5020a0;margin-bottom:10px;letter-spacing:.5px">${displayName}</div>
+              <div style="margin-bottom:10px">
+                <div style="font-family:var(--font-title);font-size:9px;color:#7030d0;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidades</div>
+                ${megaAbHtml||'<div style="font-size:11px;color:var(--muted)">—</div>'}
+              </div>
+              <div>
+                <div style="font-family:var(--font-title);font-size:9px;color:#7030d0;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Base Stats</div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+                  ${statsHtml}
+                  <span style="display:inline-flex;flex-direction:column;align-items:center;background:#5020a0;border-radius:6px;padding:4px 8px;min-width:44px">
+                    <span style="font-family:var(--font-title);font-size:8px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.3px">BST</span>
+                    <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#fff">${megaBst}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+        return {nodeHtml, infoHtml, rawName};
+      }catch{return null;}
     }));
-    const validMegas=megaNodes.filter(Boolean);
+
+    const validMegas=megaData.filter(Boolean);
     if(!validMegas.length)return;
     const wrap=document.getElementById('evo-chain-wrap');
     if(wrap){
+      const nodesHtml=validMegas.map((m,i)=>`
+        <div onclick="toggleMegaInfo('${m.rawName}')" style="cursor:pointer;border-radius:10px;transition:background .2s" onmouseenter="this.style.background='rgba(100,0,200,.06)'" onmouseleave="this.style.background='transparent'">
+          ${m.nodeHtml}
+          <div style="font-family:var(--font-title);font-size:8px;color:#00d4c8;text-align:center;letter-spacing:.4px;margin-top:-4px">▼ ver detalhes</div>
+        </div>`).join('');
+      const infosHtml=validMegas.map(m=>m.infoHtml).join('');
       wrap.insertAdjacentHTML('beforeend',`
-        <div style="width:100%;border-top:1px solid var(--border);margin-top:12px;padding-top:12px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px">
-          <div style="font-family:var(--font-title);font-size:9px;color:var(--accent);letter-spacing:.5px;margin-right:8px;text-transform:uppercase">Mega</div>
-          ${validMegas.join('')}
+        <div style="width:100%;border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+            <span class="alpha-forces-lbl">⬡ FORÇAS ALFAS</span>
+            ${nodesHtml}
+          </div>
+          ${infosHtml}
         </div>`);
     }
   }catch{}
+}
+
+function toggleMegaInfo(rawName){
+  const el=document.getElementById(`mega-info-${rawName}`);
+  if(!el)return;
+  const isHidden=el.style.display==='none';
+  // close all others
+  document.querySelectorAll('[id^="mega-info-"]').forEach(e=>e.style.display='none');
+  el.style.display=isHidden?'block':'none';
 }
 
 /* ═══════════════════════════════════════
