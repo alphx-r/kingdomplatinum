@@ -13189,9 +13189,9 @@ function toggleMapaFullscreen() {
     ? '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="13" x2="5" y2="9"/><polyline points="1,9 1,13 5,13"/><line x1="13" y1="1" x2="9" y2="5"/><polyline points="9,1 13,1 13,5"/></svg>'
     : '⛶';
   btn.title = full ? 'Recolher mapa' : 'Expandir mapa';
-  // Aguarda o CSS aplicar a nova altura (dvh recalcula após o reflow),
-  // depois recalcula zoom para preencher o novo espaço.
-  requestAnimationFrame(() => requestAnimationFrame(() => mapaFitScreen()));
+  // Espera o browser aplicar a nova altura (2x rAF garante que o layout
+  // foi recalculado e pintado antes de calcular minScale)
+  requestAnimationFrame(() => requestAnimationFrame(() => mapaReset()));
 }
 
 function toggleModoEdicaoPins() {
@@ -13576,10 +13576,8 @@ function initMapaPanZoom() {
     } catch(e) {}
     if (!restored) {
       _mapaScale = minScale;
-      const iW = img.offsetWidth * minScale;
-      const iH = img.offsetHeight * minScale;
-      _mapaPanX = iW < wrap.clientWidth  ? (wrap.clientWidth  - iW) / 2 : 0;
-      _mapaPanY = iH < wrap.clientHeight ? (wrap.clientHeight - iH) / 2 : 0;
+      _mapaPanX = 0;
+      _mapaPanY = 0;
     }
     canvas.style.transition = 'none';
     canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
@@ -13683,25 +13681,13 @@ function mapaZoom(dir) {
 }
 
 function mapaReset() {
-  mapaFitScreen();
-}
-
-// Ajusta zoom para cobrir o wrap inteiro e centraliza o mapa
-function mapaFitScreen() {
-  const wrap   = document.getElementById('mapaWrap');
-  const img    = document.getElementById('mapaImg');
+  const wrap = document.getElementById('mapaWrap');
+  const img  = document.getElementById('mapaImg');
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !img || !canvas) return;
-  const iW = img.offsetWidth, iH = img.offsetHeight;
-  if (!iW || !iH) return;
-  const wW = wrap.clientWidth, wH = wrap.clientHeight;
-  const isMobileNormal = window.innerWidth <= 600 && !wrap.classList.contains('mapa-fullscreen');
-  const minScale = isMobileNormal ? wW / iW : Math.min(wW / iW, wH / iH);
-  _mapaScale = minScale;
-  // Centraliza o mapa no espaço disponível
-  _mapaPanX = iW * minScale <= wW ? (wW - iW * minScale) / 2 : 0;
-  _mapaPanY = iH * minScale <= wH ? (wH - iH * minScale) / 2 : 0;
-  canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${minScale})`;
+  const minScale = Math.min(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
+  _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
+  canvas.style.transform = `translate(0,0) scale(${minScale})`;
 }
 
 // ── Hook no goTo ───────────────────────────────────────────
