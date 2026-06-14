@@ -5027,7 +5027,8 @@ fetch('https://pokeapi.co/api/v2/pokemon-form/10027/')
 let _loadingCount = 0;
 function loading(show){
   _loadingCount = Math.max(0, _loadingCount + (show ? 1 : -1));
-  document.getElementById('loading-overlay').style.display = _loadingCount > 0 ? 'flex' : 'none';
+  const ov = document.getElementById('loading-overlay');
+  if (ov) ov.style.display = _loadingCount > 0 ? 'flex' : 'none';
 }
 // Segurança: força o overlay a sumir após 8s mesmo que algo falhe silenciosamente
 setTimeout(()=>{ _loadingCount=0; const ov=document.getElementById('loading-overlay'); if(ov) ov.style.display='none'; }, 8000);
@@ -5126,11 +5127,18 @@ async function init(){
       });
     }
 
-  } catch(e){ console.error('Erro no init:', e); }
-  finally{
+  } catch(e){
+    console.error('Erro no init:', e);
+    // Garante que pelo menos uma página fique visível mesmo em caso de erro
+    const anyActive = document.querySelector('.page.active');
+    if(!anyActive){
+      const fallback = document.getElementById('page-roller');
+      if(fallback) fallback.classList.add('active');
+    }
+  } finally{
     loading(false);
     // Após carregar tudo, verifica sessão de player
-    await iniciarSessaoPlayer();
+    await iniciarSessaoPlayer().catch(()=>{});
   }
 }
 
