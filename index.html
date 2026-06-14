@@ -13517,7 +13517,8 @@ function initMapaPanZoom() {
     const img = document.getElementById('mapaImg');
     if (!img || !img.naturalWidth) return 1;
     const wW = wrap.clientWidth, wH = wrap.clientHeight;
-    const iW = img.offsetWidth,  iH = img.offsetHeight;
+    // naturalWidth/Height = dimensões reais da imagem, imune ao transform atual
+    const iW = img.naturalWidth,  iH = img.naturalHeight;
     if (!iW || !iH) return 1;
     // Mobile sem fullscreen: cobre toda a largura (aspect-ratio limita altura)
     const isMobileNormal = window.innerWidth <= 600 && !wrap.classList.contains('mapa-fullscreen');
@@ -13670,12 +13671,14 @@ function mapaZoom(dir) {
   const wrap = document.getElementById('mapaWrap');
   const img  = document.getElementById('mapaImg');
   if (!wrap || !img) return;
-  const minScale = Math.min(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
+  const iNW = img.naturalWidth  || img.offsetWidth;
+  const iNH = img.naturalHeight || img.offsetHeight;
+  const minScale = Math.min(wrap.clientWidth / iNW, wrap.clientHeight / iNH);
   _mapaScale = Math.min(4, Math.max(minScale, _mapaScale + dir * 0.25));
   // Clamp pan
-  const iW = img.offsetWidth * _mapaScale, iH = img.offsetHeight * _mapaScale;
-  _mapaPanX = Math.min(0, Math.max(wrap.clientWidth  - iW, _mapaPanX));
-  _mapaPanY = Math.min(0, Math.max(wrap.clientHeight - iH, _mapaPanY));
+  const sW = iNW * _mapaScale, sH = iNH * _mapaScale;
+  _mapaPanX = Math.min(0, Math.max(wrap.clientWidth  - sW, _mapaPanX));
+  _mapaPanY = Math.min(0, Math.max(wrap.clientHeight - sH, _mapaPanY));
   const canvas = document.getElementById('mapaCanvas');
   if (canvas) canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
 }
@@ -13685,7 +13688,11 @@ function mapaReset() {
   const img  = document.getElementById('mapaImg');
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !img || !canvas) return;
-  const minScale = Math.min(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
+  // naturalWidth/naturalHeight = dimensões reais da imagem, sem ser afetado pelo transform atual
+  const iW = img.naturalWidth  || img.offsetWidth;
+  const iH = img.naturalHeight || img.offsetHeight;
+  if (!iW || !iH) return;
+  const minScale = Math.min(wrap.clientWidth / iW, wrap.clientHeight / iH);
   _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
   canvas.style.transform = `translate(0,0) scale(${minScale})`;
 }
