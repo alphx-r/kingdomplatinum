@@ -13314,6 +13314,9 @@ function initMapaPanZoom() {
   function applyTransform() {
     clampPan(_mapaScale);
     canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
+    try {
+      localStorage.setItem('mapa_view', JSON.stringify({scale:_mapaScale, panX:_mapaPanX, panY:_mapaPanY}));
+    } catch(e) {}
   }
 
   function setScale(newScale, pivotX, pivotY) {
@@ -13335,11 +13338,24 @@ function initMapaPanZoom() {
     img.style.width = img.naturalWidth + 'px';
     void wrap.offsetWidth;
     const minScale = getMinScale();
-    _mapaScale = minScale;
-    _mapaPanX = 0;
-    _mapaPanY = 0;
+    // Tenta restaurar posição salva
+    let restored = false;
+    try {
+      const saved = JSON.parse(localStorage.getItem('mapa_view') || 'null');
+      if (saved && saved.scale >= minScale && saved.scale <= 4) {
+        _mapaScale = saved.scale;
+        _mapaPanX  = saved.panX;
+        _mapaPanY  = saved.panY;
+        restored = true;
+      }
+    } catch(e) {}
+    if (!restored) {
+      _mapaScale = minScale;
+      _mapaPanX = 0;
+      _mapaPanY = 0;
+    }
     canvas.style.transition = 'none';
-    canvas.style.transform = `translate(0,0) scale(${minScale})`;
+    canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
     requestAnimationFrame(() => {
       canvas.style.visibility = '';
       canvas.style.transition = '';
