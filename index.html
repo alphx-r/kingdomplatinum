@@ -12915,20 +12915,16 @@ function toggleMapaFullscreen() {
   const full = wrap.classList.toggle('mapa-fullscreen');
   btn.textContent = full ? '✕' : '⛶';
   btn.title = full ? 'Recolher mapa' : 'Expandir mapa';
-  // Recalcula zoom após resize do container
+  // Recalcula zoom após resize do container (modo muda o getMinScale)
   setTimeout(() => {
     const img = document.getElementById('mapaImg');
-    if (!img || !img.naturalWidth) return;
+    const canvas = document.getElementById('mapaCanvas');
+    if (!img || !img.naturalWidth || !canvas) return;
     const wW = wrap.clientWidth, wH = wrap.clientHeight;
-    const minScale = Math.min(wW / img.offsetWidth, wH / img.offsetHeight);
-    if (_mapaScale < minScale) {
-      _mapaScale = minScale;
-      const sW = img.offsetWidth * minScale, sH = img.offsetHeight * minScale;
-      _mapaPanX = sW < wW ? (wW - sW) / 2 : 0;
-      _mapaPanY = sH < wH ? (wH - sH) / 2 : 0;
-      document.getElementById('mapaCanvas').style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${minScale})`;
-    }
-    }
+    const isMobileNormal = window.innerWidth <= 600 && !wrap.classList.contains('mapa-fullscreen');
+    const minScale = isMobileNormal ? wW / img.offsetWidth : Math.min(wW / img.offsetWidth, wH / img.offsetHeight);
+    _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
+    canvas.style.transform = `translate(0,0) scale(${minScale})`;
   }, 50);
 }
 
@@ -13250,14 +13246,16 @@ function initMapaPanZoom() {
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !canvas) return;
 
-  // Escala mínima = mapa inteiro visível dentro do container (sem cortar bordas)
+  // Escala mínima = caber inteiramente na tela (contain)
   function getMinScale() {
     const img = document.getElementById('mapaImg');
     if (!img || !img.naturalWidth) return 1;
     const wW = wrap.clientWidth, wH = wrap.clientHeight;
     const iW = img.offsetWidth,  iH = img.offsetHeight;
     if (!iW || !iH) return 1;
-    return Math.min(wW / iW, wH / iH);
+    // Mobile sem fullscreen: cobre toda a largura (aspect-ratio limita altura)
+    const isMobileNormal = window.innerWidth <= 600 && !wrap.classList.contains('mapa-fullscreen');
+    return isMobileNormal ? wW / iW : Math.min(wW / iW, wH / iH);
   }
 
   // Garante que o pan nunca deixa o mapa sair da área visível
@@ -13266,17 +13264,10 @@ function initMapaPanZoom() {
     if (!img) return;
     const wW = wrap.clientWidth, wH = wrap.clientHeight;
     const iW = img.offsetWidth * scale, iH = img.offsetHeight * scale;
-    // Se o mapa for menor que o container, centraliza; se maior, limita o pan
-    if (iW <= wW) {
-      _mapaPanX = (wW - iW) / 2;
-    } else {
-      _mapaPanX = Math.min(0, Math.max(wW - iW, _mapaPanX));
-    }
-    if (iH <= wH) {
-      _mapaPanY = (wH - iH) / 2;
-    } else {
-      _mapaPanY = Math.min(0, Math.max(wH - iH, _mapaPanY));
-    }
+    const maxX = 0, minX = Math.min(0, wW - iW);
+    const maxY = 0, minY = Math.min(0, wH - iH);
+    _mapaPanX = Math.min(maxX, Math.max(minX, _mapaPanX));
+    _mapaPanY = Math.min(maxY, Math.max(minY, _mapaPanY));
   }
 
   function applyTransform() {
@@ -13304,12 +13295,10 @@ function initMapaPanZoom() {
     void wrap.offsetWidth;
     const minScale = getMinScale();
     _mapaScale = minScale;
-    const scaledW = img.offsetWidth * minScale;
-    const scaledH = img.offsetHeight * minScale;
-    _mapaPanX = scaledW < wrap.clientWidth  ? (wrap.clientWidth  - scaledW) / 2 : 0;
-    _mapaPanY = scaledH < wrap.clientHeight ? (wrap.clientHeight - scaledH) / 2 : 0;
+    _mapaPanX = 0;
+    _mapaPanY = 0;
     canvas.style.transition = 'none';
-    canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${minScale})`;
+    canvas.style.transform = `translate(0,0) scale(${minScale})`;
     requestAnimationFrame(() => {
       canvas.style.visibility = '';
       canvas.style.transition = '';
@@ -13401,11 +13390,10 @@ function mapaZoom(dir) {
   if (!wrap || !img) return;
   const minScale = Math.min(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
   _mapaScale = Math.min(4, Math.max(minScale, _mapaScale + dir * 0.25));
+  // Clamp pan
   const iW = img.offsetWidth * _mapaScale, iH = img.offsetHeight * _mapaScale;
-  if (iW <= wrap.clientWidth)  _mapaPanX = (wrap.clientWidth  - iW) / 2;
-  else _mapaPanX = Math.min(0, Math.max(wrap.clientWidth  - iW, _mapaPanX));
-  if (iH <= wrap.clientHeight) _mapaPanY = (wrap.clientHeight - iH) / 2;
-  else _mapaPanY = Math.min(0, Math.max(wrap.clientHeight - iH, _mapaPanY));
+  _mapaPanX = Math.min(0, Math.max(wrap.clientWidth  - iW, _mapaPanX));
+  _mapaPanY = Math.min(0, Math.max(wrap.clientHeight - iH, _mapaPanY));
   const canvas = document.getElementById('mapaCanvas');
   if (canvas) canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
 }
@@ -13416,12 +13404,8 @@ function mapaReset() {
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !img || !canvas) return;
   const minScale = Math.min(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
-  _mapaScale = minScale;
-  const scaledW = img.offsetWidth * minScale;
-  const scaledH = img.offsetHeight * minScale;
-  _mapaPanX = scaledW < wrap.clientWidth  ? (wrap.clientWidth  - scaledW) / 2 : 0;
-  _mapaPanY = scaledH < wrap.clientHeight ? (wrap.clientHeight - scaledH) / 2 : 0;
-  canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${minScale})`;
+  _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
+  canvas.style.transform = `translate(0,0) scale(${minScale})`;
 }
 
 // ── Hook no goTo ───────────────────────────────────────────
