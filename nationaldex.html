@@ -130,7 +130,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 /* Tabela de info */
 .info-table{flex:1;border-collapse:collapse;width:100%}
 .info-table td{padding:7px 16px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
-.info-table td.lbl{font-family:var(--font-body);font-size:9.5px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:var(--surface2);width:140px}
+.info-table td.lbl{font-family:var(--font-body);font-size:12px;font-weight:600;color:var(--muted);text-transform:lowercase;letter-spacing:0;white-space:nowrap;background:var(--surface2);width:140px}
 .info-table tr:last-child td{border-bottom:none}
 
 /* Stats row */
@@ -139,6 +139,17 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .stat-cell:last-child{border-right:none}
 .stat-cell-lbl{font-family:var(--font-title);font-size:8px;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
 .stat-cell-val{font-family:var(--font-title);font-size:14px;font-weight:700}
+
+/* Base Stats minimal redesign */
+.base-stats-block{padding:14px 20px 10px;display:flex;flex-direction:column;gap:7px}
+.base-stat-row{display:grid;grid-template-columns:56px 36px 1fr;align-items:center;gap:10px}
+.base-stat-lbl{font-family:var(--font-body);font-size:12px;font-weight:600;color:var(--muted);text-transform:lowercase;text-align:right;letter-spacing:0}
+.base-stat-num{font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--text);text-align:right;min-width:28px}
+.base-stat-bar-track{height:6px;border-radius:99px;background:var(--border);overflow:hidden}
+.base-stat-bar-fill{height:100%;border-radius:99px;transition:width .4s cubic-bezier(.4,0,.2,1)}
+.base-stats-bst{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-top:4px;padding-top:8px;border-top:1px solid var(--border)}
+.base-stats-bst-lbl{font-family:var(--font-body);font-size:12px;color:var(--muted);font-weight:600;text-transform:lowercase}
+.base-stats-bst-val{font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--text)}
 
 /* Habilidades inline */
 .ability-entry{padding:7px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start}
@@ -382,6 +393,7 @@ const TYPE_CHART={normal:{rock:.5,ghost:0,steel:.5},fire:{fire:.5,water:.5,grass
 ═══════════════════════════════════════ */
 function pill(t,lg=false){const c=TC[t]||{bg:'#999',c:'#fff'};return `<span class="${lg?'tpill-lg':'tpill'}" style="background:${c.bg};color:${c.c}">${(TL[t]||t).toUpperCase()}</span>`;}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1).replace(/-/g,' ');}
+function titleCase(s){return s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
 function calcDmg(types){
   const m={};for(const t of Object.keys(TYPE_CHART))m[t]=1;
   for(const def of types)for(const[atk,v]of Object.entries(TYPE_CHART))if(TYPE_CHART[atk][def]!==undefined)m[atk]*=TYPE_CHART[atk][def];
@@ -672,7 +684,7 @@ async function renderDetail(p,s,container){
         const styleLabel=d?.style?cap(d.style):'—';
         return`<tr>
           ${showLvl?`<td class="move-lvl" style="text-align:center">${m.lvl||'—'}</td>`:''}
-          <td class="move-name" style="text-align:center;white-space:nowrap">${cap(m.name)}</td>
+          <td class="move-name" style="text-align:center;white-space:nowrap">${titleCase(m.name)}</td>
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
@@ -713,21 +725,25 @@ async function renderDetail(p,s,container){
           <div class="hero-name">${cap(p.name)}</div>
         </div>
         <table class="info-table">
-          <tr><td class="lbl" style="color:${TT.mid}">Classification</td><td>${genus}</td></tr>
-          <tr><td class="lbl" style="color:${TT.mid}">Height</td><td>${p.height*10} cm</td></tr>
-          <tr><td class="lbl" style="color:${TT.mid}">Weight</td><td>${p.weight/10} kg</td></tr>
-          <tr><td class="lbl" style="color:${TT.mid}">Gender</td><td>${genderHtml}</td></tr>
-          <tr><td class="lbl" style="color:${TT.mid}">Egg Groups</td><td>${eggs}</td></tr>
-          <tr><td class="lbl" style="color:${TT.mid}">Abilities</td><td style="padding:0 16px">${abHtml.join('')}</td></tr>
-          <tr><td class="lbl" style="color:${TT.mid}">Base Stats</td><td style="padding:0">
-            <div style="display:flex;border-top:1px solid var(--border)">
-              ${p.stats.map(st=>`<div style="flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--border)">
-                <div style="font-family:var(--font-title);font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px">${STAT_NAMES[st.stat.name]||st.stat.name}</div>
-                <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${STAT_COLORS[st.stat.name]||'var(--brand)'}">${st.base_stat}</div>
-              </div>`).join('')}
-              <div style="flex:1;text-align:center;padding:8px 4px;background:var(--brand);border-right:1px solid var(--border)">
-                <div style="font-family:var(--font-title);font-size:8px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px">BST</div>
-                <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#fff">${bst}</div>
+          <tr><td class="lbl" style="color:${TT.mid}">classification</td><td>${genus}</td></tr>
+          <tr><td class="lbl" style="color:${TT.mid}">height</td><td>${p.height*10} cm</td></tr>
+          <tr><td class="lbl" style="color:${TT.mid}">weight</td><td>${p.weight/10} kg</td></tr>
+          <tr><td class="lbl" style="color:${TT.mid}">gender</td><td>${genderHtml}</td></tr>
+          <tr><td class="lbl" style="color:${TT.mid}">egg groups</td><td>${eggs}</td></tr>
+          <tr><td class="lbl" style="color:${TT.mid}">abilities</td><td style="padding:0 16px">${abHtml.join('')}</td></tr>
+          <tr><td class="lbl" style="color:${TT.mid}">base stats</td><td style="padding:0">
+            <div class="base-stats-block">
+              ${p.stats.map(st=>{
+                const pct=Math.min(100,Math.round(st.base_stat/255*100));
+                return`<div class="base-stat-row">
+                  <span class="base-stat-lbl">${STAT_NAMES[st.stat.name]||st.stat.name}</span>
+                  <span class="base-stat-num" style="color:${STAT_COLORS[st.stat.name]||'var(--brand)'}">${st.base_stat}</span>
+                  <div class="base-stat-bar-track"><div class="base-stat-bar-fill" style="width:${pct}%;background:${STAT_COLORS[st.stat.name]||'var(--brand)'}22;outline:1.5px solid ${STAT_COLORS[st.stat.name]||'var(--brand)'}88;outline-offset:-1px;background:${STAT_COLORS[st.stat.name]||'var(--brand)'}"></div></div>
+                </div>`;
+              }).join('')}
+              <div class="base-stats-bst">
+                <span class="base-stats-bst-lbl">total</span>
+                <span class="base-stats-bst-val" style="color:${TT.dark}">${bst}</span>
               </div>
             </div>
           </td></tr>
