@@ -564,7 +564,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   /* Altura proporcional à largura (aspect ratio do mapa Nendo ~16:9) */
   .mapa-wrap{height:auto;aspect-ratio:16/9}
   /* Modo fullscreen no mobile: expande dentro do layout, sem fixed */
-  .mapa-wrap.mapa-fullscreen{aspect-ratio:unset;height:calc(100dvh - 58px) !important}
+  .mapa-wrap.mapa-fullscreen{aspect-ratio:unset;height:calc(100dvh - 78px) !important}
   /* Botão fullscreen: topo direito, só no mobile */
   .mapa-btn-fullscreen{display:flex;position:absolute;top:10px;right:10px;z-index:35;width:34px;height:34px;border-radius:10px;border:none;background:rgba(255,255,255,.9);color:var(--brand);font-size:15px;cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.3);transition:background .15s}
   /* Popup vira sheet de baixo pra cima */
@@ -13185,25 +13185,13 @@ function toggleMapaFullscreen() {
   const wrap = document.getElementById('mapaWrap');
   const btn  = document.getElementById('mapaFullscreenBtn');
   const full = wrap.classList.toggle('mapa-fullscreen');
-  // Ícone: ⛶ expandir / ✕ recolher
   btn.innerHTML = full
     ? '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="13" x2="5" y2="9"/><polyline points="1,9 1,13 5,13"/><line x1="13" y1="1" x2="9" y2="5"/><polyline points="9,1 13,1 13,5"/></svg>'
     : '⛶';
   btn.title = full ? 'Recolher mapa' : 'Expandir mapa';
-  // Recalcula escala após transição de tamanho
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      const img    = document.getElementById('mapaImg');
-      const canvas = document.getElementById('mapaCanvas');
-      if (!img || !img.naturalWidth || !canvas) return;
-      const wW = wrap.clientWidth, wH = wrap.clientHeight;
-      const minScale = full
-        ? Math.min(wW / img.naturalWidth, wH / img.naturalHeight)
-        : wW / img.offsetWidth;
-      _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
-      canvas.style.transform = `translate(0,0) scale(${minScale})`;
-    }, 80);
-  });
+  // Espera o CSS aplicar a nova altura, depois reseta zoom via mapaReset()
+  // que já usa getMinScale() internamente — garante fit perfeito
+  setTimeout(() => mapaReset(), 150);
 }
 
 function toggleModoEdicaoPins() {
