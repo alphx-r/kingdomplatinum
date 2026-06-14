@@ -85,10 +85,19 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-rosa-item .loc{font-size:11px;font-weight:600;color:var(--brand)}
 .mapa-rosa-center{grid-column:2;grid-row:2;display:flex;align-items:center;justify-content:center}
 .mapa-rosa-center span{font-size:16px}
-/* Filtros do mapa */
-.mapa-filtros{position:absolute;top:14px;left:14px;display:flex;gap:6px;z-index:30;flex-wrap:wrap;}
-.mapa-filtro-btn{font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;border:none;cursor:pointer;background:rgba(255,255,255,.9);color:#444;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:all .15s;white-space:nowrap}
-.mapa-filtro-btn.active{background:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+/* Filtros do mapa — dropdown */
+.mapa-filtros{position:absolute;top:14px;left:14px;z-index:30;}
+.mapa-filtro-toggle{font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;border:none;cursor:pointer;background:rgba(255,255,255,.95);color:#333;box-shadow:0 2px 8px rgba(0,0,0,.25);display:flex;align-items:center;gap:6px;white-space:nowrap;transition:all .15s}
+.mapa-filtro-toggle:hover{background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.3)}
+.mapa-filtro-toggle.has-active{background:var(--brand);color:#fff}
+.mapa-filtro-toggle-arrow{font-size:9px;opacity:.7;transition:transform .2s}
+.mapa-filtro-toggle.open .mapa-filtro-toggle-arrow{transform:rotate(180deg)}
+.mapa-filtro-menu{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:5px;min-width:150px;display:none;flex-direction:column;gap:2px;z-index:31}
+.mapa-filtro-menu.open{display:flex}
+.mapa-filtro-item{font-size:12px;font-weight:600;padding:8px 12px;border-radius:7px;border:none;cursor:pointer;background:transparent;color:#333;text-align:left;transition:background .12s;display:flex;align-items:center;gap:8px}
+.mapa-filtro-item:hover{background:var(--surface2)}
+.mapa-filtro-item.active{background:var(--brand-light);color:var(--brand-mid);font-weight:700}
+.mapa-filtro-item-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 /* Lightbox simples */
 .mapa-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9500;display:none;align-items:center;justify-content:center}
 .mapa-lightbox.open{display:flex}
@@ -4089,68 +4098,22 @@ function calcSyncSelects(){
           <div class="sec-title">Mapa — Fichas de Locais</div>
           <div class="sec-sub">Gerencie as informações exibidas no popup de cada local do mapa da Região Nendo</div>
 
-          <!-- Seletor de local -->
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px">
-            <select id="mapaAdmLocalSel" onchange="mapaAdmCarregarLocal()"
-              style="flex:1;min-width:200px;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text)">
-              <option value="">— Selecione um local —</option>
-            </select>
-            <span id="mapaAdmStatusBadge" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;display:none"></span>
-          </div>
-
-          <!-- Formulário da ficha -->
           <!-- Tabs ADM -->
-          <div style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin-bottom:16px">
-            <button class="pk-tab-btn active" onclick="mapaAdmTab('ficha',this)" style="font-size:12px;padding:7px 14px">📋 Ficha</button>
-            <button class="pk-tab-btn" onclick="mapaAdmTab('novo',this)" style="font-size:12px;padding:7px 14px">➕ Novo local</button>
-            <button class="pk-tab-btn" onclick="mapaAdmTab('filtros',this)" style="font-size:12px;padding:7px 14px">🏷️ Filtros</button>
+          <div style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin-bottom:20px">
+            <button class="pk-tab-btn active" onclick="mapaAdmTab('locais',this)" style="font-size:12px;padding:7px 14px">Locais</button>
+            <button class="pk-tab-btn" onclick="mapaAdmTab('novo',this)" style="font-size:12px;padding:7px 14px">+ Novo local</button>
+            <button class="pk-tab-btn" onclick="mapaAdmTab('filtros',this)" style="font-size:12px;padding:7px 14px">Filtros</button>
           </div>
 
-          <!-- Tab: Ficha do local existente -->
-          <div id="mapaAdmTabFicha">
-            <div id="mapaAdmForm" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-                <div class="field" style="margin-bottom:0">
-                  <label>ID do local</label>
-                  <input type="text" id="mapaFichaId" readonly style="background:var(--surface2);color:var(--muted);font-size:12px"/>
-                </div>
-                <div class="field" style="margin-bottom:0">
-                  <label>URL da imagem banner</label>
-                  <input type="text" id="mapaFichaImagem" placeholder="https://..." />
-                </div>
-              </div>
-              <div class="field">
-                <label>Resumo (frase curta de destaque)</label>
-                <input type="text" id="mapaFichaResumo" placeholder="Ex: Capital da Região Nendo, cidade mais populosa do continente." />
-              </div>
-              <div class="field">
-                <label>Descrição completa</label>
-                <textarea id="mapaFichaDescricao" rows="4" placeholder="Descrição detalhada do local, história, curiosidades..." style="resize:vertical"></textarea>
-              </div>
-              <div class="field">
-                <label>Pontos importantes — <code style="font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:4px">Nome | Descrição opcional</code></label>
-                <textarea id="mapaFichaPontos" rows="4" placeholder="Ginásio Pokémon | O ginásio local especializado em tipo fogo&#10;Mercado Central" style="resize:vertical"></textarea>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
-                <div class="field" style="margin-bottom:0"><label>Bioma primário</label><input type="text" id="mapaFichaBioma1" placeholder="Floresta" /></div>
-                <div class="field" style="margin-bottom:0"><label>Bioma secundário</label><input type="text" id="mapaFichaBioma2" placeholder="Montanha" /></div>
-                <div class="field" style="margin-bottom:0"><label>Bioma terciário</label><input type="text" id="mapaFichaBioma3" placeholder="Caverna" /></div>
-              </div>
-              <div class="field">
-                <label>Galeria (URLs, uma por linha)</label>
-                <textarea id="mapaFichaGaleria" rows="3" placeholder="https://img1.jpg&#10;https://img2.jpg" style="resize:vertical"></textarea>
-              </div>
-              <div class="field">
-                <label>Localizações próximas — rosa dos ventos</label>
-                <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Formato: <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">direção:nomeLocal</code> — uma por linha. Ex: N:Route 5, S:Koen City, L:Laceon Town</div>
-                <textarea id="mapaFichaRosa" rows="4" placeholder="N:Route 5&#10;S:Koen City&#10;L:Laceon Town&#10;O:Shadow Jungle" style="resize:vertical"></textarea>
-              </div>
-              <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
-                <button class="btn btn-primary" onclick="mapaAdmSalvarFicha()">💾 Salvar ficha</button>
-              </div>
-              <div class="fb fb-ok" id="mapaAdmFbOk">✓ Ficha salva!</div>
-              <div class="fb fb-err" id="mapaAdmFbErr">Erro ao salvar.</div>
+          <!-- Tab: Cards de locais -->
+          <div id="mapaAdmTabLocais">
+            <!-- Busca rápida -->
+            <div style="margin-bottom:14px">
+              <input type="text" id="mapaAdmBusca" placeholder="Buscar local..." oninput="mapaAdmFiltrarCards(this.value)"
+                style="width:100%;padding:8px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)"/>
             </div>
+            <!-- Grid de cards por tipo -->
+            <div id="mapaAdmCardsWrap"></div>
           </div>
 
           <!-- Tab: Novo local -->
@@ -4166,11 +4129,11 @@ function calcSyncSelects(){
               <div class="field" style="margin-bottom:0">
                 <label>Tipo</label>
                 <select id="mapaNovoTipo">
-                  <option value="cidade">🏙 Cidade</option>
-                  <option value="dungeon">🕳 Dungeon</option>
-                  <option value="especial">⭐ Especial</option>
-                  <option value="rota">🛤 Rota</option>
-                  <option value="area">🌿 Área</option>
+                  <option value="cidade">Cidade</option>
+                  <option value="dungeon">Dungeon</option>
+                  <option value="especial">Especial</option>
+                  <option value="rota">Rota</option>
+                  <option value="area">Área</option>
                 </select>
               </div>
               <div class="field" style="margin-bottom:0">
@@ -4180,7 +4143,7 @@ function calcSyncSelects(){
             </div>
             <div id="mapaNovoStatus" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--surface2);color:var(--muted);margin-bottom:10px;display:none"></div>
             <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn btn-primary" onclick="mapaAdmIniciarPosicionar()">📍 Posicionar no Mapa</button>
+              <button class="btn btn-primary" onclick="mapaAdmIniciarPosicionar()">Posicionar no Mapa</button>
             </div>
             <div class="fb fb-ok" id="mapaNovoFbOk">✓ Local criado!</div>
             <div class="fb fb-err" id="mapaNovoFbErr">Erro ao criar.</div>
@@ -4188,7 +4151,7 @@ function calcSyncSelects(){
 
           <!-- Tab: Filtros -->
           <div id="mapaAdmTabFiltros" style="display:none">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Edite os nomes exibidos nos botões de filtro do mapa. As alterações são salvas localmente e aplicadas imediatamente.</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Edite os nomes exibidos no menu de filtro do mapa. As alterações são salvas e aplicadas imediatamente.</div>
             <div style="display:flex;flex-direction:column;gap:10px" id="mapaFiltrosEditList">
               <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
                 <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Tipo</span>
@@ -4221,11 +4184,14 @@ function calcSyncSelects(){
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
               <button class="btn btn-warn btn-sm" onclick="mapaFiltrosReset()">↩ Restaurar padrão</button>
-              <button class="btn btn-primary" onclick="mapaFiltrosSalvar()">💾 Salvar nomes</button>
+              <button class="btn btn-primary" onclick="mapaFiltrosSalvar()">Salvar nomes</button>
             </div>
             <div class="fb fb-ok" id="mapaFiltrosFbOk">✓ Nomes atualizados!</div>
             <div class="fb fb-err" id="mapaFiltrosFbErr">Erro ao salvar.</div>
           </div>
+
+          <!-- hidden inputs para modal (compatibilidade com mapaAdmSalvarFicha) -->
+          <input type="hidden" id="mapaFichaId"/>
         </div>
 
       </div>
@@ -12690,9 +12656,43 @@ function renderMapaFiltros() {
   const wrap = document.getElementById('mapaFiltros');
   if (!wrap) return;
   const tipos = ['todos','cidade','dungeon','especial','rota','area'];
-  wrap.innerHTML = tipos.map(t =>
-    `<button class="mapa-filtro-btn${t==='todos'?' active':''}" data-tipo="${t}" onclick="mapaFiltrar('${t}',this)">${_mapaFiltroLabels[t]||t}</button>`
-  ).join('');
+  const cores = {todos:'#555',cidade:'#2563a8',dungeon:'#7c3aed',especial:'#b45309',rota:'#1a7a1a',area:'#0e7490'};
+  const activeLabel = _mapaFiltroLabels[_mapaFiltroAtivo] || _mapaFiltroAtivo;
+  const isFiltered = _mapaFiltroAtivo !== 'todos';
+  wrap.innerHTML = `
+    <button class="mapa-filtro-toggle${isFiltered?' has-active':''}" onclick="toggleMapaFiltroMenu(this)" id="mapaFiltroToggle">
+      Filtro${isFiltered ? ': ' + activeLabel : ''} <span class="mapa-filtro-toggle-arrow">▾</span>
+    </button>
+    <div class="mapa-filtro-menu" id="mapaFiltroMenu">
+      ${tipos.map(t => `
+        <button class="mapa-filtro-item${t===_mapaFiltroAtivo?' active':''}" onclick="mapaFiltrarDrop('${t}')" data-tipo="${t}">
+          <span class="mapa-filtro-item-dot" style="background:${cores[t]||'#555'}"></span>
+          ${_mapaFiltroLabels[t]||t}
+        </button>`).join('')}
+    </div>`;
+}
+function toggleMapaFiltroMenu(btn) {
+  const menu = document.getElementById('mapaFiltroMenu');
+  const toggle = document.getElementById('mapaFiltroToggle');
+  if (!menu) return;
+  const open = menu.classList.toggle('open');
+  if (toggle) toggle.classList.toggle('open', open);
+  if (open) {
+    const close = (e) => { if (!document.getElementById('mapaFiltros').contains(e.target)) { menu.classList.remove('open'); if(toggle)toggle.classList.remove('open'); document.removeEventListener('click', close); } };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+}
+function mapaFiltrarDrop(tipo) {
+  _mapaFiltroAtivo = tipo;
+  document.querySelectorAll('.mapa-pin').forEach(pin => {
+    const loc = MAPA_LOCAIS.find(l => l.id === pin.dataset.id);
+    pin.style.display = (!loc || tipo === 'todos' || loc.tipo === tipo) ? '' : 'none';
+  });
+  const menu = document.getElementById('mapaFiltroMenu');
+  const toggle = document.getElementById('mapaFiltroToggle');
+  if (menu) menu.classList.remove('open');
+  if (toggle) toggle.classList.remove('open');
+  renderMapaFiltros();
 }
 function mapaFiltrosCarregarInputs() {
   Object.keys(FILTRO_LABELS_DEFAULT).forEach(k => {
@@ -12940,13 +12940,7 @@ async function salvarPosicoesPins() {
 // ── Filtro por tipo ────────────────────────────────────────
 let _mapaFiltroAtivo = 'todos';
 function mapaFiltrar(tipo, btn) {
-  _mapaFiltroAtivo = tipo;
-  document.querySelectorAll('.mapa-filtro-btn').forEach(b => b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-  document.querySelectorAll('.mapa-pin').forEach(pin => {
-    const loc = MAPA_LOCAIS.find(l => l.id === pin.dataset.id);
-    pin.style.display = (!loc || tipo === 'todos' || loc.tipo === tipo) ? '' : 'none';
-  });
+  mapaFiltrarDrop(tipo);
 }
 
 // ── Tab ADM do Mapa ────────────────────────────────────────
