@@ -57,7 +57,25 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .fb{font-size:12px;font-weight:700;text-align:center;padding:7px 10px;border-radius:6px;margin-top:8px;display:none}
 .fb-ok{background:#e0f0e0;color:var(--green)}
 .fb-err{background:#fde8e8;color:var(--red)}
-/* ===== MAPA INTERATIVO ===== */
+/* Ficha rica do popup */
+.mapa-ficha-img{width:100%;max-height:200px;object-fit:cover;border-radius:0 0 0 0;display:block}
+.mapa-ficha-resumo{font-size:13px;color:var(--muted);font-style:italic;margin-bottom:12px;line-height:1.5}
+.mapa-ficha-section{margin-bottom:14px}
+.mapa-ficha-section-titulo{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:7px}
+.mapa-ficha-desc{font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap}
+.mapa-ficha-pontos{list-style:none;display:flex;flex-direction:column;gap:5px}
+.mapa-ficha-pontos li{font-size:13px;color:var(--text);display:flex;align-items:flex-start;gap:7px}
+.mapa-ficha-pontos li::before{content:'📍';flex-shrink:0}
+.mapa-ficha-biomas{display:flex;gap:7px;flex-wrap:wrap}
+.mapa-ficha-bioma-tag{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:var(--surface2);color:var(--brand);border:1.5px solid var(--border)}
+.mapa-ficha-galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px}
+.mapa-ficha-galeria img{width:100%;height:90px;object-fit:cover;border-radius:8px;cursor:pointer;transition:opacity .15s}
+.mapa-ficha-galeria img:hover{opacity:.85}
+/* Lightbox simples */
+.mapa-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9500;display:none;align-items:center;justify-content:center}
+.mapa-lightbox.open{display:flex}
+.mapa-lightbox img{max-width:90vw;max-height:90vh;border-radius:10px;object-fit:contain}
+.mapa-lightbox-close{position:absolute;top:18px;right:22px;color:#fff;font-size:28px;cursor:pointer;line-height:1}
 #page-mapa{padding:0;max-width:100%;overflow:hidden}
 .mapa-wrap{position:relative;width:100%;background:#1a8fbe;overflow:hidden;user-select:none;cursor:grab}
 .mapa-wrap.grabbing{cursor:grabbing}
@@ -103,7 +121,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-legenda{position:absolute;bottom:14px;left:14px;background:rgba(15,25,50,.82);border-radius:10px;padding:10px 14px;z-index:30;min-width:130px}
 .mapa-legenda-titulo{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.6);margin-bottom:7px}
 .mapa-legenda-item{display:flex;align-items:center;gap:7px;font-size:11px;color:#fff;margin-bottom:4px}
-.mapa-legenda-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.mapa-pin.draggable{cursor:move !important;transition:none}
+.mapa-pin.draggable:hover{transform:translate(-50%,-100%) scale(1.1)}
+.mapa-pin.dragging-pin{opacity:.85;z-index:50;transform:translate(-50%,-100%) scale(1.2) !important}
+.mapa-edit-mode .mapa-wrap{outline:2.5px dashed #e8a020;outline-offset:-3px}
+.mapa-edit-bar{display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(232,160,32,.95);color:#1a3a5c;font-family:var(--font-body);font-size:12px;font-weight:700;padding:7px 16px;border-radius:20px;z-index:40;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none}
+.mapa-edit-mode .mapa-edit-bar{display:block}
 /* loading overlay */
 .loading-overlay{position:fixed;inset:0;background:var(--bg, #f4f6fa);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 .loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:#e53e3e;border-radius:50%;animation:spin .7s linear infinite}
@@ -2303,7 +2326,10 @@ function calcSyncSelects(){
       <button class="mapa-ctrl-btn" onclick="mapaZoom(1)" title="Zoom +">+</button>
       <button class="mapa-ctrl-btn" onclick="mapaZoom(-1)" title="Zoom −">−</button>
       <button class="mapa-ctrl-btn" onclick="mapaReset()" title="Reset" style="font-size:13px">⟳</button>
+      <button class="mapa-ctrl-btn" id="mapaEditBtn" onclick="toggleModoEdicaoPins()" title="Editar pins" style="display:none;font-size:13px">✏️</button>
+      <button class="mapa-ctrl-btn" id="mapaSalvarBtn" onclick="salvarPosicoesPins()" title="Salvar posições" style="display:none;font-size:13px;background:#e8a020;color:#fff">💾</button>
     </div>
+    <div class="mapa-edit-bar" id="mapaEditBar">✏️ Modo edição — arraste os pins para reposicionar</div>
     <!-- Legenda -->
     <div class="mapa-legenda">
       <div class="mapa-legenda-titulo">Legenda</div>
@@ -2315,6 +2341,10 @@ function calcSyncSelects(){
   <!-- Popup de local -->
   <div class="mapa-popup-overlay" id="mapaPopupOverlay" onclick="fecharMapaPopup(event)">
     <div class="mapa-popup" id="mapaPopup">
+      <!-- Imagem principal -->
+      <div id="mapaPopupImgWrap" style="display:none">
+        <img id="mapaPopupImg" src="" alt="" class="mapa-ficha-img" style="border-radius:14px 14px 0 0"/>
+      </div>
       <div class="mapa-popup-header">
         <div>
           <div class="mapa-popup-titulo" id="mapaPopupTitulo"></div>
@@ -2323,8 +2353,37 @@ function calcSyncSelects(){
         <button class="mapa-popup-close" onclick="fecharMapaPopup()">×</button>
       </div>
       <div class="mapa-popup-body">
-        <div class="mapa-popup-desc" id="mapaPopupDesc"></div>
-        <div class="mapa-popup-eventos" id="mapaPopupEventos"></div>
+        <!-- Resumo -->
+        <div id="mapaPopupResumo" class="mapa-ficha-resumo" style="display:none"></div>
+        <!-- Descrição -->
+        <div id="mapaPopupDescWrap" class="mapa-ficha-section" style="display:none">
+          <div class="mapa-ficha-section-titulo">Sobre o local</div>
+          <div class="mapa-ficha-desc" id="mapaPopupDesc"></div>
+        </div>
+        <!-- Pontos turísticos -->
+        <div id="mapaPopupPontosWrap" class="mapa-ficha-section" style="display:none">
+          <div class="mapa-ficha-section-titulo">Pontos turísticos</div>
+          <ul class="mapa-ficha-pontos" id="mapaPopupPontos"></ul>
+        </div>
+        <!-- Biomas -->
+        <div id="mapaPopupBiomasWrap" class="mapa-ficha-section" style="display:none">
+          <div class="mapa-ficha-section-titulo">Biomas</div>
+          <div class="mapa-ficha-biomas" id="mapaPopupBiomas"></div>
+        </div>
+        <!-- Galeria -->
+        <div id="mapaPopupGaleriaWrap" class="mapa-ficha-section" style="display:none">
+          <div class="mapa-ficha-section-titulo">Galeria</div>
+          <div class="mapa-ficha-galeria" id="mapaPopupGaleria"></div>
+        </div>
+        <!-- Eventos -->
+        <div id="mapaPopupEventosWrap" class="mapa-ficha-section" style="display:none">
+          <div class="mapa-ficha-section-titulo">Eventos & Missões</div>
+          <div class="mapa-popup-eventos" id="mapaPopupEventos"></div>
+        </div>
+        <!-- Placeholder sem conteúdo (para jogadores) -->
+        <div id="mapaPopupVazio" style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0;display:none">
+          Nenhuma informação cadastrada ainda.
+        </div>
       </div>
       <!-- Seção ADM -->
       <div class="mapa-adm-bar" id="mapaAdmBar" style="display:none">
@@ -2348,6 +2407,12 @@ function calcSyncSelects(){
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Lightbox galeria -->
+  <div class="mapa-lightbox" id="mapaLightbox" onclick="fecharLightbox()">
+    <span class="mapa-lightbox-close">×</span>
+    <img id="mapaLightboxImg" src="" alt=""/>
   </div>
 </div>
 
@@ -2993,6 +3058,7 @@ function calcSyncSelects(){
         <button class="adm-nav-btn" data-sec="biomas" onclick="admTab('biomas',this)">🗺️ Biomas</button>
         <button class="adm-nav-btn" data-sec="pokemons" onclick="admTab('pokemons',this)">⚡ Pokémon</button>
         <button class="adm-nav-btn" data-sec="npcs-adm" onclick="admTab('npcs-adm',this)">🧑 NPCs</button>
+        <button class="adm-nav-btn" data-sec="mapa-adm" onclick="admTab('mapa-adm',this)">🗺️ Mapa</button>
         <div class="adm-nav-sep"></div>
         <button class="adm-nav-btn" id="btn-sec-admins" onclick="admTab('admins',this)">🔑 Admins</button>
         <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)">🎨 Editor Visual</button>
@@ -4009,6 +4075,80 @@ function calcSyncSelects(){
         </div>
 
         </div>
+        </div>
+
+        <!-- MAPA ADM -->
+        <div class="adm-section" id="sec-mapa-adm">
+          <div class="sec-title">Mapa — Fichas de Locais</div>
+          <div class="sec-sub">Gerencie as informações exibidas no popup de cada local do mapa da Região Nendo</div>
+
+          <!-- Seletor de local -->
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px">
+            <select id="mapaAdmLocalSel" onchange="mapaAdmCarregarLocal()"
+              style="flex:1;min-width:200px;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text)">
+              <option value="">— Selecione um local —</option>
+            </select>
+            <span id="mapaAdmStatusBadge" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;display:none"></span>
+          </div>
+
+          <!-- Formulário da ficha -->
+          <div id="mapaAdmForm" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+              <div class="field" style="margin-bottom:0">
+                <label>Nome do local</label>
+                <input type="text" id="mapaFichaId" readonly style="background:var(--surface2);color:var(--muted);font-size:12px"/>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>URL da imagem principal</label>
+                <input type="text" id="mapaFichaImagem" placeholder="https://..." />
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Resumo (frase curta de destaque)</label>
+              <input type="text" id="mapaFichaResumo" placeholder="Ex: Capital da Região Nendo, cidade mais populosa do continente." />
+            </div>
+
+            <div class="field">
+              <label>Descrição completa</label>
+              <textarea id="mapaFichaDescricao" rows="5" placeholder="Descrição detalhada do local, história, curiosidades..."
+                style="resize:vertical"></textarea>
+            </div>
+
+            <div class="field">
+              <label>Pontos turísticos (um por linha)</label>
+              <textarea id="mapaFichaPontos" rows="4" placeholder="Museu das Lendas&#10;Ginásio Pokémon&#10;Mercado Central"
+                style="resize:vertical"></textarea>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+              <div class="field" style="margin-bottom:0">
+                <label>Bioma primário</label>
+                <input type="text" id="mapaFichaBioma1" placeholder="Ex: Floresta" />
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Bioma secundário</label>
+                <input type="text" id="mapaFichaBioma2" placeholder="Ex: Montanha" />
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Bioma terciário</label>
+                <input type="text" id="mapaFichaBioma3" placeholder="Ex: Caverna" />
+              </div>
+            </div>
+
+            <!-- Galeria -->
+            <div class="field">
+              <label>Galeria (URLs separadas por vírgula ou uma por linha)</label>
+              <textarea id="mapaFichaGaleria" rows="3" placeholder="https://img1.jpg&#10;https://img2.jpg"
+                style="resize:vertical"></textarea>
+            </div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+              <button class="btn btn-primary" onclick="mapaAdmSalvarFicha()">💾 Salvar ficha</button>
+            </div>
+            <div class="fb fb-ok" id="mapaAdmFbOk">✓ Ficha salva!</div>
+            <div class="fb fb-err" id="mapaAdmFbErr">Erro ao salvar.</div>
+          </div>
         </div>
 
       </div>
@@ -5145,7 +5285,10 @@ function toggleRaridade(r){
 function admTab(sec,el){
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
-  if(sec==='calculadora-adm'){ setTimeout(()=>{ calcAdmLoad(); },0); }
+  if(sec==='mapa-adm'){ setTimeout(async ()=>{
+    if(Object.keys(_mapaFichas).length === 0) await carregarMapaFichas();
+    mapaAdmPopularSelect();
+  }, 0); }
   // verifica permissão
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','calculadora-adm'];
@@ -12439,15 +12582,236 @@ let _mapaPanX = 0, _mapaPanY = 0;
 let _mapaDragging = false;
 let _mapaStartX = 0, _mapaStartY = 0;
 let _mapaStartPanX = 0, _mapaStartPanY = 0;
+let _mapaModoEdicao = false;
+let _mapaPinDragging = null;  // {pin, loc, startMouseX, startMouseY, startX, startY}
 
 // ── Inicialização ──────────────────────────────────────────
 async function initMapa() {
-  await carregarMapaEventos();
+  await Promise.all([carregarMapaEventos(), carregarPosicoesPins(), carregarMapaFichas()]);
   renderMapaPins();
   initMapaPanZoom();
+  // Mostra botão de edição se ADM estiver logado
+  if (admLogado) {
+    const btn = document.getElementById('mapaEditBtn');
+    if (btn) btn.style.display = 'flex';
+  }
 }
 
-// ── Carregar eventos do Supabase ───────────────────────────
+// ── Painel ADM — Mapa ──────────────────────────────────────
+function mapaAdmPopularSelect() {
+  const sel = document.getElementById('mapaAdmLocalSel');
+  if (!sel) return;
+  const grupos = {};
+  MAPA_LOCAIS.forEach(l => {
+    if (!grupos[l.tipo]) grupos[l.tipo] = [];
+    grupos[l.tipo].push(l);
+  });
+  const labelTipo = {cidade:'🏙 Cidades',dungeon:'🕳 Dungeons',especial:'⭐ Especiais',rota:'🛤 Rotas',area:'🌿 Áreas'};
+  sel.innerHTML = '<option value="">— Selecione um local —</option>';
+  Object.keys(labelTipo).forEach(tipo => {
+    if (!grupos[tipo]) return;
+    const og = document.createElement('optgroup');
+    og.label = labelTipo[tipo];
+    grupos[tipo].forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l.id; opt.textContent = l.nome;
+      og.appendChild(opt);
+    });
+    sel.appendChild(og);
+  });
+}
+
+function mapaAdmCarregarLocal() {
+  const id = document.getElementById('mapaAdmLocalSel').value;
+  const form = document.getElementById('mapaAdmForm');
+  const badge = document.getElementById('mapaAdmStatusBadge');
+  if (!id) { form.style.display = 'none'; badge.style.display = 'none'; return; }
+
+  const ficha = _mapaFichas[id] || {};
+  form.style.display = 'block';
+
+  // Status badge
+  const temFicha = !!(ficha.resumo || ficha.descricao || ficha.imagem);
+  badge.textContent  = temFicha ? '✓ Ficha preenchida' : '○ Sem ficha';
+  badge.style.background = temFicha ? '#e0f0e0' : '#f0f0f0';
+  badge.style.color      = temFicha ? '#1a7a1a' : '#6b7a99';
+  badge.style.display = 'inline-block';
+
+  document.getElementById('mapaFichaId').value       = id;
+  document.getElementById('mapaFichaImagem').value   = ficha.imagem  || '';
+  document.getElementById('mapaFichaResumo').value   = ficha.resumo  || '';
+  document.getElementById('mapaFichaDescricao').value= ficha.descricao || '';
+  document.getElementById('mapaFichaPontos').value   = ficha.pontos_turisticos || '';
+  document.getElementById('mapaFichaBioma1').value   = ficha.bioma1  || '';
+  document.getElementById('mapaFichaBioma2').value   = ficha.bioma2  || '';
+  document.getElementById('mapaFichaBioma3').value   = ficha.bioma3  || '';
+  document.getElementById('mapaFichaGaleria').value  = ficha.galeria || '';
+
+  document.getElementById('mapaAdmFbOk').style.display = 'none';
+  document.getElementById('mapaAdmFbErr').style.display = 'none';
+}
+
+async function mapaAdmSalvarFicha() {
+  if (!admLogado) return;
+  const id = document.getElementById('mapaFichaId').value;
+  if (!id) return;
+  const payload = {
+    local_id:          id,
+    imagem:            document.getElementById('mapaFichaImagem').value.trim(),
+    resumo:            document.getElementById('mapaFichaResumo').value.trim(),
+    descricao:         document.getElementById('mapaFichaDescricao').value.trim(),
+    pontos_turisticos: document.getElementById('mapaFichaPontos').value.trim(),
+    bioma1:            document.getElementById('mapaFichaBioma1').value.trim(),
+    bioma2:            document.getElementById('mapaFichaBioma2').value.trim(),
+    bioma3:            document.getElementById('mapaFichaBioma3').value.trim(),
+    galeria:           document.getElementById('mapaFichaGaleria').value.trim(),
+  };
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/map_local_fichas`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=representation',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    _mapaFichas[id] = payload;
+    document.getElementById('mapaAdmFbOk').style.display = 'block';
+    document.getElementById('mapaAdmFbErr').style.display = 'none';
+    // Atualizar badge
+    const badge = document.getElementById('mapaAdmStatusBadge');
+    badge.textContent = '✓ Ficha preenchida'; badge.style.background = '#e0f0e0'; badge.style.color = '#1a7a1a';
+    setTimeout(()=>{ document.getElementById('mapaAdmFbOk').style.display = 'none'; }, 2500);
+  } catch(e) {
+    document.getElementById('mapaAdmFbErr').style.display = 'block';
+    document.getElementById('mapaAdmFbErr').textContent = 'Erro: ' + e.message;
+    console.error('[mapa] salvar ficha:', e);
+  }
+}
+
+// ── Carregar posições salvas dos pins ─────────────────────
+async function carregarPosicoesPins() {
+  try {
+    const rows = await dbGet('map_pin_positions', 'select=*');
+    if (Array.isArray(rows)) {
+      rows.forEach(r => {
+        const loc = MAPA_LOCAIS.find(l => l.id === r.local_id);
+        if (loc) { loc.x = parseFloat(r.x); loc.y = parseFloat(r.y); }
+      });
+    }
+  } catch(e) { console.warn('[mapa] Erro ao carregar posições:', e); }
+}
+
+// ── Salvar posições no Supabase ────────────────────────────
+async function salvarPosicoesPins() {
+  if (!admLogado) return;
+  const btn = document.getElementById('mapaSalvarBtn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    // Upsert todas as posições
+    const payload = MAPA_LOCAIS.map(l => ({ local_id: l.id, x: l.x, y: l.y }));
+    await fetch(`${SUPA_URL}/rest/v1/map_pin_positions`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (btn) { btn.textContent = '✅'; setTimeout(() => { btn.textContent = '💾'; btn.disabled = false; }, 1500); }
+  } catch(e) {
+    console.error('[mapa] salvar posições:', e);
+    if (btn) { btn.textContent = '❌'; setTimeout(() => { btn.textContent = '💾'; btn.disabled = false; }, 1500); }
+  }
+}
+
+// ── Modo edição de pins ────────────────────────────────────
+function toggleModoEdicaoPins() {
+  _mapaModoEdicao = !_mapaModoEdicao;
+  const wrap   = document.getElementById('page-mapa');
+  const editBtn = document.getElementById('mapaEditBtn');
+  const salvarBtn = document.getElementById('mapaSalvarBtn');
+  if (_mapaModoEdicao) {
+    wrap.classList.add('mapa-edit-mode');
+    editBtn.textContent = '✕';
+    editBtn.title = 'Sair do modo edição';
+    editBtn.style.background = '#e8a020';
+    editBtn.style.color = '#fff';
+    salvarBtn.style.display = 'flex';
+  } else {
+    wrap.classList.remove('mapa-edit-mode');
+    editBtn.textContent = '✏️';
+    editBtn.title = 'Editar pins';
+    editBtn.style.background = '';
+    editBtn.style.color = '';
+    salvarBtn.style.display = 'none';
+  }
+  renderMapaPins();
+}
+
+// ── Drag de pin individual ─────────────────────────────────
+function initPinDrag(pin, loc) {
+  pin.addEventListener('mousedown', e => {
+    if (!_mapaModoEdicao) return;
+    e.stopPropagation();
+    e.preventDefault();
+    _mapaPinDragging = {
+      pin, loc,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startX: loc.x,
+      startY: loc.y,
+    };
+    pin.classList.add('dragging-pin');
+  });
+  // Touch
+  pin.addEventListener('touchstart', e => {
+    if (!_mapaModoEdicao) return;
+    e.stopPropagation();
+    const t = e.touches[0];
+    _mapaPinDragging = {
+      pin, loc,
+      startMouseX: t.clientX,
+      startMouseY: t.clientY,
+      startX: loc.x,
+      startY: loc.y,
+    };
+    pin.classList.add('dragging-pin');
+  }, {passive:true});
+}
+
+function _onPinDragMove(clientX, clientY) {
+  if (!_mapaPinDragging) return;
+  const {pin, loc, startMouseX, startMouseY, startX, startY} = _mapaPinDragging;
+  const img = document.getElementById('mapaImg');
+  if (!img) return;
+  const rect = img.getBoundingClientRect();
+  const dx = (clientX - startMouseX) / (rect.width  * _mapaScale) * 100;
+  const dy = (clientY - startMouseY) / (rect.height * _mapaScale) * 100;
+  loc.x = Math.min(100, Math.max(0, startX + dx));
+  loc.y = Math.min(100, Math.max(0, startY + dy));
+  pin.style.left = loc.x + '%';
+  pin.style.top  = loc.y + '%';
+}
+
+function _onPinDragEnd() {
+  if (!_mapaPinDragging) return;
+  _mapaPinDragging.pin.classList.remove('dragging-pin');
+  _mapaPinDragging = null;
+}
+
+// Listeners globais para arrastar pins
+window.addEventListener('mousemove', e => {
+  if (_mapaPinDragging) _onPinDragMove(e.clientX, e.clientY);
+});
+window.addEventListener('mouseup', () => _onPinDragEnd());
+window.addEventListener('touchmove', e => {
+  if (_mapaPinDragging) _onPinDragMove(e.touches[0].clientX, e.touches[0].clientY);
+}, {passive:true});
+window.addEventListener('touchend', () => _onPinDragEnd());
 async function carregarMapaEventos() {
   try {
     const rows = await dbGet('map_events', 'select=*&order=created_at.asc');
@@ -12471,7 +12835,7 @@ function renderMapaPins() {
     const cfg = TIPO_CONFIG[loc.tipo] || TIPO_CONFIG.area;
     const pinColor = hasEvt ? '#e8a020' : cfg.cor;
     const pin = document.createElement('div');
-    pin.className = 'mapa-pin' + (hasEvt ? ' has-event' : '');
+    pin.className = 'mapa-pin' + (hasEvt ? ' has-event' : '') + (_mapaModoEdicao ? ' draggable' : '');
     pin.style.left = loc.x + '%';
     pin.style.top  = loc.y + '%';
     pin.dataset.id = loc.id;
@@ -12483,33 +12847,95 @@ function renderMapaPins() {
       </svg>
       <div class="mapa-tooltip">${loc.nome}</div>
     `;
-    pin.addEventListener('click', () => abrirMapaPopup(loc.id));
+    if (_mapaModoEdicao) {
+      initPinDrag(pin, loc);
+    } else {
+      pin.addEventListener('click', () => abrirMapaPopup(loc.id));
+    }
     wrap.appendChild(pin);
   });
 }
 
-// ── Popup ──────────────────────────────────────────────────
+// ── Cache de fichas ────────────────────────────────────────
+let _mapaFichas = {};  // {local_id: {imagem,resumo,descricao,pontos_turisticos,bioma1,bioma2,bioma3,galeria}}
+
+async function carregarMapaFichas() {
+  try {
+    const rows = await dbGet('map_local_fichas', 'select=*');
+    _mapaFichas = {};
+    if (Array.isArray(rows)) rows.forEach(r => { _mapaFichas[r.local_id] = r; });
+  } catch(e) { console.warn('[mapa] Erro ao carregar fichas:', e); }
+}
+
+// ── Popup rico ─────────────────────────────────────────────
 function abrirMapaPopup(localId) {
   const loc = MAPA_LOCAIS.find(l => l.id === localId);
   if (!loc) return;
   _mapaLocalAtual = loc;
   const cfg = TIPO_CONFIG[loc.tipo] || TIPO_CONFIG.area;
   const eventos = _mapaEventos[loc.id] || [];
+  const ficha   = _mapaFichas[loc.id]  || {};
 
+  // Título e badge
   document.getElementById('mapaPopupTitulo').textContent = loc.nome;
   const badge = document.getElementById('mapaPopupBadge');
   badge.textContent = cfg.emoji + ' ' + loc.tipo.charAt(0).toUpperCase() + loc.tipo.slice(1);
-  badge.style.background = cfg.bg;
-  badge.style.color = cfg.cor;
+  badge.style.background = cfg.bg; badge.style.color = cfg.cor;
 
-  document.getElementById('mapaPopupDesc').textContent = loc.desc || '';
+  // Imagem principal
+  const imgWrap = document.getElementById('mapaPopupImgWrap');
+  const img     = document.getElementById('mapaPopupImg');
+  if (ficha.imagem) { img.src = ficha.imagem; imgWrap.style.display = 'block'; }
+  else imgWrap.style.display = 'none';
 
-  // Eventos existentes
-  const evtWrap = document.getElementById('mapaPopupEventos');
+  // Resumo
+  const resumoEl = document.getElementById('mapaPopupResumo');
+  if (ficha.resumo) { resumoEl.textContent = ficha.resumo; resumoEl.style.display = 'block'; }
+  else resumoEl.style.display = 'none';
+
+  // Descrição
+  const descWrap = document.getElementById('mapaPopupDescWrap');
+  const descEl   = document.getElementById('mapaPopupDesc');
+  const descTexto = ficha.descricao || (!admLogado ? '' : loc.desc || '');
+  if (descTexto) { descEl.textContent = descTexto; descWrap.style.display = 'block'; }
+  else descWrap.style.display = 'none';
+
+  // Pontos turísticos
+  const pontosWrap = document.getElementById('mapaPopupPontosWrap');
+  const pontosEl   = document.getElementById('mapaPopupPontos');
+  const pontos = (ficha.pontos_turisticos || '').split('\n').map(s=>s.trim()).filter(Boolean);
+  if (pontos.length) {
+    pontosEl.innerHTML = pontos.map(p=>`<li>${p}</li>`).join('');
+    pontosWrap.style.display = 'block';
+  } else pontosWrap.style.display = 'none';
+
+  // Biomas
+  const biomasWrap = document.getElementById('mapaPopupBiomasWrap');
+  const biomasEl   = document.getElementById('mapaPopupBiomas');
+  const biomas = [ficha.bioma1, ficha.bioma2, ficha.bioma3].filter(Boolean);
+  if (biomas.length) {
+    biomasEl.innerHTML = biomas.map(b=>`<span class="mapa-ficha-bioma-tag">🌿 ${b}</span>`).join('');
+    biomasWrap.style.display = 'block';
+  } else biomasWrap.style.display = 'none';
+
+  // Galeria
+  const galeriaWrap = document.getElementById('mapaPopupGaleriaWrap');
+  const galeriaEl   = document.getElementById('mapaPopupGaleria');
+  const galeria = (ficha.galeria || '').split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
+  if (galeria.length) {
+    galeriaEl.innerHTML = galeria.map(url=>
+      `<img src="${url}" alt="" loading="lazy" onclick="abrirLightbox('${url}')" />`
+    ).join('');
+    galeriaWrap.style.display = 'block';
+  } else galeriaWrap.style.display = 'none';
+
+  // Eventos
+  const evtWrap  = document.getElementById('mapaPopupEventos');
+  const evtSection = document.getElementById('mapaPopupEventosWrap');
   evtWrap.innerHTML = '';
   if (eventos.length > 0) {
+    const tipoCfg = { missao:'⚔️', evento:'🎉', perigo:'⚠️', info:'ℹ️', lenda:'📜' };
     eventos.forEach(ev => {
-      const tipoCfg = { missao:'⚔️', evento:'🎉', perigo:'⚠️', info:'ℹ️', lenda:'📜' };
       const card = document.createElement('div');
       card.className = 'mapa-evento-card';
       card.innerHTML = `
@@ -12521,7 +12947,12 @@ function abrirMapaPopup(localId) {
       `;
       evtWrap.appendChild(card);
     });
-  }
+    evtSection.style.display = 'block';
+  } else evtSection.style.display = 'none';
+
+  // Placeholder vazio para jogadores
+  const temConteudo = ficha.imagem||ficha.resumo||descTexto||pontos.length||biomas.length||galeria.length||eventos.length;
+  document.getElementById('mapaPopupVazio').style.display = (!admLogado && !temConteudo) ? 'block' : 'none';
 
   // ADM bar
   const admBar = document.getElementById('mapaAdmBar');
@@ -12532,13 +12963,19 @@ function abrirMapaPopup(localId) {
     document.getElementById('mapaEvtTipo').value = 'missao';
     document.getElementById('mapaEvtOk').style.display = 'none';
     document.getElementById('mapaEvtErr').style.display = 'none';
-    const delBtn = document.getElementById('mapaEvtDelBtn');
-    delBtn.style.display = eventos.length > 0 ? 'inline-flex' : 'none';
-  } else {
-    admBar.style.display = 'none';
-  }
+    document.getElementById('mapaEvtDelBtn').style.display = eventos.length > 0 ? 'inline-flex' : 'none';
+  } else admBar.style.display = 'none';
 
   document.getElementById('mapaPopupOverlay').classList.add('open');
+}
+
+// ── Lightbox ───────────────────────────────────────────────
+function abrirLightbox(url) {
+  document.getElementById('mapaLightboxImg').src = url;
+  document.getElementById('mapaLightbox').classList.add('open');
+}
+function fecharLightbox() {
+  document.getElementById('mapaLightbox').classList.remove('open');
 }
 
 function fecharMapaPopup(e) {
@@ -12612,6 +13049,7 @@ function initMapaPanZoom() {
   // Mouse
   wrap.addEventListener('mousedown', e => {
     if (e.target.closest('.mapa-pin')) return;
+    if (_mapaPinDragging) return;
     _mapaDragging = true;
     _mapaStartX = e.clientX; _mapaStartY = e.clientY;
     _mapaStartPanX = _mapaPanX; _mapaStartPanY = _mapaPanY;
@@ -12628,6 +13066,7 @@ function initMapaPanZoom() {
   // Touch
   let lastTouchDist = 0;
   wrap.addEventListener('touchstart', e => {
+    if (_mapaPinDragging) return;
     if (e.touches.length === 1) {
       _mapaDragging = true;
       _mapaStartX = e.touches[0].clientX; _mapaStartY = e.touches[0].clientY;
