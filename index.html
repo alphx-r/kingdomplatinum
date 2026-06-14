@@ -77,10 +77,10 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-lightbox img{max-width:90vw;max-height:90vh;border-radius:10px;object-fit:contain}
 .mapa-lightbox-close{position:absolute;top:18px;right:22px;color:#fff;font-size:28px;cursor:pointer;line-height:1}
 #page-mapa{padding:0;max-width:100%;overflow:hidden}
-.mapa-wrap{position:relative;width:100%;background:#1a8fbe;overflow:hidden;user-select:none;cursor:grab}
+.mapa-wrap{position:relative;width:100%;height:calc(100vh - 60px);background:#1a8fbe;overflow:hidden;user-select:none;cursor:grab}
 .mapa-wrap.grabbing{cursor:grabbing}
-.mapa-canvas{position:relative;transform-origin:0 0;will-change:transform}
-.mapa-canvas img.mapa-img{display:block;width:100%;height:auto;pointer-events:none;image-rendering:pixelated}
+.mapa-canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+.mapa-canvas img.mapa-img{display:block;max-width:none;height:auto;pointer-events:none;image-rendering:pixelated}
 /* Pin */
 .mapa-pin{position:absolute;transform:translate(-50%,-100%);cursor:pointer;z-index:10;transition:transform .15s}
 .mapa-pin:hover{transform:translate(-50%,-100%) scale(1.25)}
@@ -13042,11 +13042,58 @@ function initMapaPanZoom() {
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !canvas) return;
 
+  // Escala mínima = wrap preenche completamente (sem fundo azul visível)
+  function getMinScale() {
+    const img = document.getElementById('mapaImg');
+    if (!img || !img.naturalWidth) return 1;
+    const wW = wrap.clientWidth, wH = wrap.clientHeight;
+    const iW = img.offsetWidth,  iH = img.offsetHeight;
+    if (!iW || !iH) return 1;
+    return Math.max(wW / iW, wH / iH);
+  }
+
+  // Garante que o pan nunca deixa o fundo aparecer
+  function clampPan(scale) {
+    const img = document.getElementById('mapaImg');
+    if (!img) return;
+    const wW = wrap.clientWidth, wH = wrap.clientHeight;
+    const iW = img.offsetWidth * scale, iH = img.offsetHeight * scale;
+    const maxX = 0, minX = Math.min(0, wW - iW);
+    const maxY = 0, minY = Math.min(0, wH - iH);
+    _mapaPanX = Math.min(maxX, Math.max(minX, _mapaPanX));
+    _mapaPanY = Math.min(maxY, Math.max(minY, _mapaPanY));
+  }
+
   function applyTransform() {
+    clampPan(_mapaScale);
     canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
   }
 
-  // Mouse
+  function setScale(newScale, pivotX, pivotY) {
+    const minScale = getMinScale();
+    newScale = Math.min(4, Math.max(minScale, newScale));
+    if (pivotX !== undefined) {
+      // Zoom centrado no ponto pivô (posição no viewport)
+      _mapaPanX = pivotX - (pivotX - _mapaPanX) * (newScale / _mapaScale);
+      _mapaPanY = pivotY - (pivotY - _mapaPanY) * (newScale / _mapaScale);
+    }
+    _mapaScale = newScale;
+    applyTransform();
+  }
+
+  // Inicializa na escala mínima para preencher o container
+  const img = document.getElementById('mapaImg');
+  const doInit = () => {
+    // Define largura natural da imagem para que offsetWidth seja correto
+    img.style.width = img.naturalWidth + 'px';
+    const minScale = getMinScale();
+    if (_mapaScale < minScale) { _mapaScale = minScale; }
+    applyTransform();
+  };
+  if (img.complete && img.naturalWidth) doInit();
+  else img.addEventListener('load', doInit, {once:true});
+
+  // Mouse — drag
   wrap.addEventListener('mousedown', e => {
     if (e.target.closest('.mapa-pin')) return;
     if (_mapaPinDragging) return;
@@ -13065,6 +13112,7 @@ function initMapaPanZoom() {
 
   // Touch
   let lastTouchDist = 0;
+  let lastTouchMid  = {x:0, y:0};
   wrap.addEventListener('touchstart', e => {
     if (_mapaPinDragging) return;
     if (e.touches.length === 1) {
@@ -13076,6 +13124,10 @@ function initMapaPanZoom() {
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
+      lastTouchMid = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      };
     }
   }, {passive:true});
   wrap.addEventListener('touchmove', e => {
@@ -13088,25 +13140,54 @@ function initMapaPanZoom() {
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      _mapaScale = Math.min(4, Math.max(0.5, _mapaScale * (dist / lastTouchDist)));
+      const mid = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      };
+      setScale(_mapaScale * (dist / lastTouchDist), mid.x, mid.y);
       lastTouchDist = dist;
-      applyTransform();
+      lastTouchMid  = mid;
     }
   }, {passive:true});
   wrap.addEventListener('touchend', () => { _mapaDragging = false; });
 
-  // Wheel zoom
+  // Wheel zoom — centrado no cursor
   wrap.addEventListener('wheel', e => {
     e.preventDefault();
-    _mapaScale = Math.min(4, Math.max(0.5, _mapaScale - e.deltaY * 0.001));
-    applyTransform();
+    const rect = wrap.getBoundingClientRect();
+    setScale(_mapaScale * (1 - e.deltaY * 0.001), e.clientX - rect.left, e.clientY - rect.top);
   }, {passive:false});
+
+  // Atualiza ao redimensionar janela
+  window.addEventListener('resize', () => {
+    const minScale = getMinScale();
+    if (_mapaScale < minScale) setScale(minScale);
+    else applyTransform();
+  });
 }
 
 function mapaZoom(dir) {
-  _mapaScale = Math.min(4, Math.max(0.5, _mapaScale + dir * 0.25));
+  const wrap = document.getElementById('mapaWrap');
+  const img  = document.getElementById('mapaImg');
+  if (!wrap || !img) return;
+  const minScale = Math.max(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
+  _mapaScale = Math.min(4, Math.max(minScale, _mapaScale + dir * 0.25));
+  // Clamp pan
+  const iW = img.offsetWidth * _mapaScale, iH = img.offsetHeight * _mapaScale;
+  _mapaPanX = Math.min(0, Math.max(wrap.clientWidth  - iW, _mapaPanX));
+  _mapaPanY = Math.min(0, Math.max(wrap.clientHeight - iH, _mapaPanY));
   const canvas = document.getElementById('mapaCanvas');
   if (canvas) canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
+}
+
+function mapaReset() {
+  const wrap = document.getElementById('mapaWrap');
+  const img  = document.getElementById('mapaImg');
+  const canvas = document.getElementById('mapaCanvas');
+  if (!wrap || !img || !canvas) return;
+  const minScale = Math.max(wrap.clientWidth / img.offsetWidth, wrap.clientHeight / img.offsetHeight);
+  _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
+  canvas.style.transform = `translate(0,0) scale(${minScale})`;
 }
 
 function mapaReset() {
