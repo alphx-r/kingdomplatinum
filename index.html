@@ -63,9 +63,16 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-ficha-section{margin-bottom:14px}
 .mapa-ficha-section-titulo{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:7px}
 .mapa-ficha-desc{font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap}
-.mapa-ficha-pontos{list-style:none;display:flex;flex-direction:column;gap:5px}
-.mapa-ficha-pontos li{font-size:13px;color:var(--text);display:flex;align-items:flex-start;gap:7px}
-.mapa-ficha-pontos li::before{content:'📍';flex-shrink:0}
+.mapa-ficha-pontos{list-style:none;display:flex;flex-wrap:wrap;gap:7px}
+.mapa-ponto-pill{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1.5px solid var(--border);border-radius:20px;padding:5px 12px 5px 9px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:all .2s;max-width:100%}
+.mapa-ponto-pill:hover{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand)}
+.mapa-ponto-pill.open{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand);border-radius:12px;flex-direction:column;align-items:flex-start;padding:8px 14px}
+.mapa-ponto-pill-header{display:flex;align-items:center;gap:6px;width:100%}
+.mapa-ponto-pill-nome{font-size:12px;font-weight:700}
+.mapa-ponto-pill-desc{font-size:12px;font-weight:400;color:var(--text);margin-top:5px;line-height:1.5;display:none}
+.mapa-ponto-pill.open .mapa-ponto-pill-desc{display:block}
+.mapa-ponto-pill-arrow{margin-left:auto;font-size:10px;transition:transform .2s;flex-shrink:0}
+.mapa-ponto-pill.open .mapa-ponto-pill-arrow{transform:rotate(180deg)}
 .mapa-ficha-biomas{display:flex;gap:7px;flex-wrap:wrap}
 .mapa-ficha-bioma-tag{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:var(--surface2);color:var(--brand);border:1.5px solid var(--border)}
 .mapa-ficha-galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px}
@@ -4134,7 +4141,7 @@ function calcSyncSelects(){
             </div>
 
             <div class="field">
-              <label>Pontos turísticos (um por linha)</label>
+              <label>Pontos turísticos — um por linha, formato: <code style="font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:4px">Nome | Descrição opcional</code></label>
               <textarea id="mapaFichaPontos" rows="4" placeholder="Museu das Lendas&#10;Ginásio Pokémon&#10;Mercado Central"
                 style="resize:vertical"></textarea>
             </div>
@@ -12925,7 +12932,21 @@ function abrirMapaPopup(localId) {
   const pontosEl   = document.getElementById('mapaPopupPontos');
   const pontos = (ficha.pontos_turisticos || '').split('\n').map(s=>s.trim()).filter(Boolean);
   if (pontos.length) {
-    pontosEl.innerHTML = pontos.map(p=>`<li>${p}</li>`).join('');
+    pontosEl.innerHTML = pontos.map(p => {
+      const [nome, ...resto] = p.split('|');
+      const desc = resto.join('|').trim();
+      const temDesc = !!desc;
+      return `<li>
+        <div class="mapa-ponto-pill" onclick="togglePontoPill(this)">
+          <div class="mapa-ponto-pill-header">
+            <span>📍</span>
+            <span class="mapa-ponto-pill-nome">${nome.trim()}</span>
+            ${temDesc ? '<span class="mapa-ponto-pill-arrow">▼</span>' : ''}
+          </div>
+          ${temDesc ? `<div class="mapa-ponto-pill-desc">${desc}</div>` : ''}
+        </div>
+      </li>`;
+    }).join('');
     pontosWrap.style.display = 'block';
   } else pontosWrap.style.display = 'none';
 
@@ -12996,6 +13017,12 @@ function abrirLightbox(url) {
 }
 function fecharLightbox() {
   document.getElementById('mapaLightbox').classList.remove('open');
+}
+// ── Pills de pontos turísticos ─────────────────────────────
+function togglePontoPill(el) {
+  const temDesc = el.querySelector('.mapa-ponto-pill-desc');
+  if (!temDesc) return;
+  el.classList.toggle('open');
 }
 
 function fecharMapaPopup(e) {
