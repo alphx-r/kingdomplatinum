@@ -64,17 +64,14 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-ficha-section-titulo{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:7px}
 .mapa-ficha-desc{font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap}
 .mapa-ficha-pontos{list-style:none;display:flex;flex-wrap:wrap;gap:7px}
-.mapa-ponto-pill{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1.5px solid var(--border);border-radius:20px;padding:5px 12px 5px 9px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:all .2s;max-width:100%}
-.mapa-ponto-pill:hover{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand)}
-.mapa-ponto-pill.open{border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand);border-radius:12px;flex-direction:column;align-items:flex-start;padding:8px 14px}
+.mapa-ponto-pill{display:inline-flex;align-items:center;gap:6px;background:transparent;border:none;border-radius:20px;padding:5px 12px 5px 9px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:background .18s,color .18s;max-width:100%}
+.mapa-ponto-pill.open{border-radius:12px;flex-direction:column;align-items:flex-start;padding:8px 14px}
 .mapa-ponto-pill-header{display:flex;align-items:center;gap:6px;width:100%}
 .mapa-ponto-pill-nome{font-size:12px;font-weight:700}
 .mapa-ponto-pill-desc{font-size:12px;font-weight:400;color:var(--text);margin-top:5px;line-height:1.5;display:none}
 .mapa-ponto-pill.open .mapa-ponto-pill-desc{display:block}
-.mapa-ponto-pill-arrow{margin-left:auto;font-size:10px;transition:transform .2s;flex-shrink:0}
-.mapa-ponto-pill.open .mapa-ponto-pill-arrow{transform:rotate(180deg)}
-.mapa-ficha-biomas{display:flex;gap:7px;flex-wrap:wrap}
-.mapa-ficha-bioma-tag{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:var(--surface2);color:var(--brand);border:1.5px solid var(--border)}
+.mapa-ficha-biomas{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.mapa-ficha-bioma-tag{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;background:transparent;border:none;opacity:.85}
 .mapa-ficha-galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px}
 .mapa-ficha-galeria img{width:100%;height:90px;object-fit:cover;border-radius:8px;cursor:pointer;transition:opacity .15s}
 .mapa-ficha-galeria img:hover{opacity:.85}
@@ -2342,7 +2339,7 @@ function calcSyncSelects(){
   <div class="mapa-wrap" id="mapaWrap">
     <div class="mapa-canvas" id="mapaCanvas">
       <img class="mapa-img" id="mapaImg"
-        src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
+        src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.jpg"
         alt="Mapa da Região Nendo"
         draggable="false"
       />
@@ -2374,9 +2371,12 @@ function calcSyncSelects(){
         <img id="mapaPopupImg" src="" alt="" class="mapa-ficha-img" style="border-radius:14px 14px 0 0"/>
       </div>
       <div class="mapa-popup-header">
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="mapa-popup-titulo" id="mapaPopupTitulo"></div>
-          <div style="margin-top:5px"><span class="mapa-popup-tipo-badge" id="mapaPopupBadge"></span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px">
+            <span class="mapa-popup-tipo-badge" id="mapaPopupBadge"></span>
+            <div class="mapa-ficha-biomas" id="mapaPopupBiomas"></div>
+          </div>
         </div>
         <button class="mapa-popup-close" onclick="fecharMapaPopup()">×</button>
       </div>
@@ -2392,11 +2392,6 @@ function calcSyncSelects(){
         <div id="mapaPopupPontosWrap" class="mapa-ficha-section" style="display:none">
           <div class="mapa-ficha-section-titulo">Pontos turísticos</div>
           <ul class="mapa-ficha-pontos" id="mapaPopupPontos"></ul>
-        </div>
-        <!-- Biomas -->
-        <div id="mapaPopupBiomasWrap" class="mapa-ficha-section" style="display:none">
-          <div class="mapa-ficha-section-titulo">Biomas</div>
-          <div class="mapa-ficha-biomas" id="mapaPopupBiomas"></div>
         </div>
         <!-- Galeria -->
         <div id="mapaPopupGaleriaWrap" class="mapa-ficha-section" style="display:none">
@@ -12927,7 +12922,7 @@ function abrirMapaPopup(localId) {
   if (descTexto) { descEl.textContent = descTexto; descWrap.style.display = 'block'; }
   else descWrap.style.display = 'none';
 
-  // Pontos turísticos
+  // Pontos turísticos — pills sem seta, hover colorido pelo tipo
   const pontosWrap = document.getElementById('mapaPopupPontosWrap');
   const pontosEl   = document.getElementById('mapaPopupPontos');
   const pontos = (ficha.pontos_turisticos || '').split('\n').map(s=>s.trim()).filter(Boolean);
@@ -12937,11 +12932,13 @@ function abrirMapaPopup(localId) {
       const desc = resto.join('|').trim();
       const temDesc = !!desc;
       return `<li>
-        <div class="mapa-ponto-pill" onclick="togglePontoPill(this)">
+        <div class="mapa-ponto-pill" onclick="togglePontoPill(this)"
+          style="--pill-hover-bg:${cfg.bg};--pill-hover-color:${cfg.cor}"
+          onmouseenter="this.style.background=this.style.getPropertyValue('--pill-hover-bg') || '${cfg.bg}';this.style.color='${cfg.cor}'"
+          onmouseleave="this.style.background='';this.style.color=''">
           <div class="mapa-ponto-pill-header">
             <span>📍</span>
             <span class="mapa-ponto-pill-nome">${nome.trim()}</span>
-            ${temDesc ? '<span class="mapa-ponto-pill-arrow">▼</span>' : ''}
           </div>
           ${temDesc ? `<div class="mapa-ponto-pill-desc">${desc}</div>` : ''}
         </div>
@@ -12950,14 +12947,12 @@ function abrirMapaPopup(localId) {
     pontosWrap.style.display = 'block';
   } else pontosWrap.style.display = 'none';
 
-  // Biomas
-  const biomasWrap = document.getElementById('mapaPopupBiomasWrap');
-  const biomasEl   = document.getElementById('mapaPopupBiomas');
+  // Biomas — no header, coloridos pelo tipo
+  const biomasEl = document.getElementById('mapaPopupBiomas');
   const biomas = [ficha.bioma1, ficha.bioma2, ficha.bioma3].filter(Boolean);
-  if (biomas.length) {
-    biomasEl.innerHTML = biomas.map(b=>`<span class="mapa-ficha-bioma-tag">🌿 ${b}</span>`).join('');
-    biomasWrap.style.display = 'block';
-  } else biomasWrap.style.display = 'none';
+  biomasEl.innerHTML = biomas.map(b =>
+    `<span class="mapa-ficha-bioma-tag" style="background:${cfg.bg};color:${cfg.cor}">🌿 ${b}</span>`
+  ).join('');
 
   // Galeria
   const galeriaWrap = document.getElementById('mapaPopupGaleriaWrap');
