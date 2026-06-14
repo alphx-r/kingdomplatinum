@@ -2346,9 +2346,15 @@ function calcSyncSelects(){
 <div class="page" id="page-mapa">
   <!-- Container do mapa com pan/zoom -->
   <div class="mapa-wrap" id="mapaWrap">
+    <!-- Loading overlay -->
+    <div id="mapaLoading" style="position:absolute;inset:0;z-index:100;background:#69c0c9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px">
+      <div style="font-family:var(--font-title);font-size:15px;color:#fff;letter-spacing:1px;opacity:.9">Pokétch</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.75);font-family:var(--font-body);font-weight:600;letter-spacing:.5px">Carregando o mapa…</div>
+      <div style="width:120px;height:4px;border-radius:4px;background:rgba(255,255,255,.25);overflow:hidden"><div id="mapaLoadingBar" style="height:100%;width:0%;background:#fff;border-radius:4px;transition:width .3s ease"></div></div>
+    </div>
     <div class="mapa-canvas" id="mapaCanvas">
       <img class="mapa-img" id="mapaImg"
-        src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
+        data-src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
         alt="Mapa da Região Nendo"
         draggable="false"
       />
@@ -12685,14 +12691,49 @@ let _mapaPinDragging = null;  // {pin, loc, startMouseX, startMouseY, startX, st
 
 // ── Inicialização ──────────────────────────────────────────
 async function initMapa() {
-  await Promise.all([carregarMapaEventos(), carregarPosicoesPins(), carregarMapaFichas()]);
+  const loading = document.getElementById('mapaLoading');
+  const bar     = document.getElementById('mapaLoadingBar');
+  if (loading) loading.style.display = 'flex';
+  if (bar) bar.style.width = '0%';
+
+  // Carrega dados e imagem em paralelo
+  const img = document.getElementById('mapaImg');
+  const imgSrc = img.getAttribute('data-src');
+
+  // Progresso simulado enquanto carrega
+  let prog = 0;
+  const progInterval = setInterval(() => {
+    prog = Math.min(prog + Math.random() * 8, 85);
+    if (bar) bar.style.width = prog + '%';
+  }, 120);
+
+  const [imgLoaded] = await Promise.all([
+    new Promise(res => {
+      if (img.complete && img.naturalWidth) return res();
+      img.onload  = res;
+      img.onerror = res;
+      if (imgSrc && !img.src) img.src = imgSrc;
+    }),
+    carregarMapaEventos(),
+    carregarPosicoesPins(),
+    carregarMapaFichas(),
+  ]);
+
+  clearInterval(progInterval);
+  if (bar) bar.style.width = '100%';
+
   renderMapaPins();
   initMapaPanZoom();
-  // Mostra botão de edição se ADM estiver logado
+
   if (admLogado) {
     const btn = document.getElementById('mapaEditBtn');
     if (btn) btn.style.display = 'flex';
   }
+
+  // Oculta loading após a animação da barra completar
+  setTimeout(() => {
+    if (loading) loading.style.display = 'none';
+  }, 350);
 }
 
 // ── Painel ADM — Mapa ──────────────────────────────────────
