@@ -128,6 +128,21 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-popup-body{padding:16px 20px 20px}
 .mapa-popup-desc{font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;min-height:40px;text-align:justify}
 .mapa-popup-eventos{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.mapa-rota-btns{display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.mapa-rota-btn{flex:1;font-size:11px;font-weight:700;padding:7px 4px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:background .15s,border-color .15s;font-family:var(--font-body);letter-spacing:.3px}
+.mapa-rota-btn.ativo{border-color:var(--brand);background:var(--brand);color:#fff}
+.mapa-rota-pill{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:900;display:none;background:var(--surface);border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.3);padding:10px 14px;min-width:240px;max-width:90vw;border:1.5px solid var(--border);animation:popupIn .2s ease}
+.mapa-rota-pill-titulo{font-family:var(--font-title);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;text-align:center}
+.mapa-rota-pill-locais{display:flex;align-items:center;gap:6px;justify-content:center;margin-bottom:10px}
+.mapa-rota-pill-local{font-size:12px;font-weight:700;color:var(--brand);font-family:var(--font-title)}
+.mapa-rota-pill-arrow{font-size:13px;color:var(--muted)}
+.mapa-rota-pill-transporte{display:flex;gap:6px;justify-content:center;margin-bottom:10px;flex-wrap:wrap}
+.mapa-rota-pill-transp-btn{font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .15s}
+.mapa-rota-pill-transp-btn.ativo{border-color:var(--brand);background:var(--brand);color:#fff}
+.mapa-rota-pill-resultado{text-align:center;font-size:15px;font-weight:700;color:var(--text);font-family:var(--font-title)}
+.mapa-rota-pill-resultado span{color:var(--brand)}
+.mapa-rota-pill-fechar{position:absolute;top:8px;right:10px;border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1}
+.mapa-rota-pill-limpar{display:block;margin:8px auto 0;font-size:10px;font-weight:600;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .mapa-bioma-poke-panel{margin-top:10px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);animation:popupIn .18s ease}
 .mapa-bioma-poke-panel-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface2);font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--brand)}
 .mapa-bioma-poke-panel-close{border:none;background:none;font-size:16px;cursor:pointer;color:var(--muted);line-height:1;padding:0 2px}
@@ -2383,6 +2398,20 @@ function calcSyncSelects(){
     </div>
     <!-- Botão fullscreen (só mobile) -->
     <button class="mapa-btn-fullscreen" id="mapaFullscreenBtn" onclick="toggleMapaFullscreen()" title="Expandir mapa">⛶</button>
+
+    <!-- Pill de rota -->
+    <div class="mapa-rota-pill" id="mapaRotaPill">
+      <button class="mapa-rota-pill-fechar" onclick="mapaRotaLimpar()">×</button>
+      <div class="mapa-rota-pill-titulo">Calcular viagem</div>
+      <div class="mapa-rota-pill-locais">
+        <span class="mapa-rota-pill-local" id="mapaRotaPillOrigem">—</span>
+        <span class="mapa-rota-pill-arrow">→</span>
+        <span class="mapa-rota-pill-local" id="mapaRotaPillDestino">—</span>
+      </div>
+      <div class="mapa-rota-pill-transporte" id="mapaRotaTransportes"></div>
+      <div class="mapa-rota-pill-resultado" id="mapaRotaResultado"></div>
+      <button class="mapa-rota-pill-limpar" onclick="mapaRotaLimpar()">Limpar rota</button>
+    </div>
     <div class="mapa-edit-bar" id="mapaEditBar">✏️ Modo edição — arraste os pins para reposicionar</div>
     <!-- Filtros por tipo -->
     <div class="mapa-filtros" id="mapaFiltros">
@@ -2451,6 +2480,12 @@ function calcSyncSelects(){
         <!-- Placeholder vazio -->
         <div id="mapaPopupVazio" style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0;display:none">
           Nenhuma informação cadastrada ainda.
+        </div>
+
+        <!-- Calcular rota -->
+        <div class="mapa-rota-btns">
+          <button class="mapa-rota-btn" id="mapaRotaBtnPartir" onclick="mapaRotaDefinir('origem')">📍 Partir daqui</button>
+          <button class="mapa-rota-btn" id="mapaRotaBtnChegar" onclick="mapaRotaDefinir('destino')">🏁 Ir até aqui</button>
         </div>
       </div>
 
@@ -4279,6 +4314,13 @@ function calcSyncSelects(){
 S: Dungeon Y
 NE: Vila Z
 O: Floresta..." style="resize:vertical"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Rotas (distâncias em km)</label>
+        <textarea id="mapaFichaRotas" rows="3" placeholder="rota1: 12
+yukoncity: 45
+koencity: 30" style="resize:vertical"></textarea>
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Uma por linha: <b>id_do_local: km</b></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
         <button class="btn" onclick="fecharMapaFichaModal()" style="font-size:13px">Cancelar</button>
@@ -12947,6 +12989,7 @@ function mapaAdmCarregarLocal() {
   document.getElementById('mapaFichaBioma3').value   = ficha.bioma3  || '';
   document.getElementById('mapaFichaGaleria').value  = ficha.galeria || '';
   document.getElementById('mapaFichaRosa').value     = ficha.rosa_ventos || '';
+  document.getElementById('mapaFichaRotas').value    = ficha.rotas || '';
 
   document.getElementById('mapaAdmFbOk').style.display = 'none';
   document.getElementById('mapaAdmFbErr').style.display = 'none';
@@ -12967,6 +13010,7 @@ async function mapaAdmSalvarFicha() {
     bioma3:            document.getElementById('mapaFichaBioma3').value.trim(),
     galeria:           document.getElementById('mapaFichaGaleria').value.trim(),
     rosa_ventos:       document.getElementById('mapaFichaRosa').value.trim(),
+    rotas:             document.getElementById('mapaFichaRotas').value.trim(),
   };
   try {
     const res = await fetch(`${SUPA_URL}/rest/v1/map_local_fichas`, {
@@ -13367,6 +13411,10 @@ function abrirMapaPopup(localId) {
   document.getElementById('mapaPopupTitulo').textContent = loc.nome;
   const badge = document.getElementById('mapaPopupBadge');
   badge.textContent = loc.tipo.charAt(0).toUpperCase() + loc.tipo.slice(1);
+
+  // Botões de rota — marca o ativo se este local já foi selecionado
+  document.getElementById('mapaRotaBtnPartir').classList.toggle('ativo', !!_rotaOrigem  && _rotaOrigem.id  === loc.id);
+  document.getElementById('mapaRotaBtnChegar').classList.toggle('ativo', !!_rotaDestino && _rotaDestino.id === loc.id);
   badge.style.background = cfg.bg; badge.style.color = cfg.cor;
 
   // Imagem principal
@@ -13755,16 +13803,125 @@ function toggleMapaBiomaPanel(nomeBioma, bg, cor, btn) {
   </div>`;
 }
 
+
+// ── Sistema de Rota ─────────────────────────────────────────────────────────
+let _rotaOrigem  = null; // { id, nome, x, y }
+let _rotaDestino = null;
+
+// Velocidades em km/h por meio de transporte
+const TRANSPORTES = [
+  { id:'pe',       label:'A pé',      vel:5,   icon:'🚶' },
+  { id:'bicicleta',label:'Bicicleta', vel:15,  icon:'🚲' },
+  { id:'surf',     label:'Surf',      vel:10,  icon:'🏄' },
+  { id:'moto',     label:'Moto',      vel:50,  icon:'🏍️'  },
+];
+let _rotaTransporte = 'pe';
+
+// Escala do mapa: quantos km equivalem a 1% da largura da imagem
+// Ajuste este valor conforme a escala real do seu mapa
+const MAPA_KM_POR_PCT = 3.5;
+
+function mapaRotaDefinir(tipo) {
+  const loc = _mapaLocalAtual;
+  if (!loc) return;
+  const ponto = { id: loc.id, nome: loc.nome, x: loc.x, y: loc.y };
+  if (tipo === 'origem')  _rotaOrigem  = ponto;
+  else                    _rotaDestino = ponto;
+
+  // Atualiza visual dos botões no popup
+  document.getElementById('mapaRotaBtnPartir').classList.toggle('ativo', !!_rotaOrigem  && _rotaOrigem.id  === loc.id);
+  document.getElementById('mapaRotaBtnChegar').classList.toggle('ativo', !!_rotaDestino && _rotaDestino.id === loc.id);
+
+  mapaRotaAtualizar();
+  fecharMapaPopup();
+}
+
+function mapaRotaAtualizar() {
+  const pill = document.getElementById('mapaRotaPill');
+  if (!_rotaOrigem && !_rotaDestino) { pill.style.display = 'none'; return; }
+
+  pill.style.display = 'block';
+  document.getElementById('mapaRotaPillOrigem').textContent  = _rotaOrigem  ? _rotaOrigem.nome  : '?';
+  document.getElementById('mapaRotaPillDestino').textContent = _rotaDestino ? _rotaDestino.nome : '?';
+
+  // Monta botões de transporte
+  const transpEl = document.getElementById('mapaRotaTransportes');
+  transpEl.innerHTML = TRANSPORTES.map(t =>
+    `<button class="mapa-rota-pill-transp-btn ${_rotaTransporte===t.id?'ativo':''}"
+      onclick="mapaRotaSetTransporte('${t.id}')">${t.icon} ${t.label}</button>`
+  ).join('');
+
+  if (!_rotaOrigem || !_rotaDestino) {
+    document.getElementById('mapaRotaResultado').innerHTML =
+      '<span style="font-size:12px;color:var(--muted);font-weight:400">Selecione origem e destino</span>';
+    return;
+  }
+
+  // Calcula distância — prefere rota cadastrada, fallback euclidiano
+  const km = mapaRotaKm(_rotaOrigem, _rotaDestino);
+  const transp = TRANSPORTES.find(t => t.id === _rotaTransporte);
+  const horas  = km / transp.vel;
+
+  let tempoStr;
+  if (horas < 1)       tempoStr = `${Math.round(horas * 60)} min`;
+  else if (horas < 24) tempoStr = `${horas.toFixed(1).replace('.',',')}h`;
+  else {
+    const dias = Math.floor(horas / 24), h = Math.round(horas % 24);
+    tempoStr = h > 0 ? `${dias}d ${h}h` : `${dias} dia${dias>1?'s':''}`;
+  }
+
+  document.getElementById('mapaRotaResultado').innerHTML =
+    `<span>${Math.round(km)} km</span> · ${tempoStr}`;
+}
+
+function mapaRotaKm(origem, destino) {
+  // Tenta rota cadastrada na ficha de origem
+  const fichaOrigem  = _mapaFichas[origem.id]  || {};
+  const fichaDestino = _mapaFichas[destino.id] || {};
+
+  const parseRotas = (str) => {
+    const map = {};
+    (str || '').split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+      const [id, km] = line.split(':').map(s => s.trim());
+      if (id && km && !isNaN(parseFloat(km))) map[id] = parseFloat(km);
+    });
+    return map;
+  };
+
+  const rotasOrigem  = parseRotas(fichaOrigem.rotas);
+  const rotasDestino = parseRotas(fichaDestino.rotas);
+
+  if (rotasOrigem[destino.id])  return rotasOrigem[destino.id];
+  if (rotasDestino[origem.id])  return rotasDestino[origem.id];
+
+  // Fallback: distância euclidiana em % × escala
+  const dx = origem.x - destino.x;
+  const dy = origem.y - destino.y;
+  return Math.sqrt(dx*dx + dy*dy) * MAPA_KM_POR_PCT;
+}
+
+function mapaRotaSetTransporte(id) {
+  _rotaTransporte = id;
+  mapaRotaAtualizar();
+}
+
+function mapaRotaLimpar() {
+  _rotaOrigem = _rotaDestino = null;
+  document.getElementById('mapaRotaPill').style.display = 'none';
+}
+
 function mapaReset() {
   const wrap = document.getElementById('mapaWrap');
   const img  = document.getElementById('mapaImg');
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !img || !canvas) return;
-  // naturalWidth/naturalHeight = dimensões reais da imagem, sem ser afetado pelo transform atual
   const iW = img.naturalWidth  || img.offsetWidth;
   const iH = img.naturalHeight || img.offsetHeight;
   if (!iW || !iH) return;
-  const minScale = Math.min(wrap.clientWidth / iW, wrap.clientHeight / iH);
+  // No fullscreen (ou desktop) faz contain completo; no mobile normal cobre só a largura
+  const isFullscreen = wrap.classList.contains('mapa-fullscreen');
+  const isMobileNormal = window.innerWidth <= 600 && !isFullscreen;
+  const minScale = isMobileNormal ? wrap.clientWidth / iW : Math.min(wrap.clientWidth / iW, wrap.clientHeight / iH);
   _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
   canvas.style.transform = `translate(0,0) scale(${minScale})`;
 }
