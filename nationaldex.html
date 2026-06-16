@@ -739,8 +739,7 @@ async function renderDetail(p,s,container){
     const isMobile=window.innerWidth<=720;
 
     if(isMobile){
-      // Layout de card para mobile
-      return`<div style="display:flex;flex-direction:column;gap:1px">
+      return`<div style="display:flex;flex-direction:column">
         ${moves.map((m,i)=>{
           const d=moveDetails[i];
           const typePill=d?.type?pill(d.type):'—';
@@ -750,22 +749,23 @@ async function renderDetail(p,s,container){
           const styleLabel=d?.style?cap(d.style):'—';
           const isEarly=showLvl&&(m.lvl===0||m.lvl<=5);
           const nameColor=isEarly?earlyColor:'var(--text)';
-          const nameFw=isEarly?'800':'600';
-          return`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface)">
-            <div style="flex:1;min-width:0">
-              <div style="font-family:var(--font-body);font-size:12px;font-weight:${nameFw};color:${nameColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${titleCase(m.name)}</div>
-              <div style="display:flex;align-items:center;gap:4px;margin-top:3px;flex-wrap:wrap">
-                ${typePill}
-                <span style="background:${catColor};color:#fff;font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
+          const nameFw=isEarly?'800':'700';
+          const uid='mv-'+i+'-'+m.name.replace(/[^a-z0-9]/g,'');
+          return`
+          <div style="border-bottom:1px solid var(--border)">
+            <div onclick="toggleMoveDesc(this)" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--surface)">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:${nameFw};color:${nameColor};margin-bottom:4px">${titleCase(m.name)}</div>
+                <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                  ${typePill}
+                  <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
+                  ${d?.power?`<span style="font-size:10px;font-weight:700;color:var(--muted)">PWR <span style="color:var(--text);font-family:var(--font-title)">${d.power}</span></span>`:''}          
+                </div>
               </div>
+              <span style="font-size:16px;color:var(--muted);line-height:1;flex-shrink:0">›</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;min-width:32px">
-              <span style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;font-family:var(--font-title)">PWR</span>
-              <span style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text)">${d?.power??'—'}</span>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:center;min-width:40px">
-              <span style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;font-family:var(--font-title)">ESTILO</span>
-              <span style="background:${d?.style?styleColor:'var(--surface2)'};color:${d?.style?'#fff':'var(--muted)'};font-size:8px;font-weight:700;padding:2px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.3px;margin-top:1px">${styleLabel}</span>
+            <div class="move-desc-row" style="display:none;padding:10px 14px 12px;background:var(--surface2);font-size:12px;color:var(--muted);line-height:1.6;text-align:justify">
+              ${d?.desc||'Sem descrição disponível.'}
             </div>
           </div>`;
         }).join('')}
@@ -909,12 +909,18 @@ function toggleShiny(id){
     :`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 }
 
-function toggleMoveDesc(row){
-  const expanded=row.classList.toggle('move-expanded');
-  const next=row.nextElementSibling;
-  if(next&&next.classList.contains('move-desc-row')){
-    next.style.display=expanded?'table-row':'none';
-  }
+function toggleMoveDesc(el){
+  // Suporta tanto <tr> (desktop) quanto <div> (mobile)
+  const isDiv=el.tagName==='DIV';
+  const descEl=isDiv
+    ? el.nextElementSibling  // div.move-desc-row logo após o div clicável
+    : el.nextElementSibling; // tr.move-desc-row logo após o tr
+  if(!descEl||!descEl.classList.contains('move-desc-row'))return;
+  const expanded=descEl.style.display==='none'||!descEl.style.display;
+  descEl.style.display=expanded?(isDiv?'block':'table-row'):'none';
+  // Rotaciona a seta no mobile
+  const arrow=el.querySelector('span[style*="›"]');
+  if(arrow)arrow.style.transform=expanded?'rotate(90deg)':'';
 }
 
 function switchMovesTab(btn,panelId){
