@@ -401,7 +401,7 @@ function resetTypeTheme(){
 }
 const STAT_NAMES={hp:'HP',attack:'ATK',defense:'DEF','special-attack':'SP.ATK','special-defense':'SP.DEF',speed:'SPD'};
 const STAT_COLORS={hp:'#e05050',attack:'#e07030',defense:'#e0b030','special-attack':'#7070e0','special-defense':'#4aaa6a',speed:'#e04aaa'};
-const GR=[[0,0],[1,151],[152,251],[252,386],[387,493],[494,649],[650,721],[722,809],[810,905],[906,1025]];
+const GR={1:[1,151],2:[152,251],3:[252,386],4:[387,493],5:[494,649],6:[650,721],7:[722,809],8:[810,905],9:[906,1025]};
 const TYPE_CHART={normal:{rock:.5,ghost:0,steel:.5},fire:{fire:.5,water:.5,grass:2,ice:2,bug:2,rock:.5,dragon:.5,steel:2},water:{fire:2,water:.5,grass:.5,ground:2,rock:2,dragon:.5},electric:{water:2,electric:.5,grass:.5,ground:0,flying:2,dragon:.5},grass:{fire:.5,water:2,grass:.5,poison:.5,ground:2,flying:.5,bug:.5,rock:2,dragon:.5,steel:.5},ice:{fire:.5,water:.5,grass:2,ice:.5,ground:2,flying:2,dragon:2,steel:.5},fighting:{normal:2,ice:2,poison:.5,flying:.5,psychic:.5,bug:.5,rock:2,ghost:0,dark:2,steel:2,fairy:.5},poison:{grass:2,poison:.5,ground:.5,rock:.5,ghost:.5,steel:0,fairy:2},ground:{fire:2,electric:2,grass:.5,poison:2,flying:0,bug:.5,rock:2,steel:2},flying:{electric:.5,grass:2,fighting:2,bug:2,rock:.5,steel:.5},psychic:{fighting:2,poison:2,psychic:.5,dark:0,steel:.5},bug:{fire:.5,grass:2,fighting:.5,poison:.5,flying:.5,psychic:2,ghost:.5,dark:2,steel:.5,fairy:.5},rock:{fire:2,ice:2,fighting:.5,ground:.5,flying:2,bug:2,steel:.5},ghost:{normal:0,fighting:0,poison:.5,bug:.5,ghost:2,dark:.5},dragon:{dragon:2,steel:.5,fairy:0},dark:{fighting:.5,psychic:2,ghost:2,dark:.5,fairy:.5},steel:{fire:.5,water:.5,electric:.5,ice:2,rock:2,steel:.5,fairy:2},fairy:{fire:.5,fighting:2,poison:.5,dragon:2,dark:2,steel:.5}};
 
 /* ═══════════════════════════════════════
@@ -511,27 +511,65 @@ function batchTypes(ids){
   const batches=[];for(let i=0;i<ids.length;i+=15)batches.push(ids.slice(i,i+15));
   batches.forEach((b,bi)=>setTimeout(()=>b.forEach(async id=>{
     if(typeCache[id])return;
-    try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);const d=await r.json();typeCache[id]=d.types.map(t=>t.type.name);const el=document.getElementById(`pt-${id}`);if(el)el.innerHTML=typeCache[id].map(t=>pill(t)).join('');}catch{}
+    try{
+      const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+      const d=await r.json();
+      typeCache[id]=d.types.map(t=>t.type.name);
+      const el=document.getElementById(`pt-${id}`);
+      if(el)el.innerHTML=typeCache[id].map(t=>pill(t)).join('');
+    }catch{}
   }),bi*350));
 }
 
 function applyFilters(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const tp=document.getElementById('type-filter').value;
-  filtered=all.filter(p=>{
+
+  // Primeiro filtra por região e nome (sem depender de cache de tipos)
+  const byRegion=all.filter(p=>{
     const nm=!q||p.name.includes(q)||String(p.id).includes(q);
     let gm=true;
     if(curGen==='nendo'){
       gm=NENDO_IDS.has(p.id);
     } else {
-      const[gMin,gMax]=GR[curGen];
-      gm=p.id>=gMin&&p.id<=gMax;
+      const rng=GR[curGen];
+      gm=!!rng&&p.id>=rng[0]&&p.id<=rng[1];
     }
-    const tm=!tp||(typeCache[p.id]&&typeCache[p.id].includes(tp));
-    return nm&&gm&&tm;
+    return nm&&gm;
   });
+
+  if(!tp){
+    // Sem filtro de tipo: exibe tudo da região
+    filtered=byRegion;
+  } else {
+    // Com filtro de tipo: inclui quem tem cache e bate o tipo;
+    // pokémon sem cache são carregados e depois refiltramos
+    const withCache=byRegion.filter(p=>typeCache[p.id]);
+    const withoutCache=byRegion.filter(p=>!typeCache[p.id]);
+    filtered=withCache.filter(p=>typeCache[p.id].includes(tp));
+    if(withoutCache.length){
+      // Carrega tipos dos que ainda não têm cache e reaaplica filtros ao terminar
+      batchTypesAndRefilter(withoutCache.map(p=>p.id));
+    }
+  }
+
   document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
   renderList();
+}
+
+// Carrega tipos de uma lista de IDs e reaplica filtros ao concluir
+function batchTypesAndRefilter(ids){
+  const batches=[];for(let i=0;i<ids.length;i+=15)batches.push(ids.slice(i,i+15));
+  let pending=batches.length;
+  batches.forEach((b,bi)=>setTimeout(()=>{
+    Promise.all(b.map(async id=>{
+      if(typeCache[id])return;
+      try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);const d=await r.json();typeCache[id]=d.types.map(t=>t.type.name);}catch{}
+    })).then(()=>{
+      pending--;
+      if(pending===0) applyFilters(); // reaplica quando todos os lotes terminarem
+    });
+  },bi*350));
 }
 
 document.getElementById('search').addEventListener('input',applyFilters);
@@ -753,7 +791,7 @@ async function renderDetail(p,s,container){
         const styleLabel=d?.style?cap(d.style):'—';
         const isEarly=showLvl&&(m.lvl===0||m.lvl<=5);
         const nameStyle=isEarly?`font-weight:800;color:${earlyColor}`:'';
-        return`<tr class="move-row">
+        return`<tr class="move-row" onclick="toggleMoveDesc(this)" style="cursor:pointer">
           <td class="move-name" style="text-align:center;white-space:nowrap;${nameStyle}">${titleCase(m.name)}</td>
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
@@ -872,7 +910,6 @@ function toggleShiny(id){
 }
 
 function toggleMoveDesc(row){
-  if(window.innerWidth>720)return;
   const expanded=row.classList.toggle('move-expanded');
   const next=row.nextElementSibling;
   if(next&&next.classList.contains('move-desc-row')){
