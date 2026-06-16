@@ -4277,11 +4277,7 @@ function calcSyncSelects(){
               <div class="field" style="margin-bottom:0">
                 <label>Tipo</label>
                 <select id="mapaNovoTipo">
-                  <option value="cidade">Cidade</option>
-                  <option value="dungeon">Dungeon</option>
-                  <option value="especial">Especial</option>
-                  <option value="rota">Rota</option>
-                  <option value="area">Área</option>
+                  <!-- opções preenchidas dinamicamente por popularSelectTipos() -->
                 </select>
               </div>
               <div class="field" style="margin-bottom:0">
@@ -4301,34 +4297,7 @@ function calcSyncSelects(){
           <div id="mapaAdmTabFiltros" style="display:none">
             <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Edite os nomes exibidos no menu de filtro do mapa. As alterações são salvas e aplicadas imediatamente.</div>
             <div style="display:flex;flex-direction:column;gap:10px" id="mapaFiltrosEditList">
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Tipo</span>
-                <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Nome exibido</span>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;color:var(--text);font-weight:600">Todos</span>
-                <input type="text" id="mapaFiltroLabel-todos" placeholder="Todos" style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;color:#2563a8;font-weight:600">Cidade</span>
-                <input type="text" id="mapaFiltroLabel-cidade" placeholder="Cidades" style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;color:#7c3aed;font-weight:600">Dungeon</span>
-                <input type="text" id="mapaFiltroLabel-dungeon" placeholder="Dungeons" style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;color:#b45309;font-weight:600">Especial</span>
-                <input type="text" id="mapaFiltroLabel-especial" placeholder="Especiais" style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;color:#1a7a1a;font-weight:600">Rota</span>
-                <input type="text" id="mapaFiltroLabel-rota" placeholder="Rotas" style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>
-              </div>
-              <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
-                <span style="font-size:12px;color:#0e7490;font-weight:600">Área</span>
-                <input type="text" id="mapaFiltroLabel-area" placeholder="Áreas" style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>
-              </div>
+              <!-- preenchido dinamicamente por mapaFiltrosCarregarInputs() -->
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
               <button class="btn btn-warn btn-sm" onclick="mapaFiltrosReset()">↩ Restaurar padrão</button>
@@ -5576,8 +5545,10 @@ function admTab(sec,el){
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
   if(sec==='mapa-adm'){ setTimeout(async ()=>{
+    if(MAPA_TIPOS.length === 0) await carregarMapaTipos();
     if(MAPA_LOCAIS.length === 0) await carregarMapaLocais();
     if(Object.keys(_mapaFichas).length === 0) await carregarMapaFichas();
+    popularSelectTipos('mapaNovoTipo','mapaLocalEditTipo');
     mapaAdmPopularSelect();
     mapaAdmRenderCards('');
     const busca = document.getElementById('mapaAdmBusca');
@@ -12912,24 +12883,62 @@ async function carregarMapaLocais() {
   MAPA_LOCAIS = [];
 }
 
-// ── Labels dos filtros (editáveis pelo ADM, salvos no DB) ─
-const FILTRO_LABELS_DEFAULT = {todos:'Todos', cidade:'Cidades', dungeon:'Dungeons', especial:'Especiais', rota:'Rotas', area:'Áreas'};
-let _mapaFiltroLabels = {...FILTRO_LABELS_DEFAULT};
+// ── Tipos do mapa — carregados do Supabase (map_tipos) ────
+let MAPA_TIPOS = [];
 
-async function mapaFiltrosCarregarDB() {
-  try {
-    const rows = await dbGet('config', 'chave=eq.mapa_filtro_labels');
-    if (rows && rows[0]) {
-      _mapaFiltroLabels = Object.assign({}, FILTRO_LABELS_DEFAULT, JSON.parse(rows[0].valor));
-    }
-  } catch(e) { console.warn('[mapa] filtro labels:', e); }
+// Reconstrói TIPO_CONFIG (usado pelos pins e badges) a partir de MAPA_TIPOS
+function _buildTipoHelpers() {
+  window.TIPO_CONFIG = {};
+  MAPA_TIPOS.forEach(t => { TIPO_CONFIG[t.id] = {cor: t.cor, bg: t.bg, emoji: t.emoji}; });
 }
+_buildTipoHelpers();
+
+// Popula qualquer <select> de tipos do mapa com as opções dinâmicas
+function popularSelectTipos(...ids) {
+  ids.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = MAPA_TIPOS.map(t => `<option value="${t.id}">${t.label}</option>`).join('');
+    if (cur) sel.value = cur;
+  });
+}
+
+async function carregarMapaTipos() {
+  const LS_KEY = 'mapa_tipos_cache';
+  try {
+    const rows = await dbGet('map_tipos', 'select=*&order=ordem.asc');
+    if (Array.isArray(rows) && rows.length > 0) {
+      MAPA_TIPOS = rows;
+      _buildTipoHelpers();
+      try { localStorage.setItem(LS_KEY, JSON.stringify(MAPA_TIPOS)); } catch(e) {}
+      return;
+    }
+  } catch(e) { console.warn('[mapa] carregarMapaTipos:', e); }
+  // Fallback: cache local
+  try {
+    const cached = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (Array.isArray(cached) && cached.length > 0) { MAPA_TIPOS = cached; _buildTipoHelpers(); }
+  } catch(e) {}
+}
+
+// Retorna mapa de labels para o filtro do mapa (derivado de MAPA_TIPOS + "todos")
+function _mapaFiltroLabelsMap() {
+  const out = {todos: 'Todos'};
+  MAPA_TIPOS.forEach(t => { out[t.id] = t.label_plural || t.label; });
+  return out;
+}
+
+// Compat: mapaFiltrosCarregarDB não é mais necessário
+async function mapaFiltrosCarregarDB() {}
 function renderMapaFiltros() {
   const wrap = document.getElementById('mapaFiltros');
   if (!wrap) return;
-  const tipos = ['todos','cidade','dungeon','especial','rota','area'];
-  const cores = {todos:'#555',cidade:'#2563a8',dungeon:'#7c3aed',especial:'#b45309',rota:'#1a7a1a',area:'#0e7490'};
-  const activeLabel = _mapaFiltroLabels[_mapaFiltroAtivo] || _mapaFiltroAtivo;
+  const labels = _mapaFiltroLabelsMap();
+  const tipos = ['todos', ...MAPA_TIPOS.map(t => t.id)];
+  const cores = {todos:'#555'};
+  MAPA_TIPOS.forEach(t => { cores[t.id] = t.cor; });
+  const activeLabel = labels[_mapaFiltroAtivo] || _mapaFiltroAtivo;
   const isFiltered = _mapaFiltroAtivo !== 'todos';
   wrap.innerHTML = `
     <button class="mapa-filtro-toggle${isFiltered?' has-active':''}" onclick="toggleMapaFiltroMenu(this)" id="mapaFiltroToggle">
@@ -12939,7 +12948,7 @@ function renderMapaFiltros() {
       ${tipos.map(t => `
         <button class="mapa-filtro-item${t===_mapaFiltroAtivo?' active':''}" onclick="mapaFiltrarDrop('${t}')" data-tipo="${t}">
           <span class="mapa-filtro-item-dot" style="background:${cores[t]||'#555'}"></span>
-          ${_mapaFiltroLabels[t]||t}
+          ${labels[t]||t}
         </button>`).join('')}
     </div>`;
 }
@@ -12989,30 +12998,53 @@ function mapaFiltrarDrop(tipo) {
   if (toggle) toggle.classList.remove('open');
   mapaRotaPillReposicionar();
   if (toggle) toggle.classList.remove('open');
+  popularSelectTipos('mapaNovoTipo','mapaLocalEditTipo');
   renderMapaFiltros();
 }
 function mapaFiltrosCarregarInputs() {
-  Object.keys(FILTRO_LABELS_DEFAULT).forEach(k => {
-    const el = document.getElementById('mapaFiltroLabel-' + k);
-    if (el) el.value = _mapaFiltroLabels[k] || '';
+  // Renderiza dinamicamente a lista de tipos vinda do Supabase
+  const list = document.getElementById('mapaFiltrosEditList');
+  if (!list) return;
+  const allTipos = [{id:'todos', label:'Todos', label_plural:'Todos', cor:'#555'}, ...MAPA_TIPOS];
+  const inp = (id,ph) => `<input type="text" id="mapaFiltroLabel-${id}" placeholder="${ph}"
+    style="padding:8px 11px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;color:var(--text);width:100%"/>`;
+  list.innerHTML = `
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
+      <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Tipo</span>
+      <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Nome exibido</span>
+    </div>
+    ${allTipos.map(t => `
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center">
+      <span style="font-size:12px;color:${t.cor};font-weight:600">${t.label}</span>
+      ${inp(t.id, t.label_plural || t.label)}
+    </div>`).join('')}`;
+  // Preenche valores actuais
+  const labels = _mapaFiltroLabelsMap();
+  allTipos.forEach(t => {
+    const el = document.getElementById('mapaFiltroLabel-' + t.id);
+    if (el) el.value = labels[t.id] || '';
   });
 }
 async function mapaFiltrosSalvar() {
-  const labels = {};
-  Object.keys(FILTRO_LABELS_DEFAULT).forEach(k => {
-    const el = document.getElementById('mapaFiltroLabel-' + k);
-    labels[k] = (el && el.value.trim()) ? el.value.trim() : FILTRO_LABELS_DEFAULT[k];
-  });
   const fb = document.getElementById('mapaFiltrosFbOk');
   const fbErr = document.getElementById('mapaFiltrosFbErr');
   try {
-    const existing = await dbGet('config', 'chave=eq.mapa_filtro_labels');
-    if (existing && existing[0]) {
-      await dbPatch('config', 'chave=eq.mapa_filtro_labels', {valor: JSON.stringify(labels)});
-    } else {
-      await dbPost('config', {chave: 'mapa_filtro_labels', valor: JSON.stringify(labels)});
-    }
-    _mapaFiltroLabels = labels;
+    // Salva label_plural de cada tipo em map_tipos via upsert
+    const upserts = MAPA_TIPOS.map(t => {
+      const el = document.getElementById('mapaFiltroLabel-' + t.id);
+      const novoLabel = (el && el.value.trim()) ? el.value.trim() : (t.label_plural || t.label);
+      t.label_plural = novoLabel; // actualiza memória
+      return {...t};
+    });
+    await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
+      method: 'POST',
+      headers: {...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates'},
+      body: JSON.stringify(upserts),
+    });
+    // Salva label de "todos" (só local, não vai para map_tipos)
+    const todosEl = document.getElementById('mapaFiltroLabel-todos');
+    if (todosEl && todosEl.value.trim()) _mapaTodosLabel = todosEl.value.trim();
+    try { localStorage.setItem('mapa_tipos_cache', JSON.stringify(MAPA_TIPOS)); } catch(e) {}
     renderMapaFiltros();
     if (fb) { fb.style.display='block'; setTimeout(()=>fb.style.display='none', 2000); }
     if (fbErr) fbErr.style.display='none';
@@ -13024,21 +13056,22 @@ async function mapaFiltrosSalvar() {
 }
 async function mapaFiltrosReset() {
   if (!confirm('Restaurar os nomes padrão dos filtros?')) return;
+  // Restaura label_plural dos defaults
+  // Recarrega do Supabase para restaurar valores originais
+  await carregarMapaTipos();
   try {
-    await dbPatch('config', 'chave=eq.mapa_filtro_labels', {valor: JSON.stringify(FILTRO_LABELS_DEFAULT)});
-  } catch(e) {}
-  _mapaFiltroLabels = {...FILTRO_LABELS_DEFAULT};
+    await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
+      method: 'POST',
+      headers: {...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates'},
+      body: JSON.stringify(MAPA_TIPOS),
+    });
+    try { localStorage.setItem('mapa_tipos_cache', JSON.stringify(MAPA_TIPOS)); } catch(e) {}
+  } catch(e) { console.warn('[mapa] reset filtros:', e); }
   mapaFiltrosCarregarInputs();
   renderMapaFiltros();
 }
 
-const TIPO_CONFIG = {
-  cidade:   {cor:'#2563a8', bg:'#e8f0fb', emoji:'🏙'},
-  dungeon:  {cor:'#7c3aed', bg:'#ede9fe', emoji:'🕳'},
-  especial: {cor:'#b45309', bg:'#fef3c7', emoji:'⭐'},
-  rota:     {cor:'#1a7a1a', bg:'#dcfce7', emoji:'🛤'},
-  area:     {cor:'#0e7490', bg:'#cffafe', emoji:'🌿'},
-};
+// TIPO_CONFIG é construído dinamicamente por _buildTipoHelpers() a partir de MAPA_TIPOS
 
 // Estado do mapa
 let _mapaLocalAtual = null;
@@ -13076,11 +13109,12 @@ async function initMapa() {
       img.onerror = res;
       if (imgSrc && !img.src) img.src = imgSrc;
     }),
+    carregarMapaTipos(),
     carregarMapaLocais(),
     carregarMapaEventos(),
     carregarPosicoesPins(),
     carregarMapaFichas(),
-    mapaFiltrosCarregarDB(),
+    mapaFiltrosCarregarDB(), // no-op, dados vêm de carregarMapaTipos
   ]);
 
   clearInterval(progInterval);
@@ -13113,9 +13147,9 @@ function mapaAdmPopularSelect() {
     if (!grupos[l.tipo]) grupos[l.tipo] = [];
     grupos[l.tipo].push(l);
   });
-  const labelTipo = {cidade:'Cidades',dungeon:'Dungeons',especial:'Especiais',rota:'Rotas',area:'Áreas'};
+  const labelTipo = {}; MAPA_TIPOS.forEach(t => { labelTipo[t.id] = t.label_plural || t.label; });
   sel.innerHTML = '<option value="">— Selecione um local —</option>';
-  Object.keys(labelTipo).forEach(tipo => {
+  MAPA_TIPOS.forEach(({id: tipo}) => {
     if (!grupos[tipo]) return;
     const og = document.createElement('optgroup');
     og.label = labelTipo[tipo];
@@ -13257,10 +13291,9 @@ function mapaAdmRenderCards(filtro) {
   const wrap = document.getElementById('mapaAdmCardsWrap');
   if (!wrap) return;
   const q = (filtro || '').toLowerCase().trim();
-  const TIPO_COR = {cidade:'#2563a8',dungeon:'#7c3aed',especial:'#b45309',rota:'#1a7a1a',area:'#0e7490'};
-  const TIPO_BG  = {cidade:'#e8f0fb',dungeon:'#ede9fe',especial:'#fef3c7',rota:'#dcfce7',area:'#cffafe'};
-  const TIPO_LABEL = {cidade:'Cidades',dungeon:'Dungeons',especial:'Especiais',rota:'Rotas',area:'Áreas'};
-  const ordem = ['cidade','dungeon','especial','rota','area'];
+  const TIPO_COR = {}; const TIPO_BG = {}; const TIPO_LABEL = {};
+  MAPA_TIPOS.forEach(t => { TIPO_COR[t.id]=t.cor; TIPO_BG[t.id]=t.bg; TIPO_LABEL[t.id]=t.label_plural||t.label; });
+  const ordem = MAPA_TIPOS.map(t => t.id);
   let html = '';
   ordem.forEach(tipo => {
     const lista = MAPA_LOCAIS.filter(l => l.tipo === tipo && (!q || l.nome.toLowerCase().includes(q) || l.id.toLowerCase().includes(q)));
@@ -13298,6 +13331,7 @@ function mapaAdmEditarLocal(id) {
   document.getElementById('mapaLocalEditId').value         = loc.id;
   document.getElementById('mapaLocalEditTitle').textContent = 'Editar: ' + loc.nome;
   document.getElementById('mapaLocalEditNome').value       = loc.nome;
+  popularSelectTipos('mapaLocalEditTipo');
   document.getElementById('mapaLocalEditTipo').value       = loc.tipo;
   document.getElementById('mapaLocalEditDesc').value       = loc.desc || '';
   document.getElementById('mapaLocalEditX').value          = loc.x;
@@ -13310,9 +13344,8 @@ function mapaAdmAbrirFicha(id) {
   const loc   = MAPA_LOCAIS.find(l => l.id === id);
   const ficha = _mapaFichas[id] || {};
   if (!loc) return;
-  const TIPO_COR = {cidade:'#2563a8',dungeon:'#7c3aed',especial:'#b45309',rota:'#1a7a1a',area:'#0e7490'};
-  const TIPO_BG  = {cidade:'#e8f0fb',dungeon:'#ede9fe',especial:'#fef3c7',rota:'#dcfce7',area:'#cffafe'};
-  const TIPO_LABEL = {cidade:'Cidade',dungeon:'Dungeon',especial:'Especial',rota:'Rota',area:'Área'};
+  const TIPO_COR = {}; const TIPO_BG = {}; const TIPO_LABEL = {};
+  MAPA_TIPOS.forEach(t => { TIPO_COR[t.id]=t.cor; TIPO_BG[t.id]=t.bg; TIPO_LABEL[t.id]=t.label; });
 
   document.getElementById('mapaFichaId').value            = id;
   document.getElementById('mapaFichaModalTitulo').textContent = loc.nome;
@@ -14459,11 +14492,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="mapa-local-edit-field">
       <label>Tipo</label>
       <select id="mapaLocalEditTipo">
-        <option value="cidade">Cidade</option>
-        <option value="dungeon">Dungeon</option>
-        <option value="especial">Especial</option>
-        <option value="rota">Rota</option>
-        <option value="area">Área</option>
+        <!-- opções preenchidas dinamicamente por popularSelectTipos() -->
       </select>
     </div>
     <div class="mapa-local-edit-field">
