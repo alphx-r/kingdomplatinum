@@ -74,9 +74,17 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-ficha-biomas{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .mapa-ficha-bioma-tag{font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;border:none;opacity:.85;cursor:pointer;transition:opacity .15s,transform .15s}.mapa-ficha-bioma-tag:hover{opacity:1;transform:scale(1.05)}
 /* Galeria */
-.mapa-ficha-galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:6px}
-.mapa-ficha-galeria img{width:100%;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;transition:opacity .15s}
-.mapa-ficha-galeria img:hover{opacity:.85}
+.mapa-ficha-galeria{position:relative;margin-top:6px;user-select:none}
+.mapa-galeria-track-wrap{overflow:hidden;border-radius:10px}
+.mapa-galeria-track{display:flex;transition:transform .3s ease;will-change:transform}
+.mapa-galeria-track img{min-width:100%;width:100%;height:180px;object-fit:cover;border-radius:10px;cursor:pointer;flex-shrink:0}
+.mapa-galeria-btn{position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;transition:background .15s;line-height:1}
+.mapa-galeria-btn:hover{background:rgba(0,0,0,.7)}
+.mapa-galeria-prev{left:8px}
+.mapa-galeria-next{right:8px}
+.mapa-galeria-dots{display:flex;justify-content:center;gap:5px;margin-top:6px}
+.mapa-galeria-dot{width:6px;height:6px;border-radius:50%;background:var(--border2);cursor:pointer;transition:background .2s}
+.mapa-galeria-dot.ativo{background:var(--brand)}
 /* Rosa dos ventos */
 .mapa-rosa{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;max-width:260px;margin:0 auto}
 .mapa-rosa-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text);padding:5px 8px;border-radius:8px;cursor:pointer;transition:background .15s;text-decoration:none}
@@ -126,7 +134,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 @keyframes popupIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
 .mapa-popup-header{padding:14px 20px 0;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .mapa-popup-titulo{font-family:var(--font-title);font-size:17px;color:var(--brand);font-weight:700;line-height:1.2;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mapa-popup-tipo-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:4px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.mapa-popup-tipo-badge{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:4px 10px;border-radius:20px;white-space:nowrap;display:inline-block}
 .mapa-popup-close{width:28px;height:28px;border-radius:50%;border:none;background:var(--surface2);color:var(--muted);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;margin-left:4px}
 .mapa-popup-close:hover{background:var(--border2)}.mapa-popup::-webkit-scrollbar{display:none}
 .mapa-popup-body{padding:16px 20px 20px}
@@ -627,7 +635,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   /* Barra de edição mais compacta */
   .mapa-edit-bar{font-size:11px;padding:6px 12px}
   /* Galeria de fotos: 2 colunas no mobile */
-  .mapa-ficha-galeria{grid-template-columns:repeat(2,1fr)}
+
 }
 /* Botão fullscreen oculto no desktop */
 
@@ -2485,10 +2493,7 @@ function calcSyncSelects(){
       <!-- 2. Nome (esquerda) | Tipo de local (direita) -->
       <div class="mapa-popup-header" style="padding:14px 20px 0;align-items:center">
         <div class="mapa-popup-titulo" id="mapaPopupTitulo" style="flex:1;min-width:0"></div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-          <span class="mapa-popup-tipo-badge" id="mapaPopupBadge"></span>
-          <button class="mapa-popup-close" onclick="fecharMapaPopup()">×</button>
-        </div>
+        <button class="mapa-popup-close" onclick="fecharMapaPopup()">×</button>
       </div>
 
       <!-- 3. Biomas com integração da lista de Pokémon vinculados -->
@@ -2497,6 +2502,11 @@ function calcSyncSelects(){
       </div>
 
       <div class="mapa-popup-body" style="padding:12px 20px 20px">
+
+        <!-- Badge do tipo — centralizado -->
+        <div style="text-align:center;margin-bottom:7px">
+          <span class="mapa-popup-tipo-badge" id="mapaPopupBadge"></span>
+        </div>
 
         <!-- 4. Pequena descrição / título do local -->
         <div id="mapaPopupResumo" class="mapa-ficha-resumo" style="display:none"></div>
@@ -2515,7 +2525,14 @@ function calcSyncSelects(){
         <!-- 7. Galeria -->
         <div id="mapaPopupGaleriaWrap" class="mapa-ficha-section" style="display:none">
           <div class="mapa-ficha-section-titulo">Galeria</div>
-          <div class="mapa-ficha-galeria" id="mapaPopupGaleria"></div>
+          <div class="mapa-ficha-galeria" id="mapaPopupGaleria">
+            <div class="mapa-galeria-track-wrap">
+              <div class="mapa-galeria-track" id="mapaGaleriaTrack"></div>
+            </div>
+            <button class="mapa-galeria-btn mapa-galeria-prev" id="mapaGaleriaPrev" onclick="mapaGaleriaNav(-1)">‹</button>
+            <button class="mapa-galeria-btn mapa-galeria-next" id="mapaGaleriaNext" onclick="mapaGaleriaNav(1)">›</button>
+            <div class="mapa-galeria-dots" id="mapaGaleriaDots"></div>
+          </div>
         </div>
 
         <!-- 8. Rosa dos ventos — localizações próximas -->
@@ -12867,7 +12884,7 @@ function mapaRotaPillReposicionar() {
     const tRect = toggle.getBoundingClientRect();
     // Se o menu está aberto, soma a altura dele também
     const menuH = (menu && menu.classList.contains('open')) ? menu.getBoundingClientRect().height : 0;
-    pill.style.top = (tRect.bottom - wRect.top + menuH + 8) + 'px';
+    pill.style.top = (tRect.bottom - wRect.top + menuH + 14) + 'px';
   });
 }
 function mapaFiltrarDrop(tipo) {
@@ -13570,10 +13587,19 @@ function abrirMapaPopup(localId) {
   const galeriaEl   = document.getElementById('mapaPopupGaleria');
   const galeria = (ficha.galeria || '').split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
   if (galeria.length) {
-    galeriaEl.innerHTML = galeria.map(url=>
+    galeriaWrap.style.display = 'block';
+    _mapaGaleriaIdx = 0;
+    _mapaGaleriaUrls = galeria;
+    const track = document.getElementById('mapaGaleriaTrack');
+    const dots  = document.getElementById('mapaGaleriaDots');
+    if (track) track.innerHTML = galeria.map(url =>
       `<img src="${url}" alt="" loading="lazy" onclick="abrirLightbox('${url}')" />`
     ).join('');
-    galeriaWrap.style.display = 'block';
+    if (dots) dots.innerHTML = galeria.map((_,i) =>
+      `<div class="mapa-galeria-dot${i===0?' ativo':''}" onclick="mapaGaleriaIr(${i})"></div>`
+    ).join('');
+    mapaGaleriaAtualizar();
+    mapaGaleriaIniciarSwipe();
   } else galeriaWrap.style.display = 'none';
 
   // Rosa dos ventos
@@ -14165,6 +14191,65 @@ async function excluirMapaLocal() {
     fb.textContent = 'Erro ao remover.'; fb.style.color = '#e53e3e';
   }
 }
+
+// ── Galeria Slider ────────────────────────────────────────────────────────────
+let _mapaGaleriaIdx  = 0;
+let _mapaGaleriaUrls = [];
+
+function mapaGaleriaAtualizar() {
+  const track = document.getElementById('mapaGaleriaTrack');
+  const prev  = document.getElementById('mapaGaleriaPrev');
+  const next  = document.getElementById('mapaGaleriaNext');
+  const dots  = document.querySelectorAll('.mapa-galeria-dot');
+  if (!track) return;
+  track.style.transform = `translateX(-${_mapaGaleriaIdx * 100}%)`;
+  if (prev) prev.style.display = _mapaGaleriaIdx === 0 ? 'none' : 'flex';
+  if (next) next.style.display = _mapaGaleriaIdx === _mapaGaleriaUrls.length - 1 ? 'none' : 'flex';
+  dots.forEach((d, i) => d.classList.toggle('ativo', i === _mapaGaleriaIdx));
+}
+
+function mapaGaleriaNav(dir) {
+  const total = _mapaGaleriaUrls.length;
+  _mapaGaleriaIdx = Math.max(0, Math.min(total - 1, _mapaGaleriaIdx + dir));
+  mapaGaleriaAtualizar();
+}
+
+function mapaGaleriaIr(idx) {
+  _mapaGaleriaIdx = idx;
+  mapaGaleriaAtualizar();
+}
+
+function mapaGaleriaIniciarSwipe() {
+  const wrap = document.getElementById('mapaGaleriaTrack')?.parentElement;
+  if (!wrap) return;
+  // Remove listeners antigos clonando o elemento
+  const novo = wrap.cloneNode(true);
+  wrap.parentNode.replaceChild(novo, wrap);
+  // Teclado: setas esquerda/direita (só quando galeria está visível)
+  if (!window._mapaGaleriaKeyHandler) {
+    window._mapaGaleriaKeyHandler = (e) => {
+      const galeriaWrap = document.getElementById('mapaPopupGaleriaWrap');
+      if (!galeriaWrap || galeriaWrap.style.display === 'none') return;
+      if (e.key === 'ArrowLeft')  mapaGaleriaNav(-1);
+      if (e.key === 'ArrowRight') mapaGaleriaNav(1);
+    };
+    document.addEventListener('keydown', window._mapaGaleriaKeyHandler);
+  }
+  let startX = 0, dragging = false;
+  novo.addEventListener('touchstart', e => { startX = e.touches[0].clientX; dragging = true; }, {passive:true});
+  novo.addEventListener('touchend',   e => {
+    if (!dragging) return; dragging = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    if (Math.abs(dx) > 40) mapaGaleriaNav(dx < 0 ? 1 : -1);
+  });
+  novo.addEventListener('mousedown',  e => { startX = e.clientX; dragging = true; });
+  novo.addEventListener('mouseup',    e => {
+    if (!dragging) return; dragging = false;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 40) mapaGaleriaNav(dx < 0 ? 1 : -1);
+  });
+}
+
 function mapaRotaLimpar() {
   _rotaOrigem = _rotaDestino = null;
   ['mapaRotaInputOrigem','mapaRotaInputDestino'].forEach(id => {
