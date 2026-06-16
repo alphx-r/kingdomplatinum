@@ -87,7 +87,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-rosa-center span{font-size:16px}
 /* Filtros do mapa — dropdown */
 .mapa-filtros{position:absolute;top:14px;left:14px;z-index:30;}
-.mapa-dist-pill{position:absolute;top:57px;left:14px;z-index:30;display:block;background:rgba(255,255,255,.95);border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.25);padding:6px 14px;font-family:"Nunito",sans-serif;font-size:12px;font-weight:700;color:#333;cursor:pointer;white-space:nowrap}
+.mapa-dist-pill{display:none!important}
 .mapa-dist-pill-row{display:flex;align-items:center;gap:4px;line-height:1.4}
 .mapa-dist-pill-label{font-weight:700;font-size:10px;color:#888;min-width:40px}
 .mapa-dist-pill-val{font-weight:600;color:#333;font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis}
@@ -135,7 +135,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-rota-btns{display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
 .mapa-rota-btn{flex:1;font-size:11px;font-weight:700;padding:7px 4px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:background .15s,border-color .15s;font-family:var(--font-body);letter-spacing:.3px}
 .mapa-rota-btn.ativo{border-color:var(--brand);background:var(--brand);color:#fff}
-.mapa-rota-pill{position:absolute;top:57px;left:14px;z-index:900;display:none;background:var(--surface);border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.3);padding:12px 14px;min-width:200px;max-width:260px;border:1.5px solid var(--border);animation:popupIn .2s ease;font-family:"Nunito",sans-serif}
+.mapa-rota-pill{position:absolute;top:57px;left:14px;z-index:900;display:block;background:var(--surface);border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.3);padding:10px 14px;min-width:160px;max-width:260px;border:1.5px solid var(--border);font-family:"Nunito",sans-serif}
 .mapa-rota-pill-titulo{font-family:"Nunito",sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;text-align:center}
 .mapa-rota-pill-locais{display:flex;align-items:center;gap:6px;justify-content:center;margin-bottom:10px}
 .mapa-rota-pill-local{font-size:12px;font-weight:700;color:var(--brand);font-family:"Nunito",sans-serif}
@@ -2414,7 +2414,13 @@ function calcSyncSelects(){
     <!-- Botão fullscreen (só mobile) -->
     <!-- Pill de rota -->
     <div class="mapa-rota-pill" id="mapaRotaPill">
-      <button class="mapa-rota-pill-fechar" onclick="mapaRotaLimpar()">×</button>
+      <!-- Estado colapsado -->
+      <div id="mapaRotaPillColapsado" onclick="mapaRotaExpandir()" style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px">
+        Distância
+      </div>
+      <!-- Estado expandido -->
+      <div id="mapaRotaPillExpandido" style="display:none">
+      <button class="mapa-rota-pill-fechar" onclick="mapaRotaRecolher()">×</button>
       <div class="mapa-rota-pill-titulo">Calcular viagem</div>
       <div class="mapa-rota-search" id="mapaRotaSearchOrigem">
         <span class="mapa-rota-search-label">Origem</span>
@@ -2431,6 +2437,7 @@ function calcSyncSelects(){
       <div class="mapa-rota-pill-transporte" id="mapaRotaTransportes"></div>
       <div class="mapa-rota-pill-resultado" id="mapaRotaResultado"></div>
       <button class="mapa-rota-pill-limpar" onclick="mapaRotaLimpar()">Limpar rota</button>
+      </div><!-- fim expandido -->
     </div>
     <div class="mapa-edit-bar" id="mapaEditBar">✏️ Modo edição — arraste os pins para reposicionar</div>
     <!-- Pill de distância (abaixo do filtro) -->
@@ -13950,19 +13957,8 @@ function mapaRotaSetTransporte(id) {
 
 
 function mapaDistPillAtualizar() {
-  const temPonto = _rotaOrigem || _rotaDestino;
-  const distPill = document.getElementById('mapaDistPill');
-  const rotaPill = document.getElementById('mapaRotaPill');
-  if (!distPill || !rotaPill) return;
-  if (temPonto) {
-    distPill.style.display = 'none';
-    rotaPill.style.display = 'block';
-    document.getElementById('mapaDistPillOrigem').textContent  = _rotaOrigem  ? _rotaOrigem.nome  : '—';
-    document.getElementById('mapaDistPillDestino').textContent = _rotaDestino ? _rotaDestino.nome : '—';
-  } else {
-    distPill.style.display = 'block';
-    rotaPill.style.display = 'none';
-  }
+  // Ao selecionar um ponto, expande automaticamente
+  if (_rotaOrigem || _rotaDestino) mapaRotaExpandir();
 }
 
 function mapaDistPillToggle() {
@@ -14033,9 +14029,11 @@ function mapaRotaLimpar() {
     const el = document.getElementById(id);
     if (el) { el.value = ''; el.classList.remove('selecionado'); }
   });
-  document.getElementById('mapaRotaResultado').innerHTML = '';
-  document.getElementById('mapaRotaTransportes').innerHTML = '';
-  mapaDistPillAtualizar();
+  const res = document.getElementById('mapaRotaResultado');
+  const tr  = document.getElementById('mapaRotaTransportes');
+  if (res) res.innerHTML = '';
+  if (tr)  tr.innerHTML  = '';
+  mapaRotaRecolher();
 }
 
 function mapaReset() {
