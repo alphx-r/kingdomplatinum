@@ -151,6 +151,23 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .empty-desc{font-size:12px;margin-top:5px;opacity:.7}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* Move extended fields */
+.mv-meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+@media(max-width:580px){.mv-meta-grid{grid-template-columns:1fr 1fr}}
+.mv-meta-item{display:flex;flex-direction:column;gap:4px}
+.mv-meta-lbl{font-family:var(--font-title);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.mv-meta-val{font-size:12px;color:var(--text);background:var(--surface2);padding:6px 10px;border-radius:6px;border:1px solid var(--border);min-height:30px;display:flex;align-items:center}
+.mv-meta-input{font-size:12px;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;transition:border .2s;width:100%}
+.mv-meta-input:focus{border-color:var(--brand-mid)}
+.mv-meta-select{font-size:12px;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;cursor:pointer;width:100%}
+.cat-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;padding:3px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:.3px}
+.cat-physical{background:#fde8e8;color:#c03030}
+.cat-special{background:#e8eaff;color:#3040c0}
+.cat-status{background:#f0f0f0;color:#555}
+.mv-section-lbl{font-family:var(--font-title);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--brand);margin:14px 0 8px;padding-bottom:4px;border-bottom:1.5px solid var(--border);display:flex;align-items:center;gap:6px}
+.mv-name-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+@media(max-width:580px){.mv-name-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -227,6 +244,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn on" id="ab-f-all" onclick="setAbFilter('all')">Todas</button>
       <button class="fbtn" id="ab-f-pend" onclick="setAbFilter('pend')">Pendentes</button>
       <button class="fbtn" id="ab-f-appr" onclick="setAbFilter('appr')">Aprovadas</button>
+      <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
     </div>
     <div id="ab-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando habilidades…</div></div></div>
   </div>
@@ -252,6 +270,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn on" id="mv-f-all" onclick="setMvFilter('all')">Todos</button>
       <button class="fbtn" id="mv-f-pend" onclick="setMvFilter('pend')">Pendentes</button>
       <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
+      <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
     </div>
     <div id="mv-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando movimentos…</div></div></div>
   </div>
@@ -690,6 +709,7 @@ async function loadAbilities() {
     const r = await fetch('https://pokeapi.co/api/v2/ability?limit=400');
     const d = await r.json();
     const items = d.results.map((a, i) => ({ name: a.name, id: i + 1, desc: '' }));
+    items.sort((a, b) => a.name.localeCompare(b.name));
     S.ab.all = items;
     S.ab.filtered = items;
     renderAbList();
@@ -746,29 +766,88 @@ function renderMvList() {
   con.innerHTML = items.map((item, i) => {
     const db = S.mv.dbMap[item.name] || {};
     const appr = !!db.approved;
-    const hasPt = !!(db.desc_pt);
+    const hasPt = !!(db.desc_pt || db.name_pt);
+    // Category pill
+    const cat = db.damage_class || item.damage_class || '';
+    const catLabel = { physical: 'Físico', special: 'Especial', status: 'Status' }[cat] || cat;
+    const catClass = { physical: 'cat-physical', special: 'cat-special', status: 'cat-status' }[cat] || '';
+    const typeVal = db.type || item.type || '';
+    const powerVal = db.power !== undefined ? db.power : (item.power !== undefined ? item.power : null);
+    const accVal = db.accuracy !== undefined ? db.accuracy : (item.accuracy !== undefined ? item.accuracy : null);
+    const ppVal = db.pp !== undefined ? db.pp : (item.pp !== undefined ? item.pp : null);
     return `<div class="entry${appr?' approved':''}${hasPt?' has-pt':''}" id="mv-entry-${item.name}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="toggleEntry('mv-entry-${item.name}')">
-        <span class="entry-num">#${String(item.id).padStart(3,'0')}</span>
-        <span class="entry-name">${cap(item.name)}</span>
+        <span class="entry-num">#${String(item.id||0).padStart(3,'0')}</span>
+        <span class="entry-name">${cap(item.name)}${typeVal?`<small>${typeVal.toUpperCase()}${cat?' · '+catLabel:''}</small>`:''}</span>
+        ${catClass?`<span class="badge cat-pill ${catClass}">${catLabel}</span>`:''}
         <span class="badge ${appr?'badge-appr':hasPt?'badge-pt':'badge-pend'}">${appr?'✓ Aprovado':hasPt?'Rascunho':'Pendente'}</span>
         <span class="chev">▼</span>
       </div>
       <div class="entry-body">
+
+        <div class="mv-section-lbl">✏️ Nome</div>
+        <div class="mv-name-row">
+          <div class="field-row">
+            <div class="field-lbl en">🇺🇸 Nome (EN)</div>
+            <input class="mv-meta-input" id="mv-name_en-${item.name}" value="${cap(item.name)}" placeholder="Nome em inglês…">
+          </div>
+          <div class="field-row">
+            <div class="field-lbl pt">🇧🇷 Nome (PT)</div>
+            <div class="translate-row">
+              <button class="translate-btn" onclick="translateMvField('${item.name}','name',document.getElementById('mv-name_en-${item.name}').value)">✦ Sugerir tradução</button>
+            </div>
+            <input class="mv-meta-input${db.name_pt?' filled':''}" id="mv-name_pt-${item.name}" value="${db.name_pt||''}" placeholder="Nome em português…" oninput="this.classList.toggle('filled',!!this.value.trim())">
+          </div>
+        </div>
+
+        <div class="mv-section-lbl">⚙️ Atributos</div>
+        <div class="mv-meta-grid">
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">Tipo</div>
+            <select class="mv-meta-select" id="mv-type-${item.name}">
+              <option value="">—</option>
+              ${['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'].map(t=>`<option value="${t}"${(db.type||item.type)===t?' selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">Categoria</div>
+            <select class="mv-meta-select" id="mv-cat-${item.name}">
+              <option value="">—</option>
+              <option value="physical"${(db.damage_class||item.damage_class)==='physical'?' selected':''}>Físico</option>
+              <option value="special"${(db.damage_class||item.damage_class)==='special'?' selected':''}>Especial</option>
+              <option value="status"${(db.damage_class||item.damage_class)==='status'?' selected':''}>Status</option>
+            </select>
+          </div>
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">Poder</div>
+            <input class="mv-meta-input" type="number" min="0" max="999" id="mv-power-${item.name}" value="${powerVal !== null && powerVal !== undefined ? powerVal : ''}" placeholder="—">
+          </div>
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">Precisão (%)</div>
+            <input class="mv-meta-input" type="number" min="0" max="100" id="mv-acc-${item.name}" value="${accVal !== null && accVal !== undefined ? accVal : ''}" placeholder="—">
+          </div>
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">PP</div>
+            <input class="mv-meta-input" type="number" min="0" max="99" id="mv-pp-${item.name}" value="${ppVal !== null && ppVal !== undefined ? ppVal : ''}" placeholder="—">
+          </div>
+        </div>
+
+        <div class="mv-section-lbl">📄 Descrição</div>
         <div class="two-col">
           <div class="field-row">
             <div class="field-lbl en">🇺🇸 Descrição (EN)</div>
-            <div class="field-en">${db.desc_en || item.desc || '<em style="opacity:.5">—</em>'}</div>
+            <textarea class="field-pt" id="mv-desc_en-${item.name}" rows="3" placeholder="Descrição em inglês…" style="background:var(--surface2);border-color:var(--border)">${db.desc_en || item.desc || ''}</textarea>
           </div>
           <div class="field-row">
             <div class="field-lbl pt">🇧🇷 Descrição (PT)</div>
             <div class="translate-row">
-              <button class="translate-btn" onclick="translateField('${item.name}','mv','desc','${(db.desc_en||item.desc||'').replace(/'/g,"\\'")}')">✦ Sugerir tradução</button>
+              <button class="translate-btn" onclick="translateMvField('${item.name}','desc',document.getElementById('mv-desc_en-${item.name}').value)">✦ Sugerir tradução</button>
               <span class="translate-hint">via Google Translate</span>
             </div>
             <textarea class="field-pt${db.desc_pt?' filled':''}" id="mv-desc_pt-${item.name}" rows="3" placeholder="Descrição em português…" oninput="markFilled(this)">${db.desc_pt||''}</textarea>
           </div>
         </div>
+
         <div class="entry-foot">
           <span class="save-ind" id="mv-ind-${item.name}">✓ Salvo!</span>
           <button class="btn btn-outline btn-sm" onclick="saveMv('${item.name}',false)">💾 Salvar rascunho</button>
@@ -782,23 +861,54 @@ function renderMvList() {
 async function saveMv(name, approve) {
   const item = S.mv.all.find(m => m.name === name) || {};
   const descPt = document.getElementById(`mv-desc_pt-${name}`)?.value.trim() || '';
-  const descEn = item.desc || S.mv.dbMap[name]?.desc_en || '';
+  const descEn = document.getElementById(`mv-desc_en-${name}`)?.value.trim() || item.desc || S.mv.dbMap[name]?.desc_en || '';
+  const namePt = document.getElementById(`mv-name_pt-${name}`)?.value.trim() || '';
+  const nameEn = document.getElementById(`mv-name_en-${name}`)?.value.trim() || cap(name);
+  const type = document.getElementById(`mv-type-${name}`)?.value || item.type || '';
+  const damage_class = document.getElementById(`mv-cat-${name}`)?.value || item.damage_class || '';
+  const powerRaw = document.getElementById(`mv-power-${name}`)?.value;
+  const accRaw = document.getElementById(`mv-acc-${name}`)?.value;
+  const ppRaw = document.getElementById(`mv-pp-${name}`)?.value;
+  const power = powerRaw !== '' && powerRaw !== undefined ? parseInt(powerRaw) : null;
+  const accuracy = accRaw !== '' && accRaw !== undefined ? parseInt(accRaw) : null;
+  const pp = ppRaw !== '' && ppRaw !== undefined ? parseInt(ppRaw) : null;
   try {
-    const row = { name, desc_en: descEn, desc_pt: descPt, approved: approve, updated_at: new Date().toISOString() };
+    const row = { name, name_pt: namePt, desc_en: descEn, desc_pt: descPt, type, damage_class, power, accuracy, pp, approved: approve, updated_at: new Date().toISOString() };
     await sbUpsert('moves_pt', row);
     S.mv.dbMap[name] = row;
+    // also update local item meta
+    item.type = type; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy; item.pp = pp;
     const ind = document.getElementById('mv-ind-' + name);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     const entry = document.getElementById('mv-entry-' + name);
     if (entry) {
       entry.classList.toggle('approved', approve);
-      entry.classList.toggle('has-pt', !!descPt);
-      const badge = entry.querySelector('.badge');
+      entry.classList.toggle('has-pt', !!(descPt || namePt));
+      const badge = entry.querySelector('.badge:last-of-type');
       if (badge) { badge.textContent = approve ? '✓ Aprovado' : 'Rascunho'; badge.className = 'badge ' + (approve ? 'badge-appr' : 'badge-pt'); }
     }
     updateMvStats();
     toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+async function translateMvField(name, field, enText) {
+  if (!enText || !enText.trim()) { toast('Sem texto em inglês para traduzir.', 'err'); return; }
+  const fieldId = field === 'name' ? `mv-name_pt-${name}` : `mv-desc_pt-${name}`;
+  const el = document.getElementById(fieldId);
+  if (!el) return;
+  const btn = el.closest('.entry-body')?.querySelector(`.translate-btn[onclick*="'${name}','${field}'"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '⌛ Traduzindo…'; }
+  try {
+    const translated = await gTranslate(enText);
+    el.value = translated;
+    el.classList.add('filled');
+    if (btn) { btn.disabled = false; btn.innerHTML = '✦ Sugerir tradução'; }
+    toast('Tradução sugerida! Revise e aprove.', 'ok');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '✦ Sugerir tradução'; }
+    toast('Falha na tradução automática. Tente novamente.', 'err');
+  }
 }
 
 function updateMvStats() {
@@ -821,7 +931,8 @@ async function loadMoves() {
 
     const r = await fetch('https://pokeapi.co/api/v2/move?limit=1000');
     const d = await r.json();
-    const items = d.results.map((m, i) => ({ name: m.name, id: i + 1, desc: '' }));
+    const items = d.results.map((m, i) => ({ name: m.name, id: i + 1, desc: '', power: null, pp: null, accuracy: null, damage_class: '', type: '' }));
+    items.sort((a, b) => a.name.localeCompare(b.name));
     S.mv.all = items;
     S.mv.filtered = items;
     renderMvList();
@@ -835,6 +946,11 @@ async function loadMoves() {
         const en = md.effect_entries?.find(e => e.language.name === 'en');
         item.desc = en ? en.short_effect.replace(/\$effect_chance/g, md.effect_chance || '?') : '';
         item.id = md.id;
+        item.power = md.power;
+        item.accuracy = md.accuracy;
+        item.pp = md.pp;
+        item.damage_class = md.damage_class?.name || '';
+        item.type = md.type?.name || '';
       } catch {}
     }));
     applyMvFilter();
@@ -849,6 +965,11 @@ async function loadMoves() {
           const en = md.effect_entries?.find(e => e.language.name === 'en');
           item.desc = en ? en.short_effect.replace(/\$effect_chance/g, md.effect_chance || '?') : '';
           item.id = md.id;
+          item.power = md.power;
+          item.accuracy = md.accuracy;
+          item.pp = md.pp;
+          item.damage_class = md.damage_class?.name || '';
+          item.type = md.type?.name || '';
         } catch {}
       }));
     }
