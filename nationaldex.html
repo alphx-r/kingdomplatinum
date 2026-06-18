@@ -435,7 +435,12 @@ function goList(){
 
 function goDetail(slug){
   const base=window.location.pathname.replace(/\/nationaldex(\/.*)?$/,'')||'';
-  history.pushState({pokemon:slug},'',`${base}/nationaldex/${slug}`);
+  // RPG pokemon: não vai na URL para evitar problemas com roteamento server-side
+  if(slug.startsWith('__rpg__')){
+    history.pushState({pokemon:slug},'',`${base}/nationaldex`);
+  } else {
+    history.pushState({pokemon:slug},'',`${base}/nationaldex/${slug}`);
+  }
   showDetail(slug);
 }
 
@@ -462,12 +467,44 @@ window.addEventListener('popstate',e=>{
    LISTA — carregamento
 ═══════════════════════════════════════ */
 let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
-// Pokémon do Nendo (fakemon do Kingdom Platinum) — IDs a definir; por ora exibe tudo
-const NENDO_IDS=new Set([]);// preencher com os IDs dos fakemon
+// Pokémon do Nendo (RPG customizados) — carregados do Supabase
+const NENDO_IDS=new Set([]);
+
+// ── Supabase config (mesmo do index) ──
+const _NDX_SUPA_URL='https://ucbkodkjlbatttiuqjtv.supabase.co';
+const _NDX_SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+const _NDX_SH={'Content-Type':'application/json','apikey':_NDX_SUPA_KEY,'Authorization':'Bearer '+_NDX_SUPA_KEY};
+
+// Pokémon RPG agrupados por nome (deduplicados dos biomas)
+let _rpgPokemon=[]; // [{nome, sprite, tipos, habilidade, habilidade2, genero}]
+let _rpgBioMap={}; // nome -> bio_pt
+
+async function loadRpgData(){
+  try{
+    const [pkRes, ptRes] = await Promise.all([
+      fetch(`${_NDX_SUPA_URL}/rest/v1/pokemons?select=nome,sprite,tipos,habilidade,habilidade2,genero&order=nome.asc`,{headers:_NDX_SH}),
+      fetch(`${_NDX_SUPA_URL}/rest/v1/pokemon_pt?select=name,bio_pt&order=name.asc`,{headers:_NDX_SH})
+    ]);
+    if(pkRes.ok){
+      const rows=await pkRes.json();
+      // Deduplica por nome
+      const seen=new Set();
+      _rpgPokemon=rows.filter(p=>{if(seen.has(p.nome))return false;seen.add(p.nome);return true;});
+    }
+    if(ptRes.ok){
+      const ptRows=await ptRes.json();
+      ptRows.forEach(r=>{if(r.name)_rpgBioMap[r.name]=r.bio_pt||'';});
+    }
+  }catch{}
+}
 
 async function initList(){
-  const r=await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
-  const d=await r.json();
+  // Carrega dados RPG em paralelo com PokeAPI
+  const [pokeApiRes] = await Promise.all([
+    fetch('https://pokeapi.co/api/v2/pokemon?limit=1025'),
+    loadRpgData()
+  ]);
+  const d=await pokeApiRes.json();
   all=d.results.map((p,i)=>({...p,id:i+1}));
   applyFilters();
 }
@@ -484,6 +521,17 @@ function renderList(){
 }
 
 function gridCard(p,i){
+  if(p._isRpg){
+    const tipos=(p.tipos||[]).map(t=>pill(t)).join('');
+    const spriteUrl=p.sprite||'';
+    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.nome)}')">
+      <div class="pk-num" style="color:var(--brand-mid)">RPG</div>
+      ${spriteUrl?`<img class="pk-art" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${p.nome}">`
+        :`<div class="pk-art" style="display:flex;align-items:center;justify-content:center;font-size:44px">❓</div>`}
+      <div class="pk-name">${p.nome.toUpperCase()}</div>
+      <div class="pk-types">${tipos||`<span style="font-size:9px;color:var(--muted)">—</span>`}</div>
+    </div>`;
+  }
   const th=typeCache[p.id]?typeCache[p.id].map(t=>pill(t)).join(''):`<span style="font-size:9px;color:var(--muted)">…</span>`;
   return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('${p.name}')">
     <div class="pk-num">#${String(p.id).padStart(4,'0')}</div>
@@ -496,6 +544,16 @@ function gridCard(p,i){
 }
 
 function listRow(p,i){
+  if(p._isRpg){
+    const tipos=(p.tipos||[]).map(t=>pill(t)).join('');
+    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.nome)}')">
+      <div class="pl-num" style="color:var(--brand-mid)">RPG</div>
+      ${p.sprite?`<img class="pl-sprite" loading="lazy" src="${p.sprite}" onerror="this.style.opacity='.3'" alt="${p.nome}">`
+        :`<div class="pl-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`}
+      <div class="pl-name">${p.nome.toUpperCase()}</div>
+      <div class="pl-types">${tipos}</div>
+    </div>`;
+  }
   const th=typeCache[p.id]?typeCache[p.id].map(t=>pill(t)).join(''):'';
   return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('${p.name}')">
     <div class="pl-num">#${String(p.id).padStart(4,'0')}</div>
@@ -525,16 +583,25 @@ function applyFilters(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const tp=document.getElementById('type-filter').value;
 
+  // Aba Nendo: mostra Pokémon RPG do Supabase
+  if(curGen==='nendo'){
+    let rpgFiltered=_rpgPokemon.filter(p=>{
+      const nm=!q||p.nome.toLowerCase().includes(q);
+      const tpOk=!tp||(p.tipos||[]).includes(tp);
+      return nm&&tpOk;
+    });
+    // Converte para formato compatível com renderList (marca como rpg)
+    filtered=rpgFiltered.map(p=>({...p, name:p.nome, id:'rpg_'+p.nome, _isRpg:true}));
+    document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
+    renderList();
+    return;
+  }
+
   // Primeiro filtra por região e nome (sem depender de cache de tipos)
   const byRegion=all.filter(p=>{
     const nm=!q||p.name.includes(q)||String(p.id).includes(q);
-    let gm=true;
-    if(curGen==='nendo'){
-      gm=NENDO_IDS.has(p.id);
-    } else {
-      const rng=GR[curGen];
-      gm=!!rng&&p.id>=rng[0]&&p.id<=rng[1];
-    }
+    const rng=GR[curGen];
+    const gm=!!rng&&p.id>=rng[0]&&p.id<=rng[1];
     return nm&&gm;
   });
 
@@ -596,6 +663,16 @@ async function loadPokemon(slug){
   const dc=document.getElementById('detail-content');
   dc.innerHTML=`<div class="spinner-wrap"><div class="spinner dark"></div><div class="spinner-text dark">Consultando registros…</div></div>`;
 
+  // Detecta Pokémon RPG customizado
+  if(slug.startsWith('__rpg__')){
+    const nome=decodeURIComponent(slug.replace('__rpg__',''));
+    await loadRpgData(); // garante que os dados estão carregados
+    const rpgPk=_rpgPokemon.find(p=>p.nome===nome);
+    if(rpgPk){renderRpgDetail(rpgPk,dc);}
+    else{dc.innerHTML=`<div style="text-align:center;padding:60px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div style="font-family:var(--font-title);font-size:13px;color:var(--muted)">Pokémon não encontrado</div><button onclick="goList()" style="margin-top:16px;font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body)">← Voltar à Pokédex</button></div>`;}
+    return;
+  }
+
   try{
     if(!detailCache[slug]){
       const[pRes,sRes]=await Promise.all([
@@ -614,6 +691,58 @@ async function loadPokemon(slug){
       <button onclick="goList()" style="margin-top:16px;font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body)">← Voltar à Pokédex</button>
     </div>`;
   }
+}
+
+// Renderiza página de detalhe para Pokémon RPG customizado
+function renderRpgDetail(p, container){
+  const tipos=p.tipos||[];
+  const primaryType=tipos[0]||'normal';
+  applyTypeTheme(primaryType);
+  document.title=`${p.nome} — NationalDex`;
+  const bioPt=_rpgBioMap[p.nome]||'';
+  const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
+  const tiposHtml=tipos.map(t=>{
+    const c=TYPE_THEME[t]||TYPE_THEME.normal;
+    return `<span style="background:${c.pill||c.accent||'#999'};color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px">${t}</span>`;
+  }).join('');
+  const habs=[p.habilidade,p.habilidade2].filter(Boolean);
+  const habsHtml=habs.length?habs.map(h=>`<div style="display:flex;align-items:baseline;gap:4px"><span style="font-size:12px;font-weight:700;color:var(--text)">${h.toUpperCase().replace(/-/g,' ')}</span></div>`).join(''):'<div style="color:var(--muted);font-size:12px">—</div>';
+
+  container.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap">
+      <div style="font-family:var(--font-title);font-size:11px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase">Pokémon RPG — Kingdom Platinum</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <span style="font-family:var(--font-title);font-size:22px;font-weight:700;color:var(--brand);letter-spacing:.5px">${p.nome}</span>
+      ${tiposHtml}
+    </div>
+    <div style="display:grid;grid-template-columns:160px 1fr;gap:20px;align-items:start">
+      <div style="text-align:center">
+        ${p.sprite?`<img src="${p.sprite}" style="width:140px;height:140px;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.15))" onerror="this.style.opacity='.3'">`
+          :`<div style="width:140px;height:140px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:60px;margin:0 auto">❓</div>`}
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-top:8px">${tiposHtml}</div>
+      </div>
+      <div>
+        ${bioPt?`<div style="background:${TT.surface||'var(--surface2)'};border-radius:10px;padding:12px 14px;margin-bottom:14px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Descrição</div>
+          <div style="font-size:13px;color:var(--text);line-height:1.7">${bioPt}</div>
+        </div>`:`<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;color:var(--muted);font-size:12px;font-style:italic">Descrição ainda não disponível. O ADM pode adicionar na aba RPG Pokémon da Pokédex ADM.</div>`}
+        <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Habilidades</div>
+          ${habsHtml}
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Detalhes</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+            <div><span style="color:var(--muted);font-weight:600">Gênero:</span> ${{macho:'100% ♂',femea:'100% ♀',genderless:'Sem gênero',aleatorio:'Aleatório (♂/♀)'}[p.genero]||p.genero||'—'}</div>
+            <div><span style="color:var(--muted);font-weight:600">Origem:</span> Pokémon RPG — Kingdom Platinum</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+      <button onclick="goList()" style="font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body);display:flex;align-items:center;gap:4px">← Voltar à Pokédex</button>
+    </div>`;
 }
 
 async function renderDetail(p,s,container){
