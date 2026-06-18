@@ -6447,6 +6447,20 @@ function previewPokeSpriteShiny(input){
   };
   reader.readAsDataURL(file);
 }
+// ── Sincronização com pokemon_pt (Pokédex/nationaldex) ──
+// Garante que Pokémon customizados do RPG apareçam na nationaldex com bio e nome.
+async function syncPokemonPt(nome, {bioPt='', sprite=null, tipos=[], habilidade='', habilidade2=''}={}){
+  try{
+    const fakeId=nome.split('').reduce((acc,c)=>acc+c.charCodeAt(0),90000);
+    const row={pokemon_id:fakeId,name:nome,bio_pt:bioPt,approved:!!bioPt,updated_at:new Date().toISOString()};
+    await fetch(`${SUPA_URL}/rest/v1/pokemon_pt`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify(row)
+    });
+  }catch(e){console.warn('[syncPokemonPt]',e);}
+}
+
 async function adicionarPokemon(){
   const nome          =document.getElementById('pk-nome').value.trim();
   const habilidade    =document.getElementById('pk-habilidade').value.trim();
@@ -6491,6 +6505,8 @@ async function adicionarPokemon(){
     if(Object.keys(patch).length){ await dbPatch('pokemons',`id=eq.${novo.id}`,patch); }
     pokemonDB.push(novo);
   }
+  // Sincroniza com a nationaldex (pokemon_pt) para aparecer na Pokédex
+  await syncPokemonPt(nome,{tipos,habilidade,habilidade2});
   fb('pk-fb');
   document.getElementById('pk-nome').value='';
   document.getElementById('pk-habilidade').value='';
@@ -6678,6 +6694,8 @@ async function salvarPkUnificado(){
     await Promise.all(linhas.map(l=>dbPatch('pokemons',`id=eq.${l.id}`,_pl)));
     linhas.forEach(l=>Object.assign(l,_pl));
     document.getElementById('modal-pk-uni-nome-original').value=nome;
+    // Sincroniza nome/tipos/habilidades com a nationaldex
+    await syncPokemonPt(nome,{tipos,habilidade,habilidade2,sprite:spriteUrl});
     fb('modal-pk-uni-fb');
     renderTbodyPokemons();renderTbodyBiomas();
     if(currentPage==='bioma') renderBiomaPage();
