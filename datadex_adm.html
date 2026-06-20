@@ -100,6 +100,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 /* Pokemon specific */
 .pk-grid{display:grid;grid-template-columns:130px 1fr;gap:16px}
+@media(max-width:580px){.pk-hab-grid{grid-template-columns:1fr!important}}
 @media(max-width:600px){.pk-grid{grid-template-columns:1fr}}
 .pk-art-col{display:flex;flex-direction:column;align-items:center;gap:8px}
 .pk-art-big{width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,.12))}
@@ -667,6 +668,7 @@ function switchTab(tab) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'rpg' && !S.rpg._loaded) { S.rpg._loaded = true; loadRpgPokemon(); }
 }
 
 /* ══════════════════════════════════════════
@@ -720,26 +722,123 @@ function renderPkList() {
   document.getElementById('pk-bar').style.width = pct + '%';
   document.getElementById('badge-pokemon').textContent = `${appr}/${total}`;
 
+  const TIPOS = ['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'];
+  const RARIDADES = ['comum','incomum','raro','rarissimo'];
+  const GENEROS = ['aleatorio','macho','femea','genderless'];
+
   con.innerHTML = items.map((pk, i) => {
     const db = S.pk.dbMap[pk.id] || {};
     const appr = !!db.approved;
     const hasPt = !!db.bio_pt;
     const types = pk.types || [];
+    const apiTypes = types.map(t => t.type.name);
+    const t1 = db.tipo1 || apiTypes[0] || '';
+    const t2 = db.tipo2 || apiTypes[1] || '';
+    const spriteUrl = db.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pk.id}.png`;
+    const artUrl = db.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pk.id}.png`;
+    const shinyUrl = db.sprite_shiny || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pk.id}.png`;
+
+    const tipoOpts = (id, sel) => TIPOS.map(t => `<option value="${t}"${sel===t?' selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('');
+    const rarOpts = RARIDADES.map(r => `<option value="${r}"${(db.raridade||'')===r?' selected':''}>${{comum:'Comum',incomum:'Incomum',raro:'Raro',rarissimo:'Raríssimo'}[r]}</option>`).join('');
+    const genOpts = GENEROS.map(g => `<option value="${g}"${(db.genero||'')===g?' selected':''}>${{aleatorio:'Aleatório (1d2)',macho:'100% Macho',femea:'100% Fêmea',genderless:'Sem gênero'}[g]}</option>`).join('');
+    const biomasVal = (db.biomas||[]).join(', ');
+
     return `<div class="entry${appr ? ' approved' : ''}${hasPt ? ' has-pt' : ''}" id="pk-entry-${pk.id}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="togglePk(${pk.id})">
         <span class="entry-num">#${String(pk.id).padStart(3,'0')}</span>
-        <img class="entry-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pk.id}.png" alt="${pk.name}" onerror="this.style.display='none'">
-        <span class="entry-name">${cap(pk.name)}<small>${types.map(t=>t.type.name).join(' / ')}</small></span>
+        <img class="entry-sprite" src="${spriteUrl}" alt="${pk.name}" onerror="this.style.display='none'">
+        <span class="entry-name">${cap(pk.name)}<small>${(t1||apiTypes[0]||'')}${(t2||apiTypes[1]||'')?` / ${t2||apiTypes[1]||''}`:''}</small></span>
         <span class="badge ${appr ? 'badge-appr' : hasPt ? 'badge-pt' : 'badge-pend'}">${appr ? '✓ Aprovado' : hasPt ? 'Rascunho' : 'Pendente'}</span>
         <span class="chev">▼</span>
       </div>
       <div class="entry-body" id="pk-body-${pk.id}">
         <div class="pk-grid">
           <div class="pk-art-col">
-            <img class="pk-art-big" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pk.id}.png" alt="${pk.name}">
-            <div class="pk-types-row">${types.map(t=>pill(t.type.name)).join('')}</div>
+            <img class="pk-art-big" id="pk-art-${pk.id}" src="${artUrl}" alt="${pk.name}" onerror="this.style.display='none'">
+            <div style="display:flex;gap:6px;margin-top:4px;justify-content:center">
+              <img style="width:40px;height:40px;object-fit:contain;opacity:.7" id="pk-shiny-${pk.id}" src="${shinyUrl}" title="Shiny" onerror="this.style.display='none'">
+            </div>
+            <div class="pk-types-row" id="pk-types-row-${pk.id}">
+              ${t1?`<span class="tpill" style="background:${(TC[t1]||{bg:'#999'}).bg};color:${(TC[t1]||{c:'#fff'}).c}">${t1.toUpperCase()}</span>`:''}
+              ${t2?`<span class="tpill" style="background:${(TC[t2]||{bg:'#999'}).bg};color:${(TC[t2]||{c:'#fff'}).c}">${t2.toUpperCase()}</span>`:''}
+            </div>
           </div>
           <div>
+            <!-- SPRITES -->
+            <div class="mv-section-lbl">🖼️ Sprites</div>
+            <div class="two-col" style="margin-bottom:10px">
+              <div class="field-row">
+                <div class="field-lbl en">Sprite Normal (URL)</div>
+                <input class="mv-meta-input" id="pk-sprite-${pk.id}" value="${db.sprite||''}" placeholder="deixe vazio = PokeAPI padrão" oninput="pkPreviewSprite(${pk.id})">
+              </div>
+              <div class="field-row">
+                <div class="field-lbl en">Sprite Shiny (URL)</div>
+                <input class="mv-meta-input" id="pk-sprite_shiny-${pk.id}" value="${db.sprite_shiny||''}" placeholder="deixe vazio = PokeAPI padrão" oninput="pkPreviewShiny(${pk.id})">
+              </div>
+            </div>
+            <!-- TIPOS -->
+            <div class="mv-section-lbl">🎨 Tipos</div>
+            <div class="two-col" style="margin-bottom:10px">
+              <div class="field-row">
+                <div class="field-lbl en">Tipo 1</div>
+                <select class="mv-meta-select" id="pk-tipo1-${pk.id}" onchange="pkUpdateTypePills(${pk.id})">
+                  <option value="">— sem tipo 1 —</option>
+                  ${tipoOpts('t1',t1)}
+                </select>
+              </div>
+              <div class="field-row">
+                <div class="field-lbl en">Tipo 2</div>
+                <select class="mv-meta-select" id="pk-tipo2-${pk.id}" onchange="pkUpdateTypePills(${pk.id})">
+                  <option value="">— monotype —</option>
+                  ${tipoOpts('t2',t2)}
+                </select>
+              </div>
+            </div>
+            <!-- HABILIDADES -->
+            <div class="mv-section-lbl">✦ Habilidades</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+              <div class="field-row">
+                <div class="field-lbl en">Habilidade 1</div>
+                <input class="mv-meta-input" id="pk-hab1-${pk.id}" value="${db.habilidade1||''}" placeholder="ex: Overgrow">
+              </div>
+              <div class="field-row">
+                <div class="field-lbl en">Habilidade 2</div>
+                <input class="mv-meta-input" id="pk-hab2-${pk.id}" value="${db.habilidade2||''}" placeholder="(opcional)">
+              </div>
+              <div class="field-row">
+                <div class="field-lbl en">Hab. Oculta</div>
+                <input class="mv-meta-input" id="pk-haboculta-${pk.id}" value="${db.habilidade_oculta||''}" placeholder="(opcional)">
+              </div>
+            </div>
+            <!-- GÊNERO / RARIDADE / BIOMAS -->
+            <div class="mv-section-lbl">⚙️ Dados RPG</div>
+            <div class="two-col" style="margin-bottom:10px">
+              <div class="field-row">
+                <div class="field-lbl en">Gênero</div>
+                <select class="mv-meta-select" id="pk-genero-${pk.id}">
+                  <option value="">— padrão —</option>
+                  ${genOpts}
+                </select>
+              </div>
+              <div class="field-row">
+                <div class="field-lbl en">Raridade</div>
+                <select class="mv-meta-select" id="pk-raridade-${pk.id}">
+                  <option value="">— padrão —</option>
+                  ${rarOpts}
+                </select>
+              </div>
+            </div>
+            <div class="field-row" style="margin-bottom:10px">
+              <div class="field-lbl en">Biomas (separados por vírgula)</div>
+              <input class="mv-meta-input" id="pk-biomas-${pk.id}" value="${biomasVal}" placeholder="ex: floresta, montanha, caverna">
+            </div>
+            <!-- NOME PT -->
+            <div class="field-row" style="margin-bottom:10px">
+              <div class="field-lbl pt">🇧🇷 Nome (PT)</div>
+              <input class="mv-meta-input" id="pk-nome_pt-${pk.id}" value="${db.nome_pt||''}" placeholder="Nome em português (se diferente)">
+            </div>
+            <!-- BIO -->
+            <div class="mv-section-lbl">📄 Biografia</div>
             <div class="field-row">
               <div class="field-lbl en">Biografia (EN)</div>
               <div class="field-en" id="pk-bio-en-${pk.id}">${db.bio_en || '…'}</div>
@@ -761,6 +860,27 @@ function renderPkList() {
         </div>
       </div>
     </div>`;
+  }).join('');
+}
+
+function pkPreviewSprite(id) {
+  const url = document.getElementById(`pk-sprite-${id}`)?.value.trim();
+  const img = document.getElementById(`pk-art-${id}`);
+  if (img) img.src = url || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+}
+function pkPreviewShiny(id) {
+  const url = document.getElementById(`pk-sprite_shiny-${id}`)?.value.trim();
+  const img = document.getElementById(`pk-shiny-${id}`);
+  if (img) img.src = url || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png`;
+}
+function pkUpdateTypePills(id) {
+  const t1 = document.getElementById(`pk-tipo1-${id}`)?.value || '';
+  const t2 = document.getElementById(`pk-tipo2-${id}`)?.value || '';
+  const row = document.getElementById(`pk-types-row-${id}`);
+  if (!row) return;
+  row.innerHTML = [t1, t2].filter(Boolean).map(t => {
+    const c = TC[t] || {bg:'#999',c:'#fff'};
+    return `<span class="tpill" style="background:${c.bg};color:${c.c}">${t.toUpperCase()}</span>`;
   }).join('');
 }
 
@@ -788,6 +908,16 @@ async function togglePk(id) {
         const genEl = document.getElementById('pk-genus-en-' + id);
         if (genEl) genEl.textContent = genus;
       }
+      // Preenche tipo1/tipo2 a partir da PokeAPI se não tiver no DB
+      if (!db.tipo1) {
+        const t1El = document.getElementById(`pk-tipo1-${id}`);
+        const t2El = document.getElementById(`pk-tipo2-${id}`);
+        const t1 = pk.types?.[0]?.type?.name || '';
+        const t2 = pk.types?.[1]?.type?.name || '';
+        if (t1El && t1) t1El.value = t1;
+        if (t2El) t2El.value = t2;
+        pkUpdateTypePills(id);
+      }
       pk._loaded = true;
       pk._bio_en = bio;
       pk._genus_en = genus;
@@ -800,12 +930,34 @@ async function savePk(id, approve) {
   const db = S.pk.dbMap[id] || {};
   const bioPt = document.getElementById(`pk-bio_pt-${id}`)?.value.trim() || '';
   const bioEn = document.getElementById(`pk-bio-en-${id}`)?.textContent || db.bio_en || '';
+  const sprite = document.getElementById(`pk-sprite-${id}`)?.value.trim() || null;
+  const spriteShiny = document.getElementById(`pk-sprite_shiny-${id}`)?.value.trim() || null;
+  const tipo1 = document.getElementById(`pk-tipo1-${id}`)?.value || '';
+  const tipo2 = document.getElementById(`pk-tipo2-${id}`)?.value || '';
+  const habilidade1 = document.getElementById(`pk-hab1-${id}`)?.value.trim() || '';
+  const habilidade2 = document.getElementById(`pk-hab2-${id}`)?.value.trim() || '';
+  const habilidade_oculta = document.getElementById(`pk-haboculta-${id}`)?.value.trim() || null;
+  const genero = document.getElementById(`pk-genero-${id}`)?.value || '';
+  const raridade = document.getElementById(`pk-raridade-${id}`)?.value || '';
+  const biomasRaw = document.getElementById(`pk-biomas-${id}`)?.value.trim() || '';
+  const biomas = biomasRaw ? biomasRaw.split(',').map(b => b.trim()).filter(Boolean) : [];
+  const nome_pt = document.getElementById(`pk-nome_pt-${id}`)?.value.trim() || '';
   try {
     const row = {
       id: String(id),
       name: pk ? pk.name : '',
+      nome_pt,
       bio_en: bioEn,
       bio_pt: bioPt,
+      sprite: sprite || null,
+      sprite_shiny: spriteShiny || null,
+      tipo1: tipo1 || null,
+      tipo2: tipo2 || null,
+      habilidade1, habilidade2,
+      habilidade_oculta,
+      genero: genero || null,
+      raridade: raridade || null,
+      biomas: biomas.length ? biomas : null,
       is_fakemon: false,
       source: 'pokeapi',
       approved: approve,
@@ -1457,12 +1609,7 @@ async function saveNewMove() {
    ██ RPG POKÉMON (integração com index/pokemons)
 ══════════════════════════════════════════ */
 
-// Adiciona RPG ao switchTab para carregar na primeira visita
-const _origSwitchTab = switchTab;
-function switchTab(tab) {
-  _origSwitchTab(tab);
-  if (tab === 'rpg' && !S.rpg._loaded) { S.rpg._loaded = true; loadRpgPokemon(); }
-}
+// RPG lazy-load integrado diretamente via evento no switchTab existente
 
 const S_RPG_SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
 const RPG_URL = SUPA_URL + '/rest/v1/pokemons';
