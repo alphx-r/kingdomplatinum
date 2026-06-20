@@ -38,7 +38,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .nav-login{font-size:12px;font-weight:700;font-family:var(--font-body);padding:7px 18px;border-radius:20px;border:1.5px solid rgba(255,255,255,.5);background:transparent;color:#fff;cursor:pointer;transition:all .2s}
 .nav-login:hover{background:var(--accent);border-color:var(--accent)}
 .nav-login.active{background:var(--accent);border-color:var(--accent)}
-.page{display:none;padding:28px;max-width:1000px;margin:0 auto;width:100%;box-sizing:border-box}
+.page{display:none;padding:28px;max-width:1000px;margin:0 auto;width:100%;box-sizing:border-box;position:relative}
 .page.active{display:block}
 .field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
 .field label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
@@ -799,18 +799,22 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .player-login-card .field input::placeholder{color:rgba(255,255,255,.4)}
 .player-login-card .field input:focus{border-color:rgba(255,255,255,.6);outline:none}
 
-/* TELA DE MANUTENÇÃO */
+/* TELA DE MANUTENÇÃO — bloqueia uma aba específica, inserida dentro da .page ativa */
 #tela-manutencao{
-  position:fixed;inset:0;z-index:999999;
+  position:absolute;inset:0;z-index:500;
   display:none;align-items:center;justify-content:center;flex-direction:column;
   background:linear-gradient(160deg,var(--brand) 0%,#0c1a2b 100%);
-  text-align:center;padding:24px;
+  text-align:center;padding:24px;border-radius:var(--r);min-height:340px;
 }
-.manutencao-icone{font-size:52px;margin-bottom:14px}
+.manutencao-icone{width:120px;height:auto;margin-bottom:14px;border-radius:8px}
 .manutencao-titulo{font-family:var(--font-title);font-size:26px;font-weight:700;color:#fff;letter-spacing:1px;margin-bottom:12px}
 .manutencao-msg{font-family:var(--font-body);font-size:14px;color:rgba(255,255,255,.82);max-width:440px;line-height:1.7;margin-bottom:26px;white-space:pre-wrap}
 .manutencao-adm-btn{font-family:var(--font-body);font-size:12px;font-weight:700;padding:9px 20px;border-radius:20px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);cursor:pointer;transition:all .2s}
 .manutencao-adm-btn:hover{background:rgba(255,255,255,.18);color:#fff}
+/* Painel admin: lista de abas para selecionar */
+.manutencao-abas-lista{display:flex;flex-direction:column;gap:6px;margin:10px 0 14px}
+.manutencao-aba-item{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--text);padding:7px 4px;cursor:pointer}
+.manutencao-aba-item input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)}
 .player-login-title{
   font-family:var(--font-title);font-size:20px;color:#fff;
   text-align:center;margin-bottom:4px;letter-spacing:.5px;
@@ -951,7 +955,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 </div>
 
 <div id="tela-manutencao">
-  <div class="manutencao-icone">🛠️</div>
+  <img class="manutencao-icone" src="https://i.pinimg.com/originals/c3/ef/e3/c3efe3c72dc3a0d598735ca29822e80a.gif" alt="Manutenção"/>
   <div class="manutencao-titulo">Site em Manutenção</div>
   <div class="manutencao-msg" id="manutencao-msg-texto">Estamos realizando melhorias no Reino. Voltamos em breve, treinador!</div>
   <button class="manutencao-adm-btn" onclick="acessarAdmPelaManutencao()">Acesso administrativo</button>
@@ -4086,11 +4090,12 @@ function calcSyncSelects(){
         <!-- MANUTENÇÃO -->
         <div class="adm-section" id="sec-manutencao">
           <div class="sec-title">🚧 Modo Manutenção</div>
-          <div class="sec-sub">Bloqueia o acesso de jogadores ao site inteiro, exibindo uma tela de manutenção. Administradores logados continuam acessando normalmente.</div>
+          <div class="sec-sub">Bloqueia o acesso de jogadores às abas selecionadas, exibindo uma tela de manutenção apenas nelas. Administradores logados continuam acessando normalmente em qualquer aba.</div>
           <div class="box">
-            <div class="box-title">Status atual</div>
-            <div id="manutencao-status" style="font-size:14px;font-weight:700;margin-bottom:14px">🟢 Site no ar normalmente</div>
-            <button class="btn btn-primary btn-sm" id="manutencao-toggle-btn" data-ativo="0" onclick="toggleManutencao()">Ativar manutenção</button>
+            <div class="box-title">Abas em manutenção</div>
+            <div class="manutencao-abas-lista" id="manutencao-abas-lista"><!-- preenchido por renderManutencaoAbasLista() --></div>
+            <div id="manutencao-status" style="font-size:14px;font-weight:700;margin-bottom:14px">🟢 Nenhuma aba em manutenção</div>
+            <button class="btn btn-primary btn-sm" id="manutencao-toggle-btn" onclick="salvarManutencaoAbas()">Salvar abas em manutenção</button>
             <div class="fb fb-ok" id="manutencao-fb" style="margin-top:10px">✓</div>
           </div>
           <div class="box">
@@ -5228,9 +5233,8 @@ function fb(id,ms=2500){const el=document.getElementById(id);if(!el)return;el.st
 const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false, npcs:false, evento:false, 'eventos-hub':false};
 
 async function init(){
-  // Verifica modo de manutenção antes de carregar qualquer coisa
+  // Restaura sessão admin antes de qualquer checagem de manutenção
   await restaurarSessaoAdm().catch(()=>{});
-  if(await checarManutencao()) return;
 
   loading(true);
   try{
@@ -5519,9 +5523,10 @@ async function carregarAba(page){
 // ══════════════════════════════════════
 // NAVEGAÇÃO COM HASH
 // ══════════════════════════════════════
-function navegarPara(page, replace=false){
+async function navegarPara(page, replace=false){
   setTimeout(renderEstacaoFab, 0);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  esconderBloqueioManutencao();
   const el=document.getElementById('page-'+page);
   if(el) el.classList.add('active');
   document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
@@ -5554,6 +5559,8 @@ function navegarPara(page, replace=false){
   const path = page==='roller' ? '/' : page==='rolagens' ? '/rolls' : page==='eventos-hub' ? '/eventos' : '/'+page;
   if(replace) history.replaceState(null,'', path);
   else history.pushState(null,'', path);
+  // Checa manutenção específica desta aba (admins logados nunca são bloqueados)
+  if(page!=='adm') await checarManutencaoAba(page);
 }
 
 async function goTo(page,el){
@@ -5988,23 +5995,55 @@ async function restaurarSessaoAdm(){
 // ══════════════════════════════════════
 const MANUTENCAO_MSG_PADRAO = 'Estamos realizando melhorias no Reino. Voltamos em breve, treinador!';
 
-// Verifica se a manutenção está ativa e, se sim, bloqueia a tela para quem não é admin.
+// Lista de abas que podem ser colocadas em manutenção individualmente
+const MANUTENCAO_ABAS_DISPONIVEIS = [
+  {key:'roller',       label:'Pokémon'},
+  {key:'bioma',        label:'Bioma'},
+  {key:'dados',        label:'Dados'},
+  {key:'fichario',     label:'Fichário'},
+  {key:'rolagens',     label:'Rolls'},
+  {key:'npcs',         label:'NPCs'},
+  {key:'eventos-hub',  label:'Eventos'},
+  {key:'ganhos',       label:'Ganhos'},
+  {key:'nature',       label:'Natures'},
+  {key:'batalhas',     label:'Batalhas'},
+  {key:'mapa',         label:'Mapa'},
+];
+let _manutencaoAbasAtivas = [];   // chaves das abas atualmente em manutenção (cache em memória)
+
+// Verifica se a manutenção está ativa para a página informada e, se sim, bloqueia a tela para quem não é admin.
 // Deve ser chamada após restaurarSessaoAdm() já ter resolvido admLogado.
-async function checarManutencao(){
+async function checarManutencaoAba(page){
   try{
-    const r = await dbGet('config', 'chave=in.(manutencao_ativa,manutencao_msg)');
-    const ativo = (r||[]).find(x=>x.chave==='manutencao_ativa')?.valor === 'true';
-    if(!ativo || admLogado) return false;
+    const r = await dbGet('config', 'chave=in.(manutencao_abas,manutencao_msg)');
+    let abas = [];
+    try{ abas = JSON.parse((r||[]).find(x=>x.chave==='manutencao_abas')?.valor || '[]'); }catch(e){ abas = []; }
+    if(!Array.isArray(abas)) abas = [];
+    _manutencaoAbasAtivas = abas;
+    if(!abas.includes(page) || admLogado) return false;
     const msg = (r||[]).find(x=>x.chave==='manutencao_msg')?.valor || MANUTENCAO_MSG_PADRAO;
-    const elMsg = document.getElementById('manutencao-msg-texto');
-    if(elMsg) elMsg.textContent = msg;
-    document.getElementById('tela-manutencao').style.display = 'flex';
+    mostrarBloqueioManutencao(page, msg);
     return true;
   }catch(e){ console.error('[manutencao] erro ao checar:', e); return false; }
 }
 
+function mostrarBloqueioManutencao(page, msg){
+  const tela = document.getElementById('tela-manutencao');
+  const pageEl = document.getElementById('page-'+page);
+  if(!tela || !pageEl) return;
+  const elMsg = document.getElementById('manutencao-msg-texto');
+  if(elMsg) elMsg.textContent = msg || MANUTENCAO_MSG_PADRAO;
+  pageEl.appendChild(tela);
+  tela.style.display = 'flex';
+}
+
+function esconderBloqueioManutencao(){
+  const tela = document.getElementById('tela-manutencao');
+  if(tela) tela.style.display = 'none';
+}
+
 function acessarAdmPelaManutencao(){
-  document.getElementById('tela-manutencao').style.display = 'none';
+  esconderBloqueioManutencao();
   goToAdm();
 }
 
@@ -6014,36 +6053,53 @@ async function salvarConfigChave(chave, valor){
   else await dbPost('config', {chave, valor});
 }
 
-function renderManutencaoStatus(ativo){
+function renderManutencaoAbasLista(abasAtivas){
+  const cont = document.getElementById('manutencao-abas-lista');
+  if(!cont) return;
+  cont.innerHTML = MANUTENCAO_ABAS_DISPONIVEIS.map(a=>`
+    <label class="manutencao-aba-item">
+      <input type="checkbox" value="${a.key}" ${abasAtivas.includes(a.key)?'checked':''}/>
+      ${a.label}
+    </label>`).join('');
+}
+
+function renderManutencaoStatus(abasAtivas){
   const status = document.getElementById('manutencao-status');
-  const btn = document.getElementById('manutencao-toggle-btn');
-  if(!status || !btn) return;
-  status.textContent = ativo ? '🔴 Manutenção ATIVA — jogadores estão vendo a tela de manutenção' : '🟢 Site no ar normalmente';
-  status.style.color = ativo ? 'var(--red)' : 'var(--green)';
-  btn.textContent = ativo ? 'Desativar manutenção' : 'Ativar manutenção';
-  btn.className = 'btn btn-sm' + (ativo ? ' btn-danger' : ' btn-primary');
-  btn.dataset.ativo = ativo ? '1' : '0';
+  if(!status) return;
+  if(!abasAtivas.length){
+    status.textContent = '🟢 Nenhuma aba em manutenção';
+    status.style.color = 'var(--green)';
+  } else {
+    const labels = abasAtivas.map(k=>MANUTENCAO_ABAS_DISPONIVEIS.find(a=>a.key===k)?.label || k);
+    status.textContent = `🔴 Em manutenção: ${labels.join(', ')}`;
+    status.style.color = 'var(--red)';
+  }
 }
 
 async function carregarManutencaoAdm(){
-  const r = await dbGet('config', 'chave=in.(manutencao_ativa,manutencao_msg)').catch(()=>[]);
-  const ativo = (r||[]).find(x=>x.chave==='manutencao_ativa')?.valor === 'true';
+  const r = await dbGet('config', 'chave=in.(manutencao_abas,manutencao_msg)').catch(()=>[]);
+  let abas = [];
+  try{ abas = JSON.parse((r||[]).find(x=>x.chave==='manutencao_abas')?.valor || '[]'); }catch(e){ abas = []; }
+  if(!Array.isArray(abas)) abas = [];
+  _manutencaoAbasAtivas = abas;
   const msg = (r||[]).find(x=>x.chave==='manutencao_msg')?.valor || '';
-  renderManutencaoStatus(ativo);
+  renderManutencaoAbasLista(abas);
+  renderManutencaoStatus(abas);
   const msgInput = document.getElementById('manutencao-msg-input');
   if(msgInput) msgInput.value = msg;
 }
 
-async function toggleManutencao(){
-  const btn = document.getElementById('manutencao-toggle-btn');
-  const ativoAtual = btn.dataset.ativo === '1';
-  const novo = !ativoAtual;
-  if(novo && !confirm('Isso vai bloquear o acesso de todos os jogadores ao site, exibindo a tela de manutenção. Continuar?')) return;
+async function salvarManutencaoAbas(){
+  const checks = document.querySelectorAll('#manutencao-abas-lista input[type=checkbox]:checked');
+  const novasAbas = Array.from(checks).map(c=>c.value);
+  const ativandoNovas = novasAbas.filter(k=>!_manutencaoAbasAtivas.includes(k));
+  if(ativandoNovas.length && !confirm('Isso vai bloquear o acesso de jogadores às abas selecionadas, exibindo a tela de manutenção nelas. Continuar?')) return;
   try{
-    await salvarConfigChave('manutencao_ativa', novo ? 'true' : 'false');
-    renderManutencaoStatus(novo);
+    await salvarConfigChave('manutencao_abas', JSON.stringify(novasAbas));
+    _manutencaoAbasAtivas = novasAbas;
+    renderManutencaoStatus(novasAbas);
     const fb = document.getElementById('manutencao-fb');
-    fb.textContent = novo ? '✓ Manutenção ativada! O site agora está bloqueado para jogadores.' : '✓ Manutenção desativada! O site está liberado novamente.';
+    fb.textContent = novasAbas.length ? '✓ Abas em manutenção atualizadas!' : '✓ Manutenção desativada em todas as abas!';
     fb.style.display = 'block';
     setTimeout(()=>{ fb.style.display='none'; }, 4000);
   }catch(e){ alert('Erro ao salvar: ' + e.message); }
