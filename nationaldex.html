@@ -476,27 +476,20 @@ const _NDX_SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const _NDX_SH={'Content-Type':'application/json','apikey':_NDX_SUPA_KEY,'Authorization':'Bearer '+_NDX_SUPA_KEY};
 
 // Pokémon RPG agrupados por nome (deduplicados dos biomas)
-let _rpgPokemon=[]; // [{nome, sprite, tipos, habilidade, habilidade2, genero}]
-let _rpgBioMap={}; // nome -> bio_pt
+let _rpgPokemon=[]; // fakemon e regionais — tudo com id não-numérico
 
 async function loadRpgData(){
   try{
-    const [pkRes, ptRes] = await Promise.all([
-      fetch(`${_NDX_SUPA_URL}/rest/v1/pokemons?select=nome,sprite,tipos,habilidade,habilidade2,genero&order=nome.asc`,{headers:_NDX_SH}),
-      fetch(`${_NDX_SUPA_URL}/rest/v1/pokemon_pt?select=name,bio_pt&order=name.asc`,{headers:_NDX_SH})
-    ]);
-    if(pkRes.ok){
-      const rows=await pkRes.json();
-      // Deduplica por nome
-      const seen=new Set();
-      _rpgPokemon=rows.filter(p=>{if(seen.has(p.nome))return false;seen.add(p.nome);return true;});
-    }
-    if(ptRes.ok){
-      const ptRows=await ptRes.json();
-      ptRows.forEach(r=>{if(r.name)_rpgBioMap[r.name]=r.bio_pt||'';});
-    }
+    const res=await fetch(
+      `${_NDX_SUPA_URL}/rest/v1/pokemons?select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,genero,bio_pt,is_fakemon,source&is_fakemon=eq.true&order=id.asc`,
+      {headers:_NDX_SH}
+    );
+    if(res.ok) _rpgPokemon=await res.json();
   }catch{}
 }
+
+// Retorna o prefixo de região de um id customizado (A, G, H, P, N) ou null
+function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1].toUpperCase():null; }
 
 async function initList(){
   // Carrega dados RPG em paralelo com PokeAPI
@@ -522,13 +515,17 @@ function renderList(){
 
 function gridCard(p,i){
   if(p._isRpg){
-    const tipos=(p.tipos||[]).map(t=>pill(t)).join('');
+    const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
     const spriteUrl=p.sprite||'';
-    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.nome)}')">
-      <div class="pk-num" style="color:var(--brand-mid)">RPG</div>
-      ${spriteUrl?`<img class="pk-art" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${p.nome}">`
+    const label=p.name_pt||p.name;
+    const pref=idPrefix(p.id);
+    const regionLabel={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
+    const numLabel=pref?`${regionLabel} #${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
+    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}')">
+      <div class="pk-num" style="color:var(--brand-mid)">${numLabel}</div>
+      ${spriteUrl?`<img class="pk-art" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pk-art" style="display:flex;align-items:center;justify-content:center;font-size:44px">❓</div>`}
-      <div class="pk-name">${p.nome.toUpperCase()}</div>
+      <div class="pk-name">${label.toUpperCase()}</div>
       <div class="pk-types">${tipos||`<span style="font-size:9px;color:var(--muted)">—</span>`}</div>
     </div>`;
   }
@@ -545,12 +542,16 @@ function gridCard(p,i){
 
 function listRow(p,i){
   if(p._isRpg){
-    const tipos=(p.tipos||[]).map(t=>pill(t)).join('');
-    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.nome)}')">
-      <div class="pl-num" style="color:var(--brand-mid)">RPG</div>
-      ${p.sprite?`<img class="pl-sprite" loading="lazy" src="${p.sprite}" onerror="this.style.opacity='.3'" alt="${p.nome}">`
+    const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
+    const label=p.name_pt||p.name;
+    const pref=idPrefix(p.id);
+    const regionLabel={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
+    const numLabel=pref?`${regionLabel} #${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
+    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}')">
+      <div class="pl-num" style="color:var(--brand-mid)">${numLabel}</div>
+      ${p.sprite?`<img class="pl-sprite" loading="lazy" src="${p.sprite}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pl-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`}
-      <div class="pl-name">${p.nome.toUpperCase()}</div>
+      <div class="pl-name">${label.toUpperCase()}</div>
       <div class="pl-types">${tipos}</div>
     </div>`;
   }
@@ -583,18 +584,40 @@ function applyFilters(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const tp=document.getElementById('type-filter').value;
 
-  // Aba Nendo: mostra Pokémon RPG do Supabase
+  // Aba Nendo: só fakemon Nendo (prefixo N)
   if(curGen==='nendo'){
+    if(!_rpgPokemon.length) await loadRpgData();
     let rpgFiltered=_rpgPokemon.filter(p=>{
-      const nm=!q||p.nome.toLowerCase().includes(q);
-      const tpOk=!tp||(p.tipos||[]).includes(tp);
+      if(idPrefix(p.id)!=='N') return false;
+      const nm=!q||(p.name||'').toLowerCase().includes(q)||(p.name_pt||'').toLowerCase().includes(q);
+      const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
       return nm&&tpOk;
     });
-    // Converte para formato compatível com renderList (marca como rpg)
-    filtered=rpgFiltered.map(p=>({...p, name:p.nome, id:'rpg_'+p.nome, _isRpg:true}));
+    filtered=rpgFiltered.map(p=>({...p, _isRpg:true}));
     document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
     renderList();
     return;
+  }
+
+  // Mapa de gen → prefixo regional incluído na aba
+  const GEN_REGIONAL={7:'A', 8:'G', 9:'P'};
+  // Hisui não tem gen própria — aparece na aba Sinnoh (4)
+  const GEN_REGIONAL_EXTRA={4:'H'};
+  const regionalPrefix=GEN_REGIONAL[curGen]||GEN_REGIONAL_EXTRA[curGen]||null;
+
+  // Carrega regionais do Supabase se esta aba tiver prefixo regional
+  let regionais=[];
+  if(regionalPrefix){
+    if(!_rpgPokemon.length) await loadRpgData();
+    regionais=_rpgPokemon
+      .filter(p=>{
+        if(idPrefix(p.id)!==regionalPrefix) return false;
+        const nm=!q||(p.name||'').toLowerCase().includes(q)||(p.name_pt||'').toLowerCase().includes(q);
+        const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
+        return nm&&tpOk;
+      })
+      .map(p=>({...p, _isRpg:true}))
+      .sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
   }
 
   // Primeiro filtra por região e nome (sem depender de cache de tipos)
@@ -606,16 +629,14 @@ function applyFilters(){
   });
 
   if(!tp){
-    // Sem filtro de tipo: exibe tudo da região
-    filtered=byRegion;
+    // Sem filtro de tipo: exibe tudo da região + regionais do Supabase
+    filtered=[...byRegion, ...regionais];
   } else {
-    // Com filtro de tipo: inclui quem tem cache e bate o tipo;
-    // pokémon sem cache são carregados e depois refiltramos
+    // Com filtro de tipo: inclui quem tem cache e bate o tipo
     const withCache=byRegion.filter(p=>typeCache[p.id]);
     const withoutCache=byRegion.filter(p=>!typeCache[p.id]);
-    filtered=withCache.filter(p=>typeCache[p.id].includes(tp));
+    filtered=[...withCache.filter(p=>typeCache[p.id].includes(tp)), ...regionais];
     if(withoutCache.length){
-      // Carrega tipos dos que ainda não têm cache e reaaplica filtros ao terminar
       batchTypesAndRefilter(withoutCache.map(p=>p.id));
     }
   }
@@ -665,9 +686,9 @@ async function loadPokemon(slug){
 
   // Detecta Pokémon RPG customizado
   if(slug.startsWith('__rpg__')){
-    const nome=decodeURIComponent(slug.replace('__rpg__',''));
-    await loadRpgData(); // garante que os dados estão carregados
-    const rpgPk=_rpgPokemon.find(p=>p.nome===nome);
+    const pkId=decodeURIComponent(slug.replace('__rpg__',''));
+    await loadRpgData();
+    const rpgPk=_rpgPokemon.find(p=>String(p.id)===pkId);
     if(rpgPk){renderRpgDetail(rpgPk,dc);}
     else{dc.innerHTML=`<div style="text-align:center;padding:60px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div style="font-family:var(--font-title);font-size:13px;color:var(--muted)">Pokémon não encontrado</div><button onclick="goList()" style="margin-top:16px;font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body)">← Voltar à Pokédex</button></div>`;}
     return;
@@ -695,38 +716,46 @@ async function loadPokemon(slug){
 
 // Renderiza página de detalhe para Pokémon RPG customizado
 function renderRpgDetail(p, container){
-  const tipos=p.tipos||[];
+  const tipos=[p.tipo1,p.tipo2].filter(Boolean);
   const primaryType=tipos[0]||'normal';
   applyTypeTheme(primaryType);
-  document.title=`${p.nome} — NationalDex`;
-  const bioPt=_rpgBioMap[p.nome]||'';
+  const label=p.name_pt||p.name;
+  const pref=idPrefix(p.id);
+  const regionName={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
+  const baseNum=pref?String(p.id).slice(1).padStart(4,'0'):String(p.id).padStart(4,'0');
+  const numLabel=pref?`${regionName} #${baseNum}`:`#${baseNum}`;
+  const originLabel=pref&&pref!=='N'?`Forma Regional de ${regionName}`:'Pokémon Nendo — Kingdom Platinum';
+  document.title=`${label} — NationalDex`;
+  const bioPt=p.bio_pt||'';
   const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
   const tiposHtml=tipos.map(t=>{
     const c=TYPE_THEME[t]||TYPE_THEME.normal;
     return `<span style="background:${c.pill||c.accent||'#999'};color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px">${t}</span>`;
   }).join('');
-  const habs=[p.habilidade,p.habilidade2].filter(Boolean);
-  const habsHtml=habs.length?habs.map(h=>`<div style="display:flex;align-items:baseline;gap:4px"><span style="font-size:12px;font-weight:700;color:var(--text)">${h.toUpperCase().replace(/-/g,' ')}</span></div>`).join(''):'<div style="color:var(--muted);font-size:12px">—</div>';
+  const habs=[p.habilidade1,p.habilidade2,p.habilidade_oculta].filter(Boolean);
+  const habsHtml=habs.length?habs.map((h,i)=>`<div style="display:flex;align-items:baseline;gap:4px"><span style="font-size:12px;font-weight:700;color:var(--text)">${h.toUpperCase().replace(/-/g,' ')}</span>${i===2?`<span style="font-size:9px;color:var(--muted);margin-left:2px">(oculta)</span>`:''}</div>`).join(''):'<div style="color:var(--muted);font-size:12px">—</div>';
 
   container.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap">
-      <div style="font-family:var(--font-title);font-size:11px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase">Pokémon RPG — Kingdom Platinum</div>
+      <div style="font-family:var(--font-title);font-size:11px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase">${numLabel} — ${originLabel}</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-      <span style="font-family:var(--font-title);font-size:22px;font-weight:700;color:var(--brand);letter-spacing:.5px">${p.nome}</span>
+      <span style="font-family:var(--font-title);font-size:22px;font-weight:700;color:var(--brand);letter-spacing:.5px">${label}</span>
       ${tiposHtml}
     </div>
     <div style="display:grid;grid-template-columns:160px 1fr;gap:20px;align-items:start">
       <div style="text-align:center">
         ${p.sprite?`<img src="${p.sprite}" style="width:140px;height:140px;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.15))" onerror="this.style.opacity='.3'">`
           :`<div style="width:140px;height:140px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:60px;margin:0 auto">❓</div>`}
+        ${p.sprite_shiny?`<div style="margin-top:8px"><button onclick="this.previousElementSibling.previousElementSibling.src='${p.sprite_shiny}'" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;cursor:pointer;color:var(--muted)">✨ Shiny</button></div>`:''}
         <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-top:8px">${tiposHtml}</div>
       </div>
       <div>
+        ${p.genus_en?`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${p.genus_en}</div>`:''}
         ${bioPt?`<div style="background:${TT.surface||'var(--surface2)'};border-radius:10px;padding:12px 14px;margin-bottom:14px">
           <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Descrição</div>
           <div style="font-size:13px;color:var(--text);line-height:1.7">${bioPt}</div>
-        </div>`:`<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;color:var(--muted);font-size:12px;font-style:italic">Descrição ainda não disponível. O ADM pode adicionar na aba RPG Pokémon da Pokédex ADM.</div>`}
+        </div>`:`<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;color:var(--muted);font-size:12px;font-style:italic">Descrição ainda não disponível.</div>`}
         <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
           <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Habilidades</div>
           ${habsHtml}
@@ -734,8 +763,8 @@ function renderRpgDetail(p, container){
         <div style="background:var(--surface2);border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Detalhes</div>
           <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
-            <div><span style="color:var(--muted);font-weight:600">Gênero:</span> ${{macho:'100% ♂',femea:'100% ♀',genderless:'Sem gênero',aleatorio:'Aleatório (♂/♀)'}[p.genero]||p.genero||'—'}</div>
-            <div><span style="color:var(--muted);font-weight:600">Origem:</span> Pokémon RPG — Kingdom Platinum</div>
+            <div><span style="color:var(--muted);font-weight:600">Gênero:</span> ${{macho:'100% ♂',femea:'100% ♀',genderless:'Sem gênero','1d2':'Aleatório (♂/♀)'}[p.genero]||p.genero||'—'}</div>
+            <div><span style="color:var(--muted);font-weight:600">Origem:</span> ${originLabel}</div>
           </div>
         </div>
       </div>
