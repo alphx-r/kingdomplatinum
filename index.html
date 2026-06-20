@@ -4687,14 +4687,8 @@ koencity: 30" style="resize:vertical"></textarea>
     <input type="file" id="modal-pk-uni-sprite-shiny-file" accept="image/*" style="display:none" onchange="previewModalPkUniSpriteShiny(this)"/>
     <div class="g2">
       <div class="field"><label>Nome</label><input type="text" id="modal-pk-uni-nome"/></div>
-      <div class="field"><label>Gênero</label>
-        <select id="modal-pk-uni-genero">
-          <option value="aleatorio">Aleatório</option>
-          <option value="1d2">1d2</option>
-          <option value="macho">100% Macho</option>
-          <option value="femea">100% Fêmea</option>
-          <option value="genderless">Sem gênero</option>
-        </select>
+      <div class="field"><label>Gênero <span style="font-size:10px;color:var(--muted);font-weight:400">(ex: 87.5% Macho, Sem gênero, 1d2)</span></label>
+        <input type="text" id="modal-pk-uni-genero" placeholder="ex: 87.5% Macho / 12.5% Fêmea"/>
       </div>
       <div class="field"><label>Habilidade 1</label><input type="text" id="modal-pk-uni-hab1"/></div>
       <div class="field"><label>Habilidade 2</label><input type="text" id="modal-pk-uni-hab2"/></div>
@@ -4778,26 +4772,6 @@ koencity: 30" style="resize:vertical"></textarea>
 
     <div style="margin:20px 0 8px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);padding-top:14px">
       <div style="font-family:var(--font-title);font-size:12px;color:var(--brand);text-transform:uppercase;letter-spacing:.6px">Biomas e raridades</div>
-      <button class="btn btn-sm" onclick="_pkUniMostrarAddBioma()">+ Adicionar Bioma</button>
-    </div>
-    <div id="modal-pk-uni-add-bioma" style="display:none;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px">
-      <div class="g2" style="margin-bottom:8px">
-        <div class="field"><label style="font-size:10px">Bioma</label>
-          <select id="modal-pk-uni-add-bioma-sel"></select>
-        </div>
-        <div class="field"><label style="font-size:10px">Raridade</label>
-          <select id="modal-pk-uni-add-raridade-sel">
-            <option value="comum">Comum (52–100)</option>
-            <option value="incomum">Incomum (14–51)</option>
-            <option value="raro">Raro (3–13)</option>
-            <option value="rarissimo">Raríssimo (1–2)</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-primary btn-sm" style="flex:1" onclick="_pkUniAdicionarBioma()">Adicionar</button>
-        <button class="btn btn-sm" onclick="document.getElementById('modal-pk-uni-add-bioma').style.display='none'">Cancelar</button>
-      </div>
     </div>
     <div id="modal-pk-uni-biomas-list"></div>
   </div>
@@ -6738,7 +6712,7 @@ function abrirModalPkUnificado(nome){
   const p=linhas[0];
   document.getElementById('modal-pk-uni-nome-original').value=nome;
   document.getElementById('modal-pk-uni-nome').value=p.name||p.nome;
-  document.getElementById('modal-pk-uni-genero').value=p.genero||'aleatorio';
+  document.getElementById('modal-pk-uni-genero').value=p.genero||'';
   document.getElementById('modal-pk-uni-hab1').value=p.habilidade1||'';
   document.getElementById('modal-pk-uni-hab2').value=p.habilidade2||'';
   document.getElementById('modal-pk-uni-estacao').value=p.estacao||'';
@@ -6775,31 +6749,62 @@ function fecharModalPkUnificado(){
 }
 function _renderPkUniBiomasList(nome){
   const wrap=document.getElementById('modal-pk-uni-biomas-list');
-  const linhas=_pkUniLinhas(nome).slice().sort((a,b)=>a.bioma.localeCompare(b.bioma,'pt-BR'));
-  wrap.innerHTML=linhas.map(l=>`
-    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
-      <div class="g2" style="margin-bottom:8px">
-        <div class="field"><label style="font-size:10px">Bioma</label>
-          <select onchange="_pkUniAtualizarLinha('${l.id}','bioma',this.value)">
-            ${biomas.map(b=>`<option${b.nome===l.bioma?' selected':''}>${b.nome}</option>`).join('')}
+  const linhas=_pkUniLinhas(nome);
+  if(!linhas.length){wrap.innerHTML='';return;}
+  // Nova estrutura: cada registro tem biomas[] e raridade único
+  // Exibe um card por registro (geralmente 1), mostrando biomas como chips editáveis
+  wrap.innerHTML=linhas.map(l=>{
+    const biomasArr=Array.isArray(l.biomas)?l.biomas:(l.bioma?[l.bioma]:[]);
+    const biomasChips=biomasArr.map(b=>`<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px">${b} <span style="cursor:pointer;color:var(--red)" onclick="_pkUniRemoverBioma('${l.id}','${b.replace(/'/g,"\\'")}','${nome.replace(/'/g,"\\'")}')">✕</span></span>`).join('');
+    return`<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
+      <div class="field" style="margin-bottom:8px">
+        <label style="font-size:10px">Biomas</label>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${biomasChips||'<span style="color:var(--muted);font-size:11px">Nenhum bioma</span>'}</div>
+        <div style="display:flex;gap:6px">
+          <select id="add-bioma-sel-${l.id}" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid var(--border)">
+            ${biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('')}
           </select>
+          <button class="btn btn-sm btn-primary" onclick="_pkUniAdicionarBiomaArr('${l.id}','${nome.replace(/'/g,"\\'")}')">+ Bioma</button>
         </div>
-        <div class="field"><label style="font-size:10px">Raridade</label>
-          <select onchange="_pkUniAtualizarLinha('${l.id}','raridade',this.value)">
-            <option value="comum"${l.raridade==='comum'?' selected':''}>Comum (52–100)</option>
-            <option value="incomum"${l.raridade==='incomum'?' selected':''}>Incomum (14–51)</option>
-            <option value="raro"${l.raridade==='raro'?' selected':''}>Raro (3–13)</option>
-            <option value="rarissimo"${l.raridade==='rarissimo'?' selected':''}>Raríssimo (1–2)</option>
-          </select>
-        </div>
+      </div>
+      <div class="field" style="margin-bottom:8px">
+        <label style="font-size:10px">Raridade</label>
+        <select onchange="_pkUniAtualizarLinha('${l.id}','raridade',this.value)">
+          <option value="comum"${l.raridade==='comum'?' selected':''}>Comum (52–100)</option>
+          <option value="incomum"${l.raridade==='incomum'?' selected':''}>Incomum (14–51)</option>
+          <option value="raro"${l.raridade==='raro'?' selected':''}>Raro (3–13)</option>
+          <option value="rarissimo"${l.raridade==='rarissimo'?' selected':''}>Raríssimo (1–2)</option>
+        </select>
       </div>
       <div class="field" style="margin-bottom:8px">
         <label style="font-size:10px">Condição de captura</label>
         <input type="text" value="${(l.condicao||'').replace(/"/g,'&quot;')}" onchange="_pkUniAtualizarLinha('${l.id}','condicao',this.value.trim()||null)" placeholder="Ex: Apenas com Pokéflauta equipada"/>
       </div>
-      <button class="btn btn-danger btn-sm" onclick="_pkUniRemoverLinha('${l.id}','${nome.replace(/'/g,"\\'")}')">🗑 Remover este Bioma</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+}
+async function _pkUniAdicionarBiomaArr(id,nome){
+  const p=pokemonDB.find(x=>x.id===id);if(!p)return;
+  const sel=document.getElementById('add-bioma-sel-'+id);if(!sel)return;
+  const bioma=sel.value;
+  const biomasArr=Array.isArray(p.biomas)?[...p.biomas]:(p.bioma?[p.bioma]:[]);
+  if(biomasArr.includes(bioma)){alert('Este bioma já está adicionado.');return;}
+  biomasArr.push(bioma);
+  await dbPatch('pokemons',`id=eq.${encodeURIComponent(id)}`,{biomas:biomasArr});
+  p.biomas=biomasArr;
+  _renderPkUniBiomasList(nome);
+  renderTbodyPokemons();renderTbodyBiomas();
+  if(currentPage==='bioma') renderBiomaPage();
+}
+async function _pkUniRemoverBioma(id,bioma,nome){
+  const p=pokemonDB.find(x=>x.id===id);if(!p)return;
+  const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).filter(b=>b!==bioma);
+  if(!biomasArr.length){alert('Não é possível remover o último bioma.');return;}
+  await dbPatch('pokemons',`id=eq.${encodeURIComponent(id)}`,{biomas:biomasArr});
+  p.biomas=biomasArr;
+  _renderPkUniBiomasList(nome);
+  renderTbodyPokemons();renderTbodyBiomas();
+  if(currentPage==='bioma') renderBiomaPage();
 }
 async function _pkUniAtualizarLinha(id,campo,valor){
   const p=pokemonDB.find(x=>x.id===id);if(!p)return;
