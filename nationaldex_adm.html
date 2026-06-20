@@ -802,14 +802,16 @@ async function savePk(id, approve) {
   const bioEn = document.getElementById(`pk-bio-en-${id}`)?.textContent || db.bio_en || '';
   try {
     const row = {
-      pokemon_id: id,
+      id: String(id),
       name: pk ? pk.name : '',
       bio_en: bioEn,
       bio_pt: bioPt,
+      is_fakemon: false,
+      source: 'pokeapi',
       approved: approve,
       updated_at: new Date().toISOString()
     };
-    await sbUpsert('pokemon_pt', row);
+    await sbUpsert('pokemons', row);
     S.pk.dbMap[id] = row;
     const ind = document.getElementById('pk-ind-' + id);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
@@ -839,10 +841,10 @@ function updatePkStats() {
 
 async function loadPokemon() {
   try {
-    // Load DB data first
-    const dbRows = await sbSelect('pokemon_pt');
+    // Carrega dados de bio/tradução da tabela unificada pokemons
+    const dbRows = await sbSelect('pokemons');
     S.pk.dbMap = {};
-    dbRows.forEach(r => { S.pk.dbMap[r.pokemon_id] = r; });
+    dbRows.forEach(r => { S.pk.dbMap[r.id] = r; });
 
     // Load list from PokéAPI
     const r = await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
@@ -1302,12 +1304,12 @@ function markFilled(ta) {
 async function exportAll() {
   try {
     const [abRows, mvRows, pkRows] = await Promise.all([
-      sbSelect('abilities_pt'), sbSelect('moves_pt'), sbSelect('pokemon_pt')
+      sbSelect('abilities_pt'), sbSelect('moves_pt'), sbSelect('pokemons')
     ]);
     const data = {
       abilities: Object.fromEntries(abRows.map(r => [r.name, { desc_en: r.desc_en, desc_pt: r.desc_pt, approved: r.approved }])),
       moves: Object.fromEntries(mvRows.map(r => [r.name, { desc_en: r.desc_en, desc_pt: r.desc_pt, approved: r.approved }])),
-      pokemon: Object.fromEntries(pkRows.map(r => [r.pokemon_id, { name: r.name, name_pt: r.name_pt, genus_en: r.genus_en, genus_pt: r.genus_pt, bio_en: r.bio_en, bio_pt: r.bio_pt, approved: r.approved }])),
+      pokemon: Object.fromEntries(pkRows.map(r => [r.id, { name: r.name, name_pt: r.name_pt, genus_en: r.genus_en, bio_en: r.bio_en, bio_pt: r.bio_pt, is_fakemon: r.is_fakemon, source: r.source, approved: r.approved }])),
       exported_at: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1341,7 +1343,7 @@ async function doImport() {
     }
     if (data.pokemon) {
       for (const [id, v] of Object.entries(data.pokemon)) {
-        await sbUpsert('pokemon_pt', { pokemon_id: parseInt(id), name: v.name||'', name_pt: v.name_pt||'', genus_en: v.genus_en||'', genus_pt: v.genus_pt||'', bio_en: v.bio_en||'', bio_pt: v.bio_pt||'', approved: !!v.approved, updated_at: new Date().toISOString() });
+        await sbUpsert('pokemons', { id, name: v.name||'', name_pt: v.name_pt||'', genus_en: v.genus_en||'', bio_en: v.bio_en||'', bio_pt: v.bio_pt||'', is_fakemon: !!v.is_fakemon, source: v.source||'manual', approved: !!v.approved, updated_at: new Date().toISOString() });
         count++;
       }
     }
@@ -1366,24 +1368,39 @@ document.querySelectorAll('.modal-ov').forEach(ov => {
 });
 
 async function saveNewPokemon() {
-  const id = parseInt(document.getElementById('npk-id').value);
+  const id = document.getElementById('npk-id').value.trim();
   const name = document.getElementById('npk-name').value.trim().toLowerCase().replace(/\s+/g, '-');
+  const namePt = document.getElementById('npk-name_pt')?.value.trim() || '';
   const bioPt = document.getElementById('npk-bio_pt').value.trim();
   const bioEn = document.getElementById('npk-bio_en').value.trim();
   if (!id || !name) { toast('ID e Nome são obrigatórios.', 'err'); return; }
+  // Valida formato: número puro (oficial), Nxxxx (Nendo), ou prefixo regional (A/G/P/H + número)
+  const isFakemon  = /^N\d+$/i.test(id);
+  const isRegional = /^[AGPH]\d+$/i.test(id);
+  const isOficial  = /^\d+$/.test(id);
+  if (!isFakemon && !isRegional && !isOficial) { toast('ID inválido. Use número (ex: 25), Nxxxx (Nendo) ou prefixo regional (ex: A0050, G0052, P0194, H0058).', 'err'); return; }
   try {
-    const row = { pokemon_id: id, name, bio_en: bioEn, bio_pt: bioPt, approved: false, updated_at: new Date().toISOString() };
-    await sbUpsert('pokemon_pt', row);
+    const row = {
+      id,
+      name,
+      name_pt: namePt,
+      bio_en: bioEn,
+      bio_pt: bioPt,
+      is_fakemon: isFakemon || isRegional,
+      source: isFakemon ? 'nendo' : isRegional ? 'regional' : 'manual',
+      approved: false,
+      updated_at: new Date().toISOString()
+    };
+    await sbUpsert('pokemons', row);
     S.pk.dbMap[id] = row;
-    // Add to local list if not already there
-    if (!S.pk.all.find(p => p.id === id)) {
+    if (!S.pk.all.find(p => String(p.id) === id)) {
       S.pk.all.push({ id, name, types: [] });
-      S.pk.all.sort((a, b) => a.id - b.id);
+      S.pk.all.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
     }
     applyPkFilter();
     closeModal('new-pokemon-modal');
-    ['npk-id','npk-name','npk-bio_pt','npk-bio_en'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
-    toast(`Pokémon #${id} "${name}" salvo!`, 'ok');
+    ['npk-id','npk-name','npk-name_pt','npk-bio_pt','npk-bio_en'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+    toast(`Pokémon "${id} — ${name}" salvo!`, 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
 }
 
@@ -1453,7 +1470,7 @@ const S_RPG_SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Auth
 const RPG_URL = SUPA_URL + '/rest/v1/pokemons';
 
 async function rpgFetchAll() {
-  const r = await fetch(RPG_URL + '?select=id,nome,sprite,tipos,habilidade,habilidade2,genero,bioma,raridade&order=nome.asc', { headers: S_RPG_SH });
+  const r = await fetch(RPG_URL + '?select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,habilidade_oculta,genero,biomas,raridade,condicao,estacao,estacao_boost,bio_pt,approved&is_fakemon=eq.true&order=id.asc', { headers: S_RPG_SH });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -1465,7 +1482,7 @@ async function rpgPost(body) {
 }
 
 async function rpgPatch(id, body) {
-  const r = await fetch(RPG_URL + `?id=eq.${id}`, { method: 'PATCH', headers: { ...S_RPG_SH, 'Prefer': 'return=representation' }, body: JSON.stringify(body) });
+  const r = await fetch(RPG_URL + `?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { ...S_RPG_SH, 'Prefer': 'return=representation' }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -1475,9 +1492,6 @@ async function rpgFetchBiomas() {
   if (!r.ok) return [];
   return r.json();
 }
-
-// Carrega bio_pt da tabela pokemon_pt para cruzamento
-let _rpgBioMap = {}; // pokemon nome -> bio_pt
 
 Object.assign(S, { rpg: { all: [], filtered: [], filter: 'all', _loaded: false } });
 
@@ -1494,8 +1508,8 @@ function filterRpg() { applyRpgFilter(); }
 function applyRpgFilter() {
   const q = (document.getElementById('rpg-search')?.value || '').toLowerCase();
   S.rpg.filtered = S.rpg.all.filter(p => {
-    const nm = !q || p.nome.toLowerCase().includes(q) || (p.bioma||'').toLowerCase().includes(q);
-    const hasBio = !!_rpgBioMap[p.nome];
+    const nm = !q || (p.name||'').toLowerCase().includes(q) || (p.name_pt||'').toLowerCase().includes(q) || (p.biomas||[]).some(b=>b.toLowerCase().includes(q));
+    const hasBio = !!p.bio_pt;
     const fOk = rpgFilter === 'all' || (rpgFilter === 'appr' && hasBio) || (rpgFilter === 'pend' && !hasBio);
     return nm && fOk;
   });
@@ -1505,30 +1519,18 @@ function applyRpgFilter() {
 
 function updateRpgStats() {
   const total = S.rpg.all.length;
-  const comBio = S.rpg.all.filter(p => !!_rpgBioMap[p.nome]).length;
+  const comBio = S.rpg.all.filter(p => !!p.bio_pt).length;
   document.getElementById('rpg-total').textContent = total;
   document.getElementById('rpg-appr').textContent = comBio;
   document.getElementById('rpg-pend').textContent = total - comBio;
   document.getElementById('badge-rpg').textContent = `${comBio}/${total}`;
 }
 
-// Agrupa por nome para evitar duplicatas por bioma
-function rpgUnico(lista) {
-  const seen = new Set(); const out = [];
-  lista.forEach(p => { if (!seen.has(p.nome)) { seen.add(p.nome); out.push(p); } });
-  return out;
-}
-
 async function loadRpgPokemon() {
   try {
-    // Carrega bios da nationaldex (pokemon_pt) indexadas por nome
-    const ptRows = await sbSelect('pokemon_pt');
-    _rpgBioMap = {};
-    ptRows.forEach(r => { if (r.name) _rpgBioMap[r.name] = r.bio_pt || ''; });
-
     const all = await rpgFetchAll();
-    S.rpg.all = rpgUnico(all);
-    S.rpg.filtered = S.rpg.all;
+    S.rpg.all = all;
+    S.rpg.filtered = all;
     renderRpgList();
     updateRpgStats();
   } catch (e) {
@@ -1559,36 +1561,38 @@ function renderRpgList() {
     return;
   }
   con.innerHTML = items.map((p, i) => {
-    const hasBio = !!_rpgBioMap[p.nome];
-    const tipos = p.tipos || [];
+    const hasBio = !!p.bio_pt;
+    const tipos = [p.tipo1, p.tipo2].filter(Boolean);
+    const label = p.name_pt || p.name;
+    const biomas = (p.biomas || []).join(', ') || '—';
     const spriteHtml = p.sprite
-      ? `<img class="rpg-entry-sprite" src="${p.sprite}" alt="${p.nome}" onerror="this.style.display='none'">`
+      ? `<img class="rpg-entry-sprite" src="${p.sprite}" alt="${label}" onerror="this.style.display='none'">`
       : `<div class="rpg-entry-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`;
     return `<div class="rpg-entry${hasBio?' has-bio':''}" id="rpg-entry-${p.id}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="rpg-entry-head" onclick="toggleRpgEntry('${p.id}')">
         ${spriteHtml}
-        <span class="rpg-entry-name">${p.nome}<small>${p.bioma||'—'} · ${p.raridade||'—'}${tipos.length?' · '+tipos.join('/'):''}${p.habilidade?' · '+p.habilidade:''}</small></span>
+        <span class="rpg-entry-name">${p.id} — ${label}<small>${biomas} · ${p.raridade||'—'}${tipos.length?' · '+tipos.join('/'):''}${p.habilidade1?' · '+p.habilidade1:''}</small></span>
         <span class="badge ${hasBio?'badge-appr':'badge-pend'}">${hasBio?'Com bio':'Sem bio'}</span>
         <span class="chev">▼</span>
       </div>
       <div class="rpg-entry-body" id="rpg-body-${p.id}">
         <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
           <div style="flex-shrink:0">
-            ${p.sprite?`<img src="${p.sprite}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;background:var(--surface2)" onerror="this.src=''">`:
-              `<div style="width:80px;height:80px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:32px">❓</div>`}
+            ${p.sprite?`<img src="${p.sprite}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;background:var(--surface2)" onerror="this.src=''">`
+              :`<div style="width:80px;height:80px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:32px">❓</div>`}
             <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:6px;justify-content:center">${tipos.map(rpgPill).join('')}</div>
           </div>
           <div style="flex:1;min-width:200px">
             <div class="field-row" style="margin-bottom:10px">
               <div class="field-lbl pt">🇧🇷 Biografia (PT) — aparece na Pokédex</div>
-              <textarea class="field-pt${hasBio?' filled':''}" id="rpg-bio_pt-${p.id}" rows="3" placeholder="Descrição em português…" oninput="this.classList.toggle('filled',!!this.value.trim())">${_rpgBioMap[p.nome]||''}</textarea>
+              <textarea class="field-pt${hasBio?' filled':''}" id="rpg-bio_pt-${p.id}" rows="3" placeholder="Descrição em português…" oninput="this.classList.toggle('filled',!!this.value.trim())">${p.bio_pt||''}</textarea>
             </div>
           </div>
         </div>
         <div class="entry-foot">
           <span class="save-ind" id="rpg-ind-${p.id}">✓ Salvo!</span>
           <button class="btn btn-outline btn-sm" onclick="openEditRpgPokemon('${p.id}')">✎ Editar dados RPG</button>
-          <button class="btn btn-success btn-sm" onclick="saveRpgBio('${p.id}','${p.nome.replace(/'/g,"\\'")}')">💾 Salvar bio</button>
+          <button class="btn btn-success btn-sm" onclick="saveRpgBio('${p.id}')">💾 Salvar bio</button>
         </div>
       </div>
     </div>`;
@@ -1600,15 +1604,13 @@ function toggleRpgEntry(id) {
   if (entry) entry.classList.toggle('open');
 }
 
-async function saveRpgBio(id, nome) {
+async function saveRpgBio(id) {
+  const p = S.rpg.all.find(x => String(x.id) === String(id));
+  if (!p) return;
   const bioPt = document.getElementById(`rpg-bio_pt-${id}`)?.value.trim() || '';
   try {
-    // Salva em pokemon_pt usando o nome como chave (pokemon_id = hash do nome para não colidir com IDs oficiais)
-    // Usamos o nome slug como identificador — pokemon_id fictício = soma char codes para ser único
-    const fakeId = nome.split('').reduce((acc, c) => acc + c.charCodeAt(0), 90000);
-    const row = { pokemon_id: fakeId, name: nome, bio_pt: bioPt, approved: !!bioPt, updated_at: new Date().toISOString() };
-    await sbUpsert('pokemon_pt', row);
-    _rpgBioMap[nome] = bioPt;
+    await rpgPatch(id, { bio_pt: bioPt, approved: !!bioPt, updated_at: new Date().toISOString() });
+    p.bio_pt = bioPt;
     const ind = document.getElementById('rpg-ind-' + id);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     const entry = document.getElementById('rpg-entry-' + id);
@@ -1618,7 +1620,7 @@ async function saveRpgBio(id, nome) {
       if (badge) { badge.textContent = bioPt ? 'Com bio' : 'Sem bio'; badge.className = 'badge ' + (bioPt ? 'badge-appr' : 'badge-pend'); }
     }
     updateRpgStats();
-    toast(`Bio de "${nome}" salva!`, 'ok');
+    toast(`Bio de "${p.name_pt||p.name}" salva!`, 'ok');
   } catch (e) { toast('Erro ao salvar bio: ' + e.message, 'err'); }
 }
 
@@ -1644,38 +1646,49 @@ async function openNewRpgPokemon() {
     if (sel) sel.innerHTML = _rpgBiomas.map(b => `<option value="${b.nome}">${b.nome}</option>`).join('');
   }
   document.querySelectorAll('#nrpg-tipos-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
-  ['nrpg-nome','nrpg-bio_pt','nrpg-sprite','nrpg-hab1','nrpg-hab2'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nrpg-id','nrpg-name','nrpg-name_pt','nrpg-bio_pt','nrpg-sprite','nrpg-hab1','nrpg-hab2','nrpg-hab_oculta'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   document.getElementById('new-rpg-modal').classList.add('open');
 }
 
 async function saveNewRpgPokemon() {
-  const nome = document.getElementById('nrpg-nome')?.value.trim();
+  const id = document.getElementById('nrpg-id')?.value.trim();
+  const name = document.getElementById('nrpg-name')?.value.trim().toLowerCase().replace(/\s+/g,'-');
+  const namePt = document.getElementById('nrpg-name_pt')?.value.trim() || '';
   const bioma = document.getElementById('nrpg-bioma')?.value;
   const raridade = document.getElementById('nrpg-raridade')?.value || 'comum';
-  const genero = document.getElementById('nrpg-genero')?.value || 'aleatorio';
-  const habilidade = document.getElementById('nrpg-hab1')?.value.trim() || '';
+  const genero = document.getElementById('nrpg-genero')?.value || '1d2';
+  const habilidade1 = document.getElementById('nrpg-hab1')?.value.trim() || '';
   const habilidade2 = document.getElementById('nrpg-hab2')?.value.trim() || '';
+  const habilidadeOculta = document.getElementById('nrpg-hab_oculta')?.value.trim() || null;
   const bioPt = document.getElementById('nrpg-bio_pt')?.value.trim() || '';
   const sprite = document.getElementById('nrpg-sprite')?.value.trim() || null;
-  const tipos = [...document.querySelectorAll('#nrpg-tipos-wrap .rpg-tipo-tag.sel')].map(t => t.dataset.tipo);
-  if (!nome) { toast('Nome é obrigatório.', 'err'); return; }
+  const tiposSel = [...document.querySelectorAll('#nrpg-tipos-wrap .rpg-tipo-tag.sel')].map(t => t.dataset.tipo);
+  if (!id) { toast('ID é obrigatório (ex: N0001).', 'err'); return; }
+  if (!/^N\d+$/i.test(id)) { toast('ID de fakemon deve ser Nxxxx (ex: N0001).', 'err'); return; }
+  if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   if (!bioma) { toast('Selecione um bioma.', 'err'); return; }
-  if (!tipos.length) { toast('Selecione pelo menos 1 tipo.', 'err'); return; }
+  if (!tiposSel.length) { toast('Selecione pelo menos 1 tipo.', 'err'); return; }
   try {
-    // 1. Cria na tabela pokemons (RPG)
-    const rows = await rpgPost({ nome, sprite, tipos, habilidade, habilidade2, raridade, genero, bioma, emoji: '❓' });
+    const row = {
+      id, name, name_pt: namePt,
+      tipo1: tiposSel[0] || null, tipo2: tiposSel[1] || null,
+      habilidade1, habilidade2, habilidade_oculta: habilidadeOculta,
+      raridade, genero,
+      biomas: [bioma],
+      bio_pt: bioPt,
+      sprite,
+      is_fakemon: true,
+      source: 'rpg',
+      approved: !!bioPt,
+      updated_at: new Date().toISOString()
+    };
+    const rows = await rpgPost(row);
     const novo = rows[0];
     S.rpg.all.push(novo);
-    S.rpg.all.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-    // 2. Salva bio em pokemon_pt (Pokédex) se preenchida
-    if (bioPt) {
-      const fakeId = nome.split('').reduce((acc, c) => acc + c.charCodeAt(0), 90000);
-      await sbUpsert('pokemon_pt', { pokemon_id: fakeId, name: nome, bio_pt: bioPt, approved: true, updated_at: new Date().toISOString() });
-      _rpgBioMap[nome] = bioPt;
-    }
+    S.rpg.all.sort((a,b) => String(a.id).localeCompare(String(b.id), undefined, {numeric:true}));
     applyRpgFilter();
     closeModal('new-rpg-modal');
-    toast(`"${nome}" criado no RPG${bioPt?' e na Pokédex':''}!`, 'ok');
+    toast(`"${id} — ${namePt||name}" criado!`, 'ok');
   } catch (e) { toast('Erro ao criar: ' + e.message, 'err'); }
 }
 
@@ -1683,53 +1696,47 @@ function openEditRpgPokemon(id) {
   const p = S.rpg.all.find(x => String(x.id) === String(id));
   if (!p) return;
   document.getElementById('erpg-id').value = p.id;
-  document.getElementById('erpg-nome').value = p.nome;
+  document.getElementById('erpg-name').value = p.name || '';
+  document.getElementById('erpg-name_pt').value = p.name_pt || '';
   document.getElementById('erpg-sprite').value = p.sprite || '';
-  document.getElementById('erpg-hab1').value = p.habilidade || '';
+  document.getElementById('erpg-sprite_shiny').value = p.sprite_shiny || '';
+  document.getElementById('erpg-hab1').value = p.habilidade1 || '';
   document.getElementById('erpg-hab2').value = p.habilidade2 || '';
-  document.getElementById('erpg-bio_pt').value = _rpgBioMap[p.nome] || '';
+  document.getElementById('erpg-hab_oculta').value = p.habilidade_oculta || '';
+  document.getElementById('erpg-bio_pt').value = p.bio_pt || '';
   document.querySelectorAll('#erpg-tipos-wrap .rpg-tipo-tag').forEach(t => {
-    t.classList.toggle('sel', (p.tipos || []).includes(t.dataset.tipo));
+    t.classList.toggle('sel', t.dataset.tipo === p.tipo1 || t.dataset.tipo === p.tipo2);
   });
   document.getElementById('edit-rpg-modal').classList.add('open');
 }
 
 async function saveEditRpgPokemon() {
   const id = document.getElementById('erpg-id')?.value;
-  const nome = document.getElementById('erpg-nome')?.value.trim();
+  const name = document.getElementById('erpg-name')?.value.trim().toLowerCase().replace(/\s+/g,'-');
+  const namePt = document.getElementById('erpg-name_pt')?.value.trim() || '';
   const sprite = document.getElementById('erpg-sprite')?.value.trim() || null;
-  const habilidade = document.getElementById('erpg-hab1')?.value.trim() || '';
+  const spriteShiny = document.getElementById('erpg-sprite_shiny')?.value.trim() || null;
+  const habilidade1 = document.getElementById('erpg-hab1')?.value.trim() || '';
   const habilidade2 = document.getElementById('erpg-hab2')?.value.trim() || '';
+  const habilidadeOculta = document.getElementById('erpg-hab_oculta')?.value.trim() || null;
   const bioPt = document.getElementById('erpg-bio_pt')?.value.trim() || '';
-  const tipos = [...document.querySelectorAll('#erpg-tipos-wrap .rpg-tipo-tag.sel')].map(t => t.dataset.tipo);
-  if (!nome) { toast('Nome é obrigatório.', 'err'); return; }
-  if (!tipos.length) { toast('Selecione pelo menos 1 tipo.', 'err'); return; }
+  const tiposSel = [...document.querySelectorAll('#erpg-tipos-wrap .rpg-tipo-tag.sel')].map(t => t.dataset.tipo);
+  if (!name) { toast('Nome é obrigatório.', 'err'); return; }
+  if (!tiposSel.length) { toast('Selecione pelo menos 1 tipo.', 'err'); return; }
   try {
-    // 1. Atualiza na tabela pokemons (todas as linhas com o mesmo nome)
-    const todasLinhas = S.rpg.all.filter(x => {
-      // Busca todas as entradas com o mesmo nome original (antes de editar)
-      const p = S.rpg.all.find(y => String(y.id) === String(id));
-      return p && x.nome === p.nome;
-    });
-    const patch = { nome, sprite, tipos, habilidade, habilidade2 };
-    // Patch em todas as cópias por bioma
-    const allWithSameName = (await rpgFetchAll()).filter(x => {
-      const original = S.rpg.all.find(y => String(y.id) === String(id));
-      return original && x.nome === original.nome;
-    });
-    await Promise.all(allWithSameName.map(x => rpgPatch(x.id, patch)));
-    // Atualiza local
+    const patch = {
+      name, name_pt: namePt, sprite, sprite_shiny: spriteShiny,
+      tipo1: tiposSel[0]||null, tipo2: tiposSel[1]||null,
+      habilidade1, habilidade2, habilidade_oculta: habilidadeOculta,
+      bio_pt: bioPt, approved: !!bioPt,
+      updated_at: new Date().toISOString()
+    };
+    await rpgPatch(id, patch);
     const idx = S.rpg.all.findIndex(x => String(x.id) === String(id));
     if (idx > -1) Object.assign(S.rpg.all[idx], patch);
-    // 2. Salva bio em pokemon_pt
-    if (bioPt !== undefined) {
-      const fakeId = nome.split('').reduce((acc, c) => acc + c.charCodeAt(0), 90000);
-      await sbUpsert('pokemon_pt', { pokemon_id: fakeId, name: nome, bio_pt: bioPt, approved: !!bioPt, updated_at: new Date().toISOString() });
-      _rpgBioMap[nome] = bioPt;
-    }
     applyRpgFilter();
     closeModal('edit-rpg-modal');
-    toast(`"${nome}" atualizado!`, 'ok');
+    toast(`"${namePt||name}" atualizado!`, 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
 }
 
