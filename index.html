@@ -798,6 +798,19 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 }
 .player-login-card .field input::placeholder{color:rgba(255,255,255,.4)}
 .player-login-card .field input:focus{border-color:rgba(255,255,255,.6);outline:none}
+
+/* TELA DE MANUTENÇÃO */
+#tela-manutencao{
+  position:fixed;inset:0;z-index:999999;
+  display:none;align-items:center;justify-content:center;flex-direction:column;
+  background:linear-gradient(160deg,var(--brand) 0%,#0c1a2b 100%);
+  text-align:center;padding:24px;
+}
+.manutencao-icone{font-size:52px;margin-bottom:14px}
+.manutencao-titulo{font-family:var(--font-title);font-size:26px;font-weight:700;color:#fff;letter-spacing:1px;margin-bottom:12px}
+.manutencao-msg{font-family:var(--font-body);font-size:14px;color:rgba(255,255,255,.82);max-width:440px;line-height:1.7;margin-bottom:26px;white-space:pre-wrap}
+.manutencao-adm-btn{font-family:var(--font-body);font-size:12px;font-weight:700;padding:9px 20px;border-radius:20px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);cursor:pointer;transition:all .2s}
+.manutencao-adm-btn:hover{background:rgba(255,255,255,.18);color:#fff}
 .player-login-title{
   font-family:var(--font-title);font-size:20px;color:#fff;
   text-align:center;margin-bottom:4px;letter-spacing:.5px;
@@ -935,6 +948,13 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <div id="player-login-erro"></div>
     <button class="player-login-btn" onclick="fazerLoginPlayer()">Entrar</button>
   </div>
+</div>
+
+<div id="tela-manutencao">
+  <div class="manutencao-icone">🛠️</div>
+  <div class="manutencao-titulo">Site em Manutenção</div>
+  <div class="manutencao-msg" id="manutencao-msg-texto">Estamos realizando melhorias no Reino. Voltamos em breve, treinador!</div>
+  <button class="manutencao-adm-btn" onclick="acessarAdmPelaManutencao()">Acesso administrativo</button>
 </div>
 
 <nav class="nav">
@@ -3232,6 +3252,7 @@ function calcSyncSelects(){
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
         <button class="adm-nav-btn" data-sec="estacao" onclick="admTab('estacao',this)">🌿 Estação</button>
+        <button class="adm-nav-btn" data-sec="manutencao" onclick="admTab('manutencao',this)">🚧 Manutenção</button>
         <button class="adm-nav-btn" data-sec="forcados" onclick="admTab('forcados',this)">🎯 Forçar Resultado</button>
         <button class="adm-nav-btn" data-sec="calculadora-adm" onclick="admTab('calculadora-adm',this)">🧮 Calculadora</button>
 
@@ -4062,7 +4083,25 @@ function calcSyncSelects(){
             <div class="fb fb-ok" id="estacao-pag-fb" style="display:none">✓ Páginas salvas!</div>
           </div>
         </div>
-        <!-- EVENTOS -->
+        <!-- MANUTENÇÃO -->
+        <div class="adm-section" id="sec-manutencao">
+          <div class="sec-title">🚧 Modo Manutenção</div>
+          <div class="sec-sub">Bloqueia o acesso de jogadores ao site inteiro, exibindo uma tela de manutenção. Administradores logados continuam acessando normalmente.</div>
+          <div class="box">
+            <div class="box-title">Status atual</div>
+            <div id="manutencao-status" style="font-size:14px;font-weight:700;margin-bottom:14px">🟢 Site no ar normalmente</div>
+            <button class="btn btn-primary btn-sm" id="manutencao-toggle-btn" data-ativo="0" onclick="toggleManutencao()">Ativar manutenção</button>
+            <div class="fb fb-ok" id="manutencao-fb" style="margin-top:10px">✓</div>
+          </div>
+          <div class="box">
+            <div class="box-title">Mensagem exibida aos jogadores</div>
+            <div class="field" style="margin-bottom:10px">
+              <textarea id="manutencao-msg-input" rows="3" placeholder="Estamos realizando melhorias no Reino. Voltamos em breve, treinador!" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:14px;color:var(--text);width:100%;resize:vertical"></textarea>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="salvarMensagemManutencao()">Salvar mensagem</button>
+            <div class="fb fb-ok" id="manutencao-msg-fb" style="margin-top:10px">✓ Mensagem salva!</div>
+          </div>
+        </div>
         <div class="adm-section" id="sec-eventos">
           <div class="sec-title">Eventos</div>
           <div class="sec-sub">Crie páginas exclusivas para eventos — cada evento gera uma URL própria com o rolador configurado</div>
@@ -5189,6 +5228,10 @@ function fb(id,ms=2500){const el=document.getElementById(id);if(!el)return;el.st
 const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, rolagens:false, npcs:false, evento:false, 'eventos-hub':false};
 
 async function init(){
+  // Verifica modo de manutenção antes de carregar qualquer coisa
+  await restaurarSessaoAdm().catch(()=>{});
+  if(await checarManutencao()) return;
+
   loading(true);
   try{
     const estilo = await carregarEstiloSalvo();
@@ -5650,6 +5693,7 @@ function admTab(sec,el){
     syncEventoBiomaSelect();
     carregarEventos().then(renderEventosLista);
   }
+  if(sec==='manutencao'){ carregarManutencaoAdm(); }
 }
 
 // ══════════════════════════════════════
@@ -5937,6 +5981,82 @@ async function restaurarSessaoAdm(){
     admins = lista;
     return true;
   } catch(e){ admLogado=null; return false; }
+}
+
+// ══════════════════════════════════════
+// MODO MANUTENÇÃO
+// ══════════════════════════════════════
+const MANUTENCAO_MSG_PADRAO = 'Estamos realizando melhorias no Reino. Voltamos em breve, treinador!';
+
+// Verifica se a manutenção está ativa e, se sim, bloqueia a tela para quem não é admin.
+// Deve ser chamada após restaurarSessaoAdm() já ter resolvido admLogado.
+async function checarManutencao(){
+  try{
+    const r = await dbGet('config', 'chave=in.(manutencao_ativa,manutencao_msg)');
+    const ativo = (r||[]).find(x=>x.chave==='manutencao_ativa')?.valor === 'true';
+    if(!ativo || admLogado) return false;
+    const msg = (r||[]).find(x=>x.chave==='manutencao_msg')?.valor || MANUTENCAO_MSG_PADRAO;
+    const elMsg = document.getElementById('manutencao-msg-texto');
+    if(elMsg) elMsg.textContent = msg;
+    document.getElementById('tela-manutencao').style.display = 'flex';
+    return true;
+  }catch(e){ console.error('[manutencao] erro ao checar:', e); return false; }
+}
+
+function acessarAdmPelaManutencao(){
+  document.getElementById('tela-manutencao').style.display = 'none';
+  goToAdm();
+}
+
+async function salvarConfigChave(chave, valor){
+  const existing = await dbGet('config', `chave=eq.${chave}`);
+  if(existing && existing[0]) await dbPatch('config', `chave=eq.${chave}`, {valor});
+  else await dbPost('config', {chave, valor});
+}
+
+function renderManutencaoStatus(ativo){
+  const status = document.getElementById('manutencao-status');
+  const btn = document.getElementById('manutencao-toggle-btn');
+  if(!status || !btn) return;
+  status.textContent = ativo ? '🔴 Manutenção ATIVA — jogadores estão vendo a tela de manutenção' : '🟢 Site no ar normalmente';
+  status.style.color = ativo ? 'var(--red)' : 'var(--green)';
+  btn.textContent = ativo ? 'Desativar manutenção' : 'Ativar manutenção';
+  btn.className = 'btn btn-sm' + (ativo ? ' btn-danger' : ' btn-primary');
+  btn.dataset.ativo = ativo ? '1' : '0';
+}
+
+async function carregarManutencaoAdm(){
+  const r = await dbGet('config', 'chave=in.(manutencao_ativa,manutencao_msg)').catch(()=>[]);
+  const ativo = (r||[]).find(x=>x.chave==='manutencao_ativa')?.valor === 'true';
+  const msg = (r||[]).find(x=>x.chave==='manutencao_msg')?.valor || '';
+  renderManutencaoStatus(ativo);
+  const msgInput = document.getElementById('manutencao-msg-input');
+  if(msgInput) msgInput.value = msg;
+}
+
+async function toggleManutencao(){
+  const btn = document.getElementById('manutencao-toggle-btn');
+  const ativoAtual = btn.dataset.ativo === '1';
+  const novo = !ativoAtual;
+  if(novo && !confirm('Isso vai bloquear o acesso de todos os jogadores ao site, exibindo a tela de manutenção. Continuar?')) return;
+  try{
+    await salvarConfigChave('manutencao_ativa', novo ? 'true' : 'false');
+    renderManutencaoStatus(novo);
+    const fb = document.getElementById('manutencao-fb');
+    fb.textContent = novo ? '✓ Manutenção ativada! O site agora está bloqueado para jogadores.' : '✓ Manutenção desativada! O site está liberado novamente.';
+    fb.style.display = 'block';
+    setTimeout(()=>{ fb.style.display='none'; }, 4000);
+  }catch(e){ alert('Erro ao salvar: ' + e.message); }
+}
+
+async function salvarMensagemManutencao(){
+  const val = document.getElementById('manutencao-msg-input').value.trim();
+  try{
+    await salvarConfigChave('manutencao_msg', val || MANUTENCAO_MSG_PADRAO);
+    const fb = document.getElementById('manutencao-msg-fb');
+    fb.style.display = 'block';
+    setTimeout(()=>{ fb.style.display='none'; }, 3000);
+  }catch(e){ alert('Erro ao salvar: ' + e.message); }
 }
 
 // ══════════════════════════════════════
@@ -6272,7 +6392,7 @@ function renderTbodyBiomas(){
     :biomas.map(b=>`
       <tr>
         <td><strong>${b.nome}</strong></td>
-        <td>${pokemonDB.filter(p=>p.biomas?.includes(b.nome).length} Pokémon</td>
+        <td>${pokemonDB.filter(p=>p.biomas?.includes(b.nome)).length} Pokémon</td>
         <td><button class="btn btn-danger btn-sm" onclick="removerBioma('${b.id}','${b.nome}')">Remover</button></td>
       </tr>`).join('');
 }
@@ -12215,7 +12335,7 @@ function renderPoolImportList(){
   const busca = (document.getElementById('pool-import-busca')?.value||'').toLowerCase();
   const raridade = document.getElementById('pool-import-raridade')?.value||'';
   let pks = pokemonDB.filter(p=>
-    (!biomaFiltro || p.biomas?.includes(bioma)Filtro) &&
+    (!biomaFiltro || p.biomas?.includes(biomaFiltro)) &&
     (!busca || p.name?.toLowerCase().includes(busca)) &&
     (!raridade || p.raridade===raridade)
   );
