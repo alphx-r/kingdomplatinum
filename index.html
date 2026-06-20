@@ -582,6 +582,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   .nav-links{display:none}
   .nav-hamburger{display:flex}
   .nav-login{padding:6px 12px;font-size:11px}
+  #tela-manutencao{top:52px!important}
   .page{padding:16px}
   .roller-header{margin-bottom:18px}
   .roller-header h2{font-size:18px}
@@ -799,9 +800,9 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .player-login-card .field input::placeholder{color:rgba(255,255,255,.4)}
 .player-login-card .field input:focus{border-color:rgba(255,255,255,.6);outline:none}
 
-/* TELA DE MANUTENÇÃO — bloqueia uma aba específica, exibida como overlay de tela cheia */
+/* TELA DE MANUTENÇÃO — bloqueia uma aba específica, exibida como overlay de tela cheia (abaixo da topnav) */
 #tela-manutencao{
-  position:fixed;inset:0;z-index:999999;
+  position:fixed;top:58px;left:0;right:0;bottom:0;z-index:8000;
   display:none;align-items:center;justify-content:center;flex-direction:column;
   background:#000;
   text-align:center;padding:24px;
@@ -5379,14 +5380,14 @@ async function carregarAba(page){
     if(page==='roller'){
       const [_biomas,_pokemons,_cfg,_cfgPag] = await Promise.all([
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
+        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
         dbGet('config','chave=eq.estacao_ativa'),
         dbGet('config','chave=eq.estacao_paginas'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR')); pokemonDB=_pokemons||[];
       // Se condicao nao veio (schema cache antigo), busca de novo
       if(pokemonDB.length && !('condicao' in pokemonDB[0])){
-        const _fresh=await dbGetAll('pokemons','select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon');
+        const _fresh=await dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon');
         if(_fresh&&_fresh.length) pokemonDB=_fresh;
       }
       estacaoAtiva = (_cfg&&_cfg[0]) ? _cfg[0].valor : null;
@@ -5423,7 +5424,7 @@ async function carregarAba(page){
     else if(page==='bioma'){
       const [_biomas,_pokemons] = await Promise.all([
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
+        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
       // Mescla condicao nos objetos já em memória (preserva estacao/outros campos do roller)
@@ -5489,7 +5490,7 @@ async function carregarAba(page){
         dbGet('players'),
         dbGet('personagens'),
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
+        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
         sb('npc_cidades?order=nome.asc'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
@@ -5619,11 +5620,11 @@ function renderBiomaConteudo(){
     const cards = grupo.map(p=>`
       <div class="bioma-poke-card">
         <div class="bioma-poke-sprite">
-          <img src="${p.sprite||FALLBACK_SPRITE}" alt="${p.name_pt||p.name}"
+          <img src="${p.sprite||FALLBACK_SPRITE}" alt="${p.name}"
             style="width:64px;height:64px;object-fit:contain"
             onerror="this.src='${FALLBACK_SPRITE}'"/>
         </div>
-        <div class="bioma-poke-name">${p.name_pt||p.name}</div>
+        <div class="bioma-poke-name">${p.name}</div>
         <div class="bioma-poke-tipos">
           ${[p.tipo1,p.tipo2].filter(Boolean).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}
         </div>
@@ -6979,7 +6980,7 @@ function renderTbodyPokemons(){
           <div onclick="abrirModalPkUnificado('${nome.replace(/'/g,"\\'")}')" title="Clique para editar" style="width:40px;height:40px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
             <img src="${p.sprite||FALLBACK_SPRITE}" style="width:40px;height:40px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
           </div>
-          <strong>${p.name_pt||p.name||p.nome}</strong>
+          <strong>${p.name||p.nome}</strong>
         </td>
         <td style="font-size:11px;line-height:1.8">${biomasInfo}</td>
         <td>${[p.tipo1,p.tipo2].filter(Boolean).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</td>
@@ -7000,7 +7001,7 @@ function renderTbodyPokemons(){
         <div onclick="abrirModalPk('${p.id}')" title="Clique para editar" style="width:40px;height:40px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
           <img src="${p.sprite||FALLBACK_SPRITE}" style="width:40px;height:40px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
         </div>
-        <strong>${p.name_pt||p.name||p.nome}</strong>
+        <strong>${p.name||p.nome}</strong>
       </td>
       <td><span class="poke-rarity ${rcls[p.raridade]}">${rlbl[p.raridade]}</span></td>
       <td>${[p.tipo1,p.tipo2].filter(Boolean).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</td>
@@ -7058,7 +7059,7 @@ function renderBulkPkList(){
     return`<div data-bulk-id="${p.id}" style="display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${sel?'var(--brand-light)':'transparent'};border:1.5px solid ${sel?'var(--brand-mid)':'transparent'};transition:all .15s;user-select:none">
       <input type="checkbox" ${sel?'checked':''} style="pointer-events:none;flex-shrink:0" />
       <img src="${p.sprite||FALLBACK_SPRITE}" style="width:28px;height:28px;object-fit:contain;flex-shrink:0;pointer-events:none" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <span style="font-size:12px;font-weight:600;flex:1;line-height:1.2;pointer-events:none">${p.name_pt||p.name||p.nome}</span>
+      <span style="font-size:12px;font-weight:600;flex:1;line-height:1.2;pointer-events:none">${p.name||p.nome}</span>
       <span class="poke-rarity ${rc2[p.raridade]||'rc'}" style="font-size:9px;padding:1px 6px;pointer-events:none">${rlbl[p.raridade]||p.raridade}</span>
     </div>`;
   }).join('');
@@ -8409,7 +8410,7 @@ function renderTipoPkList(){
     return`<div data-tipo-id="${p.id}" style="display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${sel?'var(--brand-light)':'transparent'};border:1.5px solid ${sel?'var(--brand-mid)':'transparent'};transition:all .15s;user-select:none">
       <input type="checkbox" ${sel?'checked':''} style="pointer-events:none;flex-shrink:0"/>
       <img src="${p.sprite||FALLBACK_SPRITE}" style="width:28px;height:28px;object-fit:contain;flex-shrink:0;pointer-events:none" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <span style="font-size:12px;font-weight:600;flex:1;line-height:1.2;pointer-events:none">${p.name_pt||p.name||p.nome}</span>
+      <span style="font-size:12px;font-weight:600;flex:1;line-height:1.2;pointer-events:none">${p.name||p.nome}</span>
       <span style="font-size:10px;color:var(--muted);pointer-events:none">${[p.tipo1,p.tipo2].filter(Boolean).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}" style="font-size:9px;padding:1px 5px">${t}</span>`).join('')||'—'}</span>
     </div>`;
   }).join('');
@@ -8630,7 +8631,7 @@ function renderFichario(){
         ${p.img?`<img src="${p.img}" style="width:72px;height:72px;object-fit:cover;border-radius:50%"/>`
           :`<img src="${FALLBACK_AVATAR}" style="width:56px;height:56px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_AVATAR}'">` }
       </div>
-      <div class="ficha-name">${p.name_pt||p.name||p.nome}</div>
+      <div class="ficha-name">${p.name||p.nome}</div>
       ${p.photoplayer?`<div class="ficha-photoplayer">${p.photoplayer}</div>`:''}
       ${p.ranking ? rankingBadge(p.ranking) : ''}
     </div>`).join('');
@@ -9185,7 +9186,7 @@ function renderEstMassa(){
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);background:${bg}" data-pk-id="${p.id}">
       <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${sprite}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name_pt||p.name||p.nome}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name||p.nome}</div>
         <div style="font-size:10px;color:var(--muted)">${(p.biomas||[]).join(", ")} · ${p.raridade}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
@@ -9428,7 +9429,7 @@ function pickFromPool(pool, usedIds, rarity){
   const p=available[Math.floor(Math.random()*available.length)];
   usedIds.add(p.id);
   const gender=rollGender(p.genero);
-  return{nome:p.name_pt||p.name||p.nome,tipos:[p.tipo1,p.tipo2].filter(Boolean),emoji:p.emoji||'❓',sprite:p.sprite||null,sprite_shiny:p.sprite_shiny||null,habilidade:p.habilidade1,condicao:p.condicao||null,rarity,genderS:gender.s,genderC:gender.c,nature:rollNature(),isShiny:rollShiny()};
+  return{nome:p.name||p.nome,tipos:[p.tipo1,p.tipo2].filter(Boolean),emoji:p.emoji||'❓',sprite:p.sprite||null,sprite_shiny:p.sprite_shiny||null,habilidade:p.habilidade1,condicao:p.condicao||null,rarity,genderS:gender.s,genderC:gender.c,nature:rollNature(),isShiny:rollShiny()};
 }
 
 function buildCardHtml(pk,delay){
@@ -10348,7 +10349,7 @@ function _renderTransferirLista(filtro){
           ${p.img?`<img src="${p.img}" style="width:32px;height:32px;object-fit:cover;border-radius:50%"/>`:`<span style="font-size:14px">👤</span>`}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text)">${p.name_pt||p.name||p.nome}</div>
+          <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text)">${p.name||p.nome}</div>
           ${p.photoplayer?`<div style="font-size:10px;color:var(--muted);font-style:italic">${p.photoplayer}</div>`:''}
         </div>
       </div>`;
@@ -10409,7 +10410,7 @@ async function confirmarTransferirNpc(){
       if(!p) continue;
       // Cria NPC com os dados do personagem
       await sbRaw('POST', 'npcs', {
-        nome: p.name_pt||p.name||p.nome,
+        nome: p.name||p.nome,
         photoplayer: p.photoplayer || null,
         foto: p.img || null,
         emoji: '👤',
@@ -11873,7 +11874,7 @@ async function iniciarPaginaEvento(slug){
 
     // garante que biomas e pokemonDB estão carregados
     if(!loaded.roller){
-      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGetAll('pokemons','select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon')]);
+      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon')]);
       biomas = (_b||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
       pokemonDB = _p||[];
       syncBiomaSelect();
@@ -12635,7 +12636,7 @@ function renderFrcPool(){
     const selected = frcSelecionados.find(x => x.id === p.id);
     const border = selected ? 'border-color:var(--brand-mid);background:var(--brand-light)' : '';
     const sprite = p.sprite || FALLBACK_SPRITE;
-    return `<div onclick="toggleFrcPoke('${p.id}')" title="${p.name_pt||p.name||p.nome}"
+    return `<div onclick="toggleFrcPoke('${p.id}')" title="${p.name||p.nome}"
       style="background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;transition:all .15s;${border}"
       onmouseover="if(!this.dataset.sel)this.style.borderColor='var(--border2)'" onmouseout="if(!this.dataset.sel)this.style.borderColor='var(--border)'"
       data-pkid="${p.id}" ${selected?'data-sel="1"':''}>
@@ -12758,7 +12759,7 @@ function renderFrcLista(){
       if(!base) return null;
       return { ...base, nome: entry.nome||base.nome, sprite: entry.sprite!==undefined?entry.sprite:base.sprite, _hasCustom: !!(entry.nome||entry.sprite!==undefined||entry.habilidade!==undefined||entry.raridade||entry.tipos) };
     }).filter(Boolean);
-    const sprites = pokes.map(p=>`<span style="position:relative;display:inline-block"><img src="${p.sprite||FALLBACK_SPRITE}" title="${p.name_pt||p.name||p.nome}" style="width:36px;height:36px;object-fit:contain;border-radius:50%;border:1.5px solid ${p._hasCustom?'var(--accent)':'var(--border)'};background:var(--surface)" onerror="this.src='${FALLBACK_SPRITE}'">${p._hasCustom?'<span style="position:absolute;top:-3px;right:-3px;font-size:8px;background:var(--accent);border-radius:50%;width:13px;height:13px;display:flex;align-items:center;justify-content:center">✏</span>':''}</span><span style="font-size:9px;color:var(--text);display:block;text-align:center;max-width:40px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${p.nome}</span>`).join('');
+    const sprites = pokes.map(p=>`<span style="position:relative;display:inline-block"><img src="${p.sprite||FALLBACK_SPRITE}" title="${p.name||p.nome}" style="width:36px;height:36px;object-fit:contain;border-radius:50%;border:1.5px solid ${p._hasCustom?'var(--accent)':'var(--border)'};background:var(--surface)" onerror="this.src='${FALLBACK_SPRITE}'">${p._hasCustom?'<span style="position:absolute;top:-3px;right:-3px;font-size:8px;background:var(--accent);border-radius:50%;width:13px;height:13px;display:flex;align-items:center;justify-content:center">✏</span>':''}</span><span style="font-size:9px;color:var(--text);display:block;text-align:center;max-width:40px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${p.nome}</span>`).join('');
     const dt = f.criadoEm ? new Date(f.criadoEm).toLocaleDateString('pt-BR') : '';
     return `<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
@@ -12995,7 +12996,7 @@ init();
 
       // Sempre recarrega dados globais usados em múltiplas abas
       refreshPromises.push(
-        dbGetAll('pokemons','select=id,name,name_pt,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon')
+        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon')
           .then(r=>{ if(r&&r.length) pokemonDB=r; }),
         dbGet('biomas').then(r=>{ if(r) biomas=(r||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR')); }),
         dbGet('personagens').then(r=>{ if(r) personagens=r||[]; }),
@@ -14362,7 +14363,7 @@ function toggleMapaBiomaPanel(nomeBioma, bg, cor, btn) {
     if (!grupo.length) return [];
     return grupo.map(p => `
       <div class="mapa-bioma-mini-card">
-        <img src="${p.sprite||FALLBACK}" alt="${p.name_pt||p.name}" onerror="this.src='${FALLBACK}'"/>
+        <img src="${p.sprite||FALLBACK}" alt="${p.name}" onerror="this.src='${FALLBACK}'"/>
         <div class="mapa-bioma-mini-name">${p.nome}</div>
         <span class="poke-rarity ${rarCfg[r]?.cls||''} mapa-bioma-mini-rar">${rarCfg[r]?.label||r}</span>
       </div>`);
