@@ -615,11 +615,14 @@ const PK = (() => {
 
   async function load() {
     if (_loaded) return _data;
-    const r = await fetch(API, { headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' } });
-    if (!r.ok) throw new Error('GitHub ' + r.status);
-    const meta = await r.json();
-    _sha  = meta.sha;
-    _data = JSON.parse(atob(meta.content.replace(/\n/g,'')));
+    // Carrega do arquivo estático local; busca o sha do GitHub em paralelo para o save funcionar
+    const [localRes, ghRes] = await Promise.all([
+      fetch('/pokemon.json'),
+      fetch(API, { headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' } }).catch(()=>null)
+    ]);
+    if (!localRes.ok) throw new Error('HTTP ' + localRes.status);
+    _data = await localRes.json();
+    if (ghRes && ghRes.ok) { const meta = await ghRes.json(); _sha = meta.sha; }
     _loaded = true;
     return _data;
   }
