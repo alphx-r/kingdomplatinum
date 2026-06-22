@@ -2315,18 +2315,6 @@ function calcSyncSelects(){
     </div>
   </div>
 
-  <div class="ctrl-group" style="margin-bottom:18px;flex-direction:row;align-items:center;gap:20px">
-    <label style="margin:0">Bônus</label>
-    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
-      <input type="checkbox" id="bonus-shiny-charm" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
-      Shiny Charm
-    </label>
-    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
-      <input type="checkbox" id="bonus-brilhante" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
-      Brilhante
-    </label>
-  </div>
-
   <button class="roll-btn" onclick="rolarEncontro()">Rolar Encontro</button>
   <div id="results-section"></div>
   <div id="historico-wrap" style="margin-top:32px;display:none">
@@ -5073,6 +5061,63 @@ koencity: 30" style="resize:vertical"></textarea>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // ══════════════════════════════════════
+// PK — PokemonStore (JSON ↔ GitHub)
+// ══════════════════════════════════════
+const PK = (() => {
+  const REPO  = 'alphx-r/kingdomplatinum';
+  const FILE  = 'pokemon.json';
+  const TOKEN = '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';
+  const API   = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
+  let _data   = [];   // array de objetos pokémon
+  let _sha    = null; // sha atual do arquivo no GitHub
+
+  async function load() {
+    try {
+      const r = await fetch(API, {
+        headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' }
+      });
+      if (!r.ok) throw new Error('GitHub ' + r.status);
+      const meta = await r.json();
+      _sha  = meta.sha;
+      _data = JSON.parse(atob(meta.content.replace(/\n/g,'')));
+    } catch (e) {
+      console.error('[PK.load]', e);
+      _data = [];
+    }
+    return _data;
+  }
+
+  async function save() {
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(_data, null, 2))));
+    const body = { message: 'chore: update pokemon.json', content, ..._sha ? { sha: _sha } : {} };
+    const r = await fetch(API, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${TOKEN}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) { const t = await r.text(); throw new Error('GitHub save: ' + t); }
+    const res = await r.json();
+    _sha = res.content.sha;
+  }
+
+  function get(id)          { return _data.find(p => String(p.id) === String(id)); }
+  function getAll()         { return _data; }
+  function set(id, patch)   {
+    const idx = _data.findIndex(p => String(p.id) === String(id));
+    if (idx >= 0) Object.assign(_data[idx], patch);
+    else _data.push({ id: String(id), ...patch });
+  }
+  function remove(id)       { _data = _data.filter(p => String(p.id) !== String(id)); }
+  function setAll(arr)      { _data = arr; }
+
+  return { load, save, get, getAll, set, remove, setAll };
+})();
+
+// ══════════════════════════════════════
 // SUPABASE CONFIG
 // ══════════════════════════════════════
 const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
@@ -5361,16 +5406,11 @@ async function carregarAba(page){
     if(page==='roller'){
       const [_biomas,_pokemons,_cfg,_cfgPag] = await Promise.all([
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
+        PK.load(),
         dbGet('config','chave=eq.estacao_ativa'),
         dbGet('config','chave=eq.estacao_paginas'),
       ]);
       biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR')); pokemonDB=_pokemons||[];
-      // Se condicao nao veio (schema cache antigo), busca de novo
-      if(pokemonDB.length && !('condicao' in pokemonDB[0])){
-        const _fresh=await dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon');
-        if(_fresh&&_fresh.length) pokemonDB=_fresh;
-      }
       estacaoAtiva = (_cfg&&_cfg[0]) ? _cfg[0].valor : null;
       if(_cfgPag&&_cfgPag[0]){ try{ estacaoPaginas=JSON.parse(_cfgPag[0].valor); }catch(e){} }
       else { dbPost('config',{chave:'estacao_paginas',valor:JSON.stringify(estacaoPaginas)}).catch(()=>{}); }
@@ -5403,17 +5443,9 @@ async function carregarAba(page){
       renderNatures(NATURES_DATA);
     }
     else if(page==='bioma'){
-      const [_biomas,_pokemons] = await Promise.all([
-        dbGet('biomas'),
-        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
-      ]);
-      biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
-      // Mescla condicao nos objetos já em memória (preserva estacao/outros campos do roller)
-      const mapaCondicao={};
-      (_pokemons||[]).forEach(p=>{ mapaCondicao[p.id]=p.condicao||null; });
-      pokemonDB.forEach(p=>{ if(p.id in mapaCondicao) p.condicao=mapaCondicao[p.id]; });
-      // Se pokemonDB estava vazio, usa o resultado direto
-      if(!pokemonDB.length) pokemonDB=_pokemons||[];
+      const _biomas2 = await dbGet('biomas');
+      biomas=(_biomas2||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
+      if(!pokemonDB.length) pokemonDB = PK.getAll();
       if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
       syncBiomaSelect();
     }
@@ -5466,16 +5498,16 @@ async function carregarAba(page){
     }
     else if(page==='adm'){
       if(!admLogado){ return; }
-      const [_admins,_players,_personagens,_biomas,_pokemons,_npcCidades] = await Promise.all([
+      const [_admins,_players,_personagens,_biomas,_npcCidades] = await Promise.all([
         dbGet('admins'),
         dbGet('players'),
         dbGet('personagens'),
         dbGet('biomas'),
-        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon'),
         sb('npc_cidades?order=nome.asc'),
       ]);
       admins=_admins; players=_players; personagens=_personagens;
-      biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR')); pokemonDB=_pokemons||[];
+      biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
+      if(!pokemonDB.length) pokemonDB = PK.getAll();
       npcCidades=_npcCidades||[];
       if(!pokemonDB.length || !biomas.length){ loaded['adm']=false; console.warn('[carregarAba] adm: dados vazios'); }
       syncBiomaSelect();
@@ -6633,7 +6665,7 @@ async function adicionarPokemon(){
   if(tipo2&&tipo2===tipo1){alert('O Tipo Secundário não pode ser igual ao Tipo Primário.');return;}
   if(biomasSel.length===0){alert('Selecione ao menos 1 bioma.');return;}
 
-  const res=await dbPost('pokemons',{
+  const novo={
     id:pkId, name:nome, sprite:null, sprite_shiny:null,
     tipo1, tipo2:tipo2||null,
     habilidade1, habilidade2,
@@ -6641,25 +6673,24 @@ async function adicionarPokemon(){
     estacao, estacao_boost:estacaoBoost, condicao,
     is_fakemon: isFakemon || isRegional, source: isFakemon ? 'nendo' : isRegional ? 'regional' : 'manual', approved:false,
     updated_at:new Date().toISOString()
-  });
-  if(!res||!res[0]) return;
-  const novo=res[0];
-  const patch={};
+  };
   if(b64&&b64.startsWith('data:')){
     loading(true);
     const ext=b64.includes('image/png')?'png':'jpg';
-    const url=await uploadImgStorage(b64,'pokemons',`${novo.id}.${ext}`);
+    const url=await uploadImgStorage(b64,'pokemons',`${pkId}.${ext}`);
     loading(false);
-    if(url){ patch.sprite=url; novo.sprite=url; }
+    if(url) novo.sprite=url;
   }
   if(b64Shiny&&b64Shiny.startsWith('data:')){
     loading(true);
     const ext=b64Shiny.includes('image/png')?'png':'jpg';
-    const url=await uploadImgStorage(b64Shiny,'pokemons',`${novo.id}-shiny.${ext}`);
+    const url=await uploadImgStorage(b64Shiny,'pokemons',`${pkId}-shiny.${ext}`);
     loading(false);
-    if(url){ patch.sprite_shiny=url; novo.sprite_shiny=url; }
+    if(url) novo.sprite_shiny=url;
   }
-  if(Object.keys(patch).length){ await dbPatch('pokemons',`id=eq.${encodeURIComponent(novo.id)}`,patch); }
+  PK.set(pkId, novo);
+  try{ loading(true); await PK.save(); loading(false); }
+  catch(e){ loading(false); alert('Erro ao salvar JSON: '+e.message); return; }
   pokemonDB.push(novo);
   fb('pk-fb');
   ['pk-id','pk-nome','pk-habilidade','pk-habilidade2','pk-condicao','pk-sprite-file'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
@@ -6676,7 +6707,9 @@ async function adicionarPokemon(){
 }
 async function removerPokemon(id){
   if(!confirm('Remover este Pokémon?'))return;
-  await dbDel('pokemons',`id=eq.${id}`);
+  PK.remove(id);
+  try{ loading(true); await PK.save(); loading(false); }
+  catch(e){ loading(false); alert('Erro ao salvar JSON: '+e.message); return; }
   pokemonDB=pokemonDB.filter(p=>p.id!==id);
   renderTbodyPokemons();renderTbodyBiomas();
 }
@@ -6797,8 +6830,8 @@ async function _pkUniAdicionarBiomaArr(id,nome){
   const biomasArr=Array.isArray(p.biomas)?[...p.biomas]:(p.bioma?[p.bioma]:[]);
   if(biomasArr.includes(bioma)){alert('Este bioma já está adicionado.');return;}
   biomasArr.push(bioma);
-  await dbPatch('pokemons',`id=eq.${encodeURIComponent(id)}`,{biomas:biomasArr});
-  p.biomas=biomasArr;
+  p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
+  try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
   _renderPkUniBiomasList(nome);
   renderTbodyPokemons();renderTbodyBiomas();
   if(currentPage==='bioma') renderBiomaPage();
@@ -6807,16 +6840,16 @@ async function _pkUniRemoverBioma(id,bioma,nome){
   const p=pokemonDB.find(x=>x.id===id);if(!p)return;
   const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).filter(b=>b!==bioma);
   if(!biomasArr.length){alert('Não é possível remover o último bioma.');return;}
-  await dbPatch('pokemons',`id=eq.${encodeURIComponent(id)}`,{biomas:biomasArr});
-  p.biomas=biomasArr;
+  p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
+  try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
   _renderPkUniBiomasList(nome);
   renderTbodyPokemons();renderTbodyBiomas();
   if(currentPage==='bioma') renderBiomaPage();
 }
 async function _pkUniAtualizarLinha(id,campo,valor){
   const p=pokemonDB.find(x=>x.id===id);if(!p)return;
-  await dbPatch('pokemons',`id=eq.${id}`,{[campo]:valor});
-  p[campo]=valor;
+  p[campo]=valor; PK.set(id,{[campo]:valor});
+  try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
   renderTbodyPokemons();renderTbodyBiomas();
   if(currentPage==='bioma') renderBiomaPage();
 }
@@ -6824,7 +6857,8 @@ async function _pkUniRemoverLinha(id,nome){
   const linhas=_pkUniLinhas(nome);
   if(linhas.length<=1){alert('Não é possível remover o último bioma — exclua o Pokémon inteiro pela lista filtrada por bioma.');return;}
   if(!confirm('Remover este Pokémon deste bioma?'))return;
-  await dbDel('pokemons',`id=eq.${id}`);
+  PK.remove(id);
+  try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
   pokemonDB=pokemonDB.filter(p=>p.id!==id);
   _renderPkUniBiomasList(nome);
   renderTbodyPokemons();renderTbodyBiomas();
@@ -6871,14 +6905,14 @@ async function salvarPkUnificado(){
 
   const _pl={name,genero,habilidade1,habilidade2,tipo1,tipo2:tipo2||null,estacao,estacao_boost:estacaoBoost,sprite:spriteUrl,sprite_shiny:spriteShinyUrl,updated_at:new Date().toISOString()};
   try{
-    // Tabela unificada: um único registro por Pokémon — patch direto pelo id
-    await Promise.all(linhas.map(l=>dbPatch('pokemons',`id=eq.${encodeURIComponent(l.id)}`,_pl)));
-    linhas.forEach(l=>Object.assign(l,_pl));
+    linhas.forEach(l=>{ Object.assign(l,_pl); PK.set(l.id,_pl); });
+    loading(true); await PK.save(); loading(false);
     document.getElementById('modal-pk-uni-nome-original').value=name;
     fb('modal-pk-uni-fb');
     renderTbodyPokemons();renderTbodyBiomas();
     if(currentPage==='bioma') renderBiomaPage();
   }catch(e){
+    loading(false);
     console.error('[salvarPkUnificado]',e);
     fb('modal-pk-uni-fb-err');
   }
@@ -6897,22 +6931,25 @@ async function _pkUniAdicionarBioma(){
   const bioma=document.getElementById('modal-pk-uni-add-bioma-sel').value;
   const raridade=document.getElementById('modal-pk-uni-add-raridade-sel').value;
   // Copia todos os campos compartilhados da primeira linha
+  const id = `${ref.id}_${bioma.replace(/\s+/g,'_')}`;
   const payload={
-    nome:ref.nome,sprite:ref.sprite||null,sprite_shiny:ref.sprite_shiny||null,
-    tipos:ref.tipos||[],habilidade:ref.habilidade||null,habilidade2:ref.habilidade2||null,
-    genero:ref.genero||'aleatorio',estacao:ref.estacao||null,estacao_boost:ref.estacao_boost||null,
-    condicao:null,bioma,raridade
+    id, name:ref.name, sprite:ref.sprite||null, sprite_shiny:ref.sprite_shiny||null,
+    tipo1:ref.tipo1||null, tipo2:ref.tipo2||null,
+    habilidade1:ref.habilidade1||null, habilidade2:ref.habilidade2||null,
+    genero:ref.genero||'1d2', estacao:ref.estacao||null, estacao_boost:ref.estacao_boost||null,
+    condicao:null, biomas:[bioma], raridade, is_fakemon:ref.is_fakemon||false,
+    source:ref.source||'manual', approved:ref.approved||false,
+    updated_at:new Date().toISOString()
   };
   loading(true);
-  const res=await dbPost('pokemons',payload);
-  loading(false);
-  if(res&&res[0]){
-    pokemonDB.push(res[0]);
-    document.getElementById('modal-pk-uni-add-bioma').style.display='none';
-    _renderPkUniBiomasList(nome);
-    renderTbodyPokemons();renderTbodyBiomas();
-    if(currentPage==='bioma') renderBiomaPage();
-  }
+  PK.set(id, payload);
+  try{ await PK.save(); loading(false); }
+  catch(e){ loading(false); alert('Erro: '+e.message); return; }
+  pokemonDB.push(payload);
+  document.getElementById('modal-pk-uni-add-bioma').style.display='none';
+  _renderPkUniBiomasList(nome);
+  renderTbodyPokemons();renderTbodyBiomas();
+  if(currentPage==='bioma') renderBiomaPage();
 }
 
 // ── Migrar artwork shiny da PokeAPI para todos os Pokémon que ainda não têm sprite_shiny ──
@@ -6942,8 +6979,8 @@ async function migrarShiniesPokeApi(){
     // Salva em todas as linhas com o mesmo nome
     const linhas=pokemonDB.filter(x=>(x.name||x.nome)===(p.name||p.nome));
     try{
-      await Promise.all(linhas.map(l=>dbPatch('pokemons',`id=eq.${l.id}`,{sprite_shiny:shinySrc})));
-      linhas.forEach(l=>{l.sprite_shiny=shinySrc;});
+      linhas.forEach(l=>{ l.sprite_shiny=shinySrc; PK.set(l.id,{sprite_shiny:shinySrc}); });
+      await PK.save();
       ok++;
     }catch(e){err++;}
   }
@@ -7115,9 +7152,10 @@ async function aplicarBulkRaridade(){
   const ids=[...bulkSelecionados];
   for(const id of ids){
     const p=pokemonDB.find(x=>x.id===id);if(!p)continue;
-    await dbPatch('pokemons',`id=eq.${id}`,{raridade:novaRaridade});
-    p.raridade=novaRaridade;
+    p.raridade=novaRaridade; PK.set(id,{raridade:novaRaridade});
   }
+  try{ loading(true); await PK.save(); loading(false); }
+  catch(e){ loading(false); alert('Erro: '+e.message); return; }
   bulkSelecionados.clear();
   renderBulkPkList();
   renderTbodyPokemons();renderTbodyBiomas();
@@ -8493,11 +8531,11 @@ async function aplicarBulkTipagem(){
       const existentes=[p.tipo1,p.tipo2].filter(Boolean);
       novosTipos=[...new Set([...existentes,...bulkTiposSel])].slice(0,2);
     }
-    await dbPatch('pokemons',`id=eq.${id}`,{tipos:novosTipos});
-    // tipos migrated: use tipo1/tipo2 directly
-    p.tipo1=novosTipos[0]||p.tipo1;
-    p.tipo2=novosTipos[1]||p.tipo2;
+    p.tipo1=novosTipos[0]||p.tipo1; p.tipo2=novosTipos[1]||p.tipo2;
+    PK.set(id,{tipo1:p.tipo1,tipo2:p.tipo2});
   }
+  try{ loading(true); await PK.save(); loading(false); }
+  catch(e){ loading(false); alert('Erro: '+e.message); return; }
   tipoSelecionados.clear();
   bulkTiposSel=[];
   document.querySelectorAll('#tipo-bulk-wrap .tipo-tag').forEach(t=>t.classList.remove('sel'));
@@ -8544,14 +8582,21 @@ async function importarDaPokeAPI(){
       const gr=species.gender_rate??-1;
       const genero=gr===-1?'genderless':gr===0?'macho':gr===8?'femea':'1d2';
       const nomeFormatado=raw.trim();
-      if(!pokemonDB.find(p=>(p.name||p.nome).toLowerCase()===nomeFormatado.toLowerCase()&&p.biomas?.includes(bioma))){
-        const res=await dbPost('pokemons',{nome:nomeFormatado,sprite,tipos,habilidade,habilidade2,raridade,genero,bioma});
-        if(res&&res[0])pokemonDB.push(res[0]);
+      if(!pokemonDB.find(p=>(p.name||p.nome).toLowerCase()===nomeFormatado.toLowerCase()&&(p.biomas||[]).includes(bioma))){
+        const newId=`${nomeFormatado.toLowerCase().replace(/\s+/g,'_')}_${bioma.replace(/\s+/g,'_')}`;
+        const novo={id:newId,name:nomeFormatado,sprite,sprite_shiny:null,
+          tipo1:tipos[0]||null,tipo2:tipos[1]||null,
+          habilidade1:habilidade,habilidade2,raridade,genero,
+          biomas:[bioma],estacao:null,estacao_boost:null,condicao:null,
+          is_fakemon:false,source:'import',approved:false,
+          updated_at:new Date().toISOString()};
+        PK.set(newId,novo); pokemonDB.push(novo);
       }
       ok++;
     }catch(e){erros.push(raw);}
     await new Promise(r=>setTimeout(r,250));
   }
+  try{ loading(true); await PK.save(); loading(false); }catch(e){ loading(false); alert('Erro ao salvar JSON: '+e.message); }
   bar.style.width='100%';btn.disabled=false;progress.style.display='none';
   if(erros.length>0){
     const errEl=document.getElementById('imp-fb-err');
@@ -8594,12 +8639,12 @@ async function migrarArtworks(){
     status.textContent=`Atualizando ${p.name||p.nome}... (${i+1}/${alvos.length})`;
     bar.style.width=`${Math.round(((i+1)/alvos.length)*100)}%`;
     try{
-      await dbPatch('pokemons',`id=eq.${p.id}`,{sprite:novaUrl});
-      p.sprite=novaUrl;
+      p.sprite=novaUrl; PK.set(p.id,{sprite:novaUrl});
       ok++;
     }catch(e){erros.push(p.name||p.nome);}
     await new Promise(r=>setTimeout(r,80));
   }
+  try{ loading(true); await PK.save(); loading(false); }catch(e){ loading(false); alert('Erro ao salvar JSON: '+e.message); }
 
   btn.disabled=false;progress.style.display='none';
   if(erros.length>0){
@@ -9240,7 +9285,8 @@ async function salvarEstMassa(){
   fbe.style.display='none';
   loading(true);
   try{
-    await Promise.all(ids.map(id=>dbPatch('pokemons',`id=eq.${id}`,_estMassaPendente[id])));
+    for(const id of ids){ PK.set(id, _estMassaPendente[id]); }
+    await PK.save();
     for(const id of ids) delete _estMassaPendente[id];
     fb('est-massa-fb');
   }catch(e){
@@ -9253,13 +9299,13 @@ async function limparEstMassa(){
   const estacao = document.getElementById('est-massa-estacao')?.value;
   if(!confirm(`Remover todos os vínculos de estação (exclusivo e boost) para "${estacao}"?`)) return;
   loading(true);
-  // Pega todos os pokémon com vínculo nesta estação
   const alvos = pokemonDB.filter(p=>p.estacao===estacao||p.estacao_boost===estacao);
-  await Promise.all(alvos.map(p=>{
+  alvos.forEach(p=>{
     if(p.estacao===estacao) p.estacao=null;
     if(p.estacao_boost===estacao) p.estacao_boost=null;
-    return dbPatch('pokemons',`id=eq.${p.id}`,{estacao:p.estacao,estacao_boost:p.estacao_boost});
-  }));
+    PK.set(p.id,{estacao:p.estacao,estacao_boost:p.estacao_boost});
+  });
+  try{ await PK.save(); }catch(e){ alert('Erro: '+e.message); }
   loading(false);
   renderEstMassa();
   fb('est-massa-fb');
@@ -9411,15 +9457,8 @@ async function setEstacao(val){
 // ══════════════════════════════════════
 function rollGender(g){if(g==='macho')return{s:'♂',c:'#3a80e0'};if(g==='femea')return{s:'♀',c:'#e04090'};if(g==='genderless')return{s:'☼',c:'#888'};return Math.random()<.5?{s:'♂',c:'#3a80e0'}:{s:'♀',c:'#e04090'};}
 function rollNature(){const n=NATURES_DATA[Math.floor(Math.random()*NATURES_DATA.length)];return n||{en:'Hardy',pt:'Robusto'};}
-const SHINY_RATE=500; const SHINY_THRESHOLD=1; // 1 em 500 (taxa base)
-function rollShiny(){
-  let threshold=SHINY_THRESHOLD;
-  const charmOn=document.getElementById('bonus-shiny-charm')?.checked;
-  const brilhanteOn=document.getElementById('bonus-brilhante')?.checked;
-  if(brilhanteOn) threshold+=5;
-  if(charmOn) threshold+=7;
-  return Math.floor(Math.random()*SHINY_RATE)<threshold;
-}
+const SHINY_RATE=100; const SHINY_THRESHOLD=1; // 1 em 100
+function rollShiny(){return Math.floor(Math.random()*SHINY_RATE)<SHINY_THRESHOLD;}
 
 function spriteHtml(pk){
   let src=pk.sprite||FALLBACK_SPRITE;
@@ -9535,13 +9574,7 @@ async function rolarEncontro(){
 
   const bioma=document.getElementById('bioma').value;
 
-  // Recarrega condicao se nao estiver no pokemonDB (schema cache antigo)
-  if(pokemonDB.length && !('condicao' in pokemonDB[0])){
-    const _fresh=await dbGetAll('pokemons','select=id,condicao');
-    if(_fresh&&_fresh.length){
-      const _map={}; _fresh.forEach(p=>{_map[p.id]=p.condicao||null;});
-      pokemonDB.forEach(p=>{p.condicao=_map[p.id]||null;});
-    }
+  // condicao já está no JSON — sem necessidade de recarregar
   }
 
   // Monta os pools por raridade para este bioma (aplica filtro de estação)
@@ -9614,16 +9647,6 @@ async function rolarEncontro(){
       if(base) pk.condicao=base.condicao||null;
     }
   });
-  const charmOn=document.getElementById('bonus-shiny-charm')?.checked||false;
-  const brilhanteOn=document.getElementById('bonus-brilhante')?.checked||false;
-  const bonusAtivos=[];
-  if(brilhanteOn) bonusAtivos.push({label:'Brilhante',pct:5});
-  if(charmOn) bonusAtivos.push({label:'Shiny Charm',pct:7});
-  const chanceShinyTotal=1+bonusAtivos.reduce((s,b)=>s+b.pct,0);
-  if(bonusAtivos.length){
-    pokes.forEach(pk=>{ pk.bonusShiny=bonusAtivos.map(b=>b.label); });
-  }
-
   const section=document.getElementById('results-section');
   section.innerHTML='';
 
@@ -9636,12 +9659,6 @@ async function rolarEncontro(){
     const banner=document.createElement('div');
     banner.style.cssText='background:var(--brand-light);border:1.5px solid var(--border2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:var(--brand);font-family:var(--font-body)';
     banner.innerHTML=`Rolando <strong>${nEncontrar}</strong> Pokémon${adicionais>0?` + <strong>${adicionais}</strong> adicionais`:''} neste encontro.`;
-    section.appendChild(banner);
-  }
-  if(bonusAtivos.length){
-    const banner=document.createElement('div');
-    banner.style.cssText='background:linear-gradient(135deg,#fffde7,#fff8c4);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
-    banner.innerHTML=`<span style="font-size:16px">✨</span><span><strong>Bônus de Shiny ativos:</strong> ${bonusAtivos.map(b=>`${b.label} (+${b.pct})`).join(' + ')}</span>`;
     section.appendChild(banner);
   }
   const grid=document.createElement('div');
@@ -9948,7 +9965,6 @@ function renderHistorico(){
           <span style="font-size:11px;color:var(--muted)">• ${e.bioma}</span>
           ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
           ${e.motivo_extras?`<span style="font-size:10px;background:var(--accent-light);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid var(--accent)">⚡ ${e.motivo_extras}</span>`:''}
-          ${pokes[0]?.bonusShiny?.length?`<span style="font-size:10px;background:linear-gradient(135deg,#fffde7,#ffeaa0);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid #f0c040">✨ ${pokes[0].bonusShiny.join(' + ')}</span>`:''}
           ${e.n_encontrar&&e.n_encontrar!==3?`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 7px;border-radius:8px;border:1px solid var(--border2)">${pokes.length} Pokémon</span>`:''}
         </div>
         <span style="font-size:11px;color:var(--muted)">${e.hora} · ${e.data}</span>
@@ -11910,9 +11926,9 @@ async function iniciarPaginaEvento(slug){
 
     // garante que biomas e pokemonDB estão carregados
     if(!loaded.roller){
-      const [_b,_p] = await Promise.all([dbGet('biomas'), dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon')]);
+      const _b = await dbGet('biomas');
       biomas = (_b||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
-      pokemonDB = _p||[];
+      if(!pokemonDB.length) pokemonDB = await PK.load();
       syncBiomaSelect();
       loaded.roller = true;
     }
@@ -13032,8 +13048,7 @@ init();
 
       // Sempre recarrega dados globais usados em múltiplas abas
       refreshPromises.push(
-        dbGetAll('pokemons','select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,raridade,genero,biomas,estacao,estacao_boost,condicao,is_fakemon')
-          .then(r=>{ if(r&&r.length) pokemonDB=r; }),
+        PK.load().then(r=>{ if(r&&r.length) pokemonDB=r; }),
         dbGet('biomas').then(r=>{ if(r) biomas=(r||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR')); }),
         dbGet('personagens').then(r=>{ if(r) personagens=r||[]; }),
         dbGet('players').then(r=>{ if(r) players=r||[]; }),
@@ -13359,7 +13374,7 @@ async function mapaFiltrosSalvar() {
     });
     await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'resolution=merge-duplicates'},
+      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
       body: JSON.stringify(upserts),
     });
     // Salva label de "todos" (só local, não vai para map_tipos)
@@ -13383,7 +13398,7 @@ async function mapaFiltrosReset() {
   try {
     await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'resolution=merge-duplicates'},
+      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
       body: JSON.stringify(MAPA_TIPOS),
     });
     try { localStorage.setItem('mapa_tipos_cache', JSON.stringify(MAPA_TIPOS)); } catch(e) {}
@@ -14638,32 +14653,25 @@ function fecharMapaLocalEdit() {
 async function salvarMapaLocalEdit() {
   const id  = document.getElementById('mapaLocalEditId').value;
   const fb  = document.getElementById('mapaLocalEditFb');
-  const nome     = document.getElementById('mapaLocalEditNome').value.trim();
-  const tipo     = document.getElementById('mapaLocalEditTipo').value;
-  const descricao = document.getElementById('mapaLocalEditDesc').value.trim();
-  const x        = parseFloat(document.getElementById('mapaLocalEditX').value);
-  const y        = parseFloat(document.getElementById('mapaLocalEditY').value);
-  const payload = { local_id: id, nome, tipo, descricao, x, y, excluido: false };
-  const hdrs = {
-    'Content-Type': 'application/json',
-    'apikey': SUPA_KEY,
-    'Authorization': `Bearer ${SUPA_KEY}`,
-    'Prefer': 'resolution=merge-duplicates,return=minimal'
+  const payload = {
+    local_id: id,
+    nome: document.getElementById('mapaLocalEditNome').value.trim(),
+    tipo: document.getElementById('mapaLocalEditTipo').value,
+    descricao: document.getElementById('mapaLocalEditDesc').value.trim(),
+    x:    parseFloat(document.getElementById('mapaLocalEditX').value),
+    y:    parseFloat(document.getElementById('mapaLocalEditY').value),
+    excluido: false,
   };
   try {
     fb.textContent = 'Salvando...'; fb.style.color = 'var(--muted)';
-    const res = await fetch(`${SUPA_URL}/rest/v1/map_locais`, {
+    await fetch(`${SUPA_URL}/rest/v1/map_locais`, {
       method: 'POST',
-      headers: hdrs,
+      headers: { 'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => res.status);
-      throw new Error(errBody || res.status);
-    }
-    // Atualiza local em memória
+    // Atualiza local
     const loc = MAPA_LOCAIS.find(l => l.id === id);
-    if (loc) Object.assign(loc, { nome, tipo, desc: descricao, x, y });
+    if (loc) Object.assign(loc, { nome: payload.nome, tipo: payload.tipo, desc: payload.desc, x: payload.x, y: payload.y });
     // Atualiza cache
     try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     renderMapaPins();
@@ -14672,8 +14680,7 @@ async function salvarMapaLocalEdit() {
     fb.textContent = '✓ Salvo!'; fb.style.color = 'var(--brand)';
     setTimeout(fecharMapaLocalEdit, 800);
   } catch(e) {
-    fb.textContent = 'Erro ao salvar: ' + (e.message || e); fb.style.color = '#e53e3e';
-    console.error('[mapaLocalEdit] salvar:', e);
+    fb.textContent = 'Erro ao salvar.'; fb.style.color = '#e53e3e';
   }
 }
 
@@ -14681,23 +14688,13 @@ async function excluirMapaLocal() {
   const id = document.getElementById('mapaLocalEditId').value;
   const fb = document.getElementById('mapaLocalEditFb');
   if (!confirm('Remover este local do mapa?')) return;
-  const hdrs = {
-    'Content-Type': 'application/json',
-    'apikey': SUPA_KEY,
-    'Authorization': `Bearer ${SUPA_KEY}`,
-    'Prefer': 'return=minimal'
-  };
   try {
     fb.textContent = 'Removendo...'; fb.style.color = 'var(--muted)';
-    const res = await fetch(`${SUPA_URL}/rest/v1/map_locais?local_id=eq.${id}`, {
+    await fetch(`${SUPA_URL}/rest/v1/map_locais?local_id=eq.${id}`, {
       method: 'PATCH',
-      headers: hdrs,
+      headers: { 'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'return=minimal' },
       body: JSON.stringify({ excluido: true })
     });
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => res.status);
-      throw new Error(errBody || res.status);
-    }
     MAPA_LOCAIS = MAPA_LOCAIS.filter(l => l.id !== id);
     try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     renderMapaPins();
@@ -14705,8 +14702,7 @@ async function excluirMapaLocal() {
     mapaAdmRenderCards(document.getElementById('mapaAdmBusca')?.value || '');
     fecharMapaLocalEdit();
   } catch(e) {
-    fb.textContent = 'Erro ao remover: ' + (e.message || e); fb.style.color = '#e53e3e';
-    console.error('[mapaLocalEdit] excluir:', e);
+    fb.textContent = 'Erro ao remover.'; fb.style.color = '#e53e3e';
   }
 }
 
