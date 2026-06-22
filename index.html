@@ -13359,7 +13359,7 @@ async function mapaFiltrosSalvar() {
     });
     await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
       method: 'POST',
-      headers: {...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates'},
+      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'resolution=merge-duplicates'},
       body: JSON.stringify(upserts),
     });
     // Salva label de "todos" (só local, não vai para map_tipos)
@@ -13383,7 +13383,7 @@ async function mapaFiltrosReset() {
   try {
     await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
       method: 'POST',
-      headers: {...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates'},
+      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'resolution=merge-duplicates'},
       body: JSON.stringify(MAPA_TIPOS),
     });
     try { localStorage.setItem('mapa_tipos_cache', JSON.stringify(MAPA_TIPOS)); } catch(e) {}
@@ -13762,7 +13762,7 @@ function _mapaCliqueNovoLocal(clientX, clientY) {
   // Salva em map_locais (tabela principal)
   fetch(`${SUPA_URL}/rest/v1/map_locais`, {
     method:'POST',
-    headers:{...SUPA_HEADERS,'Prefer':'resolution=merge-duplicates'},
+    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
     body: JSON.stringify({local_id:id, nome, tipo, descricao:'', x:parseFloat(xPct), y:parseFloat(yPct), excluido:false})
   });
   // Salva posição e cria ficha vazia
@@ -14638,25 +14638,32 @@ function fecharMapaLocalEdit() {
 async function salvarMapaLocalEdit() {
   const id  = document.getElementById('mapaLocalEditId').value;
   const fb  = document.getElementById('mapaLocalEditFb');
-  const payload = {
-    local_id: id,
-    nome: document.getElementById('mapaLocalEditNome').value.trim(),
-    tipo: document.getElementById('mapaLocalEditTipo').value,
-    descricao: document.getElementById('mapaLocalEditDesc').value.trim(),
-    x:    parseFloat(document.getElementById('mapaLocalEditX').value),
-    y:    parseFloat(document.getElementById('mapaLocalEditY').value),
-    excluido: false,
+  const nome     = document.getElementById('mapaLocalEditNome').value.trim();
+  const tipo     = document.getElementById('mapaLocalEditTipo').value;
+  const descricao = document.getElementById('mapaLocalEditDesc').value.trim();
+  const x        = parseFloat(document.getElementById('mapaLocalEditX').value);
+  const y        = parseFloat(document.getElementById('mapaLocalEditY').value);
+  const payload = { local_id: id, nome, tipo, descricao, x, y, excluido: false };
+  const hdrs = {
+    'Content-Type': 'application/json',
+    'apikey': SUPA_KEY,
+    'Authorization': `Bearer ${SUPA_KEY}`,
+    'Prefer': 'resolution=merge-duplicates,return=minimal'
   };
   try {
     fb.textContent = 'Salvando...'; fb.style.color = 'var(--muted)';
-    await fetch(`${SUPA_URL}/rest/v1/map_locais`, {
+    const res = await fetch(`${SUPA_URL}/rest/v1/map_locais`, {
       method: 'POST',
-      headers: { ...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: hdrs,
       body: JSON.stringify(payload)
     });
-    // Atualiza local
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => res.status);
+      throw new Error(errBody || res.status);
+    }
+    // Atualiza local em memória
     const loc = MAPA_LOCAIS.find(l => l.id === id);
-    if (loc) Object.assign(loc, { nome: payload.nome, tipo: payload.tipo, desc: payload.desc, x: payload.x, y: payload.y });
+    if (loc) Object.assign(loc, { nome, tipo, desc: descricao, x, y });
     // Atualiza cache
     try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     renderMapaPins();
@@ -14665,7 +14672,8 @@ async function salvarMapaLocalEdit() {
     fb.textContent = '✓ Salvo!'; fb.style.color = 'var(--brand)';
     setTimeout(fecharMapaLocalEdit, 800);
   } catch(e) {
-    fb.textContent = 'Erro ao salvar.'; fb.style.color = '#e53e3e';
+    fb.textContent = 'Erro ao salvar: ' + (e.message || e); fb.style.color = '#e53e3e';
+    console.error('[mapaLocalEdit] salvar:', e);
   }
 }
 
@@ -14673,13 +14681,23 @@ async function excluirMapaLocal() {
   const id = document.getElementById('mapaLocalEditId').value;
   const fb = document.getElementById('mapaLocalEditFb');
   if (!confirm('Remover este local do mapa?')) return;
+  const hdrs = {
+    'Content-Type': 'application/json',
+    'apikey': SUPA_KEY,
+    'Authorization': `Bearer ${SUPA_KEY}`,
+    'Prefer': 'return=minimal'
+  };
   try {
     fb.textContent = 'Removendo...'; fb.style.color = 'var(--muted)';
-    await fetch(`${SUPA_URL}/rest/v1/map_locais?local_id=eq.${id}`, {
+    const res = await fetch(`${SUPA_URL}/rest/v1/map_locais?local_id=eq.${id}`, {
       method: 'PATCH',
-      headers: { ...SUPA_HEADERS, 'Prefer': 'return=minimal' },
+      headers: hdrs,
       body: JSON.stringify({ excluido: true })
     });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => res.status);
+      throw new Error(errBody || res.status);
+    }
     MAPA_LOCAIS = MAPA_LOCAIS.filter(l => l.id !== id);
     try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     renderMapaPins();
@@ -14687,7 +14705,8 @@ async function excluirMapaLocal() {
     mapaAdmRenderCards(document.getElementById('mapaAdmBusca')?.value || '');
     fecharMapaLocalEdit();
   } catch(e) {
-    fb.textContent = 'Erro ao remover.'; fb.style.color = '#e53e3e';
+    fb.textContent = 'Erro ao remover: ' + (e.message || e); fb.style.color = '#e53e3e';
+    console.error('[mapaLocalEdit] excluir:', e);
   }
 }
 
