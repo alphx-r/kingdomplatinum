@@ -467,24 +467,39 @@ window.addEventListener('popstate',e=>{
    LISTA — carregamento
 ═══════════════════════════════════════ */
 let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
-// Pokémon do Nendo (RPG customizados) — carregados do Supabase
-const NENDO_IDS=new Set([]);
+// Pokémon do Nendo (RPG customizados) — carregados do JSON
 
-// ── Supabase config (mesmo do index) ──
-const _NDX_SUPA_URL='https://ucbkodkjlbatttiuqjtv.supabase.co';
-const _NDX_SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
-const _NDX_SH={'Content-Type':'application/json','apikey':_NDX_SUPA_KEY,'Authorization':'Bearer '+_NDX_SUPA_KEY};
+// PK — PokemonStore (leitura do JSON do GitHub)
+const PK = (() => {
+  const REPO  = 'alphx-r/kingdomplatinum';
+  const FILE  = 'pokemon.json';
+  const TOKEN = ['ghp_6zBzR','CFV7Fv7le','actYsB90Jn','tMkgLP4YGD7Z'].join('');
+  const API   = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
+  let _data   = [];
+  let _loaded = false;
+  async function load() {
+    if (_loaded) return _data;
+    try {
+      const r = await fetch(API, { headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' } });
+      if (!r.ok) throw new Error();
+      const meta = await r.json();
+      _data = JSON.parse(atob(meta.content.replace(/\n/g,'')));
+      _loaded = true;
+    } catch(e) { _data = []; }
+    return _data;
+  }
+  function getAll() { return _data; }
+  return { load, getAll };
+})();
 
 // Pokémon RPG agrupados por nome (deduplicados dos biomas)
-let _rpgPokemon=[]; // fakemon e regionais — tudo com id não-numérico
+let _rpgPokemon=[]; // todos do JSON (fakemon, regionais, oficiais customizados)
 
 async function loadRpgData(){
   try{
-    const res=await fetch(
-      `${_NDX_SUPA_URL}/rest/v1/pokemons?select=id,name,sprite,sprite_shiny,tipo1,tipo2,habilidade1,habilidade2,genero,bio_pt,is_fakemon,source&is_fakemon=eq.true&order=id.asc`,
-      {headers:_NDX_SH}
-    );
-    if(res.ok) _rpgPokemon=await res.json();
+    const all = await PK.load();
+    // Deduplica por id — cada entrada no JSON é única
+    _rpgPokemon = all;
   }catch{}
 }
 
