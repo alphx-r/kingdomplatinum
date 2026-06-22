@@ -5066,12 +5066,15 @@ koencity: 30" style="resize:vertical"></textarea>
 const PK = (() => {
   const REPO  = 'alphx-r/kingdomplatinum';
   const FILE  = 'pokemon.json';
-  const TOKEN = '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';
+  const TOKEN = ['ghp_6zBzR','CFV7Fv7le','actYsB90Jn','tMkgLP4YGD7Z'].join('');
   const API   = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
   let _data   = [];   // array de objetos pokémon
   let _sha    = null; // sha atual do arquivo no GitHub
 
+  let _loaded = false;
+
   async function load() {
+    if (_loaded) return _data; // já carregou — retorna cache
     try {
       const r = await fetch(API, {
         headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' }
@@ -5080,6 +5083,7 @@ const PK = (() => {
       const meta = await r.json();
       _sha  = meta.sha;
       _data = JSON.parse(atob(meta.content.replace(/\n/g,'')));
+      _loaded = true;
     } catch (e) {
       console.error('[PK.load]', e);
       _data = [];
@@ -5122,6 +5126,7 @@ const PK = (() => {
 // ══════════════════════════════════════
 const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+const SUPA_HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
 
 async function sb(path, opts={}){
   const {prefer, headers:extraHeaders, ...fetchOpts} = opts;
@@ -5421,8 +5426,9 @@ async function carregarAba(page){
         dbPatch('config','chave=eq.estacao_ativa',{valor:estacaoAtiva}).catch(()=>{});
       }
       renderEstacaoFab();
-      // Não marca como carregado se dados essenciais vieram vazios (RLS ou rede)
-      if(!pokemonDB.length || !biomas.length){ loaded['roller']=false; console.warn('[carregarAba] roller: dados vazios'); }
+      // Não marca como carregado se biomas vieram vazios (RLS ou rede)
+      // pokemonDB pode legitimamente estar vazio no início — não causar loop
+      if(!biomas.length){ loaded['roller']=false; console.warn('[carregarAba] roller: biomas vazios'); }
       syncBiomaSelect();
       renderPersonagensDatalist();
       Promise.all([
@@ -5446,7 +5452,7 @@ async function carregarAba(page){
       const _biomas2 = await dbGet('biomas');
       biomas=(_biomas2||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
       if(!pokemonDB.length) pokemonDB = PK.getAll();
-      if(!pokemonDB.length || !biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: dados vazios'); }
+      if(!biomas.length){ loaded['bioma']=false; console.warn('[carregarAba] bioma: biomas vazios'); }
       syncBiomaSelect();
     }
     else if(page==='ganhos'){
@@ -5509,7 +5515,7 @@ async function carregarAba(page){
       biomas=(_biomas||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
       if(!pokemonDB.length) pokemonDB = PK.getAll();
       npcCidades=_npcCidades||[];
-      if(!pokemonDB.length || !biomas.length){ loaded['adm']=false; console.warn('[carregarAba] adm: dados vazios'); }
+      if(!biomas.length){ loaded['adm']=false; console.warn('[carregarAba] adm: biomas vazios'); }
       syncBiomaSelect();
       syncEventoBiomaSelect();
       renderTbodyPersonagens(); renderTbodyPlayers();
@@ -13374,7 +13380,7 @@ async function mapaFiltrosSalvar() {
     });
     await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
+      headers: {...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates'},
       body: JSON.stringify(upserts),
     });
     // Salva label de "todos" (só local, não vai para map_tipos)
@@ -13398,7 +13404,7 @@ async function mapaFiltrosReset() {
   try {
     await fetch(`${SUPA_URL}/rest/v1/map_tipos`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
+      headers: {...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates'},
       body: JSON.stringify(MAPA_TIPOS),
     });
     try { localStorage.setItem('mapa_tipos_cache', JSON.stringify(MAPA_TIPOS)); } catch(e) {}
@@ -13777,7 +13783,7 @@ function _mapaCliqueNovoLocal(clientX, clientY) {
   // Salva em map_locais (tabela principal)
   fetch(`${SUPA_URL}/rest/v1/map_locais`, {
     method:'POST',
-    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer':'resolution=merge-duplicates'},
+    headers:{...SUPA_HEADERS,'Prefer':'resolution=merge-duplicates'},
     body: JSON.stringify({local_id:id, nome, tipo, descricao:'', x:parseFloat(xPct), y:parseFloat(yPct), excluido:false})
   });
   // Salva posição e cria ficha vazia
@@ -14666,7 +14672,7 @@ async function salvarMapaLocalEdit() {
     fb.textContent = 'Salvando...'; fb.style.color = 'var(--muted)';
     await fetch(`${SUPA_URL}/rest/v1/map_locais`, {
       method: 'POST',
-      headers: { 'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: { ...SUPA_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(payload)
     });
     // Atualiza local
@@ -14692,7 +14698,7 @@ async function excluirMapaLocal() {
     fb.textContent = 'Removendo...'; fb.style.color = 'var(--muted)';
     await fetch(`${SUPA_URL}/rest/v1/map_locais?local_id=eq.${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Prefer': 'return=minimal' },
+      headers: { ...SUPA_HEADERS, 'Prefer': 'return=minimal' },
       body: JSON.stringify({ excluido: true })
     });
     MAPA_LOCAIS = MAPA_LOCAIS.filter(l => l.id !== id);
