@@ -4469,7 +4469,7 @@ koencity: 30" style="resize:vertical"></textarea>
         </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
-        <button class="btn" onclick="fecharMapaFichaModal()" style="font-size:13px">Cancelar</button>
+        <button class="btn" onclick="fecharMapaFichaModal(true)" style="font-size:13px">Cancelar</button>
         <button class="btn btn-primary" onclick="mapaAdmSalvarFicha()" style="font-size:13px">Salvar ficha</button>
       </div>
       <div class="fb fb-ok" id="mapaAdmFbOk">✓ Ficha salva!</div>
@@ -10997,7 +10997,11 @@ function abrirModalCidade(id){
   }
   modal.style.display='flex';
 }
-function fecharModalCidade(){
+function fecharModalCidade(_skip){
+  if(!_skip){
+    const nome=document.getElementById('modal-cidade-nome')?.value.trim();
+    if(nome){ salvarCidade(); return; }
+  }
   document.getElementById('modal-cidade-overlay').style.display='none';
 }
 async function salvarCidade(){
@@ -11022,7 +11026,7 @@ async function salvarCidade(){
   // resincroniza NPC_CIDADES do banco para a página pública não duplicar
   await _resyncNpcCidades();
   renderNpcs();
-  setTimeout(fecharModalCidade,800);
+  document.getElementById('modal-cidade-overlay').style.display='none';
 }
 async function deletarCidade(){
   const id=document.getElementById('modal-cidade-idx').value;
@@ -11033,7 +11037,7 @@ async function deletarCidade(){
   await dbDel('npcs',`npc_cidade_id=eq.${id}`);
   await dbDel('npc_cidades',`id=eq.${id}`);
   npcCidades=npcCidades.filter(x=>x.id!==id&&x.id!=id);
-  fecharModalCidade();
+  fecharModalCidade(true);
   renderNpcCidadesLista();
   renderNpcAdmSelCidade();
   await _resyncNpcCidades();
@@ -11143,7 +11147,14 @@ function _setNpcTipo(modelo){
   }
 }
 
-function fecharModalNpc(){
+function fecharModalNpc(_skip){
+  if(!_skip){
+    const nome=document.getElementById('modal-npc-nome')?.value.trim();
+    const modelo=document.getElementById('modal-npc-modelo')?.value||'completo';
+    const isEvento=modelo==='simples';
+    const cidadeId=document.getElementById('modal-npc-cidade-sel')?.value;
+    if(nome && (isEvento || cidadeId)){ salvarNpc(); return; }
+  }
   document.getElementById('modal-npc-overlay').style.display='none';
 }
 // ══════════════════════════════════════
@@ -11438,7 +11449,7 @@ async function salvarNpc(){
     renderNpcAdmLista();
     await _resyncNpcCidades();
     renderNpcs();
-    setTimeout(fecharModalNpc,800);
+    document.getElementById('modal-npc-overlay').style.display='none';
   } catch(e){
     errEl.textContent='Erro ao salvar: '+(e.message||e);
     errEl.style.display='block';
@@ -11483,7 +11494,7 @@ async function deletarNpc(){
   const nome=document.getElementById('modal-npc-nome').value||id;
   if(!confirm(`Excluir o NPC "${nome}"?`))return;
   await dbDel('npcs',`id=eq.${id}`);
-  fecharModalNpc();
+  fecharModalNpc(true);
   renderNpcAdmLista();
   await _resyncNpcCidades();
   renderNpcs();
@@ -13603,7 +13614,7 @@ async function mapaAdmSalvarFicha() {
     // Rerender cards para refletir o ✓
     const buscaEl = document.getElementById('mapaAdmBusca');
     mapaAdmRenderCards(buscaEl ? buscaEl.value : '');
-    setTimeout(()=>{ document.getElementById('mapaAdmFbOk').style.display = 'none'; fecharMapaFichaModal(); }, 1800);
+    setTimeout(()=>{ document.getElementById('mapaAdmFbOk').style.display = 'none'; document.getElementById('mapaFichaModalOverlay').classList.remove('open'); document.body.style.overflow = ''; }, 1800);
   } catch(e) {
     document.getElementById('mapaAdmFbErr').style.display = 'block';
     document.getElementById('mapaAdmFbErr').textContent = 'Erro: ' + e.message;
@@ -13704,8 +13715,6 @@ function mapaAdmEditarLocal(id) {
   popularSelectTipos('mapaLocalEditTipo');
   document.getElementById('mapaLocalEditTipo').value       = loc.tipo;
   document.getElementById('mapaLocalEditDesc').value       = loc.desc || '';
-  document.getElementById('mapaLocalEditX').value          = loc.x;
-  document.getElementById('mapaLocalEditY').value          = loc.y;
   document.getElementById('mapaLocalEditFb').textContent   = '';
   document.getElementById('mapaLocalEditOverlay').classList.add('open');
 }
@@ -13750,7 +13759,11 @@ function mapaAdmAbrirFicha(id) {
   document.body.style.overflow = 'hidden';
 }
 
-function fecharMapaFichaModal() {
+function fecharMapaFichaModal(_skip) {
+  if(!_skip){
+    const id=document.getElementById('mapaFichaId')?.value;
+    if(id){ mapaAdmSalvarFicha(); return; }
+  }
   document.getElementById('mapaFichaModalOverlay').classList.remove('open');
   document.body.style.overflow = '';
 }
@@ -14680,7 +14693,11 @@ async function carregarMapaLocaisCustom() {
 }
 
 
-function fecharMapaLocalEdit() {
+function fecharMapaLocalEdit(_skip) {
+  if(!_skip){
+    const nome=document.getElementById('mapaLocalEditNome')?.value.trim();
+    if(nome){ salvarMapaLocalEdit(); return; }
+  }
   document.getElementById('mapaLocalEditOverlay').classList.remove('open');
 }
 
@@ -14692,8 +14709,6 @@ async function salvarMapaLocalEdit() {
     nome: document.getElementById('mapaLocalEditNome').value.trim(),
     tipo: document.getElementById('mapaLocalEditTipo').value,
     descricao: document.getElementById('mapaLocalEditDesc').value.trim(),
-    x:    parseFloat(document.getElementById('mapaLocalEditX').value),
-    y:    parseFloat(document.getElementById('mapaLocalEditY').value),
     excluido: false,
   };
   try {
@@ -14705,14 +14720,14 @@ async function salvarMapaLocalEdit() {
     });
     // Atualiza local
     const loc = MAPA_LOCAIS.find(l => l.id === id);
-    if (loc) Object.assign(loc, { nome: payload.nome, tipo: payload.tipo, desc: payload.desc, x: payload.x, y: payload.y });
+    if (loc) Object.assign(loc, { nome: payload.nome, tipo: payload.tipo, desc: payload.descricao });
     // Atualiza cache
     try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     renderMapaPins();
     renderMapaFiltros();
     mapaAdmRenderCards(document.getElementById('mapaAdmBusca')?.value || '');
     fb.textContent = '✓ Salvo!'; fb.style.color = 'var(--brand)';
-    setTimeout(fecharMapaLocalEdit, 800);
+    document.getElementById('mapaLocalEditOverlay').classList.remove('open');
   } catch(e) {
     fb.textContent = 'Erro ao salvar.'; fb.style.color = '#e53e3e';
   }
@@ -14734,7 +14749,7 @@ async function excluirMapaLocal() {
     renderMapaPins();
     renderMapaFiltros();
     mapaAdmRenderCards(document.getElementById('mapaAdmBusca')?.value || '');
-    fecharMapaLocalEdit();
+    document.getElementById('mapaLocalEditOverlay').classList.remove('open');
   } catch(e) {
     fb.textContent = 'Erro ao remover.'; fb.style.color = '#e53e3e';
   }
@@ -14869,19 +14884,9 @@ document.addEventListener('DOMContentLoaded', () => {
       <label>Descrição</label>
       <textarea id="mapaLocalEditDesc" rows="2"></textarea>
     </div>
-    <div style="display:flex;gap:10px">
-      <div class="mapa-local-edit-field" style="flex:1">
-        <label>X (%)</label>
-        <input type="number" id="mapaLocalEditX" step="0.1"/>
-      </div>
-      <div class="mapa-local-edit-field" style="flex:1">
-        <label>Y (%)</label>
-        <input type="number" id="mapaLocalEditY" step="0.1"/>
-      </div>
-    </div>
     <div class="mapa-local-edit-actions">
       <button class="mapa-local-edit-del" onclick="excluirMapaLocal()">Excluir</button>
-      <button class="btn" onclick="fecharMapaLocalEdit()" style="flex:1">Cancelar</button>
+      <button class="btn" onclick="fecharMapaLocalEdit(true)" style="flex:1">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarMapaLocalEdit()" style="flex:1">Salvar</button>
     </div>
     <div id="mapaLocalEditFb" style="font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>
