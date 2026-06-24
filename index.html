@@ -2315,6 +2315,18 @@ function calcSyncSelects(){
     </div>
   </div>
 
+  <div class="ctrl-group" style="margin-bottom:18px;flex-direction:row;align-items:center;gap:20px">
+    <label style="margin:0">Bônus</label>
+    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
+      <input type="checkbox" id="bonus-shiny-charm" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
+      Shiny Charm
+    </label>
+    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
+      <input type="checkbox" id="bonus-brilhante" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
+      Brilhante
+    </label>
+  </div>
+
   <button class="roll-btn" onclick="rolarEncontro()">Rolar Encontro</button>
   <div id="results-section"></div>
   <div id="historico-wrap" style="margin-top:32px;display:none">
@@ -9459,8 +9471,15 @@ async function setEstacao(val){
 // ══════════════════════════════════════
 function rollGender(g){if(g==='macho')return{s:'♂',c:'#3a80e0'};if(g==='femea')return{s:'♀',c:'#e04090'};if(g==='genderless')return{s:'☼',c:'#888'};return Math.random()<.5?{s:'♂',c:'#3a80e0'}:{s:'♀',c:'#e04090'};}
 function rollNature(){const n=NATURES_DATA[Math.floor(Math.random()*NATURES_DATA.length)];return n||{en:'Hardy',pt:'Robusto'};}
-const SHINY_RATE=100; const SHINY_THRESHOLD=1; // 1 em 100
-function rollShiny(){return Math.floor(Math.random()*SHINY_RATE)<SHINY_THRESHOLD;}
+const SHINY_RATE=100; const SHINY_THRESHOLD=1; // 1 em 100 (taxa base)
+function rollShiny(){
+  let threshold=SHINY_THRESHOLD;
+  const charmOn=document.getElementById('bonus-shiny-charm')?.checked;
+  const brilhanteOn=document.getElementById('bonus-brilhante')?.checked;
+  if(brilhanteOn) threshold+=5;
+  if(charmOn) threshold+=7;
+  return Math.floor(Math.random()*SHINY_RATE)<threshold;
+}
 
 function spriteHtml(pk){
   let src=pk.sprite||FALLBACK_SPRITE;
@@ -9646,6 +9665,16 @@ async function rolarEncontro(){
       if(base) pk.condicao=base.condicao||null;
     }
   });
+  const charmOn=document.getElementById('bonus-shiny-charm')?.checked||false;
+  const brilhanteOn=document.getElementById('bonus-brilhante')?.checked||false;
+  const bonusAtivos=[];
+  if(brilhanteOn) bonusAtivos.push({label:'Brilhante',pct:5});
+  if(charmOn) bonusAtivos.push({label:'Shiny Charm',pct:7});
+  const chanceShinyTotal=1+bonusAtivos.reduce((s,b)=>s+b.pct,0);
+  if(bonusAtivos.length){
+    pokes.forEach(pk=>{ pk.bonusShiny=bonusAtivos.map(b=>b.label); });
+  }
+
   const section=document.getElementById('results-section');
   section.innerHTML='';
 
@@ -9658,6 +9687,12 @@ async function rolarEncontro(){
     const banner=document.createElement('div');
     banner.style.cssText='background:var(--brand-light);border:1.5px solid var(--border2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:var(--brand);font-family:var(--font-body)';
     banner.innerHTML=`Rolando <strong>${nEncontrar}</strong> Pokémon${adicionais>0?` + <strong>${adicionais}</strong> adicionais`:''} neste encontro.`;
+    section.appendChild(banner);
+  }
+  if(bonusAtivos.length){
+    const banner=document.createElement('div');
+    banner.style.cssText='background:linear-gradient(135deg,#fffde7,#fff8c4);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
+    banner.innerHTML=`<span style="font-size:16px">✨</span><span><strong>Bônus de Shiny ativos:</strong> ${bonusAtivos.map(b=>`${b.label} (+${b.pct})`).join(' + ')}</span>`;
     section.appendChild(banner);
   }
   const grid=document.createElement('div');
