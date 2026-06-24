@@ -2317,14 +2317,7 @@ function calcSyncSelects(){
 
   <div class="ctrl-group" style="margin-bottom:18px;flex-direction:row;align-items:center;gap:20px">
     <label style="margin:0">Bônus</label>
-    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
-      <input type="checkbox" id="bonus-shiny-charm" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
-      Shiny Charm
-    </label>
-    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
-      <input type="checkbox" id="bonus-brilhante" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
-      Brilhante
-    </label>
+    <div id="bonus-checkboxes-wrap" style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"></div>
   </div>
 
   <button class="roll-btn" onclick="rolarEncontro()">Rolar Encontro</button>
@@ -3269,6 +3262,7 @@ function calcSyncSelects(){
         <button class="adm-nav-btn" data-sec="eventos" onclick="admTab('eventos',this)">🎪 Eventos</button>
         <button class="adm-nav-btn" data-sec="historicos" onclick="admTab('historicos',this)">🗑️ Históricos</button>
         <button class="adm-nav-btn" data-sec="estacao" onclick="admTab('estacao',this)">🌿 Estação</button>
+        <button class="adm-nav-btn" data-sec="bonus-adm" onclick="admTab('bonus-adm',this)">✨ Bônus</button>
         <button class="adm-nav-btn" data-sec="manutencao" onclick="admTab('manutencao',this)">🚧 Manutenção</button>
         <button class="adm-nav-btn" data-sec="forcados" onclick="admTab('forcados',this)">🎯 Forçar Resultado</button>
         <button class="adm-nav-btn" data-sec="calculadora-adm" onclick="admTab('calculadora-adm',this)">🧮 Calculadora</button>
@@ -4320,6 +4314,22 @@ function calcSyncSelects(){
         </div>
 
         <!-- MAPA ADM -->
+        <div class="adm-section" id="sec-bonus-adm">
+          <div class="sec-title">Bônus de Shiny</div>
+          <div class="sec-sub">Configure os bônus que aumentam a chance de encontrar Pokémon shiny no Rolador de Encontro</div>
+          <div id="bonus-adm-lista" style="display:flex;flex-direction:column;gap:12px;margin-top:16px"></div>
+          <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-primary" onclick="salvarShinyBonusConfig()">💾 Salvar</button>
+          </div>
+          <div class="fb fb-ok" id="bonus-adm-fb-ok">✓ Bônus salvos!</div>
+          <div class="fb fb-err" id="bonus-adm-fb-err">Erro ao salvar.</div>
+          <div style="margin-top:20px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1.5px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Taxa base</div>
+            <div style="font-size:13px;color:var(--text)">1 em 500 rolagens <span style="color:var(--muted)">(0.2%)</span></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Os bônus somam ao threshold — ex: +7 significa 8 em 500 com Shiny Charm ativo</div>
+          </div>
+        </div>
+
         <div class="adm-section" id="sec-mapa-adm">
           <div class="sec-title">Mapa — Fichas de Locais</div>
           <div class="sec-sub">Gerencie as informações exibidas no popup de cada local do mapa da Região Nendo</div>
@@ -5672,6 +5682,7 @@ function toggleRaridade(r){
   document.getElementById('acc-'+r).classList.toggle('open');
 }
 function admTab(sec,el){
+  if(sec==='bonus-adm') setTimeout(renderBonusAdmLista,50);
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
   if(sec==='mapa-adm'){ setTimeout(async ()=>{
@@ -6162,7 +6173,7 @@ function getAdminPerms(a){
 function aplicarPermissoesSidebar(){
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
   // Seções abertas para todos os ADMs (não precisam de permissão específica)
-  const abertas = ['mapa-adm','manutencao'];
+  const abertas = ['mapa-adm','manutencao','bonus-adm','estacao','forcados'];
   // botões com data-sec
   document.querySelectorAll('.adm-nav-btn[data-sec]').forEach(btn=>{
     const sec = btn.dataset.sec;
@@ -9472,13 +9483,84 @@ async function setEstacao(val){
 function rollGender(g){if(g==='macho')return{s:'♂',c:'#3a80e0'};if(g==='femea')return{s:'♀',c:'#e04090'};if(g==='genderless')return{s:'☼',c:'#888'};return Math.random()<.5?{s:'♂',c:'#3a80e0'}:{s:'♀',c:'#e04090'};}
 function rollNature(){const n=NATURES_DATA[Math.floor(Math.random()*NATURES_DATA.length)];return n||{en:'Hardy',pt:'Robusto'};}
 const SHINY_RATE=500; const SHINY_THRESHOLD=1; // 1 em 500 (taxa base)
+// Bônus de shiny configuráveis pelo ADM
+let SHINY_BONUS_CONFIG = [
+  {id:'bonus-shiny-charm', label:'Shiny Charm', pct:7},
+  {id:'bonus-brilhante',   label:'Brilhante',   pct:5},
+];
+async function carregarShinyBonusConfig(){
+  try{
+    const rows = await dbGet('config','chave=eq.shiny_bonus');
+    if(rows&&rows[0]) SHINY_BONUS_CONFIG = JSON.parse(rows[0].valor);
+  }catch(e){}
+  renderShinyBonusCheckboxes();
+}
+function renderShinyBonusCheckboxes(){
+  const wrap = document.getElementById('bonus-checkboxes-wrap');
+  if(!wrap) return;
+  wrap.innerHTML = SHINY_BONUS_CONFIG.map(b=>`
+    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
+      <input type="checkbox" id="${b.id}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
+      ${b.label} <span style="color:var(--muted);font-size:11px">(+${b.pct})</span>
+    </label>`).join('');
+}
 function rollShiny(){
   let threshold=SHINY_THRESHOLD;
-  const charmOn=document.getElementById('bonus-shiny-charm')?.checked;
-  const brilhanteOn=document.getElementById('bonus-brilhante')?.checked;
-  if(brilhanteOn) threshold+=5;
-  if(charmOn) threshold+=7;
+  SHINY_BONUS_CONFIG.forEach(b=>{
+    if(document.getElementById(b.id)?.checked) threshold+=b.pct;
+  });
   return Math.floor(Math.random()*SHINY_RATE)<threshold;
+}
+
+// ── ADM Bônus de Shiny ────────────────────────────────────
+function renderBonusAdmLista(){
+  const wrap = document.getElementById('bonus-adm-lista');
+  if(!wrap) return;
+  wrap.innerHTML = SHINY_BONUS_CONFIG.map((b,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Nome</div>
+        <input type="text" value="${b.label}" oninput="SHINY_BONUS_CONFIG[${i}].label=this.value;renderShinyBonusCheckboxes()"
+          style="width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;background:var(--surface2)"/>
+      </div>
+      <div style="width:80px;flex-shrink:0">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">+Threshold</div>
+        <input type="number" value="${b.pct}" min="0" max="499" oninput="SHINY_BONUS_CONFIG[${i}].pct=parseInt(this.value)||0;renderShinyBonusCheckboxes()"
+          style="width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;background:var(--surface2);text-align:center"/>
+      </div>
+      <div style="width:60px;flex-shrink:0;text-align:right">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Chance</div>
+        <div style="font-size:12px;font-weight:700;color:var(--brand)">${((1+b.pct)/500*100).toFixed(2)}%</div>
+      </div>
+    </div>`).join('');
+}
+
+async function salvarShinyBonusConfig(){
+  const fbOk  = document.getElementById('bonus-adm-fb-ok');
+  const fbErr = document.getElementById('bonus-adm-fb-err');
+  fbOk.style.display='none'; fbErr.style.display='none';
+  try{
+    const valor = JSON.stringify(SHINY_BONUS_CONFIG);
+    const existing = await dbGet('config','chave=eq.shiny_bonus');
+    if(existing&&existing[0]) await dbPatch('config','chave=eq.shiny_bonus',{valor});
+    else await dbPost('config',{chave:'shiny_bonus',valor});
+    renderShinyBonusCheckboxes();
+    fb('bonus-adm-fb-ok');
+  }catch(e){
+    fbErr.textContent='Erro: '+e.message;
+    fbErr.style.display='block';
+  }
+}
+
+function toggleBonusWrap(){
+  const wrap = document.getElementById('bonus-checkboxes-wrap');
+  const arrow = document.getElementById('bonus-toggle-arrow');
+  const btn = document.getElementById('bonus-toggle-btn');
+  if(!wrap) return;
+  const open = wrap.style.display === 'none';
+  wrap.style.display = open ? 'flex' : 'none';
+  if(arrow) arrow.textContent = open ? '▴' : '▾';
+  if(btn){ btn.style.borderColor = open ? 'var(--accent)' : 'var(--border)'; btn.style.color = open ? 'var(--accent)' : 'var(--muted)'; btn.style.background = open ? 'var(--accent-light)' : 'var(--surface)'; }
 }
 
 function spriteHtml(pk){
@@ -9665,11 +9747,10 @@ async function rolarEncontro(){
       if(base) pk.condicao=base.condicao||null;
     }
   });
-  const charmOn=document.getElementById('bonus-shiny-charm')?.checked||false;
-  const brilhanteOn=document.getElementById('bonus-brilhante')?.checked||false;
   const bonusAtivos=[];
-  if(brilhanteOn) bonusAtivos.push({label:'Brilhante',pct:5});
-  if(charmOn) bonusAtivos.push({label:'Shiny Charm',pct:7});
+  SHINY_BONUS_CONFIG.forEach(b=>{
+    if(document.getElementById(b.id)?.checked) bonusAtivos.push({label:b.label,pct:b.pct});
+  });
   const chanceShinyTotal=1+bonusAtivos.reduce((s,b)=>s+b.pct,0);
   if(bonusAtivos.length){
     pokes.forEach(pk=>{ pk.bonusShiny=bonusAtivos.map(b=>b.label); });
@@ -13495,6 +13576,7 @@ async function initMapa() {
     carregarMapaEventos(),
     carregarPosicoesPins(),
     carregarMapaFichas(),
+    carregarShinyBonusConfig(),
     mapaFiltrosCarregarDB(), // no-op, dados vêm de carregarMapaTipos
   ]);
 
@@ -13780,6 +13862,7 @@ function mapaAdmTab(tab, btn) {
   if(tabFiltros) tabFiltros.style.display = tab === 'filtros' ? '' : 'none';
   if(tab === 'filtros') mapaFiltrosCarregarInputs();
   if(tab === 'locais')  mapaAdmRenderCards('');
+  if(tab === 'bonus-adm') renderBonusAdmLista();
 }
 
 // ── Novo local — posicionar no mapa ───────────────────────
@@ -13953,6 +14036,9 @@ window.addEventListener('touchmove', e => {
   if (_mapaPinDragging) _onPinDragMove(e.touches[0].clientX, e.touches[0].clientY);
 }, {passive:true});
 window.addEventListener('touchend', () => _onPinDragEnd());
+// ── Carregar config de bônus shiny ─────────────────────
+// (chamado no init junto com outros carregamentos)
+
 async function carregarMapaEventos() {
   try {
     const rows = await dbGet('map_events', 'select=*&order=created_at.asc');
