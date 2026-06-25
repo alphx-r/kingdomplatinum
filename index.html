@@ -2298,7 +2298,7 @@ function calcSyncSelects(){
     <p>Selecione o bioma, configure seu personagem e role!</p>
   </div>
   <div class="roller-controls">
-    <div class="ctrl-group"><label>Bioma</label><select id="bioma"></select></div>
+    <div class="ctrl-group"><label>Bioma</label><select id="bioma" onchange="atualizarHoneyStatus()"></select></div>
     <div class="ctrl-group">
       <label>Personagem</label>
       <select id="personagem" required onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
@@ -2315,10 +2315,15 @@ function calcSyncSelects(){
     </div>
   </div>
 
-  <div class="ctrl-group" style="margin-bottom:18px;flex-direction:row;align-items:center;gap:20px">
+  <div class="ctrl-group" style="margin-bottom:6px;flex-direction:row;align-items:center;gap:20px">
     <label style="margin:0">Bônus</label>
     <div id="bonus-checkboxes-wrap" style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"></div>
+    <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--text);cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1">
+      <input type="checkbox" id="bonus-honey" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
+      Honey <span style="color:var(--muted);font-size:11px">(+2 encontros no bioma por 24h)</span>
+    </label>
   </div>
+  <div id="honey-status" style="display:none;margin-bottom:18px;font-size:12px;font-weight:700;color:#7a5010;background:linear-gradient(135deg,#fffde7,#fff3c4);border:1.5px solid #f0c040;border-radius:8px;padding:7px 12px;align-items:center;gap:8px"></div>
 
   <button class="roll-btn" onclick="rolarEncontro()">Rolar Encontro</button>
   <div id="results-section"></div>
@@ -5449,6 +5454,8 @@ async function carregarAba(page){
       if(!biomas.length){ loaded['roller']=false; console.warn('[carregarAba] roller: biomas vazios'); }
       syncBiomaSelect();
       renderPersonagensDatalist();
+      carregarHoneyState();
+      carregarShinyBonusConfig();
       Promise.all([
         dbGet('historico','order=criado_em.desc&limit=100'),
         dbGet('historico_dados','order=criado_em.desc&limit=100'),
@@ -6492,6 +6499,7 @@ function renderTbodyBiomas(){
 function syncBiomaSelect(){
   const sel=document.getElementById('bioma');
   sel.innerHTML=biomas.map(b=>`<option>${b.nome}</option>`).join('');
+  if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus();
 }
 function syncBiomaSelects(){
   const pks=document.getElementById('pk-bioma');
@@ -9645,6 +9653,113 @@ function verificarMotivoExtraEvento(){
   }
 }
 
+// ── Bônus "Honey" (compartilhado entre todos os jogadores) ──
+// Ao rolar com Honey marcado em um bioma, esse bioma fica com +2 encontros
+// automáticos em qualquer rolagem de qualquer jogador (mesmo sem marcar o
+// checkbox de novo) por 24h. O estado fica salvo no banco (tabela config),
+// não no localStorage, para que o bônus valha para todo mundo.
+const HONEY_DURACAO_MS = 24*60*60*1000; // 24h
+let HONEY_STATE = {}; // cache em memória: { [biomaLowerCase]: expiraEmTimestamp }
+let _honeyStateCarregado = false;
+
+async function carregarHoneyState(){
+  try{
+    const rows = await dbGet('config','chave=eq.honey_ativo');
+    HONEY_STATE = (rows && rows[0] && JSON.parse(rows[0].valor)) || {};
+  }catch(e){ HONEY_STATE = {}; }
+  _honeyStateCarregado = true;
+  await _honeyStateLimparExpirados();
+  atualizarHoneyStatus();
+}
+
+// Remove entradas expiradas do estado em memória e persiste se algo mudou
+async function _honeyStateLimparExpirados(){
+  const agora = Date.now();
+  let mudou = false;
+  for(const k of Object.keys(HONEY_STATE)){
+    if(!HONEY_STATE[k] || agora >= HONEY_STATE[k]){
+      delete HONEY_STATE[k];
+      mudou = true;
+    }
+  }
+  if(mudou) await _salvarHoneyState(HONEY_STATE);
+}
+
+async function _salvarHoneyState(stateParaSalvar){
+  try{
+    const valor = JSON.stringify(stateParaSalvar);
+    const existing = await dbGet('config','chave=eq.honey_ativo');
+    if(existing && existing[0]) await dbPatch('config','chave=eq.honey_ativo',{valor});
+    else await dbPost('config',{chave:'honey_ativo',valor});
+  }catch(e){ console.error('[honey] erro ao salvar estado compartilhado',e); }
+}
+
+function getHoneyAtivo(bioma){
+  if(!bioma) return null;
+  const k=bioma.toLowerCase();
+  const expiraEm = HONEY_STATE[k];
+  if(!expiraEm) return null;
+  if(Date.now() >= expiraEm){
+    delete HONEY_STATE[k];
+    _salvarHoneyState(HONEY_STATE);
+    return null;
+  }
+  return {expiraEm};
+}
+
+// Ativa/renova o bônus no bioma de forma atômica: busca o estado mais
+// recente direto do banco (não confia só no cache local), mescla apenas a
+// chave do bioma sendo ativado e salva de volta. Isso evita que a ativação
+// de um bioma apague, por sobrescrita, a ativação simultânea de outro bioma
+// feita por outro jogador. Dentro do MESMO bioma, a ativação mais recente
+// sempre prevalece (estende a expiração para +24h a partir de agora).
+async function ativarHoneyBioma(bioma){
+  if(!bioma) return;
+  const k=bioma.toLowerCase();
+  let estadoFresco = {};
+  try{
+    const rows = await dbGet('config','chave=eq.honey_ativo');
+    estadoFresco = (rows && rows[0] && JSON.parse(rows[0].valor)) || {};
+  }catch(e){ estadoFresco = {...HONEY_STATE}; } // fallback: usa o cache local se a leitura falhar
+  // Limpa expirados do estado fresco antes de mesclar
+  const agora = Date.now();
+  for(const bk of Object.keys(estadoFresco)){
+    if(!estadoFresco[bk] || agora >= estadoFresco[bk]) delete estadoFresco[bk];
+  }
+  estadoFresco[k] = agora + HONEY_DURACAO_MS; // este bioma: renova para +24h a partir de agora
+  HONEY_STATE = estadoFresco; // atualiza o cache local com o estado completo e atual
+  await _salvarHoneyState(HONEY_STATE);
+}
+
+function formatarTempoRestante(ms){
+  if(ms<=0) return '0h';
+  const h = Math.floor(ms/3600000);
+  const m = Math.floor((ms%3600000)/60000);
+  if(h>0) return `${h}h${m>0?` ${m}min`:''}`;
+  return `${m}min`;
+}
+
+function atualizarHoneyStatus(){
+  const bioma = document.getElementById('bioma')?.value;
+  const status = document.getElementById('honey-status');
+  const checkbox = document.getElementById('bonus-honey');
+  if(!status) return;
+  const ativo = getHoneyAtivo(bioma);
+  if(ativo){
+    const restante = formatarTempoRestante(ativo.expiraEm - Date.now());
+    status.style.display = 'flex';
+    status.innerHTML = `<span>Honey ativo em <strong>${bioma}</strong> (válido para todos os jogadores) — +2 encontros automáticos por mais ${restante}.</span>`;
+    if(checkbox) checkbox.checked = false; // já está ativo, não precisa marcar de novo
+  } else {
+    status.style.display = 'none';
+    status.innerHTML = '';
+  }
+}
+// Atualiza o relógio a cada minuto e revalida com o banco periodicamente
+// (caso outro jogador tenha ativado o Honey enquanto esta aba estava aberta)
+setInterval(()=>{ if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); }, 60000);
+setInterval(()=>{ if(_honeyStateCarregado && typeof carregarHoneyState==='function') carregarHoneyState(); }, 120000);
+
 async function rolarEncontro(){
   const personagem=document.getElementById('personagem').value.trim();
   if(!personagem){
@@ -9654,7 +9769,15 @@ async function rolarEncontro(){
   }
   if(personagem) localStorage.setItem('ultimo_personagem', personagem);
   const adicionais=0;
-  const nEncontrar=Math.max(1,parseInt(document.getElementById('n-encontrar').value)||3);
+  const bioma=document.getElementById('bioma').value;
+  if(!_honeyStateCarregado) await carregarHoneyState();
+  const honeyCheckbox=document.getElementById('bonus-honey');
+  const honeyMarcadoAgora=!!honeyCheckbox?.checked;
+  const honeyJaAtivo=getHoneyAtivo(bioma);
+  const honeyAtivoNestaRolagem=honeyMarcadoAgora||!!honeyJaAtivo;
+  const honeyBonusEncontros=honeyAtivoNestaRolagem?2:0;
+  const nEncontrarBase=Math.max(1,parseInt(document.getElementById('n-encontrar').value)||3);
+  const nEncontrar=nEncontrarBase+honeyBonusEncontros;
   const motivoExtras=(document.getElementById('motivo-extras').value||'').trim();
   const total=nEncontrar;
 
@@ -9675,7 +9798,13 @@ async function rolarEncontro(){
     }
   }
 
-  const bioma=document.getElementById('bioma').value;
+  // Se o Honey foi marcado nesta rolagem, ativa/renova o bônus de +2 encontros
+  // nesse bioma por 24h (vale para qualquer rolagem no bioma, mesmo sem marcar de novo)
+  if(honeyMarcadoAgora){
+    await ativarHoneyBioma(bioma);
+    if(honeyCheckbox) honeyCheckbox.checked=false;
+  }
+  atualizarHoneyStatus();
 
   // Monta os pools por raridade para este bioma (aplica filtro de estação)
   const raridades=['comum','incomum','raro','rarissimo'];
@@ -9774,6 +9903,12 @@ async function rolarEncontro(){
     const banner=document.createElement('div');
     banner.style.cssText='background:linear-gradient(135deg,#fffde7,#fff8c4);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
     banner.innerHTML=`<span style="font-size:16px">✨</span><span><strong>Bônus de Shiny ativos:</strong> ${bonusAtivos.map(b=>`${b.label} (+${b.pct})`).join(' + ')}</span>`;
+    section.appendChild(banner);
+  }
+  if(honeyAtivoNestaRolagem){
+    const banner=document.createElement('div');
+    banner.style.cssText='background:linear-gradient(135deg,#fff8e1,#ffecb3);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
+    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> +2 encontros automáticos (válido por 24h a partir da primeira marcação)</span>`;
     section.appendChild(banner);
   }
   const grid=document.createElement('div');
