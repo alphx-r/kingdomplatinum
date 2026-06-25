@@ -9608,8 +9608,13 @@ function buildCardHtml(pk,delay){
   const natureHtml=natEN?`<div style="font-size:10px;color:var(--muted);font-weight:600;text-align:center;margin-top:2px"><span style="font-style:italic">${natEN}</span> <span style="opacity:.65">(${natPT})</span></div>`:'';
   const shinyStyle=pk.isShiny?'background:linear-gradient(135deg,#fffde7 0%,#fff8c4 40%,#ffeaa0 100%);border-color:#f0c040;box-shadow:0 0 0 2px #ffe06688,0 6px 24px #ffd70055':'';
   const shinyBadge=pk.isShiny?`<div style="position:absolute;top:-8px;right:-8px;background:linear-gradient(135deg,#ffd700,#ffb300);color:#7a4a00;font-size:10px;font-weight:800;padding:3px 7px;border-radius:10px;border:1.5px solid #e8a800;box-shadow:0 2px 8px #ffd70066;letter-spacing:.4px;z-index:2;white-space:nowrap">✨ SHINY</div>`:'';
-  return`<div class="poke-card" style="animation-delay:${delay}s;${shinyStyle};position:relative">
+  // Pokémon vindo do bônus de Honey: borda dourada sólida. Se também for shiny,
+  // o estilo de shiny (mais raro) prevalece visualmente, mas a badge de Honey continua aparecendo.
+  const honeyStyle=(pk.isHoney&&!pk.isShiny)?'border:2px solid #d4a017;box-shadow:0 0 0 2px #d4a01733':'';
+  const honeyBadge=pk.isHoney?`<div style="position:absolute;top:-8px;${pk.isShiny?'left:-8px':'right:-8px'};background:#fff3d4;color:#7a5010;font-size:9px;font-weight:800;padding:3px 7px;border-radius:10px;border:1.5px solid #d4a017;letter-spacing:.3px;z-index:2;white-space:nowrap">HONEY</div>`:'';
+  return`<div class="poke-card" style="animation-delay:${delay}s;${shinyStyle};${honeyStyle};position:relative">
     ${shinyBadge}
+    ${honeyBadge}
     <div class="poke-card-left">
       <div class="poke-card-img">${spriteHtml(pk)}</div>
       <div class="poke-card-name">${pk.nome.replace(/\s*(\(.+\))/,'<br><span style="font-size:10px;font-weight:500;opacity:.85">$1</span>')} <span class="gender-icon" style="color:${pk.genderC}">${pk.genderS}</span></div>
@@ -9854,20 +9859,23 @@ async function rolarEncontro(){
           const customTipos     = frcEntry.tipos      || pkData.tipos || [];
           const customGender = frcEntry.gender ? rollGender(frcEntry.gender) : gender;
           const customNature = frcEntry.nature || rollNature();
-          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:customNature,isShiny:rollShiny()});
+          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:customNature,isShiny:rollShiny(),isHoney:honeyAtivoNestaRolagem&&i>=nEncontrarBase});
           continue;
         }
       }
       // slot sem forçado: sorteia normalmente
       const rarity=rollRarity();
       const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
-      pokes.push(pickFromPool(pool,usedIds[rarity],rarity));
+      const pkForcado=pickFromPool(pool,usedIds[rarity],rarity);
+      if(pkForcado) pkForcado.isHoney=honeyAtivoNestaRolagem&&i>=nEncontrarBase;
+      pokes.push(pkForcado);
     }
   } else {
     for(let i=0;i<total;i++){
       const rarity=rollRarity();
       const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
       const pk=pickFromPool(pool,usedIds[rarity],rarity);
+      if(pk) pk.isHoney=honeyAtivoNestaRolagem&&i>=nEncontrarBase;
       pokes.push(pk);
     }
   }
@@ -9911,7 +9919,7 @@ async function rolarEncontro(){
   if(honeyAtivoNestaRolagem){
     const banner=document.createElement('div');
     banner.style.cssText='background:linear-gradient(135deg,#fff8e1,#ffecb3);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
-    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> +2 encontros automáticos (válido por 24h a partir da primeira marcação)</span>`;
+    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> ${nEncontrarBase} + 2 (Honey) = <strong>${total}</strong> Pokémon (válido por 24h a partir da primeira marcação)</span>`;
     section.appendChild(banner);
   }
   const grid=document.createElement('div');
@@ -10192,17 +10200,19 @@ function renderHistorico(){
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
     const ph=pokes.map(pk=>{
       const hShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'';
+      const hHoney=(pk.isHoney&&!pk.isShiny)?'border:2px solid #d4a017':'';
       let shinySprSrc=pk.sprite||FALLBACK_SPRITE;
       if(pk.isShiny){ if(pk.sprite_shiny){shinySprSrc=pk.sprite_shiny;} else if(shinySprSrc.includes('raw.githubusercontent.com')){shinySprSrc=shinySprSrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/');} }
       const hGlow=pk.isShiny?'drop-shadow(0 0 5px #ffd700)':'';
       return`
-      <div class="hist-poke" style="${hShiny}">
+      <div class="hist-poke" style="${hShiny};${hHoney}">
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
           <div style="width:56px;height:56px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden">
             <img src="${shinySprSrc}" style="width:56px;height:56px;object-fit:contain;filter:${hGlow}" onerror="this.src='${pk.sprite||FALLBACK_SPRITE}';this.style.filter='${hGlow}'"/>
           </div>
           <div style="font-size:10px;font-weight:600;color:var(--text);text-align:center;font-family:var(--font-title);line-height:1.2">${pk.nome} <span style="color:${pk.genderC}">${pk.genderS}</span></div>
           ${pk.isShiny?`<div style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY</div>`:''}
+          ${pk.isHoney?`<div style="font-size:9px;font-weight:800;color:#7a5010;background:#fff3d4;border:1px solid #d4a017;border-radius:8px;padding:1px 6px">HONEY</div>`:''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
           <div>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</div>
@@ -10219,7 +10229,7 @@ function renderHistorico(){
           <span style="font-size:11px;color:var(--muted)">• ${e.bioma}</span>
           ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
           ${e.motivo_extras?`<span style="font-size:10px;background:var(--accent-light);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid var(--accent)">⚡ ${e.motivo_extras}</span>`:''}
-          ${e.honey?`<span style="font-size:10px;font-weight:700;background:linear-gradient(135deg,#fffde7,#ffecb3);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid #f0c040">Honey</span>`:''}
+          ${e.honey?`<span style="font-size:10px;font-weight:700;background:linear-gradient(135deg,#fffde7,#ffecb3);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid #f0c040">${Math.max(0,(e.n_encontrar||pokes.length)-2)} + 2 (Honey) = ${e.n_encontrar||pokes.length}</span>`:''}
           ${e.n_encontrar&&e.n_encontrar!==3?`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 7px;border-radius:8px;border:1px solid var(--border2)">${pokes.length} Pokémon</span>`:''}
         </div>
         <span style="font-size:11px;color:var(--muted)">${e.hora} · ${e.data}</span>
