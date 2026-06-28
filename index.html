@@ -62,14 +62,16 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-ficha-section{margin-bottom:16px}
 .mapa-ficha-section-titulo{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px}
 .mapa-ficha-desc{font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;text-align:justify}
-/* Pills de pontos */
-.mapa-ficha-pontos{list-style:none;display:flex;flex-direction:column;gap:4px}
-.mapa-ponto-pill{display:flex;flex-direction:column;background:transparent;border:none;border-radius:10px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:background .18s,color .18s;text-align:justify;width:100%}
-.mapa-ponto-pill.open{border-radius:10px}
+/* Pills de pontos — grade de 2 colunas */
+.mapa-ficha-pontos{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.mapa-ponto-pill{display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:10px;padding:8px 10px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:background .18s,color .18s;text-align:center;width:100%;height:100%}
+.mapa-ponto-pill.open{font-weight:700}
 .mapa-ponto-pill-header{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;text-align:center}
 .mapa-ponto-pill-nome{font-size:12px;font-weight:700}
-.mapa-ponto-pill-desc{font-size:12px;font-weight:400;color:var(--muted);margin-top:4px;padding-left:0;line-height:1.5;display:none;text-align:justify}
-.mapa-ponto-pill.open .mapa-ponto-pill-desc{display:block}
+/* Caixa única de descrição, exibida abaixo da grade inteira */
+.mapa-ponto-desc-box{display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--card2,rgba(0,0,0,.03));font-size:12px;font-weight:400;color:var(--muted);line-height:1.6;text-align:justify}
+.mapa-ponto-desc-box.open{display:block}
+.mapa-ponto-desc-box-titulo{font-weight:700;color:var(--text);margin-bottom:4px;display:block}
 /* Biomas inline */
 .mapa-ficha-biomas{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .mapa-ficha-bioma-tag{font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;border:none;opacity:.85;cursor:pointer;transition:opacity .15s,transform .15s}.mapa-ficha-bioma-tag:hover{opacity:1;transform:scale(1.05)}
@@ -2562,6 +2564,10 @@ function calcSyncSelects(){
         <div id="mapaPopupPontosWrap" class="mapa-ficha-section" style="display:none">
           <div class="mapa-ficha-section-titulo">Pontos importantes</div>
           <ul class="mapa-ficha-pontos" id="mapaPopupPontos"></ul>
+          <div class="mapa-ponto-desc-box" id="mapaPopupPontoDescBox">
+            <span class="mapa-ponto-desc-box-titulo" id="mapaPopupPontoDescTitulo"></span>
+            <span id="mapaPopupPontoDescTexto"></span>
+          </div>
         </div>
 
         <!-- 7. Galeria -->
@@ -14294,19 +14300,23 @@ function abrirMapaPopup(localId) {
   const pontosEl   = document.getElementById('mapaPopupPontos');
   const pontos = (ficha.pontos_turisticos || '').split('\n').map(s=>s.trim()).filter(Boolean);
   if (pontos.length) {
+    // Fecha/reseta a caixa de descrição única ao trocar de local
+    const descBox = document.getElementById('mapaPopupPontoDescBox');
+    if (descBox) descBox.classList.remove('open');
     pontosEl.innerHTML = pontos.map(p => {
       const [nome, ...resto] = p.split('|');
       const desc = resto.join('|').trim();
       const temDesc = !!desc;
       return `<li>
         <div class="mapa-ponto-pill" onclick="togglePontoPill(this)"
+          data-nome="${nome.trim().replace(/"/g,'&quot;')}"
+          ${temDesc ? `data-desc="${desc.replace(/"/g,'&quot;')}"` : ''}
           style="--pill-hover-bg:${cfg.bg};--pill-hover-color:${cfg.cor}"
           onmouseenter="this.style.background=this.style.getPropertyValue('--pill-hover-bg') || '${cfg.bg}';this.style.color='${cfg.cor}'"
-          onmouseleave="this.style.background='';this.style.color=''">
+          onmouseleave="if(!this.classList.contains('open')){this.style.background='';this.style.color=''}">
           <div class="mapa-ponto-pill-header">
             <span class="mapa-ponto-pill-nome">${nome.trim()}</span>
           </div>
-          ${temDesc ? `<div class="mapa-ponto-pill-desc">${desc}</div>` : ''}
         </div>
       </li>`;
     }).join('');
@@ -14479,9 +14489,31 @@ function fecharLightbox() {
 }
 // ── Pills de pontos turísticos ─────────────────────────────
 function togglePontoPill(el) {
-  const temDesc = el.querySelector('.mapa-ponto-pill-desc');
-  if (!temDesc) return;
-  el.classList.toggle('open');
+  const desc = el.dataset.desc;
+  const descBox = document.getElementById('mapaPopupPontoDescBox');
+  const descTitulo = document.getElementById('mapaPopupPontoDescTitulo');
+  const descTexto = document.getElementById('mapaPopupPontoDescTexto');
+  const jaAberto = el.classList.contains('open');
+
+  // Remove o estado "open" e o hover preso de todas as pílulas
+  document.querySelectorAll('.mapa-ponto-pill.open').forEach(p => {
+    p.classList.remove('open');
+    p.style.background = '';
+    p.style.color = '';
+  });
+
+  if (!desc || jaAberto) {
+    // Sem descrição, ou clicou de novo na mesma pílula → fecha a caixa
+    descBox.classList.remove('open');
+    return;
+  }
+
+  el.classList.add('open');
+  el.style.background = el.style.getPropertyValue('--pill-hover-bg');
+  el.style.color = el.style.getPropertyValue('--pill-hover-color');
+  descTitulo.textContent = el.dataset.nome || '';
+  descTexto.textContent = desc;
+  descBox.classList.add('open');
 }
 
 function fecharMapaPopup(e) {
