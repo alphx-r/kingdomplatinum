@@ -63,14 +63,15 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .mapa-ficha-section-titulo{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px}
 .mapa-ficha-desc{font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;text-align:justify}
 /* Pills de pontos — grade de 2 colunas */
-.mapa-ficha-pontos{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.mapa-ficha-pontos{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start}
 .mapa-ponto-pill{display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:10px;padding:8px 10px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;transition:background .18s,color .18s;text-align:center;width:100%;height:100%}
 .mapa-ponto-pill.open{font-weight:700}
 .mapa-ponto-pill-header{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;text-align:center}
 .mapa-ponto-pill-nome{font-size:12px;font-weight:700}
-/* Caixa única de descrição, exibida abaixo da grade inteira */
-.mapa-ponto-desc-box{display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--card2,rgba(0,0,0,.03));font-size:12px;font-weight:400;color:var(--muted);line-height:1.6;text-align:justify}
-.mapa-ponto-desc-box.open{display:block}
+/* Item de descrição: ocupa a linha inteira da grade, logo após o par clicado */
+.mapa-ponto-desc-li{grid-column:1 / -1}
+.mapa-ponto-desc-box{padding:10px 12px;border-radius:10px;background:var(--card2,rgba(0,0,0,.03));font-size:12px;font-weight:400;color:var(--muted);line-height:1.6;text-align:justify;animation:mapaPontoDescIn .18s ease}
+@keyframes mapaPontoDescIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 .mapa-ponto-desc-box-titulo{font-weight:700;color:var(--text);margin-bottom:4px;display:block}
 /* Biomas inline */
 .mapa-ficha-biomas{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
@@ -2564,10 +2565,6 @@ function calcSyncSelects(){
         <div id="mapaPopupPontosWrap" class="mapa-ficha-section" style="display:none">
           <div class="mapa-ficha-section-titulo">Pontos importantes</div>
           <ul class="mapa-ficha-pontos" id="mapaPopupPontos"></ul>
-          <div class="mapa-ponto-desc-box" id="mapaPopupPontoDescBox">
-            <span class="mapa-ponto-desc-box-titulo" id="mapaPopupPontoDescTitulo"></span>
-            <span id="mapaPopupPontoDescTexto"></span>
-          </div>
         </div>
 
         <!-- 7. Galeria -->
@@ -14300,19 +14297,16 @@ function abrirMapaPopup(localId) {
   const pontosEl   = document.getElementById('mapaPopupPontos');
   const pontos = (ficha.pontos_turisticos || '').split('\n').map(s=>s.trim()).filter(Boolean);
   if (pontos.length) {
-    // Fecha/reseta a caixa de descrição única ao trocar de local
-    const descBox = document.getElementById('mapaPopupPontoDescBox');
-    if (descBox) descBox.classList.remove('open');
-    pontosEl.innerHTML = pontos.map(p => {
+    pontosEl.innerHTML = pontos.map((p, idx) => {
       const [nome, ...resto] = p.split('|');
       const desc = resto.join('|').trim();
       const temDesc = !!desc;
-      return `<li>
+      return `<li data-idx="${idx}">
         <div class="mapa-ponto-pill" onclick="togglePontoPill(this)"
           data-nome="${nome.trim().replace(/"/g,'&quot;')}"
           ${temDesc ? `data-desc="${desc.replace(/"/g,'&quot;')}"` : ''}
           style="--pill-hover-bg:${cfg.bg};--pill-hover-color:${cfg.cor}"
-          onmouseenter="this.style.background=this.style.getPropertyValue('--pill-hover-bg') || '${cfg.bg}';this.style.color='${cfg.cor}'"
+          onmouseenter="if(!this.classList.contains('open')){this.style.background=this.style.getPropertyValue('--pill-hover-bg') || '${cfg.bg}';this.style.color='${cfg.cor}'}"
           onmouseleave="if(!this.classList.contains('open')){this.style.background='';this.style.color=''}">
           <div class="mapa-ponto-pill-header">
             <span class="mapa-ponto-pill-nome">${nome.trim()}</span>
@@ -14490,30 +14484,40 @@ function fecharLightbox() {
 // ── Pills de pontos turísticos ─────────────────────────────
 function togglePontoPill(el) {
   const desc = el.dataset.desc;
-  const descBox = document.getElementById('mapaPopupPontoDescBox');
-  const descTitulo = document.getElementById('mapaPopupPontoDescTitulo');
-  const descTexto = document.getElementById('mapaPopupPontoDescTexto');
+  const li = el.closest('li');
+  const ul = document.getElementById('mapaPopupPontos');
   const jaAberto = el.classList.contains('open');
 
-  // Remove o estado "open" e o hover preso de todas as pílulas
+  // Remove qualquer caixa de descrição aberta anteriormente e reseta o item ativo
+  const descAberta = ul.querySelector('.mapa-ponto-desc-li');
+  if (descAberta) descAberta.remove();
   document.querySelectorAll('.mapa-ponto-pill.open').forEach(p => {
     p.classList.remove('open');
     p.style.background = '';
     p.style.color = '';
   });
 
-  if (!desc || jaAberto) {
-    // Sem descrição, ou clicou de novo na mesma pílula → fecha a caixa
-    descBox.classList.remove('open');
-    return;
-  }
+  if (!desc || jaAberto) return; // sem descrição, ou clicou de novo na mesma → só fecha
 
   el.classList.add('open');
   el.style.background = el.style.getPropertyValue('--pill-hover-bg');
   el.style.color = el.style.getPropertyValue('--pill-hover-color');
-  descTitulo.textContent = el.dataset.nome || '';
-  descTexto.textContent = desc;
-  descBox.classList.add('open');
+
+  // Monta o <li> de descrição, ocupando a linha inteira da grade
+  const idx = parseInt(li.dataset.idx, 10);
+  const nome = el.dataset.nome || '';
+  const descLi = document.createElement('li');
+  descLi.className = 'mapa-ponto-desc-li';
+  descLi.innerHTML = `<div class="mapa-ponto-desc-box">
+    <span class="mapa-ponto-desc-box-titulo">${nome}</span>
+    <span>${desc}</span>
+  </div>`;
+
+  // Insere depois do segundo item do par (linha) ao qual o clicado pertence,
+  // assim a caixa "empurra" os pares seguintes para baixo.
+  const fimDoPar = (idx % 2 === 0) ? li.nextElementSibling : null;
+  const referencia = fimDoPar || li;
+  referencia.after(descLi);
 }
 
 function fecharMapaPopup(e) {
