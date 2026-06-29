@@ -1479,13 +1479,13 @@ const PK = (() => {
   }
 
   async function save() {
+    const GH = { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+    // Sempre busca o SHA mais recente antes de salvar — evita 409 por SHA desatualizado
+    const metaRes = await fetch(API, { headers: GH }).catch(() => null);
+    if (metaRes && metaRes.ok) { const meta = await metaRes.json(); _sha = meta.sha; }
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(_data, null, 2))));
     const body = { message: 'chore: update pokemon.json', content, ...(_sha ? { sha: _sha } : {}) };
-    const r = await fetch(API, {
-      method: 'PUT',
-      headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const r = await fetch(API, { method: 'PUT', headers: GH, body: JSON.stringify(body) });
     if (!r.ok) throw new Error('GitHub save: ' + await r.text());
     const res = await r.json();
     _sha = res.content.sha;
@@ -2303,15 +2303,13 @@ async function savePkModal(approve) {
     if (b64 && b64.startsWith('data:')) {
       toast('Enviando sprite…', 'ok');
       const ext = b64.includes('image/png') ? 'png' : 'jpg';
-      const uploaded = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`);
-      sprite = uploaded + '?t=' + Date.now();
+      sprite = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`) + '?t=' + Date.now();
       delete document.getElementById('epk-sprite-preview').dataset.b64;
       document.getElementById('epk-sprite').value = sprite;
     }
     if (b64Shiny && b64Shiny.startsWith('data:')) {
       const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
-      const uploaded = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`);
-      spriteShiny = uploaded + '?t=' + Date.now();
+      spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`) + '?t=' + Date.now();
       delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
       document.getElementById('epk-sprite_shiny').value = spriteShiny;
     }
@@ -2930,27 +2928,19 @@ function openNewPokemon() {
 }
 
 async function uploadImgStorage(b64, bucket, path) {
-  // Converte data URL para Blob diretamente (mais robusto que fetch(b64))
   const [header, data] = b64.split(',');
   const mime = header.match(/:(.*?);/)[1];
   const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const blob = new Blob([bytes], { type: mime });
-
   const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/${bucket}/${path}`, {
     method: 'POST',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${SUPA_KEY}`,
-      'Content-Type': mime,
-      'x-upsert': 'true'
-    },
+    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': mime, 'x-upsert': 'true' },
     body: blob
   });
   if (!uploadRes.ok) {
     const err = await uploadRes.text();
-    console.error('[storage] erro upload:', uploadRes.status, err);
     throw new Error('Falha no upload: ' + uploadRes.status + ' — ' + err);
   }
   return `${SUPA_URL}/storage/v1/object/public/${bucket}/${path}`;
@@ -3677,15 +3667,13 @@ async function saveEditRpgPokemon() {
     if (spPrev?.dataset.b64?.startsWith('data:')) {
       toast('Enviando sprite…', 'ok');
       const ext = spPrev.dataset.b64.includes('image/png') ? 'png' : 'jpg';
-      const uploaded = await uploadImgStorage(spPrev.dataset.b64, 'pokemons', `${id}.${ext}`);
-      sprite = uploaded + '?t=' + Date.now();
+      sprite = await uploadImgStorage(spPrev.dataset.b64, 'pokemons', `${id}.${ext}`) + '?t=' + Date.now();
       delete spPrev.dataset.b64;
       document.getElementById('erpg-sprite').value = sprite;
     }
     if (ssPrev?.dataset.b64?.startsWith('data:')) {
       const ext = ssPrev.dataset.b64.includes('image/png') ? 'png' : 'jpg';
-      const uploaded = await uploadImgStorage(ssPrev.dataset.b64, 'pokemons', `${id}-shiny.${ext}`);
-      spriteShiny = uploaded + '?t=' + Date.now();
+      spriteShiny = await uploadImgStorage(ssPrev.dataset.b64, 'pokemons', `${id}-shiny.${ext}`) + '?t=' + Date.now();
       delete ssPrev.dataset.b64;
       document.getElementById('erpg-sprite_shiny').value = spriteShiny;
     }
