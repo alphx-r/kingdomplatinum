@@ -227,6 +227,16 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .rpg-entry-name small{display:block;font-size:10px;color:var(--muted);font-family:var(--font-body);letter-spacing:0;font-weight:400;margin-top:1px}
 .rpg-entry-body{display:none;border-top:1.5px solid var(--border);padding:16px}
 .rpg-entry.open .rpg-entry-body{display:block}
+
+/* ── Combobox (input + datalist autocomplete) ── */
+.cb-wrap{position:relative;width:100%}
+.cb-input{width:100%;font-size:12px;padding:6px 28px 6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;transition:border .2s;cursor:pointer}
+.cb-input:focus{border-color:var(--brand-mid)}
+.cb-input.has-val{border-color:#80dfc0;background:var(--green-light)}
+.cb-arrow{position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:10px}
+/* moveset combobox inline */
+.moveset-row .cb-wrap{min-width:0;flex:1}
+.moveset-row .cb-input{font-size:12px;padding:4px 24px 4px 7px}
 </style>
 </head>
 <body>
@@ -1297,15 +1307,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="mv-meta-grid" style="margin-bottom:12px">
         <div class="mv-meta-item">
           <div class="mv-meta-lbl">Tipo</div>
-          <select class="mv-meta-select" id="nmv-type">
-            <option value="">—</option>
-            <option value="normal">Normal</option><option value="fire">Fire</option><option value="water">Water</option>
-            <option value="electric">Electric</option><option value="grass">Grass</option><option value="ice">Ice</option>
-            <option value="fighting">Fighting</option><option value="poison">Poison</option><option value="ground">Ground</option>
-            <option value="flying">Flying</option><option value="psychic">Psychic</option><option value="bug">Bug</option>
-            <option value="rock">Rock</option><option value="ghost">Ghost</option><option value="dragon">Dragon</option>
-            <option value="dark">Dark</option><option value="steel">Steel</option><option value="fairy">Fairy</option>
-          </select>
+          <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-type" list="dl-move-type" autocomplete="off" placeholder="— tipo —"><span class="cb-arrow">▾</span></div>
         </div>
         <div class="mv-meta-item">
           <div class="mv-meta-lbl">Categoria</div>
@@ -1326,14 +1328,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <div class="mv-meta-item">
           <div class="mv-meta-lbl">Contest Style</div>
-          <select class="mv-meta-select" id="nmv-style">
-            <option value="">—</option>
-            <option value="cool">Cool</option>
-            <option value="beauty">Beauty</option>
-            <option value="cute">Cute</option>
-            <option value="smart">Smart</option>
-            <option value="tough">Tough</option>
-          </select>
+          <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-style" list="dl-contest-style" autocomplete="off" placeholder="— estilo —"><span class="cb-arrow">▾</span></div>
         </div>
       </div>
       <div style="margin-bottom:12px">
@@ -1668,15 +1663,15 @@ function pkCardHtml(pk, db, appr, hasPt, t1, t2, spriteUrl, artUrl, shinyUrl, ti
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
               <div class="field-row">
                 <div class="field-lbl en">Habilidade 1</div>
-                <input class="mv-meta-input" id="pk-hab1-${pk.id}" value="${db.habilidade1||''}" placeholder="ex: Overgrow">
+                <div class="cb-wrap"><input class="cb-input mv-meta-input" id="pk-hab1-${pk.id}" list="dl-ability" autocomplete="off" placeholder="ex: Overgrow" value="${db.habilidade1||''}"><span class="cb-arrow">▾</span></div>
               </div>
               <div class="field-row">
                 <div class="field-lbl en">Habilidade 2</div>
-                <input class="mv-meta-input" id="pk-hab2-${pk.id}" value="${db.habilidade2||''}" placeholder="(opcional)">
+                <div class="cb-wrap"><input class="cb-input mv-meta-input" id="pk-hab2-${pk.id}" list="dl-ability" autocomplete="off" placeholder="(opcional)" value="${db.habilidade2||''}"><span class="cb-arrow">▾</span></div>
               </div>
               <div class="field-row">
                 <div class="field-lbl en">Hab. Oculta</div>
-                <input class="mv-meta-input" id="pk-haboculta-${pk.id}" value="${db.habilidade_oculta||''}" placeholder="(opcional)">
+                <div class="cb-wrap"><input class="cb-input mv-meta-input" id="pk-haboculta-${pk.id}" list="dl-ability" autocomplete="off" placeholder="(opcional)" value="${db.habilidade_oculta||''}"><span class="cb-arrow">▾</span></div>
               </div>
             </div>
             <!-- GÊNERO / RARIDADE / BIOMAS -->
@@ -1995,17 +1990,18 @@ function epkPreviewSpriteShinyFile(input) {
 ══════════════════════════════════════════ */
 
 // Constrói o select de moves a partir de S.mv.all
+// movesetBuildSelect kept for compat (unused for rendering)
 function movesetBuildSelect(value = '') {
   const moves = (S.mv?.all || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const opts = moves.map(m => {
-    const label = m.name.replace(/-/g,' ').replace(/\w/g, c => c.toUpperCase());
+    const label = m.name.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
     const sel = m.name === value ? ' selected' : '';
     return `<option value="${m.name}"${sel}>${label}</option>`;
   }).join('');
   return `<option value="">— Move —</option>${opts}`;
 }
 
-// Adiciona uma linha de move na lista indicada
+// Adiciona uma linha de move na lista indicada (combobox input+datalist)
 // type: 'level' | 'egg' | 'tutor'
 // data: { move, level } (opcional, para popular na edição)
 function movesetAddRow(listId, type, data = {}) {
@@ -2014,13 +2010,22 @@ function movesetAddRow(listId, type, data = {}) {
   const row = document.createElement('div');
   row.className = 'moveset-row';
 
-  const selectHtml = `<select class="mv-name">${movesetBuildSelect(data.move || '')}</select>`;
+  const rawVal = data.move || '';
+  const dispVal = rawVal ? rawVal.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+  const comboHtml = `<div class="cb-wrap mv-name"><input class="cb-input mv-name-input" list="dl-move" autocomplete="off" placeholder="— Move —" value="${dispVal}" data-raw="${rawVal}"><span class="cb-arrow">▾</span></div>`;
   const levelHtml = type === 'level'
     ? `<input type="number" class="mv-lvl" min="0" max="100" placeholder="Nível" value="${data.level ?? ''}">`
     : '';
   const delBtn = `<button type="button" class="mv-del" onclick="this.closest('.moveset-row').remove()" title="Remover">✕</button>`;
 
-  row.innerHTML = selectHtml + levelHtml + delBtn;
+  row.innerHTML = comboHtml + levelHtml + delBtn;
+  const inp = row.querySelector('.mv-name-input');
+  if (inp) {
+    const syncHasVal = () => inp.classList.toggle('has-val', inp.value.trim() !== '');
+    inp.addEventListener('input', syncHasVal);
+    inp.addEventListener('change', syncHasVal);
+    if (rawVal) inp.classList.add('has-val');
+  }
   list.appendChild(row);
 }
 
@@ -2029,7 +2034,7 @@ function movesetReadList(listId, type) {
   const list = document.getElementById(listId);
   if (!list) return [];
   return [...list.querySelectorAll('.moveset-row')].map(row => {
-    const move = row.querySelector('select')?.value || '';
+    const inp = row.querySelector('.mv-name-input'); const move = inp ? inp.value.trim() : '';
     if (!move) return null;
     if (type === 'level') {
       const level = parseInt(row.querySelector('input')?.value) || 0;
@@ -2373,6 +2378,7 @@ async function loadAbilities() {
     S.ab.filtered = items;
     renderAbList();
     nrpgPopulateAbilitySelects();
+    cbBuildAbilityList();
 
     const BATCH = 20;
     for (let b = 0; b < items.length; b += BATCH) {
@@ -2455,10 +2461,7 @@ function renderMvList() {
         <div class="mv-meta-grid">
           <div class="mv-meta-item">
             <div class="mv-meta-lbl">Tipo</div>
-            <select class="mv-meta-select" id="mv-type-${item.name}">
-              <option value="">—</option>
-              ${['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'].map(t=>`<option value="${t}"${(db.type||item.type)===t?' selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
-            </select>
+            <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-type-${item.name}" list="dl-move-type" autocomplete="off" placeholder="— tipo —" value="${db.type||item.type||''}"><span class="cb-arrow">▾</span></div>
           </div>
           <div class="mv-meta-item">
             <div class="mv-meta-lbl">Categoria</div>
@@ -2479,10 +2482,7 @@ function renderMvList() {
           </div>
           <div class="mv-meta-item">
             <div class="mv-meta-lbl">Contest Style</div>
-            <select class="mv-meta-select" id="mv-style-${item.name}">
-              <option value="">—</option>
-              ${['cool','beauty','cute','smart','tough'].map(s=>`<option value="${s}"${(db.contest_style||item.style)===s?' selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
-            </select>
+            <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-style-${item.name}" list="dl-contest-style" autocomplete="off" placeholder="— estilo —" value="${db.contest_style||item.style||''}"><span class="cb-arrow">▾</span></div>
           </div>
         </div>
 
@@ -2576,6 +2576,7 @@ async function loadMoves() {
     S.mv.all = items;
     S.mv.filtered = items;
     renderMvList();
+    cbBuildMoveList();
 
     const FIRST = 30;
     await Promise.all(items.slice(0, FIRST).map(async item => {
@@ -3507,11 +3508,82 @@ async function deleteRpgModal() {
 /* ══════════════════════════════════════════
    INIT
 ══════════════════════════════════════════ */
+cbBuildStaticLists();
 loadPokemon();
 // Marca Kanto como ativo por padrão
 document.querySelector('.pk-reg-btn[data-reg="Kanto"]')?.classList.add('active');
 loadAbilities();
 loadMoves();
+
+/* ── Combobox helpers ─────────────────────────────────────────── */
+// cbMake(wrapEl, listId) — wires an input to a datalist and marks .has-val
+function cbInit(inputEl) {
+  if (!inputEl) return;
+  const sync = () => inputEl.classList.toggle('has-val', inputEl.value.trim() !== '');
+  inputEl.addEventListener('input', sync);
+  inputEl.addEventListener('change', sync);
+  sync();
+}
+
+// build <datalist> HTML from an options array [{value, label}]
+function cbBuildDatalist(id, opts) {
+  let dl = document.getElementById(id);
+  if (!dl) { dl = document.createElement('datalist'); dl.id = id; document.body.appendChild(dl); }
+  dl.innerHTML = opts.map(o => `<option value="${o.value}">${o.label||o.value}</option>`).join('');
+}
+
+// wrap a plain <input> or replace a <select> with a combobox inside a .cb-wrap
+// called after lists are loaded; el = existing input element
+function cbAttach(el, listId) {
+  if (!el || el.dataset.cbDone) return;
+  el.setAttribute('list', listId);
+  el.setAttribute('autocomplete', 'off');
+  el.classList.add('cb-input');
+  // wrap in .cb-wrap if not already
+  if (!el.closest('.cb-wrap')) {
+    const w = document.createElement('div');
+    w.className = 'cb-wrap';
+    el.parentNode.insertBefore(w, el);
+    w.appendChild(el);
+    w.insertAdjacentHTML('beforeend','<span class="cb-arrow">▾</span>');
+  }
+  cbInit(el);
+  el.dataset.cbDone = '1';
+}
+
+// MOVE types datalist
+const CB_DL_TYPE = 'dl-move-type';
+const MOVE_TYPES = ['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'];
+
+// Contest styles datalist
+const CB_DL_STYLE = 'dl-contest-style';
+const CONTEST_STYLES = ['cool','beauty','cute','smart','tough'];
+
+function cbBuildStaticLists() {
+  cbBuildDatalist(CB_DL_TYPE,  MOVE_TYPES.map(t => ({ value: t, label: t.charAt(0).toUpperCase()+t.slice(1) })));
+  cbBuildDatalist(CB_DL_STYLE, CONTEST_STYLES.map(s => ({ value: s, label: s.charAt(0).toUpperCase()+s.slice(1) })));
+}
+
+function cbBuildAbilityList() {
+  const opts = (S.ab?.all || []).map(a => ({ value: a.name, label: a.name }));
+  cbBuildDatalist('dl-ability', opts);
+}
+
+function cbBuildMoveList() {
+  const opts = (S.mv?.all || []).slice().sort((a,b)=>a.name.localeCompare(b.name)).map(m => ({
+    value: m.name,
+    label: m.name.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase())
+  }));
+  cbBuildDatalist('dl-move', opts);
+}
+
+// read a combobox value (validates against datalist if present)
+function cbRead(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  return el.value.trim();
+}
+
 </script>
 </body>
 </html>
