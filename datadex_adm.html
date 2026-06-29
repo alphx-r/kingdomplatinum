@@ -428,8 +428,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div style="margin-bottom:10px">
         <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
         <div style="display:flex;gap:8px;align-items:center">
-          <input class="mv-meta-input" id="nrpg-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%">
-          <input class="mv-meta-input" id="nrpg-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%">
+          <input class="mv-meta-input" id="nrpg-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%" oninput="genderAutoComplete('nrpg-genero-m','nrpg-genero-f','nrpg-genero-hint')">
+          <input class="mv-meta-input" id="nrpg-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%" oninput="genderAutoComplete('nrpg-genero-f','nrpg-genero-m','nrpg-genero-hint')">
+        </div>
+        <div id="nrpg-genero-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px">⚲ Genderless (ambos = 0)</div>
         </div>
       </div>
 
@@ -683,8 +685,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div style="margin-bottom:10px">
       <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <input class="mv-meta-input" id="erpg-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%">
-        <input class="mv-meta-input" id="erpg-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%">
+        <input class="mv-meta-input" id="erpg-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%" oninput="genderAutoComplete('erpg-genero-m','erpg-genero-f','erpg-genero-hint')">
+        <input class="mv-meta-input" id="erpg-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%" oninput="genderAutoComplete('erpg-genero-f','erpg-genero-m','erpg-genero-hint')">
+      </div>
+      <div id="erpg-genero-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px">⚲ Genderless (ambos = 0)</div>
       </div>
     </div>
 
@@ -1095,8 +1099,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div style="margin-bottom:10px">
       <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <input class="mv-meta-input" id="epk-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%">
-        <input class="mv-meta-input" id="epk-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%">
+        <input class="mv-meta-input" id="epk-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%" oninput="genderAutoComplete('epk-genero-m','epk-genero-f','epk-genero-hint')">
+        <input class="mv-meta-input" id="epk-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%" oninput="genderAutoComplete('epk-genero-f','epk-genero-m','epk-genero-hint')">
+      </div>
+      <div id="epk-genero-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px">⚲ Genderless (ambos = 0)</div>
       </div>
     </div>
 
@@ -1889,7 +1895,7 @@ async function openEditPokemon(id) {
 
   // Raridade, Gênero, Condição
   document.getElementById('epk-raridade').value = db.raridade || '';
-  { const g=(db.genero||'').split(','); document.getElementById('epk-genero-m').value=g[0]||''; document.getElementById('epk-genero-f').value=g[1]||''; }
+  { const g=(db.genero||'').split(','); document.getElementById('epk-genero-m').value=g[0]||''; document.getElementById('epk-genero-f').value=g[1]||''; const h=document.getElementById('epk-genero-hint'); if(h){const m=parseFloat(g[0])||0,f=parseFloat(g[1])||0; h.style.display=(m===0&&f===0&&db.genero)?'block':'none';} }
   document.getElementById('epk-condicao').value = db.condicao || '';
 
   // Base stats
@@ -3120,6 +3126,37 @@ async function saveRpgBio(id, ns) {
   } catch (e) { toast('Erro ao salvar bio: ' + e.message, 'err'); }
 }
 
+// ── Gender autocomplete ──────────────────────────────────────────────────────
+function genderAutoComplete(srcId, dstId, hintId) {
+  const src = document.getElementById(srcId);
+  const dst = document.getElementById(dstId);
+  const hint = document.getElementById(hintId);
+  if (!src || !dst) return;
+  const val = parseFloat(src.value);
+  if (!isNaN(val) && src.value.trim() !== '') {
+    if (val === 0) {
+      // Se digitou 0, não preenche o outro — pode ser Genderless
+      // mas só mostra hint se ambos já forem 0
+    } else {
+      // Autocomplete: preenche o outro com 100 - val
+      const complement = Math.max(0, Math.min(100, 100 - val));
+      // Formata sem decimais desnecessários
+      dst.value = Number(complement.toFixed(1)) % 1 === 0
+        ? Math.round(complement)
+        : complement.toFixed(1);
+    }
+  }
+  // Atualiza hint de Genderless
+  if (hint) {
+    const m = parseFloat(document.getElementById(srcId.replace(/-[mf]$/, '-m'))?.value) || 0;
+    const f = parseFloat(document.getElementById(srcId.replace(/-[mf]$/, '-f'))?.value) || 0;
+    hint.style.display = (m === 0 && f === 0 &&
+      (document.getElementById(srcId.replace(/-[mf]$/, '-m'))?.value.trim() !== '' ||
+       document.getElementById(srcId.replace(/-[mf]$/, '-f'))?.value.trim() !== ''))
+      ? 'block' : 'none';
+  }
+}
+
 function nrpgPreviewSprite(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -3380,7 +3417,7 @@ function openEditRpgPokemon(id) {
   document.getElementById('erpg-hab-mega').value = p.habilidade_mega || '';
   document.getElementById('erpg-raridade').value = p.raridade || 'comum';
   document.getElementById('erpg-condicao').value = p.condicao || '';
-  { const g=(p.genero||'').split(','); document.getElementById('erpg-genero-m').value=g[0]||''; document.getElementById('erpg-genero-f').value=g[1]||''; }
+  { const g=(p.genero||'').split(','); document.getElementById('erpg-genero-m').value=g[0]||''; document.getElementById('erpg-genero-f').value=g[1]||''; const h=document.getElementById('erpg-genero-hint'); if(h){const m=parseFloat(g[0])||0,f=parseFloat(g[1])||0; h.style.display=(m===0&&f===0&&p.genero)?'block':'none';} }
   document.getElementById('erpg-bio_pt').value = p.bio || '';
   // stats
   ['hp','atk','def','spa','spd','spe'].forEach(s => {
