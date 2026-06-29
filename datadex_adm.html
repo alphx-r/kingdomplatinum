@@ -997,9 +997,8 @@ function filterPk() { applyPkFilter(); }
 function applyPkFilter() {
   const q = document.getElementById('pk-search').value.toLowerCase();
   S.pk.filtered = S.pk.all.filter(pk => {
-    const nm = !q || pk.name.includes(q) || String(pk.id).includes(q);
-    const db = S.pk.dbMap[pk.id] || {};
-    const appr = !!db.approved;
+    const nm = !q || (pk.name||'').toLowerCase().includes(q) || String(pk.id).toLowerCase().includes(q);
+    const appr = pk._isRpg ? !!pk.approved : !!(S.pk.dbMap[pk.id] || {}).approved;
     const fOk = pkFilter === 'all' || (pkFilter === 'appr' && appr) || (pkFilter === 'pend' && !appr);
     return nm && fOk;
   });
@@ -1014,7 +1013,9 @@ function renderPkList() {
     return;
   }
   const total = S.pk.all.length;
-  const appr = Object.values(S.pk.dbMap).filter(d => d.approved).length;
+  const apprOficiais = Object.values(S.pk.dbMap).filter(d => d.approved).length;
+  const apprRpg = S.pk.all.filter(pk => pk._isRpg && pk.approved).length;
+  const appr = apprOficiais + apprRpg;
   document.getElementById('pk-total').textContent = total;
   document.getElementById('pk-appr').textContent = appr;
   document.getElementById('pk-pend').textContent = total - appr;
@@ -1052,12 +1053,14 @@ function renderPkList() {
   const grupos = {};
   REGIOES.forEach(r => { grupos[r.nome] = []; });
   items.forEach(pk => { const r = getRegiao(pk.id); if (grupos[r]) grupos[r].push(pk); });
+  Object.values(grupos).forEach(g => g.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true })));
 
   const TIPOS = ['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'];
   const RARIDADES = ['comum','incomum','raro','rarissimo'];
   const GENEROS = ['aleatorio','macho','femea','genderless'];
 
   function renderCard(pk, i) {
+    if (pk._isRpg) return rpgCardHtml(pk, i, 'pk');
     const db = S.pk.dbMap[pk.id] || {};
     const appr = !!db.approved;
     const hasPt = !!db.bio_pt;
@@ -1079,7 +1082,7 @@ function renderPkList() {
   REGIOES.forEach(regiao => {
     const grupo = grupos[regiao.nome];
     if (!grupo.length) return;
-    const apprG = grupo.filter(pk => !!(S.pk.dbMap[pk.id]||{}).approved).length;
+    const apprG = grupo.filter(pk => pk._isRpg ? !!pk.approved : !!(S.pk.dbMap[pk.id]||{}).approved).length;
     html += `
       <div class="regiao-header" onclick="toggleRegiao('regiao-${regiao.nome}')" style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;user-select:none">
         <span style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--brand);letter-spacing:.5px">${regiao.nome}</span>
@@ -1366,12 +1369,18 @@ async function loadPokemon() {
     const d = await r.json();
     // Fetch types in batches
     const items = d.results.map((p, i) => ({ name: p.name, id: i + 1, types: [], url: p.url }));
-    S.pk.all = items;
-    S.pk.filtered = items;
+
+    // Carrega também os Pokémon RPG/fakemon (Nendo e formas regionais) do pokemon.json,
+    // para que apareçam agrupados junto na lista por região (ex: Nendo).
+    const rpgAll = await rpgFetchAll();
+    const rpgItems = rpgAll.map(p => ({ ...p, _isRpg: true }));
+
+    S.pk.all = [...items, ...rpgItems];
+    S.pk.filtered = S.pk.all;
     renderPkList();
     updatePkStats();
 
-    // Load types in background batches
+    // Load types in background batches (apenas para os oficiais da PokéAPI)
     const BATCH = 50;
     for (let b = 0; b < items.length; b += BATCH) {
       await Promise.all(items.slice(b, b + BATCH).map(async pk => {
@@ -1382,9 +1391,9 @@ async function loadPokemon() {
           pk.id = d.id;
         } catch {}
       }));
-      if (b === 0) { S.pk.filtered = items; renderPkList(); }
+      if (b === 0) { S.pk.filtered = S.pk.all; renderPkList(); }
     }
-    S.pk.filtered = items;
+    S.pk.filtered = S.pk.all;
     renderPkList();
   } catch (e) {
     document.getElementById('pk-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar Pokémon</div><div class="empty-desc">${e.message}</div></div>`;
@@ -2184,6 +2193,45 @@ function rpgPill(t) {
   return `<span class="tpill" style="background:${c.bg};color:${c.c}">${t.toUpperCase()}</span>`;
 }
 
+function rpgCardHtml(p, i, ns) {
+  ns = ns || 'rpg'; // namespace dos ids no DOM — evita colisão quando o mesmo fakemon aparece em 2 abas
+  const hasBio = !!p.bio_pt;
+  const tipos = [p.tipo1, p.tipo2].filter(Boolean);
+  const label = p.name;
+  const biomas = (p.biomas || []).join(', ') || '—';
+  const spriteHtml = p.sprite
+    ? `<img class="rpg-entry-sprite" src="${p.sprite}" alt="${label}" onerror="this.style.display='none'">`
+    : `<div class="rpg-entry-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`;
+  return `<div class="rpg-entry${hasBio?' has-bio':''}" id="${ns}-entry-${p.id}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
+    <div class="rpg-entry-head" onclick="toggleRpgEntry('${p.id}','${ns}')">
+      ${spriteHtml}
+      <span class="rpg-entry-name">${p.id} — ${label}<small>${biomas} · ${p.raridade||'—'}${tipos.length?' · '+tipos.join('/'):''}${p.habilidade1?' · '+p.habilidade1:''}</small></span>
+      <span class="badge ${hasBio?'badge-appr':'badge-pend'}">${hasBio?'Com bio':'Sem bio'}</span>
+      <span class="chev">▼</span>
+    </div>
+    <div class="rpg-entry-body" id="${ns}-body-${p.id}">
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex-shrink:0">
+          ${p.sprite?`<img src="${p.sprite}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;background:var(--surface2)" onerror="this.src=''">`
+            :`<div style="width:80px;height:80px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:32px">❓</div>`}
+          <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:6px;justify-content:center">${tipos.map(rpgPill).join('')}</div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div class="field-row" style="margin-bottom:10px">
+            <div class="field-lbl pt">🇧🇷 Biografia (PT) — aparece na Pokédex</div>
+            <textarea class="field-pt${hasBio?' filled':''}" id="${ns}-bio_pt-${p.id}" rows="3" placeholder="Descrição em português…" oninput="this.classList.toggle('filled',!!this.value.trim())">${p.bio_pt||''}</textarea>
+          </div>
+        </div>
+      </div>
+      <div class="entry-foot">
+        <span class="save-ind" id="${ns}-ind-${p.id}">✓ Salvo!</span>
+        <button class="btn btn-outline btn-sm" onclick="openEditRpgPokemon('${p.id}')">✎ Editar dados RPG</button>
+        <button class="btn btn-success btn-sm" onclick="saveRpgBio('${p.id}','${ns}')">💾 Salvar bio</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderRpgList() {
   const con = document.getElementById('rpg-list');
   if (!con) return;
@@ -2192,60 +2240,26 @@ function renderRpgList() {
     con.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhum Pokémon RPG encontrado</div></div>`;
     return;
   }
-  con.innerHTML = items.map((p, i) => {
-    const hasBio = !!p.bio_pt;
-    const tipos = [p.tipo1, p.tipo2].filter(Boolean);
-    const label = p.name;
-    const biomas = (p.biomas || []).join(', ') || '—';
-    const spriteHtml = p.sprite
-      ? `<img class="rpg-entry-sprite" src="${p.sprite}" alt="${label}" onerror="this.style.display='none'">`
-      : `<div class="rpg-entry-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`;
-    return `<div class="rpg-entry${hasBio?' has-bio':''}" id="rpg-entry-${p.id}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
-      <div class="rpg-entry-head" onclick="toggleRpgEntry('${p.id}')">
-        ${spriteHtml}
-        <span class="rpg-entry-name">${p.id} — ${label}<small>${biomas} · ${p.raridade||'—'}${tipos.length?' · '+tipos.join('/'):''}${p.habilidade1?' · '+p.habilidade1:''}</small></span>
-        <span class="badge ${hasBio?'badge-appr':'badge-pend'}">${hasBio?'Com bio':'Sem bio'}</span>
-        <span class="chev">▼</span>
-      </div>
-      <div class="rpg-entry-body" id="rpg-body-${p.id}">
-        <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-          <div style="flex-shrink:0">
-            ${p.sprite?`<img src="${p.sprite}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;background:var(--surface2)" onerror="this.src=''">`
-              :`<div style="width:80px;height:80px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:32px">❓</div>`}
-            <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:6px;justify-content:center">${tipos.map(rpgPill).join('')}</div>
-          </div>
-          <div style="flex:1;min-width:200px">
-            <div class="field-row" style="margin-bottom:10px">
-              <div class="field-lbl pt">🇧🇷 Biografia (PT) — aparece na Pokédex</div>
-              <textarea class="field-pt${hasBio?' filled':''}" id="rpg-bio_pt-${p.id}" rows="3" placeholder="Descrição em português…" oninput="this.classList.toggle('filled',!!this.value.trim())">${p.bio_pt||''}</textarea>
-            </div>
-          </div>
-        </div>
-        <div class="entry-foot">
-          <span class="save-ind" id="rpg-ind-${p.id}">✓ Salvo!</span>
-          <button class="btn btn-outline btn-sm" onclick="openEditRpgPokemon('${p.id}')">✎ Editar dados RPG</button>
-          <button class="btn btn-success btn-sm" onclick="saveRpgBio('${p.id}')">💾 Salvar bio</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  con.innerHTML = items.map((p, i) => rpgCardHtml(p, i)).join('');
 }
 
-function toggleRpgEntry(id) {
-  const entry = document.getElementById('rpg-entry-' + id);
+function toggleRpgEntry(id, ns) {
+  ns = ns || 'rpg';
+  const entry = document.getElementById(`${ns}-entry-${id}`);
   if (entry) entry.classList.toggle('open');
 }
 
-async function saveRpgBio(id) {
+async function saveRpgBio(id, ns) {
+  ns = ns || 'rpg';
   const p = S.rpg.all.find(x => String(x.id) === String(id));
   if (!p) return;
-  const bioPt = document.getElementById(`rpg-bio_pt-${id}`)?.value.trim() || '';
+  const bioPt = document.getElementById(`${ns}-bio_pt-${id}`)?.value.trim() || '';
   try {
     await rpgPatch(id, { bio_pt: bioPt, approved: !!bioPt, updated_at: new Date().toISOString() });
     p.bio_pt = bioPt;
-    const ind = document.getElementById('rpg-ind-' + id);
+    const ind = document.getElementById(`${ns}-ind-${id}`);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
-    const entry = document.getElementById('rpg-entry-' + id);
+    const entry = document.getElementById(`${ns}-entry-${id}`);
     if (entry) {
       entry.classList.toggle('has-bio', !!bioPt);
       const badge = entry.querySelector('.badge');
