@@ -237,13 +237,13 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 /* ── Combobox (input + datalist autocomplete) ── */
 .cb-wrap{position:relative;width:100%}
-.cb-input{width:100%;font-size:12px;padding:6px 28px 6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;transition:border .2s;cursor:pointer}
+.cb-input{width:100%;font-size:12px;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;transition:border .2s;cursor:pointer;-webkit-appearance:none;appearance:none}
 .cb-input:focus{border-color:var(--brand-mid)}
 .cb-input.has-val{border-color:#80dfc0;background:var(--green-light)}
-.cb-arrow{position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:10px}
+.cb-arrow{display:none}
 /* moveset combobox inline */
 .moveset-row .cb-wrap{min-width:0;flex:1}
-.moveset-row .cb-input{font-size:12px;padding:4px 24px 4px 7px}
+.moveset-row .cb-input{font-size:12px;padding:4px 7px;-webkit-appearance:none;appearance:none}
 </style>
 </head>
 <body>
@@ -1142,7 +1142,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </div>
       <div>
         <div class="field-lbl en" style="margin-bottom:4px">Height <span style="font-weight:400;color:var(--muted)">(m)</span></div>
-        <input class="mv-meta-input" id="epk-height" type="number" min="0" step="0.1" placeholder="Ex: 0.4" style="width:100%;text-align:center">
+        <input class="mv-meta-input" id="epk-height" type="number" min="0" step="0.01" placeholder="Ex: 0.4" style="width:100%;text-align:center" onblur="epkNormalizeHeight(this)">
       </div>
       <div>
         <div class="field-lbl en" style="margin-bottom:4px">Egg Group</div>
@@ -1887,9 +1887,10 @@ async function openEditPokemon(id) {
   document.getElementById('epk-art-preview').src = artUrl;
 
   // Nome, slug, pokédex
-  const slugVal = pk.name || '';
-  document.getElementById('epk-nome').value = slugVal ? slugVal.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
-  document.getElementById('epk-slug').value = slugVal;
+  const slugVal = db.url_slug || pk.name || '';
+  const toSlugLocal = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/,'');
+  document.getElementById('epk-nome').value = slugVal ? slugVal.replace(/-/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase()) : '';
+  document.getElementById('epk-slug').value = toSlugLocal(slugVal);
   document.getElementById('epk-pokedex').value = idStr;
   document.getElementById('epk-genus').value = db.genus_en || pk._genus_en || '';
 
@@ -2107,6 +2108,17 @@ async function epkTranslate() {
   } catch(e) {
     if (btn) { btn.disabled = false; btn.innerHTML = '✦ Sugerir tradução'; }
     toast('Falha na tradução.', 'err');
+  }
+}
+
+
+function epkNormalizeHeight(el) {
+  const raw = el.value;
+  const v = parseFloat(raw);
+  if (isNaN(v) || v <= 0) return;
+  // Se o valor não tem ponto decimal, assume que está em cm e converte para m
+  if (!raw.includes('.') && !raw.includes(',')) {
+    el.value = (v / 100).toFixed(2);
   }
 }
 
