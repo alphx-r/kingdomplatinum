@@ -271,6 +271,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
 .moves-table .move-desc-row{display:none}
+.moves-table .desc-col{display:none}
+.moves-table td.move-name{cursor:pointer}
+.moves-table .move-row:hover .move-name{color:var(--brand-mid)}
 @media(max-width:720px){
   .hero{grid-template-columns:1fr}
   .hero-left{border-right:none;border-bottom:1.5px solid var(--border);padding-bottom:48px;min-height:220px}
@@ -1021,23 +1024,25 @@ async function renderRpgDetail(p, container){
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
           <td style="text-align:center"><span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;${!d?.style?'background:var(--surface2);color:var(--muted)':''}">${styleLabel}</span></td>
           <td class="desc-col" style="text-align:left;font-size:11px;color:var(--muted);line-height:1.4">${d?.desc||'—'}</td>
-        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="6" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
+        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="5" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
       }).join('')}</tbody></table></div>`;
   }
 
   // Parse moves from pokemon.json fields
   // Expects p.moves_level = [{name, lvl}], p.moves_egg = [name], p.moves_tutor = [name]
   // OR p.moves = [{name, method, lvl}] with method in 'level-up','egg','tutor'
-  let levelMoves=[], eggMoves=[], tutorMoves=[];
+  let levelMoves=[], tmMoves=[], eggMoves=[], tutorMoves=[];
   if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m.move||m,lvl:m.lvl||m.level||0});
+  if(p.moves_tm) tmMoves=p.moves_tm.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
   if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
   if(p.moves_tutor) tutorMoves=p.moves_tutor.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
   // fallback: unified moves array
-  if(!levelMoves.length&&!eggMoves.length&&!tutorMoves.length&&p.moves&&Array.isArray(p.moves)){
+  if(!levelMoves.length&&!tmMoves.length&&!eggMoves.length&&!tutorMoves.length&&p.moves&&Array.isArray(p.moves)){
     p.moves.forEach(m=>{
       const nm=typeof m==='string'?{name:m,method:'level-up',lvl:0}:m;
       const method=(nm.method||nm.learn_method||'level-up').toLowerCase();
-      if(method==='egg') eggMoves.push({name:nm.name});
+      if(method==='machine') tmMoves.push({name:nm.name});
+      else if(method==='egg') eggMoves.push({name:nm.name});
       else if(method==='tutor') tutorMoves.push({name:nm.name});
       else levelMoves.push({name:nm.name,lvl:nm.lvl||nm.level||0});
     });
@@ -1107,16 +1112,19 @@ async function renderRpgDetail(p, container){
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
       <button class="moves-tab active" onclick="switchMovesTab(this,'rpg-mv-level')">Moves por Nível</button>
+      <button class="moves-tab" onclick="switchMovesTab(this,'rpg-mv-tm')">TM</button>
       <button class="moves-tab" onclick="switchMovesTab(this,'rpg-mv-egg')">Egg Moves</button>
       <button class="moves-tab" onclick="switchMovesTab(this,'rpg-mv-tutor')">Tutor Moves</button>
     </div>
     <div class="moves-panel active" id="rpg-mv-level"><div class="moves-empty">Carregando…</div></div>
+    <div class="moves-panel" id="rpg-mv-tm"><div class="moves-empty">Carregando…</div></div>
     <div class="moves-panel" id="rpg-mv-egg"><div class="moves-empty">Carregando…</div></div>
     <div class="moves-panel" id="rpg-mv-tutor"><div class="moves-empty">Carregando…</div></div>
   </div>`;
 
   // Load moves async
   rpgMovesTable(levelMoves,true).then(html=>{const el=document.getElementById('rpg-mv-level');if(el)el.innerHTML=html;});
+  rpgMovesTable(tmMoves,false).then(html=>{const el=document.getElementById('rpg-mv-tm');if(el)el.innerHTML=html;});
   rpgMovesTable(eggMoves,false).then(html=>{const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
   rpgMovesTable(tutorMoves,false).then(html=>{const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
 
@@ -1211,10 +1219,11 @@ async function renderDetail(p,s,container){
   if(id<1025){try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id+1}`);const d=await r.json();nextHtml=`<button class="nav-arrow right" onclick="goDetail('${d.name}')"><span class="adir">›</span><span class="aname"><strong>#${String(id+1).padStart(3,'0')}</strong> ${cap(d.name)}</span></button>`;}catch{}}
 
   // Moves
-  let levelMoves=[],eggMoves=[],tutorMoves=[];
+  let levelMoves=[],tmMoves=[],eggMoves=[],tutorMoves=[];
   p.moves.forEach(m=>{
     m.version_group_details.forEach(vg=>{
       if(vg.move_learn_method.name==='level-up'&&!levelMoves.find(x=>x.name===m.move.name))levelMoves.push({name:m.move.name,lvl:vg.level_learned_at});
+      else if(vg.move_learn_method.name==='machine'&&!tmMoves.find(x=>x.name===m.move.name))tmMoves.push({name:m.move.name});
       else if(vg.move_learn_method.name==='egg'&&!eggMoves.find(x=>x.name===m.move.name))eggMoves.push({name:m.move.name});
       else if(vg.move_learn_method.name==='tutor'&&!tutorMoves.find(x=>x.name===m.move.name))tutorMoves.push({name:m.move.name});
     });
@@ -1317,7 +1326,7 @@ async function renderDetail(p,s,container){
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
           <td style="text-align:center"><span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;${!d?.style?'background:var(--surface2);color:var(--muted)':''}">${styleLabel}</span></td>
           <td class="desc-col" style="text-align:left;font-size:11px;color:var(--muted);line-height:1.4">${d?.desc||'—'}</td>
-        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="6" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
+        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="5" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
       }).join('')}</tbody></table></div>`;
   }
 
@@ -1405,10 +1414,12 @@ async function renderDetail(p,s,container){
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
       <button class="moves-tab active" onclick="switchMovesTab(this,'mv-level')">Moves por Nível</button>
+      <button class="moves-tab" onclick="switchMovesTab(this,'mv-tm')">TM</button>
       <button class="moves-tab" onclick="switchMovesTab(this,'mv-egg')">Egg Moves</button>
       <button class="moves-tab" onclick="switchMovesTab(this,'mv-tutor')">Tutor Moves</button>
     </div>
     <div class="moves-panel active" id="mv-level"><div class="moves-empty">Carregando…</div></div>
+    <div class="moves-panel" id="mv-tm"><div class="moves-empty">Carregando…</div></div>
     <div class="moves-panel" id="mv-egg"><div class="moves-empty">Carregando…</div></div>
     <div class="moves-panel" id="mv-tutor"><div class="moves-empty">Carregando…</div></div>
   </div>`;
@@ -1416,6 +1427,7 @@ async function renderDetail(p,s,container){
   if(evoHtml) _evoSpeciesNames.forEach(n=>appendMegas(n, container));
   // Load moves async after DOM
   movesTable(levelMoves,true).then(html=>{const el=document.getElementById('mv-level');if(el)el.innerHTML=html;});
+  movesTable(tmMoves,false).then(html=>{const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
   movesTable(eggMoves,false).then(html=>{const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
   movesTable(tutorMoves,false).then(html=>{const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
 }
