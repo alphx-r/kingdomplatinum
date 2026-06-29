@@ -820,13 +820,21 @@ async function renderRpgDetail(p, container){
   }));
 
   // ── Gender ──
-  const genderRaw=p.genero||'';
+  const genderRaw=(p.genero||'').trim();
   let genderHtml='—';
-  if(genderRaw==='genderless') genderHtml='Sem gênero (⚲)';
-  else if(genderRaw==='macho')  genderHtml=`<span style="color:#5588cc;font-weight:700">100% Male</span>, <span style="color:#cc5588;font-weight:700">0% Female</span>`;
-  else if(genderRaw==='femea')  genderHtml=`<span style="color:#5588cc;font-weight:700">0% Male</span>, <span style="color:#cc5588;font-weight:700">100% Female</span>`;
-  else if(genderRaw==='1d2')    genderHtml=`<span style="color:#5588cc;font-weight:700">50% Male</span>, <span style="color:#cc5588;font-weight:700">50% Female</span>`;
-  else if(genderRaw)            genderHtml=genderRaw;
+  if(!genderRaw||genderRaw==='genderless'||/sem gên/i.test(genderRaw)){
+    genderHtml='Sem gênero (⚲)';
+  } else {
+    const mMatch=genderRaw.match(/(\d+(?:\.\d+)?)\s*%\s*(?:macho|male)/i);
+    const fMatch=genderRaw.match(/(\d+(?:\.\d+)?)\s*%\s*(?:f[êe]mea|female)/i);
+    if(mMatch||fMatch){
+      const m=mMatch?parseFloat(mMatch[1]):(fMatch?100-parseFloat(fMatch[1]):50);
+      const f=fMatch?parseFloat(fMatch[1]):100-m;
+      genderHtml=`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+    } else {
+      genderHtml=genderRaw;
+    }
+  }
 
   // ── Egg groups ──
   const eggs=[p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—';
@@ -987,9 +995,9 @@ async function renderRpgDetail(p, container){
   // Expects p.moves_level = [{name, lvl}], p.moves_egg = [name], p.moves_tutor = [name]
   // OR p.moves = [{name, method, lvl}] with method in 'level-up','egg','tutor'
   let levelMoves=[], eggMoves=[], tutorMoves=[];
-  if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m,lvl:m.lvl||m.level||0});
-  if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m});
-  if(p.moves_tutor) tutorMoves=p.moves_tutor.map(m=>typeof m==='string'?{name:m}:{name:m.name||m});
+  if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m.move||m,lvl:m.lvl||m.level||0});
+  if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
+  if(p.moves_tutor) tutorMoves=p.moves_tutor.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
   // fallback: unified moves array
   if(!levelMoves.length&&!eggMoves.length&&!tutorMoves.length&&p.moves&&Array.isArray(p.moves)){
     p.moves.forEach(m=>{
