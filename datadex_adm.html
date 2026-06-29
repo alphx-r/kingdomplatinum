@@ -473,14 +473,34 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
       </div>
 
-      <!-- Gênero (fora dos biomas) -->
-      <div style="margin-bottom:10px">
-        <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input class="mv-meta-input" id="nrpg-genero-m" type="number" min="0" max="100" step="0.1" placeholder="% Male" style="width:50%" oninput="genderAutoComplete('nrpg-genero-m','nrpg-genero-f','nrpg-genero-hint')">
-          <input class="mv-meta-input" id="nrpg-genero-f" type="number" min="0" max="100" step="0.1" placeholder="% Female" style="width:50%" oninput="genderAutoComplete('nrpg-genero-f','nrpg-genero-m','nrpg-genero-hint')">
+      <!-- Gênero + Weight + Height + Egg Group -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(% M / % F)</span></div>
+          <div style="display:flex;gap:5px;align-items:center">
+            <input class="mv-meta-input" id="nrpg-genero-m" type="number" min="0" max="100" step="0.1" placeholder="♂ %" style="width:50%;text-align:center" oninput="genderAutoComplete('nrpg-genero-m','nrpg-genero-f','nrpg-genero-hint')">
+            <input class="mv-meta-input" id="nrpg-genero-f" type="number" min="0" max="100" step="0.1" placeholder="♀ %" style="width:50%;text-align:center" oninput="genderAutoComplete('nrpg-genero-f','nrpg-genero-m','nrpg-genero-hint')">
+          </div>
+          <div id="nrpg-genero-hint" style="display:none;font-size:10px;color:var(--muted);margin-top:3px">⚲ Genderless</div>
         </div>
-        <div id="nrpg-genero-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px">⚲ Genderless (ambos = 0)</div>
+        <div>
+          <div class="field-lbl en" style="margin-bottom:4px">Weight</div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <input class="mv-meta-input" id="nrpg-weight" type="number" min="0" step="0.1" placeholder="Ex: 6.9" style="flex:1;text-align:center">
+            <span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">kg</span>
+          </div>
+        </div>
+        <div>
+          <div class="field-lbl en" style="margin-bottom:4px">Height</div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <input class="mv-meta-input" id="nrpg-height" type="number" min="0" step="0.01" placeholder="Ex: 0.4" style="flex:1;text-align:center">
+            <span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">m</span>
+          </div>
+        </div>
+        <div>
+          <div class="field-lbl en" style="margin-bottom:4px">Egg Group</div>
+          <input class="mv-meta-input" id="nrpg-egg-group" type="text" placeholder="Ex: Field, Fairy" style="width:100%">
+        </div>
       </div>
 
       <!-- Sprites -->
@@ -1977,7 +1997,7 @@ async function openEditPokemon(id) {
   // Nome, slug, pokédex
   const slugVal = db.url_slug || pk.name || '';
   const toSlugLocal = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/,'');
-  document.getElementById('epk-nome').value = slugVal ? slugVal.replace(/-/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase()) : '';
+  document.getElementById('epk-nome').value = slugVal ? slugVal.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
   document.getElementById('epk-slug').value = toSlugLocal(slugVal);
   document.getElementById('epk-pokedex').value = idStr;
   document.getElementById('epk-genus').value = db.genus_en || pk._genus_en || '';
@@ -3238,7 +3258,7 @@ function rpgCardHtml(p, i, ns) {
   ns = ns || 'rpg'; // namespace dos ids no DOM — evita colisão quando o mesmo fakemon aparece em 2 abas
   const hasBio = !!(p.bio || p.bio_pt);
   const tipos = [p.tipo1, p.tipo2].filter(Boolean);
-  const label = p.name;
+  const label = cap(p.name);
   const biomas = (p.biomas || []).join(', ') || '—';
   const spriteHtml = p.sprite
     ? `<img class="rpg-entry-sprite" src="${p.sprite}" alt="${label}" onerror="this.style.display='none'">`
@@ -3420,7 +3440,7 @@ function nrpgRemoveBioma(nome) {
 function nrpgResetForm() {
   document.querySelectorAll('#nrpg-tipo1-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('#nrpg-tipo2-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
-  ['nrpg-nome','nrpg-pokedex','nrpg-genus','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-condicao','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nrpg-nome','nrpg-pokedex','nrpg-genus','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-condicao','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-sprite-file','nrpg-sprite-shiny-file'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   const sp = document.getElementById('nrpg-sprite-preview'); if (sp) { sp.innerHTML = '<span style="font-size:18px;opacity:.3">🖼</span>'; delete sp.dataset.b64; }
   const ss = document.getElementById('nrpg-sprite-shiny-preview'); if (ss) { ss.innerHTML = '<span style="font-size:18px;opacity:.35">✨</span>'; delete ss.dataset.b64; }
@@ -3448,6 +3468,9 @@ async function saveNewRpgPokemon() {
   const _gf = document.getElementById('nrpg-genero-f')?.value.trim();
   const genero  = (_gm !== '' || _gf !== '') ? `${_gm||0},${_gf||0}` : null;
   const condicao = document.getElementById('nrpg-condicao')?.value.trim() || null;
+  const weight   = parseFloat(document.getElementById('nrpg-weight')?.value) || null;
+  const height   = parseFloat(document.getElementById('nrpg-height')?.value) || null;
+  const eggGroup = document.getElementById('nrpg-egg-group')?.value.trim() || null;
   const habilidade1 = abilityToSlug(document.getElementById('nrpg-hab1')?.value) || '';
   const habilidade2 = abilityToSlug(document.getElementById('nrpg-hab2')?.value) || '';
   const habilidadeOculta = abilityToSlug(document.getElementById('nrpg-hab-oculta')?.value) || null;
@@ -3507,7 +3530,7 @@ async function saveNewRpgPokemon() {
       habilidade_oculta: habilidadeOculta,
       habilidade_mega: habilidadeMega,
       hp, atk, def, spa, spd, spe,
-      raridade, genero,
+      raridade, genero, weight, height, egg_group: eggGroup,
       biomas,
       condicao: condicao,
       bio,
