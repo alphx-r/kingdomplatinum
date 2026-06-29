@@ -2299,24 +2299,25 @@ async function savePkModal(approve) {
   let spriteShiny = document.getElementById('epk-sprite_shiny').value.trim() || null;
   const b64      = document.getElementById('epk-sprite-preview').dataset.b64;
   const b64Shiny = document.getElementById('epk-sprite-shiny-preview').dataset.b64;
-  if (b64 && b64.startsWith('data:')) {
-    toast('Enviando sprite…', 'ok');
-    const ext = b64.includes('image/png') ? 'png' : 'jpg';
-    const uploaded = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`);
-    if (uploaded) {
+  try {
+    if (b64 && b64.startsWith('data:')) {
+      toast('Enviando sprite…', 'ok');
+      const ext = b64.includes('image/png') ? 'png' : 'jpg';
+      const uploaded = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`);
       sprite = uploaded + '?t=' + Date.now();
       delete document.getElementById('epk-sprite-preview').dataset.b64;
       document.getElementById('epk-sprite').value = sprite;
     }
-  }
-  if (b64Shiny && b64Shiny.startsWith('data:')) {
-    const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
-    const uploaded = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`);
-    if (uploaded) {
+    if (b64Shiny && b64Shiny.startsWith('data:')) {
+      const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
+      const uploaded = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`);
       spriteShiny = uploaded + '?t=' + Date.now();
       delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
       document.getElementById('epk-sprite_shiny').value = spriteShiny;
     }
+  } catch(uploadErr) {
+    toast('Erro no upload: ' + uploadErr.message, 'err');
+    return;
   }
 
   // Tipos via tags
@@ -2929,14 +2930,20 @@ function openNewPokemon() {
 }
 
 async function uploadImgStorage(b64, bucket, path) {
-  const res = await fetch(b64);
-  const blob = await res.blob();
+  // Converte data URL para Blob diretamente (mais robusto que fetch(b64))
+  const [header, data] = b64.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+
   const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/${bucket}/${path}`, {
     method: 'POST',
     headers: {
       'apikey': SUPA_KEY,
       'Authorization': `Bearer ${SUPA_KEY}`,
-      'Content-Type': blob.type,
+      'Content-Type': mime,
       'x-upsert': 'true'
     },
     body: blob
@@ -2944,7 +2951,7 @@ async function uploadImgStorage(b64, bucket, path) {
   if (!uploadRes.ok) {
     const err = await uploadRes.text();
     console.error('[storage] erro upload:', uploadRes.status, err);
-    return null;
+    throw new Error('Falha no upload: ' + uploadRes.status + ' — ' + err);
   }
   return `${SUPA_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
@@ -3661,28 +3668,30 @@ async function saveEditRpgPokemon() {
   if (!tipo1) { toast('Selecione o Tipo Primário.', 'err'); return; }
   if (tipo2 && tipo2 === tipo1) { toast('Tipo Secundário não pode ser igual ao Primário.', 'err'); return; }
 
-  // sprite upload ou manter URL
+  // sprite upload ou manter URL existente
   let sprite = document.getElementById('erpg-sprite')?.value.trim() || null;
   let spriteShiny = document.getElementById('erpg-sprite_shiny')?.value.trim() || null;
   const spPrev = document.getElementById('erpg-sprite-preview');
   const ssPrev = document.getElementById('erpg-sprite-shiny-preview');
-  if (spPrev?.dataset.b64?.startsWith('data:')) {
-    const ext = spPrev.dataset.b64.includes('image/png') ? 'png' : 'jpg';
-    const uploaded = await uploadImgStorage(spPrev.dataset.b64, 'pokemons', `${id}.${ext}`);
-    if (uploaded) {
-      sprite = uploaded + '?t=' + Date.now(); // cache-bust para atualizar visualmente
+  try {
+    if (spPrev?.dataset.b64?.startsWith('data:')) {
+      toast('Enviando sprite…', 'ok');
+      const ext = spPrev.dataset.b64.includes('image/png') ? 'png' : 'jpg';
+      const uploaded = await uploadImgStorage(spPrev.dataset.b64, 'pokemons', `${id}.${ext}`);
+      sprite = uploaded + '?t=' + Date.now();
       delete spPrev.dataset.b64;
       document.getElementById('erpg-sprite').value = sprite;
     }
-  }
-  if (ssPrev?.dataset.b64?.startsWith('data:')) {
-    const ext = ssPrev.dataset.b64.includes('image/png') ? 'png' : 'jpg';
-    const uploaded = await uploadImgStorage(ssPrev.dataset.b64, 'pokemons', `${id}-shiny.${ext}`);
-    if (uploaded) {
+    if (ssPrev?.dataset.b64?.startsWith('data:')) {
+      const ext = ssPrev.dataset.b64.includes('image/png') ? 'png' : 'jpg';
+      const uploaded = await uploadImgStorage(ssPrev.dataset.b64, 'pokemons', `${id}-shiny.${ext}`);
       spriteShiny = uploaded + '?t=' + Date.now();
       delete ssPrev.dataset.b64;
       document.getElementById('erpg-sprite_shiny').value = spriteShiny;
     }
+  } catch(uploadErr) {
+    toast('Erro no upload: ' + uploadErr.message, 'err');
+    return;
   }
 
   try {
