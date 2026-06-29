@@ -771,11 +771,12 @@ async function renderRpgDetail(p, container){
   const primaryType=tipos[0]||'normal';
   applyTypeTheme(primaryType);
   const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
-  const label=p.name;
+  // 1. Label: nome legível com todas as palavras capitalizadas
+  const label=titleCase(p.name);
   const pref=idPrefix(p.id);
   const regionName={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
   const baseNum=pref?String(p.id).slice(1).padStart(4,'0'):String(p.id).padStart(4,'0');
-  const numDisplay=pref?`${regionName} #${baseNum}`:`#${baseNum}`;
+  const numDisplay=`#${String(p.id)}`;
   const originLabel=pref&&pref!=='N'?`Forma Regional de ${regionName}`:'Pokémon Nendo — Kingdom Platinum';
   document.title=`${label} — NationalDex`;
 
@@ -802,32 +803,37 @@ async function renderRpgDetail(p, container){
     p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
   ].filter(Boolean);
   // fetch descriptions from PokeAPI if available
-  const abHtml=await Promise.all(habEntries.map(async(h,i)=>{
+  let rpgAbCounter=0;
+  const abHtml=await Promise.all(habEntries.map(async(h)=>{
     let desc='';
     try{
       const r=await fetch(`https://pokeapi.co/api/v2/ability/${h.name.toLowerCase().replace(/ /g,'-')}`);
       if(r.ok){const d=await r.json();const en=d.effect_entries?.find(e=>e.language.name==='en');desc=en?en.short_effect:'';}
     }catch{}
-    // fallback: check localStorage like official
     if(!desc){try{const s=JSON.parse(localStorage.getItem('kdex_abilities_pt'))||{};desc=s[h.name.toLowerCase().replace(/ /g,'-')]||'';}catch{}}
-    return `<div class="ability-entry">
-      <span class="ability-idx">${h.ha?'':i+1+'.'}</span>
-      <div>
-        ${h.ha?`<span class="ha-badge">HA</span>`:'' }
-        <span class="ability-name-lbl ${h.ha?'ha':''}">${h.name.toUpperCase().replace(/-/g,' ')}</span>${desc?`<span class="ability-desc-txt"> — ${desc}</span>`:''}
-      </div>
+    if(!h.ha) rpgAbCounter++;
+    return `<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
+      ${h.ha?`<span class="ha-badge">HA</span>`:`<span class="ability-idx">${rpgAbCounter}.</span>`}
+      <span class="ability-name-lbl ${h.ha?'ha':''}">${h.name.toUpperCase().replace(/-/g,' ')}</span>
+      ${desc?`: <span style="color:var(--text);font-weight:400;font-size:11px">${desc}</span>`:''}
     </div>`;
   }));
 
   // ── Gender ──
-  const genderMap={macho:'100% ♂',femea:'100% ♀',genderless:'Sem gênero','1d2':'Aleatório (♂/♀)'};
-  const genderHtml=genderMap[p.genero]||p.genero||'—';
+  const genderRaw=p.genero||'';
+  let genderHtml='—';
+  if(genderRaw==='genderless') genderHtml='Sem gênero (⚲)';
+  else if(genderRaw==='macho')  genderHtml=`<span style="color:#5588cc;font-weight:700">100% Macho</span>`;
+  else if(genderRaw==='femea')  genderHtml=`<span style="color:#cc5588;font-weight:700">100% Fêmea</span>`;
+  else if(genderRaw==='1d2')    genderHtml=`<span style="color:#5588cc;font-weight:700">50% Macho</span> / <span style="color:#cc5588;font-weight:700">50% Fêmea</span>`;
+  else if(genderRaw)            genderHtml=genderRaw;
 
   // ── Egg groups ──
   const eggs=[p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—';
 
   // ── Genus / Classification ──
-  const genus=p.genus_en||p.genus_pt||'Pokémon';
+  const genusRaw=p.genus_en||p.genus_pt||'';
+  const genus=genusRaw?(genusRaw.toLowerCase().endsWith('pokémon')||genusRaw.toLowerCase().endsWith('pokemon')?genusRaw:genusRaw+' Pokémon'):'Pokémon';
 
   // ── Shiny ──
   const hasShiny=!!p.sprite_shiny;
