@@ -421,7 +421,15 @@ function calcDmg(types){
 /* ═══════════════════════════════════════
    ROTEAMENTO via ?pokemon=slug
 ═══════════════════════════════════════ */
-function getParam(){const m=window.location.pathname.match(/\/nationaldex\/(.+)$/);return m?m[1]:null;}
+function getParam(){const m=window.location.pathname.match(/\/nationaldex\/(.+)$/);return m?decodeURIComponent(m[1]):null;}
+
+function slugify(str){
+  return String(str||'')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // remove acentos
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'');
+}
 
 function goList(){
   resetTypeTheme();
@@ -433,14 +441,12 @@ function goList(){
   document.title='NationalDex — Kingdom Platinum';
 }
 
-function goDetail(slug){
+function goDetail(slug,urlSlugOverride){
   const base=window.location.pathname.replace(/\/nationaldex(\/.*)?$/,'')||'';
-  // RPG pokemon: não vai na URL para evitar problemas com roteamento server-side
-  if(slug.startsWith('__rpg__')){
-    history.pushState({pokemon:slug},'',`${base}/nationaldex`);
-  } else {
-    history.pushState({pokemon:slug},'',`${base}/nationaldex/${slug}`);
-  }
+  // urlSlugOverride: texto amigável a exibir na URL (ex: nome do fakemon).
+  // Se ausente, usa o próprio slug (caso de Pokémon oficiais, cujo "slug" já é o nome).
+  const urlSlug=urlSlugOverride||slug;
+  history.pushState({pokemon:slug},'',`${base}/nationaldex/${encodeURIComponent(urlSlug)}`);
   showDetail(slug);
 }
 
@@ -501,6 +507,15 @@ async function loadRpgData(){
 // Retorna o prefixo de região de um id customizado (A, G, H, P, N) ou null
 function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1].toUpperCase():null; }
 
+// Gera o slug usado na URL para um Pokémon RPG. Se houver outro Pokémon RPG
+// com o mesmo nome (slugificado), desambigua anexando o id (ex: desert-tinyvine-n0719).
+function rpgUrlSlug(p){
+  const base=slugify(p.name)||String(p.id);
+  const colisoes=_rpgPokemon.filter(o=>slugify(o.name)===base);
+  if(colisoes.length>1) return `${base}-${slugify(p.id)}`;
+  return base;
+}
+
 async function initList(){
   // Carrega dados RPG em paralelo com PokeAPI
   const [pokeApiRes] = await Promise.all([
@@ -531,7 +546,8 @@ function gridCard(p,i){
     const pref=idPrefix(p.id);
     const regionLabel={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
     const numLabel=pref?`${regionLabel} #${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
-    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}')">
+    const urlSlug=rpgUrlSlug(p);
+    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
       <div class="pk-num" style="color:var(--brand-mid)">${numLabel}</div>
       ${spriteUrl?`<img class="pk-art" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pk-art" style="display:flex;align-items:center;justify-content:center;font-size:44px">❓</div>`}
@@ -557,7 +573,8 @@ function listRow(p,i){
     const pref=idPrefix(p.id);
     const regionLabel={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
     const numLabel=pref?`${regionLabel} #${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
-    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}')">
+    const urlSlug=rpgUrlSlug(p);
+    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
       <div class="pl-num" style="color:var(--brand-mid)">${numLabel}</div>
       ${p.sprite?`<img class="pl-sprite" loading="lazy" src="${p.sprite}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pl-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`}
@@ -694,15 +711,27 @@ async function loadPokemon(slug){
   const dc=document.getElementById('detail-content');
   dc.innerHTML=`<div class="spinner-wrap"><div class="spinner dark"></div><div class="spinner-text dark">Consultando registros…</div></div>`;
 
-  // Detecta Pokémon RPG customizado
+  // Caso 1: navegação interna (clique no card) já manda o id prefixado
   if(slug.startsWith('__rpg__')){
     const pkId=decodeURIComponent(slug.replace('__rpg__',''));
     await loadRpgData();
     const rpgPk=_rpgPokemon.find(p=>String(p.id)===pkId);
     if(rpgPk){renderRpgDetail(rpgPk,dc);}
-    else{dc.innerHTML=`<div style="text-align:center;padding:60px"><div style="font-size:40px;margin-bottom:12px">⚠️</div><div style="font-family:var(--font-title);font-size:13px;color:var(--muted)">Pokémon não encontrado</div><button onclick="goList()" style="margin-top:16px;font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body)">← Voltar à Pokédex</button></div>`;}
+    else{showNotFound(dc);}
     return;
   }
+
+  // Caso 2: deep-link / reload — a URL só tem o slug amigável (ex: desert-tinyvine
+  // ou, em caso de nomes repetidos, desert-tinyvine-n0719). Tenta resolver contra
+  // os Pokémon RPG primeiro (slug completo, depois id puro, depois nome simples),
+  // e só then cai para a PokeAPI (Pokémon oficiais usam o próprio nome como slug).
+  await loadRpgData();
+  const slugNorm=slugify(slug);
+  const rpgMatch=
+    _rpgPokemon.find(p=>rpgUrlSlug(p)===slugNorm) ||
+    _rpgPokemon.find(p=>String(p.id).toLowerCase()===slug.toLowerCase()) ||
+    _rpgPokemon.find(p=>slugify(p.name)===slugNorm);
+  if(rpgMatch){renderRpgDetail(rpgMatch,dc);return;}
 
   try{
     if(!detailCache[slug]){
@@ -716,12 +745,16 @@ async function loadPokemon(slug){
     const{p,s}=detailCache[slug];
     renderDetail(p,s,dc);
   }catch{
-    dc.innerHTML=`<div style="text-align:center;padding:60px">
-      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-      <div style="font-family:var(--font-title);font-size:13px;color:var(--muted)">Pokémon não encontrado</div>
-      <button onclick="goList()" style="margin-top:16px;font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body)">← Voltar à Pokédex</button>
-    </div>`;
+    showNotFound(dc);
   }
+}
+
+function showNotFound(dc){
+  dc.innerHTML=`<div style="text-align:center;padding:60px">
+    <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+    <div style="font-family:var(--font-title);font-size:13px;color:var(--muted)">Pokémon não encontrado</div>
+    <button onclick="goList()" style="margin-top:16px;font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body)">← Voltar à Pokédex</button>
+  </div>`;
 }
 
 // Renderiza página de detalhe para Pokémon RPG customizado
