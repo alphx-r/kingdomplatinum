@@ -2148,20 +2148,19 @@ async function savePkModal(approve) {
       genero, raridade, biomas: biomas.length ? biomas : null,
       condicao: condicao,
       hp, atk, def, spa, spd, spe,
-      moves_level: moves_level.length ? moves_level : null,
-      moves_egg:   moves_egg.length   ? moves_egg   : null,
-      moves_tutor: moves_tutor.length ? moves_tutor : null,
       is_fakemon: !!pk._isRpg,
       source: pk._isRpg ? (pk.source||'rpg') : 'pokeapi',
       approved: approve,
       updated_at: new Date().toISOString()
     };
+    // Moves só vão pro pokemon.json (Supabase não tem essas colunas)
+    const rowJson = { ...row, moves_level: moves_level.length ? moves_level : null, moves_egg: moves_egg.length ? moves_egg : null, moves_tutor: moves_tutor.length ? moves_tutor : null };
     await sbUpsert('pokemons', row);
     if (renaming) pk.id = newId;
-    PK.set(String(newId), row);
+    PK.set(String(newId), rowJson);
     await PK.save();
-    S.pk.dbMap[newId] = row;
-    if (pk._isRpg) Object.assign(pk, row);
+    S.pk.dbMap[newId] = rowJson;
+    if (pk._isRpg) Object.assign(pk, rowJson);
     updatePkStats();
     applyPkFilter();
     toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
