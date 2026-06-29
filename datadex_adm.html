@@ -369,6 +369,12 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </div>
       <style>@media(max-width:640px){#nrpg-inline-form .two-col,#nrpg-inline-form > div[style*="grid-template-columns:1fr 1fr 110px"]{grid-template-columns:1fr!important}}</style>
 
+      <!-- Classificação -->
+      <div style="margin-bottom:10px">
+        <div class="field-lbl en" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(EN)</span></div>
+        <input class="mv-meta-input" id="nrpg-genus" type="text" placeholder="Ex: Seed Pokémon" style="width:100%">
+      </div>
+
       <!-- Habilidades -->
       <div class="two-col" style="margin-bottom:10px">
         <div>
@@ -1010,6 +1016,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <!-- Nome + Slug + Pokédex -->
     <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:10px;margin-bottom:10px">
       <div>
+        <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
+        <input class="mv-meta-input" id="epk-nome" type="text" placeholder="Ex: Pikachu" style="width:100%" oninput="epkSyncSlug()">
+      </div>
+      <div>
         <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted);font-size:10px">(gerado automático)</span></div>
         <input class="mv-meta-input" id="epk-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)">
       </div>
@@ -1017,6 +1027,12 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
         <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%">
       </div>
+    </div>
+
+    <!-- Classificação -->
+    <div style="margin-bottom:10px">
+      <div class="field-lbl en" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(EN)</span></div>
+      <input class="mv-meta-input" id="epk-genus" type="text" placeholder="Ex: Seed Pokémon" style="width:100%">
     </div>
 
     <!-- Habilidades -->
@@ -1821,8 +1837,11 @@ async function openEditPokemon(id) {
   document.getElementById('epk-art-preview').src = artUrl;
 
   // Nome, slug, pokédex
-  document.getElementById('epk-slug').value = pk.name || '';
+  const slugVal = pk.name || '';
+  document.getElementById('epk-nome').value = slugVal ? slugVal.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+  document.getElementById('epk-slug').value = slugVal;
   document.getElementById('epk-pokedex').value = idStr;
+  document.getElementById('epk-genus').value = db.genus_en || pk._genus_en || '';
 
   // Sprites (URL)
   document.getElementById('epk-sprite').value = db.sprite || '';
@@ -2037,13 +2056,30 @@ async function epkTranslate() {
   }
 }
 
+function epkSyncSlug() {
+  const nome = document.getElementById('epk-nome')?.value.trim() || '';
+  const slugEl = document.getElementById('epk-slug');
+  if (slugEl) slugEl.value = nome ? nome.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : '';
+}
+
 async function savePkModal(approve) {
   const id = document.getElementById('epk-id').value;
   const pk = S.pk.all.find(p => String(p.id) === String(id));
   if (!pk) return;
 
   const bioPt   = document.getElementById('epk-bio_pt').value.trim();
-  const slug    = document.getElementById('epk-slug').value.trim() || pk.name;
+  const nomeRaw = document.getElementById('epk-nome').value.trim();
+  const slugRaw = document.getElementById('epk-slug').value.trim();
+  const slug    = slugRaw || (nomeRaw ? nomeRaw.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : pk.name);
+  const genusEn = document.getElementById('epk-genus').value.trim() || null;
+
+  // Pokédex: permite renumerar o Pokémon (id) através deste campo
+  const newIdRaw = document.getElementById('epk-pokedex').value.trim();
+  const newId = newIdRaw || id;
+  if (String(newId) !== String(id)) {
+    const conflito = S.pk.all.some(p => String(p.id) === String(newId) && String(p.id) !== String(id)) || !!PK.get(String(newId));
+    if (conflito) { toast(`Já existe um Pokémon com o número "${newId}".`, 'err'); return; }
+  }
 
   // Sprite: prioriza arquivo carregado, depois URL
   let sprite     = document.getElementById('epk-sprite').value.trim() || null;
@@ -2053,12 +2089,12 @@ async function savePkModal(approve) {
   if (b64 && b64.startsWith('data:')) {
     toast('Enviando sprite…', 'ok');
     const ext = b64.includes('image/png') ? 'png' : 'jpg';
-    const url = await uploadImgStorage(b64, 'pokemons', `${id}.${ext}`);
+    const url = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`);
     if (url) sprite = url;
   }
   if (b64Shiny && b64Shiny.startsWith('data:')) {
     const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
-    const url = await uploadImgStorage(b64Shiny, 'pokemons', `${id}-shiny.${ext}`);
+    const url = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`);
     if (url) spriteShiny = url;
   }
 
@@ -2093,8 +2129,18 @@ async function savePkModal(approve) {
   const moves_tutor = movesetReadList('epk-moves-tutor', 'tutor');
 
   try {
+    // Se o ID mudou, remove o registro antigo ANTES de inserir o novo (evita conflito de PK)
+    const renaming = String(newId) !== String(id);
+    if (renaming) {
+      try { await sbDelete('pokemons', id); } catch(e) {}
+      PK.remove(String(id));
+      delete S.pk.dbMap[id];
+      // Atualiza referência no array in-memory
+      S.pk.all.filter(p => String(p.id) === String(id)).forEach(p => { p.id = newId; });
+    }
+
     const row = {
-      id: String(id), name: slug,
+      id: String(newId), name: slug, genus_en: genusEn,
       bio: bioPt,
       sprite, sprite_shiny: spriteShiny,
       tipo1: tipo1||null, tipo2: tipo2||null,
@@ -2102,21 +2148,24 @@ async function savePkModal(approve) {
       genero, raridade, biomas: biomas.length ? biomas : null,
       condicao: condicao,
       hp, atk, def, spa, spd, spe,
+      moves_level: moves_level.length ? moves_level : null,
+      moves_egg:   moves_egg.length   ? moves_egg   : null,
+      moves_tutor: moves_tutor.length ? moves_tutor : null,
       is_fakemon: !!pk._isRpg,
       source: pk._isRpg ? (pk.source||'rpg') : 'pokeapi',
       approved: approve,
       updated_at: new Date().toISOString()
     };
     await sbUpsert('pokemons', row);
-    PK.set(String(id), row);
+    if (renaming) pk.id = newId;
+    PK.set(String(newId), row);
     await PK.save();
-    S.pk.dbMap[id] = row;
+    S.pk.dbMap[newId] = row;
     if (pk._isRpg) Object.assign(pk, row);
-    const ind = document.getElementById('epk-ind');
-    if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     updatePkStats();
     applyPkFilter();
-    toast(approve ? '✓ Aprovado!' : '💾 Rascunho salvo!', 'ok');
+    toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
+    closeModal('edit-pokemon-modal');
   } catch(e) { toast('Erro: ' + e.message, 'err'); }
 }
 
@@ -3131,7 +3180,7 @@ function nrpgRemoveBioma(nome) {
 function nrpgResetForm() {
   document.querySelectorAll('#nrpg-tipo1-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('#nrpg-tipo2-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
-  ['nrpg-nome','nrpg-pokedex','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-condicao','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nrpg-nome','nrpg-pokedex','nrpg-genus','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-condicao','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-sprite-file','nrpg-sprite-shiny-file'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   const sp = document.getElementById('nrpg-sprite-preview'); if (sp) { sp.innerHTML = '<span style="font-size:18px;opacity:.3">🖼</span>'; delete sp.dataset.b64; }
   const ss = document.getElementById('nrpg-sprite-shiny-preview'); if (ss) { ss.innerHTML = '<span style="font-size:18px;opacity:.35">✨</span>'; delete ss.dataset.b64; }
@@ -3151,6 +3200,7 @@ async function saveNewRpgPokemon() {
   const spe = parseInt(document.getElementById('nrpg-spe')?.value) || null;
   const nomeRaw = document.getElementById('nrpg-nome')?.value.trim();
   const name    = nomeRaw ? nomeRaw.toLowerCase().replace(/\s+/g, '-') : '';
+  const genusEn = document.getElementById('nrpg-genus')?.value.trim() || null;
   const pokedexNum = document.getElementById('nrpg-pokedex')?.value.trim() || null;
   const biomas  = [...nrpgBiomasSel];
   const raridade = document.getElementById('nrpg-raridade')?.value || 'comum';
@@ -3207,7 +3257,7 @@ async function saveNewRpgPokemon() {
     const moves_tutor = movesetReadList('nrpg-moves-tutor', 'tutor');
 
     const row = {
-      id, name,
+      id, name, genus_en: genusEn,
       tipo1, tipo2,
       habilidade1, habilidade2,
       habilidade_oculta: habilidadeOculta,
