@@ -760,64 +760,326 @@ function showNotFound(dc){
   </div>`;
 }
 
-// Renderiza página de detalhe para Pokémon RPG customizado
-function renderRpgDetail(p, container){
+// Renderiza página de detalhe para Pokémon RPG customizado — mesmo layout dos oficiais
+async function renderRpgDetail(p, container){
   const tipos=[p.tipo1,p.tipo2].filter(Boolean);
   const primaryType=tipos[0]||'normal';
   applyTypeTheme(primaryType);
+  const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
   const label=p.name;
   const pref=idPrefix(p.id);
   const regionName={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
   const baseNum=pref?String(p.id).slice(1).padStart(4,'0'):String(p.id).padStart(4,'0');
-  const numLabel=pref?`${regionName} #${baseNum}`:`#${baseNum}`;
+  const numDisplay=pref?`${regionName} #${baseNum}`:`#${baseNum}`;
   const originLabel=pref&&pref!=='N'?`Forma Regional de ${regionName}`:'Pokémon Nendo — Kingdom Platinum';
   document.title=`${label} — NationalDex`;
-  const bioPt=p.bio_pt||'';
-  const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
-  const tiposHtml=tipos.map(t=>{
-    const c=TYPE_THEME[t]||TYPE_THEME.normal;
-    return `<span style="background:${c.pill||c.accent||'#999'};color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px">${t}</span>`;
-  }).join('');
-  const habs=[p.habilidade1,p.habilidade2,p.habilidade_oculta].filter(Boolean);
-  const habsHtml=habs.length?habs.map((h,i)=>`<div style="display:flex;align-items:baseline;gap:4px"><span style="font-size:12px;font-weight:700;color:var(--text)">${h.toUpperCase().replace(/-/g,' ')}</span>${i===2?`<span style="font-size:9px;color:var(--muted);margin-left:2px">(oculta)</span>`:''}</div>`).join(''):'<div style="color:var(--muted);font-size:12px">—</div>';
 
-  container.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap">
-      <div style="font-family:var(--font-title);font-size:11px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase">${numLabel} — ${originLabel}</div>
+  // ── Stats ──
+  const statKeys=['hp','attack','defense','special-attack','special-defense','speed'];
+  const statNames={hp:'HP',attack:'ATK',defense:'DEF','special-attack':'SP.ATK','special-defense':'SP.DEF',speed:'SPD'};
+  const statFields={hp:p.hp,attack:p.atk,defense:p.def,'special-attack':p.sp_atk,'special-defense':p.sp_def,speed:p.spd};
+  const bst=statKeys.reduce((a,k)=>a+(parseInt(statFields[k])||0),0);
+  const statsHtml=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:4px">
+    ${statKeys.map(k=>`<div style="text-align:center">
+      <div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">${statNames[k]}</div>
+      <div style="font-size:12px;font-weight:700;color:${STAT_COLORS[k]||'var(--brand)'}">${statFields[k]||'—'}</div>
+    </div>`).join('')}
+    <div style="text-align:center">
+      <div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">BST</div>
+      <div style="font-size:12px;font-weight:700;color:${TT.dark}">${bst||'—'}</div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-      <span style="font-family:var(--font-title);font-size:22px;font-weight:700;color:var(--brand);letter-spacing:.5px">${label}</span>
-      ${tiposHtml}
-    </div>
-    <div style="display:grid;grid-template-columns:160px 1fr;gap:20px;align-items:start">
-      <div style="text-align:center">
-        ${p.sprite?`<img src="${p.sprite}" style="width:140px;height:140px;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,.15))" onerror="this.style.opacity='.3'">`
-          :`<div style="width:140px;height:140px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:60px;margin:0 auto">❓</div>`}
-        ${p.sprite_shiny?`<div style="margin-top:8px"><button onclick="this.previousElementSibling.previousElementSibling.src='${p.sprite_shiny}'" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;cursor:pointer;color:var(--muted)">✨ Shiny</button></div>`:''}
-        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-top:8px">${tiposHtml}</div>
-      </div>
+  </div>`;
+
+  // ── Abilities ──
+  const habEntries=[
+    p.habilidade1?{name:p.habilidade1,ha:false}:null,
+    p.habilidade2?{name:p.habilidade2,ha:false}:null,
+    p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
+  ].filter(Boolean);
+  // fetch descriptions from PokeAPI if available
+  const abHtml=await Promise.all(habEntries.map(async(h,i)=>{
+    let desc='';
+    try{
+      const r=await fetch(`https://pokeapi.co/api/v2/ability/${h.name.toLowerCase().replace(/ /g,'-')}`);
+      if(r.ok){const d=await r.json();const en=d.effect_entries?.find(e=>e.language.name==='en');desc=en?en.short_effect:'';}
+    }catch{}
+    // fallback: check localStorage like official
+    if(!desc){try{const s=JSON.parse(localStorage.getItem('kdex_abilities_pt'))||{};desc=s[h.name.toLowerCase().replace(/ /g,'-')]||'';}catch{}}
+    return `<div class="ability-entry">
+      <span class="ability-idx">${h.ha?'':i+1+'.'}</span>
       <div>
-        ${p.genus_en?`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${p.genus_en}</div>`:''}
-        ${bioPt?`<div style="background:${TT.surface||'var(--surface2)'};border-radius:10px;padding:12px 14px;margin-bottom:14px">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Descrição</div>
-          <div style="font-size:13px;color:var(--text);line-height:1.7">${bioPt}</div>
-        </div>`:`<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px;color:var(--muted);font-size:12px;font-style:italic">Descrição ainda não disponível.</div>`}
-        <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Habilidades</div>
-          ${habsHtml}
+        ${h.ha?`<span class="ha-badge">HA</span>`:'' }
+        <span class="ability-name-lbl ${h.ha?'ha':''}">${h.name.toUpperCase().replace(/-/g,' ')}</span>
+        ${desc?`<div class="ability-desc-txt">: ${desc}</div>`:''}
+      </div>
+    </div>`;
+  }));
+
+  // ── Gender ──
+  const genderMap={macho:'100% ♂',femea:'100% ♀',genderless:'Sem gênero','1d2':'Aleatório (♂/♀)'};
+  const genderHtml=genderMap[p.genero]||p.genero||'—';
+
+  // ── Egg groups ──
+  const eggs=[p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—';
+
+  // ── Genus / Classification ──
+  const genus=p.genus_en||p.genus_pt||'Pokémon';
+
+  // ── Shiny ──
+  const hasShiny=!!p.sprite_shiny;
+  const shinyHtml=hasShiny?`<div class="shiny-row">
+    <img class="shiny-thumb" id="rpg-shiny-thumb" src="${p.sprite_shiny}" onclick="toggleRpgShiny()" title="Ver Shiny" alt="shiny" style="opacity:.7">
+    <span class="shiny-lbl">✦ SHINY</span>
+  </div>`:'';
+
+  // ── Nav arrows (prev/next within nendo list) ──
+  const nendoList=_rpgPokemon.filter(x=>idPrefix(x.id)==='N').sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
+  const curIdx=nendoList.findIndex(x=>String(x.id)===String(p.id));
+  const prevPk=curIdx>0?nendoList[curIdx-1]:null;
+  const nextPk=curIdx<nendoList.length-1?nendoList[curIdx+1]:null;
+  const prevHtml=prevPk?`<button class="nav-arrow" onclick="goDetail('__rpg__${encodeURIComponent(prevPk.id)}','${rpgUrlSlug(prevPk)}')"><span class="adir">‹</span><span class="aname"><strong>${String(prevPk.id).slice(1).padStart(4,'0')}</strong> ${prevPk.name}</span></button>`:`<span></span>`;
+  const nextHtml=nextPk?`<button class="nav-arrow right" onclick="goDetail('__rpg__${encodeURIComponent(nextPk.id)}','${rpgUrlSlug(nextPk)}')"><span class="adir">›</span><span class="aname"><strong>${String(nextPk.id).slice(1).padStart(4,'0')}</strong> ${nextPk.name}</span></button>`:`<span></span>`;
+
+  // ── Damage taken ──
+  const dmg=calcDmg(tipos);
+  const allTypes=Object.keys(TC);
+  const allMults=[{k:0,lbl:'×0'},{k:.25,lbl:'×¼'},{k:.5,lbl:'×½'},{k:2,lbl:'×2'},{k:4,lbl:'×4'}];
+  dmg[1]=allTypes.filter(t=>!allMults.some(r=>dmg[r.k]?.includes(t)));
+  const dmgHtml=`<div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px">
+    ${allMults.filter(r=>dmg[r.k]&&dmg[r.k].length).map(r=>{
+      const isImmune=r.k===0;const isResist=r.k>0&&r.k<1;const isWeak=r.k>=2;
+      const multColor=isImmune?'#e05050':isResist?'#2a7a2a':isWeak?'#c03030':'#888';
+      const multBg=isImmune?'#ffeaea':isResist?'#eaffea':isWeak?'#fff0f0':'#f5f5f5';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <span style="font-family:var(--font-title);font-size:12px;font-weight:700;min-width:30px;text-align:center;padding:3px 6px;border-radius:5px;background:${multBg};color:${multColor};border:1px solid ${multColor}40">${r.lbl}</span>
+        <div style="display:flex;flex-wrap:wrap;gap:3px">${dmg[r.k].map(t=>pill(t)).join('')}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  // ── Biology ──
+  const bioText=p.bio_pt||p.bio||'';
+  const bioHtml=bioText?`<div class="section" style="border-color:${TT.mid}40">
+    <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Biology</div></div>
+    <div class="sec-body">
+      <div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
+        <strong style="color:${TT.dark}">${label}, ${genus}.</strong> ${bioText}
+      </div>
+    </div>
+  </div>`:'';
+
+  // ── Evo chain (from p.evo array or single) ──
+  let evoChainHtml='';
+  if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
+    // Espera array de objetos: [{id, name, method}]
+    evoChainHtml=p.evolucoes.map((ev,i)=>{
+      const evPk=_rpgPokemon.find(x=>String(x.id)===String(ev.id)||slugify(x.name)===slugify(ev.name||''));
+      const sprite=evPk?.sprite||'';
+      const evName=evPk?.name||ev.name||'?';
+      const evId=evPk?.id||ev.id||'?';
+      const isMe=String(evId)===String(p.id);
+      const arrow=i>0?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${ev.method?`<span class="evo-method">${ev.method}</span>`:''}</div>`:'';
+      return `${arrow}<button class="evo-node" onclick="goDetail('__rpg__${encodeURIComponent(evId)}','${evPk?rpgUrlSlug(evPk):slugify(evName)}')" style="${isMe?'opacity:.6;cursor:default':''}">
+        ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${evName}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
+        <span class="evo-node-name">${evName}</span>
+        <span class="evo-node-num">${String(evId).slice(1).padStart(4,'0')}</span>
+      </button>`;
+    }).join('');
+  }
+
+  // ── Moves ──
+  const STYLE_COLORS={cool:'#e03030',beauty:'#2080e0',cute:'#e030a0',smart:'#30a030',tough:'#e0a020'};
+  const CAT_COLORS_M={physical:'#e07030',special:'#6070e0',status:'#90a090'};
+  const moveDataCacheRpg={};
+  async function fetchRpgMoveData(name){
+    const k=name.toLowerCase().replace(/ /g,'-');
+    if(moveDataCacheRpg[k])return moveDataCacheRpg[k];
+    // Check local storage translations first
+    let ptDesc='';
+    try{const s=JSON.parse(localStorage.getItem('kdex_moves_pt'))||{};ptDesc=s[k]||'';}catch{}
+    try{
+      const r=await fetch(`https://pokeapi.co/api/v2/move/${k}`);
+      if(r.ok){
+        const d=await r.json();
+        const en=d.effect_entries?.find(e=>e.language.name==='en');
+        const data={power:d.power||null,type:d.type?.name||null,category:d.damage_class?.name||null,style:d.contest_type?.name||null,desc:(ptDesc||(en?en.short_effect:'')).replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' ')};
+        moveDataCacheRpg[k]=data;return data;
+      }
+    }catch{}
+    // fallback: use what the pokemon.json provides
+    return moveDataCacheRpg[k]={power:null,type:null,category:null,style:null,desc:ptDesc};
+  }
+
+  async function rpgMovesTable(moves,showLvl=false){
+    if(!moves||!moves.length)return`<div class="moves-empty">Nenhum move registrado</div>`;
+    const earlyColor=(TC[tipos[0]]||{bg:'var(--brand-mid)'}).bg;
+    const isMobile=window.innerWidth<=720;
+    const moveDetails=await Promise.all(moves.map(m=>fetchRpgMoveData(m.name||m)));
+    if(isMobile){
+      return`<div style="display:flex;flex-direction:column">
+        ${moves.map((m,i)=>{
+          const mn=m.name||m;const d=moveDetails[i];
+          const typePill=d?.type?pill(d.type):'—';
+          const catColor=d?.category?CAT_COLORS_M[d.category]||'#888':'#888';
+          const catLabel=d?.category?cap(d.category):'—';
+          const styleColor=d?.style?STYLE_COLORS[d.style]||'#888':'transparent';
+          const styleLabel=d?.style?cap(d.style):'—';
+          const isEarly=showLvl&&(m.lvl===0||m.lvl<=5);
+          const nameColor=isEarly?earlyColor:'var(--text)';
+          return`<div style="border-bottom:1px solid var(--border)">
+            <div onclick="toggleMoveDesc(this)" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--surface)">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:700;color:${nameColor};margin-bottom:4px">${titleCase(mn)}</div>
+                <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                  ${typePill}
+                  <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
+                  ${d?.style?`<span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${styleLabel}</span>`:''}
+                  ${d?.power?`<span style="font-size:10px;font-weight:700;color:var(--muted)">PWR <span style="color:var(--text);font-family:var(--font-title)">${d.power}</span></span>`:''}
+                </div>
+              </div>
+              <span style="font-size:16px;color:var(--muted);line-height:1;flex-shrink:0">›</span>
+            </div>
+            <div class="move-desc-row" style="display:none;padding:10px 14px 12px;background:var(--surface2);font-size:12px;color:var(--muted);line-height:1.6;text-align:justify">${d?.desc||'Sem descrição disponível.'}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+    return`<div><table class="moves-table" style="text-align:center;width:100%">
+      <thead><tr>
+        <th style="text-align:center">Nome</th>
+        <th style="text-align:center">Tipo</th>
+        <th style="text-align:center">Categoria</th>
+        <th style="text-align:center">Poder</th>
+        <th style="text-align:center">Estilo</th>
+        <th class="desc-col" style="text-align:center">Descrição</th>
+      </tr></thead>
+      <tbody>${moves.map((m,i)=>{
+        const mn=m.name||m;const d=moveDetails[i];
+        const typePill=d?.type?pill(d.type):'—';
+        const catColor=d?.category?CAT_COLORS_M[d.category]||'#888':'#888';
+        const catLabel=d?.category?cap(d.category):'—';
+        const styleColor=d?.style?STYLE_COLORS[d.style]||'#888':'transparent';
+        const styleLabel=d?.style?cap(d.style):'—';
+        const isEarly=showLvl&&(m.lvl===0||m.lvl<=5);
+        const nameStyle=isEarly?`font-weight:800;color:${earlyColor}`:'';
+        return`<tr class="move-row" onclick="toggleMoveDesc(this)" style="cursor:pointer">
+          <td class="move-name" style="text-align:center;white-space:nowrap;${nameStyle}">${titleCase(mn)}</td>
+          <td style="text-align:center">${typePill}</td>
+          <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
+          <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
+          <td style="text-align:center"><span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;${!d?.style?'background:var(--surface2);color:var(--muted)':''}">${styleLabel}</span></td>
+          <td class="desc-col" style="text-align:left;font-size:11px;color:var(--muted);line-height:1.4">${d?.desc||'—'}</td>
+        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="6" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
+      }).join('')}</tbody></table></div>`;
+  }
+
+  // Parse moves from pokemon.json fields
+  // Expects p.moves_level = [{name, lvl}], p.moves_egg = [name], p.moves_tutor = [name]
+  // OR p.moves = [{name, method, lvl}] with method in 'level-up','egg','tutor'
+  let levelMoves=[], eggMoves=[], tutorMoves=[];
+  if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m,lvl:m.lvl||m.level||0});
+  if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m});
+  if(p.moves_tutor) tutorMoves=p.moves_tutor.map(m=>typeof m==='string'?{name:m}:{name:m.name||m});
+  // fallback: unified moves array
+  if(!levelMoves.length&&!eggMoves.length&&!tutorMoves.length&&p.moves&&Array.isArray(p.moves)){
+    p.moves.forEach(m=>{
+      const nm=typeof m==='string'?{name:m,method:'level-up',lvl:0}:m;
+      const method=(nm.method||nm.learn_method||'level-up').toLowerCase();
+      if(method==='egg') eggMoves.push({name:nm.name});
+      else if(method==='tutor') tutorMoves.push({name:nm.name});
+      else levelMoves.push({name:nm.name,lvl:nm.lvl||nm.level||0});
+    });
+  }
+  levelMoves.sort((a,b)=>a.lvl-b.lvl);
+
+  // ── Render HTML ──
+  container.innerHTML=`
+  <div class="breadcrumb">
+    <button onclick="goList()">NationalDex</button>
+    <span>›</span>
+    <span>${numDisplay} ${label}</span>
+  </div>
+
+  <div class="main-card" style="border-color:${TT.mid}40">
+    <div class="hero">
+      <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
+        <div class="hero-dex-num">${numDisplay}</div>
+        <img class="hero-art" id="rpg-main-art"
+          src="${p.sprite||''}"
+          onerror="this.style.opacity='.2'" alt="${label}"
+          style="${!p.sprite?'opacity:.15':''}">
+        <div class="hero-type-icons">
+          ${tipos.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${TL[t]||t}">`).join('')}
         </div>
-        <div style="background:var(--surface2);border-radius:10px;padding:12px 14px">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Detalhes</div>
-          <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
-            <div><span style="color:var(--muted);font-weight:600">Gênero:</span> ${{macho:'100% ♂',femea:'100% ♀',genderless:'Sem gênero','1d2':'Aleatório (♂/♀)'}[p.genero]||p.genero||'—'}</div>
-            <div><span style="color:var(--muted);font-weight:600">Origem:</span> ${originLabel}</div>
+        ${shinyHtml}
+        <div class="nav-arrows">${prevHtml}${nextHtml}</div>
+      </div>
+
+      <div class="hero-right">
+        <div class="hero-header" style="background:${TT.dark}">
+          <div class="hero-name">${label}</div>
+        </div>
+        <div class="info-flat">
+          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> ${genus}</div>
+          <div class="info-flat-row info-flat-split">
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> ${p.height||'—'}</div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> ${p.weight||'—'}</div>
+          </div>
+          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">GENDER RATIO:</span> ${genderHtml}</div>
+          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> ${eggs}</div>
+          <div class="info-flat-row info-flat-abilities">
+            <div class="info-flat-lbl" style="color:${TT.mid};margin-bottom:6px">ABILITIES:</div>
+            <div style="display:flex;flex-direction:column;gap:5px">${abHtml.join('')}</div>
+          </div>
+          <div class="info-flat-row info-flat-stats">
+            <span class="info-flat-lbl" style="color:${TT.mid}">BASE STATS:</span>
+            ${statsHtml}
           </div>
         </div>
       </div>
     </div>
-    <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
-      <button onclick="goList()" style="font-size:12px;color:var(--brand-mid);background:none;border:none;cursor:pointer;font-family:var(--font-body);display:flex;align-items:center;gap:4px">← Voltar à Pokédex</button>
-    </div>`;
+  </div>
+
+  <div class="section" style="border-color:${TT.mid}40">
+    <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Damage Taken</div></div>
+    <div class="sec-body">${dmgHtml}</div>
+  </div>
+
+  ${bioHtml}
+
+  ${evoChainHtml?`<div class="section" style="border-color:${TT.mid}40">
+    <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Evolutionary Chain</div></div>
+    <div class="sec-body"><div class="evo-chain">${evoChainHtml}</div></div>
+  </div>`:''}
+
+  <div class="ficha-moves-wrap">
+    <div class="moves-tabs">
+      <button class="moves-tab active" onclick="switchMovesTab(this,'rpg-mv-level')">Moves por Nível</button>
+      <button class="moves-tab" onclick="switchMovesTab(this,'rpg-mv-egg')">Egg Moves</button>
+      <button class="moves-tab" onclick="switchMovesTab(this,'rpg-mv-tutor')">Tutor Moves</button>
+    </div>
+    <div class="moves-panel active" id="rpg-mv-level"><div class="moves-empty">Carregando…</div></div>
+    <div class="moves-panel" id="rpg-mv-egg"><div class="moves-empty">Carregando…</div></div>
+    <div class="moves-panel" id="rpg-mv-tutor"><div class="moves-empty">Carregando…</div></div>
+  </div>`;
+
+  // Load moves async
+  rpgMovesTable(levelMoves,true).then(html=>{const el=document.getElementById('rpg-mv-level');if(el)el.innerHTML=html;});
+  rpgMovesTable(eggMoves,false).then(html=>{const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
+  rpgMovesTable(tutorMoves,false).then(html=>{const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
+
+  // Store sprite refs for shiny toggle
+  window._rpgNormalSprite=p.sprite||'';
+  window._rpgShinySprite=p.sprite_shiny||'';
+  window._rpgShinyOn=false;
+}
+
+function toggleRpgShiny(){
+  window._rpgShinyOn=!window._rpgShinyOn;
+  const art=document.getElementById('rpg-main-art');
+  const thumb=document.getElementById('rpg-shiny-thumb');
+  if(art) art.src=window._rpgShinyOn?window._rpgShinySprite:window._rpgNormalSprite;
+  if(thumb) thumb.style.opacity=window._rpgShinyOn?'1':'.7';
 }
 
 async function renderDetail(p,s,container){
