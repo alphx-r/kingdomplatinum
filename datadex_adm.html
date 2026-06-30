@@ -1524,14 +1524,26 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
 <script>
 /* ══════════════════════════════════════════
    SLUG — geração unificada nome→slug, com sufixo de região
-   Formas regionais e Nendo (prefixo A/G/H/P/N no ID) sempre
-   recebem o slug no formato "<nome>-<regiao>" (ex: vulpix-alola).
+   Formas regionais (prefixo A/G/H/P no ID) sempre recebem o slug
+   no formato "<nome>-<regiao>" (ex: vulpix-alola).
+   Nendo (-nendo) só é aplicado quando o NOME do Pokémon começa
+   explicitamente com "(N)" — não basta o ID começar com N.
+   Isso evita que variações/formas de um fakemon existente (ex:
+   "Tinyvine (Desert Form)", que tem ID N#### mas não tem "(N)" no
+   nome) ganhem o sufixo -nendo à toa.
 ══════════════════════════════════════════ */
 const REGION_SLUG_SUFFIX = { A: 'alola', G: 'galar', H: 'hisui', P: 'paldea', N: 'nendo' };
 
-// Extrai o prefixo regional (A/G/H/P/N) de um ID, se houver.
+// Extrai o prefixo regional (A/G/H/P) de um ID, se houver.
+// Não inclui N — Nendo é detectado pelo NOME, não pelo ID (ver buildAutoSlug).
 function regionPrefixFromId(id) {
-  const m = String(id || '').match(/^([AGHPN])\d/i);
+  const m = String(id || '').match(/^([AGHP])\d/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Extrai o prefixo visual "(A)", "(N)", etc. do INÍCIO do nome, se houver.
+function namePrefixLetter(nameRaw) {
+  const m = String(nameRaw || '').match(/^\(\s*([AGHPN])\s*\)\s*/i);
   return m ? m[1].toUpperCase() : null;
 }
 
@@ -1548,10 +1560,16 @@ function toSlugBase(s) {
 }
 
 // Gera o slug final a partir do nome (de exibição) e do ID.
-// Remove o prefixo visual "(A) ", "(G) " etc. do nome antes de slugificar,
-// e garante o sufixo "-<regiao>" para formas regionais/Nendo.
+// Remove o prefixo visual "(A) ", "(N) " etc. do nome antes de slugificar.
+// Sufixo "-<regiao>":
+//  - Formas regionais reais (A/G/H/P): aplicado com base no nome OU no ID (qualquer um basta).
+//  - Nendo (N): aplicado SOMENTE se o nome começar explicitamente com "(N)".
+//    Um ID N#### sozinho não é suficiente — formas/variações de um fakemon que
+//    não tem o prefixo "(N)" no nome não devem ganhar -nendo.
 function buildAutoSlug(nameRaw, id) {
-  const prefix = regionPrefixFromId(id);
+  const npfx = namePrefixLetter(nameRaw);
+  const idpfx = regionPrefixFromId(id);
+  const prefix = npfx === 'N' ? 'N' : (npfx || idpfx || null);
   const cleanName = String(nameRaw || '').replace(/^\(\s*[AGHPN]\s*\)\s*/i, '');
   let base = toSlugBase(cleanName);
   if (prefix) {
@@ -2527,9 +2545,12 @@ async function savePkModal(approve) {
   // Slug: usa o que foi digitado manualmente (se houver), senão gera a partir do nome.
   // Remove primeiro o prefixo visual "(A)/(N)/etc" caso o usuário tenha colado o nome
   // completo no campo de slug — evita slugs quebrados tipo "n-meowth" em vez de "meowth-nendo".
-  // Em qualquer caso, garante o sufixo "-<regiao>" para formas regionais/Nendo (prefixo A/G/H/P/N no ID).
+  // Sufixo "-<regiao>": formas regionais reais (A/G/H/P) por nome OU ID; Nendo (N) só pelo nome
+  // (um ID N#### sozinho não força -nendo — ver buildAutoSlug).
   let slug = slugRaw ? toSlugBase(slugRaw.replace(/^\(\s*[AGHPN]\s*\)\s*/i, '')) : buildAutoSlug(displayName, newId);
-  const regionPrefix = regionPrefixFromId(newId);
+  const npfx = namePrefixLetter(displayName);
+  const idpfx = regionPrefixFromId(newId);
+  const regionPrefix = npfx === 'N' ? 'N' : (npfx || idpfx || null);
   if (regionPrefix) {
     const suf = REGION_SLUG_SUFFIX[regionPrefix];
     if (slug && !slug.endsWith('-' + suf)) slug = `${slug}-${suf}`;
