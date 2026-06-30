@@ -955,22 +955,58 @@ async function renderRpgDetail(p, container){
   if(apiEvoChain?.chain){
     try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{}
   } else if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
-    // Espera array de objetos: [{id, name, method}]
-    evoChainHtml=p.evolucoes.map((ev,i)=>{
+    // Espera array de objetos: [{id, name, method, from}]
+    // "from" (1-based) indica de qual estágio anterior este evolui — permite ramificações
+    // (ex: um Pokémon com 2 evoluções diferentes a partir do mesmo estágio base).
+    // Sem "from", assume cadeia linear (evolui do estágio imediatamente anterior) — comportamento legado.
+    const evos=p.evolucoes;
+    const nEv=evos.length;
+
+    function rpgEvoNode(ev,isFirst){
       const evPk=_rpgPokemon.find(x=>String(x.id)===String(ev.id)||slugify(x.name)===slugify(ev.name||''));
       const sprite=evPk?.sprite||'';
       const evName=evPk?.name||ev.name||'?';
       const evId=evPk?.id||ev.id||'?';
       const isMe=String(evId)===String(p.id);
-      // method pode estar no item atual (chegando aqui) OU no item anterior (saindo dele)
-      const evMethod=ev.method||ev.trigger||(i>0?(p.evolucoes[i-1].method||p.evolucoes[i-1].trigger||''):'');
-      const arrow=i>0?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${evMethod?`<span class="evo-method">${evMethod}</span>`:''}</div>`:'';
+      const method=ev.method||ev.trigger||'';
+      const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
       return `${arrow}<button class="evo-node" onclick="${isMe?'void(0)':`goDetail('__rpg__${encodeURIComponent(evId)}','${evPk?rpgUrlSlug(evPk):slugify(evName)}')`}" style="${isMe?'cursor:default':''}">
         ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${evName}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
         <span class="evo-node-name">${evName}</span>
         <span class="evo-node-num">${String(evId).slice(1).padStart(4,'0')}</span>
       </button>`;
-    }).join('');
+    }
+
+    // Resolve o pai de cada estágio: usa "from" (1-based) quando definido,
+    // senão assume o estágio anterior (cadeia linear, comportamento legado).
+    const parentOf=evos.map((ev,i)=>{
+      if(i===0) return null;
+      const f=parseInt(ev.from,10);
+      return (f&&f>=1&&f<=nEv)?f-1:i-1;
+    });
+    const childrenOf={};
+    parentOf.forEach((par,i)=>{ if(par!==null) (childrenOf[par]=childrenOf[par]||[]).push(i); });
+    const hasBranch=Object.values(childrenOf).some(arr=>arr.length>1);
+
+    if(!hasBranch){
+      evoChainHtml=evos.map((ev,i)=>rpgEvoNode(ev,i===0)).join('');
+    } else {
+      const baseIdx=parentOf.findIndex(par=>par===null);
+      let html=`<div class="evo-branch-wrap"><div class="evo-branch-col">${rpgEvoNode(evos[baseIdx],true)}</div><div class="evo-branch-col">`;
+      const branchStarts=childrenOf[baseIdx]||[];
+      for(const startIdx of branchStarts){
+        html+=`<div class="evo-branch-row">${rpgEvoNode(evos[startIdx],false)}`;
+        let cur=startIdx;
+        // Continua a sub-cadeia enquanto houver exatamente 1 filho (ramo linear após a ramificação)
+        while((childrenOf[cur]||[]).length===1){
+          cur=childrenOf[cur][0];
+          html+=rpgEvoNode(evos[cur],false);
+        }
+        html+=`</div>`;
+      }
+      html+=`</div></div>`;
+      evoChainHtml=html;
+    }
   }
 
   // ── Moves ──
