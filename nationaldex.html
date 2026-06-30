@@ -776,10 +776,41 @@ async function renderRpgDetail(p, container){
   const originLabel=pref&&pref!=='N'?`Forma Regional de ${regionName}`:'Pokémon Nendo — Kingdom Platinum';
   document.title=`${label} — NationalDex`;
 
+  // ── Dados via PokéAPI para formas regionais (Alola/Galar/Paldea/Hisui) ──
+  // Tudo (stats, tipos, habilidades, gênero, egg groups, gênero/classificação,
+  // biografia e cadeia evolutiva) é puxado diretamente da PokéAPI, usando o slug
+  // "<nome-base>-<regiao>" (ex: "(A) Vulpix" → "vulpix-alola").
+  const REGION_SLUG_F={'A':'alola','G':'galar','P':'paldea','H':'hisui'};
+  let apiPoke=null, apiSpecies=null, apiEvoChain=null;
+  if(REGION_SLUG_F[pref]){
+    const baseSlug=slugify(label.replace(/^\([AGPH]\)\s*/i,''));
+    const regSlug=REGION_SLUG_F[pref];
+    const formSlug=baseSlug.endsWith(`-${regSlug}`)?baseSlug:`${baseSlug}-${regSlug}`;
+    try{
+      const[fr,sr]=await Promise.all([
+        fetch(`https://pokeapi.co/api/v2/pokemon/${formSlug}`),
+        fetch(`https://pokeapi.co/api/v2/pokemon-species/${baseSlug}`)
+      ]);
+      if(fr.ok) apiPoke=await fr.json();
+      if(sr.ok) apiSpecies=await sr.json();
+      if(apiSpecies?.evolution_chain?.url){
+        const er=await fetch(apiSpecies.evolution_chain.url);
+        if(er.ok) apiEvoChain=await er.json();
+      }
+    }catch{}
+  }
+  // Tipos — sobrescreve com os da PokéAPI quando disponível
+  if(apiPoke?.types?.length){
+    tipos.length=0;
+    apiPoke.types.sort((a,b)=>a.slot-b.slot).forEach(t=>tipos.push(t.type.name));
+  }
+
   // ── Stats ──
   const statKeys=['hp','attack','defense','special-attack','special-defense','speed'];
   const statNames={hp:'HP',attack:'ATK',defense:'DEF','special-attack':'SP.ATK','special-defense':'SP.DEF',speed:'SPD'};
-  const statFields={hp:p.hp,attack:p.atk,defense:p.def,'special-attack':p.spa,'special-defense':p.spd,speed:p.spe};
+  const statFields=apiPoke?.stats?.length
+    ? Object.fromEntries(apiPoke.stats.map(s=>[s.stat.name,s.base_stat]))
+    : {hp:p.hp,attack:p.atk,defense:p.def,'special-attack':p.spa,'special-defense':p.spd,speed:p.spe};
   const bst=statKeys.reduce((a,k)=>a+(parseInt(statFields[k])||0),0);
   const statsHtml=`<div class="base-stats-grid">
     ${statKeys.map(k=>`<div style="text-align:center">
@@ -793,11 +824,13 @@ async function renderRpgDetail(p, container){
   </div>`;
 
   // ── Abilities ──
-  const habEntries=[
-    p.habilidade1?{name:p.habilidade1,ha:false}:null,
-    p.habilidade2?{name:p.habilidade2,ha:false}:null,
-    p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
-  ].filter(Boolean);
+  const habEntries=apiPoke?.abilities?.length
+    ? apiPoke.abilities.sort((a,b)=>a.slot-b.slot).map(a=>({name:a.ability.name,ha:a.is_hidden}))
+    : [
+        p.habilidade1?{name:p.habilidade1,ha:false}:null,
+        p.habilidade2?{name:p.habilidade2,ha:false}:null,
+        p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
+      ].filter(Boolean);
   // fetch descriptions from PokeAPI if available
   let rpgAbCounter=0;
   const abHtml=await Promise.all(habEntries.map(async(h)=>{
@@ -816,38 +849,54 @@ async function renderRpgDetail(p, container){
   }));
 
   // ── Gender ──
-  const genderRaw=(p.genero||'').trim();
   let genderHtml='—';
-  if(!genderRaw||genderRaw==='genderless'||/sem gên/i.test(genderRaw)){
-    genderHtml='Sem gênero (⚲)';
-  } else if(genderRaw.includes(',')) {
-    // Novo formato: "ValorMale,ValorFemale"
-    const parts=genderRaw.split(',');
-    const m=parseFloat(parts[0])||0;
-    const f=parseFloat(parts[1])||0;
-    if(m===0&&f===0){
+  if(apiSpecies){
+    const gr=apiSpecies.gender_rate;
+    if(gr===-1){
       genderHtml='Sem gênero (⚲)';
     } else {
-      genderHtml=`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+      const fPct=(gr/8*100).toFixed(0);
+      const mPct=(100-(gr/8*100)).toFixed(0);
+      genderHtml=`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
     }
   } else {
-    // Legado: texto livre com %
-    const mMatch=genderRaw.match(/(\d+(?:\.\d+)?)\s*%\s*(?:macho|male)/i);
-    const fMatch=genderRaw.match(/(\d+(?:\.\d+)?)\s*%\s*(?:f[êe]mea|female)/i);
-    if(mMatch||fMatch){
-      const m=mMatch?parseFloat(mMatch[1]):(fMatch?100-parseFloat(fMatch[1]):50);
-      const f=fMatch?parseFloat(fMatch[1]):100-m;
-      genderHtml=`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+    const genderRaw=(p.genero||'').trim();
+    if(!genderRaw||genderRaw==='genderless'||/sem gên/i.test(genderRaw)){
+      genderHtml='Sem gênero (⚲)';
+    } else if(genderRaw.includes(',')) {
+      // Novo formato: "ValorMale,ValorFemale"
+      const parts=genderRaw.split(',');
+      const m=parseFloat(parts[0])||0;
+      const f=parseFloat(parts[1])||0;
+      if(m===0&&f===0){
+        genderHtml='Sem gênero (⚲)';
+      } else {
+        genderHtml=`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+      }
     } else {
-      genderHtml=genderRaw;
+      // Legado: texto livre com %
+      const mMatch=genderRaw.match(/(\d+(?:\.\d+)?)\s*%\s*(?:macho|male)/i);
+      const fMatch=genderRaw.match(/(\d+(?:\.\d+)?)\s*%\s*(?:f[êe]mea|female)/i);
+      if(mMatch||fMatch){
+        const m=mMatch?parseFloat(mMatch[1]):(fMatch?100-parseFloat(fMatch[1]):50);
+        const f=fMatch?parseFloat(fMatch[1]):100-m;
+        genderHtml=`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+      } else {
+        genderHtml=genderRaw;
+      }
     }
   }
 
   // ── Egg groups ──
-  const eggs=[p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—';
+  const eggs=apiSpecies?.egg_groups?.length
+    ? apiSpecies.egg_groups.map(e=>cap(e.name)).join(', ')
+    : (p.egg_group
+        ? String(p.egg_group).split(',').map(s=>s.trim()).filter(Boolean).map(cap).join(', ')
+        : ([p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—'));
 
   // ── Genus / Classification ──
-  const genusRaw=p.genus_en||p.genus_pt||'';
+  const genusFromApi=apiSpecies?.genera?.find(g=>g.language.name==='en')?.genus||'';
+  const genusRaw=genusFromApi||p.genus_en||p.genus_pt||'';
   const genus=genusRaw?(genusRaw.toLowerCase().endsWith('pokémon')||genusRaw.toLowerCase().endsWith('pokemon')?genusRaw:genusRaw+' Pokémon'):'Pokémon';
 
   // ── Shiny ──
@@ -883,7 +932,13 @@ async function renderRpgDetail(p, container){
   </div>`;
 
   // ── Biology ──
-  const bioText=p.bio||'';
+  let bioText=p.bio||'';
+  if(apiSpecies?.flavor_text_entries?.length){
+    const flavor=apiSpecies.flavor_text_entries.find(f=>f.language.name==='pt-BR')
+      ||apiSpecies.flavor_text_entries.find(f=>f.language.name==='pt')
+      ||apiSpecies.flavor_text_entries.find(f=>f.language.name==='en');
+    if(flavor) bioText=flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' ');
+  }
   const bioHtml=bioText?`<div class="section" style="border-color:${TT.mid}40">
     <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Biology</div></div>
     <div class="sec-body">
@@ -893,9 +948,13 @@ async function renderRpgDetail(p, container){
     </div>
   </div>`:'';
 
-  // ── Evo chain (from p.evo array or single) ──
+  // ── Evo chain ──
+  // Para formas regionais, usa a cadeia evolutiva oficial da PokéAPI (buildEvo).
+  // Para fakemon Nendo, usa o array p.evolucoes definido manualmente no JSON.
   let evoChainHtml='';
-  if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
+  if(apiEvoChain?.chain){
+    try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{}
+  } else if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
     // Espera array de objetos: [{id, name, method}]
     evoChainHtml=p.evolucoes.map((ev,i)=>{
       const evPk=_rpgPokemon.find(x=>String(x.id)===String(ev.id)||slugify(x.name)===slugify(ev.name||''));
@@ -1036,35 +1095,25 @@ async function renderRpgDetail(p, container){
   // OR p.moves = [{name, method, lvl}] with method in 'level-up','egg','tutor'
   let levelMoves=[], tmMoves=[], eggMoves=[], tutorMoves=[];
 
-  // ── Formas regionais (Alola/Galar/Paldea/Hisui) — busca o moveset direto na PokéAPI
-  // usando o slug "<nome-base>-<regiao>" (ex: "(A) Vulpix" → "vulpix-alola")
-  const REGION_SLUG_M={'A':'alola','G':'galar','P':'paldea','H':'hisui'};
+  // ── Formas regionais (Alola/Galar/Paldea/Hisui) — moveset vem do apiPoke
+  // já buscado na PokéAPI acima (mesma chamada usada para stats/tipos/abilidades)
   let regionalMovesLoaded=false;
-  if(REGION_SLUG_M[pref]){
-    const baseSlug=slugify(String(p.name||'').replace(/^\([AGPH]\)\s*/i,''));
-    const regSlug=REGION_SLUG_M[pref];
-    const apiSlug=baseSlug.endsWith(`-${regSlug}`)?baseSlug:`${baseSlug}-${regSlug}`;
-    try{
-      const rMv=await fetch(`https://pokeapi.co/api/v2/pokemon/${apiSlug}`);
-      if(rMv.ok){
-        const dMv=await rMv.json();
-        dMv.moves.forEach(mv=>{
-          const vgd=mv.version_group_details;
-          const lvlUp=vgd.filter(v=>v.move_learn_method.name==='level-up');
-          const machine=vgd.some(v=>v.move_learn_method.name==='machine');
-          const egg=vgd.some(v=>v.move_learn_method.name==='egg');
-          const tutor=vgd.some(v=>v.move_learn_method.name==='tutor');
-          if(lvlUp.length){
-            const lvl=Math.max(...lvlUp.map(v=>v.level_learned_at));
-            levelMoves.push({name:mv.move.name,lvl});
-          }
-          if(machine) tmMoves.push({name:mv.move.name});
-          if(egg) eggMoves.push({name:mv.move.name});
-          if(tutor) tutorMoves.push({name:mv.move.name});
-        });
-        regionalMovesLoaded=true;
+  if(apiPoke?.moves?.length){
+    apiPoke.moves.forEach(mv=>{
+      const vgd=mv.version_group_details;
+      const lvlUp=vgd.filter(v=>v.move_learn_method.name==='level-up');
+      const machine=vgd.some(v=>v.move_learn_method.name==='machine');
+      const egg=vgd.some(v=>v.move_learn_method.name==='egg');
+      const tutor=vgd.some(v=>v.move_learn_method.name==='tutor');
+      if(lvlUp.length){
+        const lvl=Math.max(...lvlUp.map(v=>v.level_learned_at));
+        levelMoves.push({name:mv.move.name,lvl});
       }
-    }catch{}
+      if(machine) tmMoves.push({name:mv.move.name});
+      if(egg) eggMoves.push({name:mv.move.name});
+      if(tutor) tutorMoves.push({name:mv.move.name});
+    });
+    regionalMovesLoaded=true;
   }
 
   if(!regionalMovesLoaded){
@@ -1085,6 +1134,7 @@ async function renderRpgDetail(p, container){
     }
   }
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
+
 
   // ── Render HTML ──
   container.innerHTML=`
@@ -1116,8 +1166,8 @@ async function renderRpgDetail(p, container){
         <div class="info-flat">
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> ${genus}</div>
           <div class="info-flat-row info-flat-split">
-            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> ${p.height?p.height+' m':'—'}</div>
-            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> ${p.weight?p.weight+' kg':'—'}</div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> ${apiPoke?.height?(apiPoke.height/10)+' m':(p.height?p.height+' m':'—')}</div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> ${apiPoke?.weight?(apiPoke.weight/10)+' kg':(p.weight?p.weight+' kg':'—')}</div>
           </div>
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">GENDER RATIO:</span> ${genderHtml}</div>
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> ${eggs}</div>
