@@ -431,7 +431,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <div>
           <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
-          <input class="mv-meta-input" id="nrpg-pokedex" type="text" placeholder="Vazio = automático" style="width:100%">
+          <input class="mv-meta-input" id="nrpg-pokedex" type="text" placeholder="Vazio = automático" style="width:100%" oninput="nrpgSyncSlug()">
         </div>
       </div>
       <style>@media(max-width:640px){#nrpg-inline-form .two-col,#nrpg-inline-form > div[style*="grid-template-columns:1fr 1fr 110px"]{grid-template-columns:1fr!important}}</style>
@@ -1163,7 +1163,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       </div>
       <div>
         <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
-        <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%">
+        <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%" oninput="epkSyncSlug()">
       </div>
     </div>
 
@@ -1498,6 +1498,45 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
 </div>
 
 <script>
+/* ══════════════════════════════════════════
+   SLUG — geração unificada nome→slug, com sufixo de região
+   Formas regionais e Nendo (prefixo A/G/H/P/N no ID) sempre
+   recebem o slug no formato "<nome>-<regiao>" (ex: vulpix-alola).
+══════════════════════════════════════════ */
+const REGION_SLUG_SUFFIX = { A: 'alola', G: 'galar', H: 'hisui', P: 'paldea', N: 'nendo' };
+
+// Extrai o prefixo regional (A/G/H/P/N) de um ID, se houver.
+function regionPrefixFromId(id) {
+  const m = String(id || '').match(/^([AGHPN])\d/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Slugifica uma string genérica (sem lógica de região).
+function toSlugBase(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\(/g, '-').replace(/\)/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// Gera o slug final a partir do nome (de exibição) e do ID.
+// Remove o prefixo visual "(A) ", "(G) " etc. do nome antes de slugificar,
+// e garante o sufixo "-<regiao>" para formas regionais/Nendo.
+function buildAutoSlug(nameRaw, id) {
+  const prefix = regionPrefixFromId(id);
+  const cleanName = String(nameRaw || '').replace(/^\(\s*[AGHPN]\s*\)\s*/i, '');
+  let base = toSlugBase(cleanName);
+  if (prefix) {
+    const suf = REGION_SLUG_SUFFIX[prefix];
+    if (base && !base.endsWith('-' + suf)) base = base ? `${base}-${suf}` : suf;
+  }
+  return base;
+}
+
 /* ══════════════════════════════════════════
    PK — PokemonStore (JSON ↔ GitHub)
 ══════════════════════════════════════════ */
@@ -2015,10 +2054,9 @@ async function openEditPokemon(id) {
 
   // Nome, slug, pokédex
   // Nome é independente — sempre mostra o nome real do Pokémon, nunca reconstruído do slug.
-  const toSlugLocal = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/,'');
   document.getElementById('epk-nome').value = db.name || pk.name || '';
-  document.getElementById('epk-slug').value = toSlugLocal(db.url_slug || db.name || pk.name || '');
   document.getElementById('epk-pokedex').value = idStr;
+  document.getElementById('epk-slug').value = buildAutoSlug(db.name || pk.name || '', idStr);
   document.getElementById('epk-genus').value = db.genus_en || pk._genus_en || '';
 
   // Sprites (URL)
@@ -2104,12 +2142,23 @@ async function openEditPokemon(id) {
 }
 
 // ── helpers do edit-pokemon-modal ──
+// Fallback estático (usado só enquanto a lista do Supabase ainda não carregou).
 const EPK_BIOMAS = ['Urbano', 'Polar', 'Assombrado', 'Florestal', 'Montanhoso', 'Árido', 'Caverna', 'Pantanoso', 'Planície', 'Rios e Lagos', 'Praia', 'Costeiro', 'Marítimo', 'Recifes', 'Vulcânico', 'Pelágico'];
 function epkRenderBiomas(sel = []) {
   const wrap = document.getElementById('epk-biomas-wrap');
-  wrap.innerHTML = EPK_BIOMAS.map(b =>
+  // Usa a mesma fonte dinâmica (Supabase) da criação (npk), garantindo que
+  // qualquer bioma novo cadastrado apareça igualmente nos dois formulários.
+  const lista = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome) : EPK_BIOMAS;
+  wrap.innerHTML = lista.map(b =>
     `<span class="pk-bioma-tag${sel.map(s=>s.toLowerCase()).includes(b.toLowerCase())?' sel':''}" data-bioma="${b}" onclick="this.classList.toggle('sel')">${b}</span>`
   ).join('');
+  // Se a lista ainda não tiver sido carregada do Supabase, busca agora e re-renderiza
+  // preservando a seleção atual — assim o formulário de edição fica sempre igual ao de criação.
+  if (!S.biomas || !S.biomas.length) {
+    rpgFetchBiomas().then(lista2 => {
+      if (lista2 && lista2.length) { S.biomas = lista2; epkRenderBiomas(sel); }
+    });
+  }
 }
 function epkToggleTipo1(el) {
   document.querySelectorAll('#epk-tipo1-wrap .tipo-tag').forEach(t => t.classList.remove('sel'));
@@ -2419,14 +2468,16 @@ function epkNormalizeHeight(el) {
 
 function epkSyncSlug() {
   const nome = document.getElementById('epk-nome')?.value.trim() || '';
+  const id   = document.getElementById('epk-pokedex')?.value.trim() || '';
   const slugEl = document.getElementById('epk-slug');
-  if (slugEl) slugEl.value = nome ? nome.toLowerCase().replace(/\(/g,'-').replace(/\)/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'') : '';
+  if (slugEl) slugEl.value = buildAutoSlug(nome, id);
 }
 
 function nrpgSyncSlug() {
   const nome = document.getElementById('nrpg-nome')?.value.trim() || '';
+  const id   = document.getElementById('nrpg-pokedex')?.value.trim() || 'N0000'; // sem ID ainda = assume Nendo (padrão deste form)
   const slugEl = document.getElementById('nrpg-slug');
-  if (slugEl) slugEl.value = nome ? nome.toLowerCase().replace(/\(/g,'-').replace(/\)/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'') : '';
+  if (slugEl) slugEl.value = buildAutoSlug(nome, id);
 }
 
 async function savePkModal(approve) {
@@ -2437,8 +2488,6 @@ async function savePkModal(approve) {
   const bioPt   = document.getElementById('epk-bio_pt').value.trim();
   const nomeRaw = document.getElementById('epk-nome').value.trim();
   const slugRaw = document.getElementById('epk-slug').value.trim();
-  const toSlug  = s => s.toLowerCase().replace(/\(/g,'-').replace(/\)/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'');
-  const slug    = slugRaw ? toSlug(slugRaw) : (nomeRaw ? toSlug(nomeRaw) : pk.name);
   const displayName = nomeRaw || pk.name;
   const genusEn = document.getElementById('epk-genus').value.trim() || null;
 
@@ -2448,6 +2497,17 @@ async function savePkModal(approve) {
   if (String(newId) !== String(id)) {
     const conflito = S.pk.all.some(p => String(p.id) === String(newId) && String(p.id) !== String(id)) || !!PK.get(String(newId));
     if (conflito) { toast(`Já existe um Pokémon com o número "${newId}".`, 'err'); return; }
+  }
+
+  // Slug: usa o que foi digitado manualmente (se houver), senão gera a partir do nome.
+  // Remove primeiro o prefixo visual "(A)/(N)/etc" caso o usuário tenha colado o nome
+  // completo no campo de slug — evita slugs quebrados tipo "n-meowth" em vez de "meowth-nendo".
+  // Em qualquer caso, garante o sufixo "-<regiao>" para formas regionais/Nendo (prefixo A/G/H/P/N no ID).
+  let slug = slugRaw ? toSlugBase(slugRaw.replace(/^\(\s*[AGHPN]\s*\)\s*/i, '')) : buildAutoSlug(displayName, newId);
+  const regionPrefix = regionPrefixFromId(newId);
+  if (regionPrefix) {
+    const suf = REGION_SLUG_SUFFIX[regionPrefix];
+    if (slug && !slug.endsWith('-' + suf)) slug = `${slug}-${suf}`;
   }
 
   // Sprite: prioriza arquivo carregado, depois URL
@@ -3668,7 +3728,7 @@ async function saveNewRpgPokemon() {
   const spd = parseInt(document.getElementById('nrpg-spd')?.value) || null;
   const spe = parseInt(document.getElementById('nrpg-spe')?.value) || null;
   const nomeRaw = document.getElementById('nrpg-nome')?.value.trim();
-  const name    = nomeRaw ? nomeRaw.toLowerCase().replace(/\(/g,'-').replace(/\)/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'') : '';
+  const name    = nomeRaw || ''; // nome é independente — nunca slugificado
   const genusEn = document.getElementById('nrpg-genus')?.value.trim() || null;
   const pokedexNum = document.getElementById('nrpg-pokedex')?.value.trim() || null;
   const biomas  = [...nrpgBiomasSel];
@@ -3735,7 +3795,7 @@ async function saveNewRpgPokemon() {
     const moves_tutor = movesetReadList('nrpg-moves-tutor', 'tutor');
 
     const row = {
-      id, name, genus_en: genusEn,
+      id, name, url_slug: buildAutoSlug(name, id), genus_en: genusEn,
       tipo1, tipo2,
       habilidade1, habilidade2,
       habilidade_oculta: habilidadeOculta,
@@ -3829,7 +3889,7 @@ function openEditRpgPokemon(id) {
   if (!p) return;
   document.getElementById('erpg-id').value = p.id;
   document.getElementById('erpg-nome').value = p.name || '';
-  document.getElementById('erpg-slug').value = (p.name || '').toLowerCase().replace(/\(/g,'-').replace(/\)/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'');
+  document.getElementById('erpg-slug').value = buildAutoSlug(p.name || '', p.id);
   document.getElementById('erpg-pokedex').value = p.id || '';
   document.getElementById('erpg-sprite').value = p.sprite || '';
   document.getElementById('erpg-sprite_shiny').value = p.sprite_shiny || '';
@@ -3875,7 +3935,7 @@ function openEditRpgPokemon(id) {
 async function saveEditRpgPokemon() {
   const id = document.getElementById('erpg-id')?.value;
   const nomeRaw = document.getElementById('erpg-nome')?.value.trim();
-  const name = nomeRaw ? nomeRaw.toLowerCase().replace(/\s+/g,'-') : '';
+  const name = nomeRaw || ''; // nome é independente — nunca slugificado
   const habilidade1 = abilityToSlug(document.getElementById('erpg-hab1')?.value) || '';
   const habilidade2 = abilityToSlug(document.getElementById('erpg-hab2')?.value) || '';
   const habilidadeOculta = abilityToSlug(document.getElementById('erpg-hab_oculta')?.value) || null;
@@ -3930,7 +3990,7 @@ async function saveEditRpgPokemon() {
 
   try {
     const patch = {
-      name, sprite, sprite_shiny: spriteShiny,
+      name, url_slug: buildAutoSlug(name, id), sprite, sprite_shiny: spriteShiny,
       tipo1, tipo2,
       habilidade1, habilidade2, habilidade_oculta: habilidadeOculta, habilidade_mega: habilidadeMega,
       raridade, condicao, genero,
