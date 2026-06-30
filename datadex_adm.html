@@ -2498,7 +2498,7 @@ async function savePkModal(approve) {
     };
     // Moves e url_slug só vão pro pokemon.json (Supabase não tem essas colunas)
     const rowJson = { ...row, url_slug: slug, evolucoes: evolucoes.length ? evolucoes : null, moves_level: moves_level.length ? moves_level : null, moves_tm: moves_tm.length ? moves_tm : null, moves_egg: moves_egg.length ? moves_egg : null, moves_tutor: moves_tutor.length ? moves_tutor : null };
-    await sbUpsert('pokemons', row);
+    // 1. Grava primeiro no pokemon.json (GitHub) — é a fonte real usada pelo site público.
     if (renaming) pk.id = newId;
     PK.set(String(newId), rowJson);
     await PK.save();
@@ -2506,6 +2506,11 @@ async function savePkModal(approve) {
     Object.assign(pk, rowJson);
     updatePkStats();
     applyPkFilter();
+    // 2. Espelha no Supabase como melhor esforço — se falhar (ex: coluna NOT NULL,
+    //    linha que nunca existiu lá pra um fakemon criado via RPG), não deve derrubar
+    //    o save real, que já foi feito acima.
+    try { await sbUpsert('pokemons', row); }
+    catch (syncErr) { toast('Salvo no JSON, mas falhou ao espelhar no Supabase: ' + syncErr.message, 'err'); }
     toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
     closeModal('edit-pokemon-modal');
   } catch(e) { toast('Erro: ' + e.message, 'err'); }
