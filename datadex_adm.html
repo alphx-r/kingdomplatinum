@@ -215,7 +215,11 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 /* Evo Chain ADM */
 /* Evo editor — estilo uwadex */
-.evo-edit-row{display:grid;grid-template-columns:110px 1fr 140px 110px 36px;gap:8px;align-items:end;margin-bottom:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;animation:fadeUp .2s both}
+.evo-edit-row{display:grid;grid-template-columns:22px 100px minmax(140px,.85fr) 170px 170px 36px;gap:8px;align-items:end;margin-bottom:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;animation:fadeUp .2s both;transition:opacity .15s,box-shadow .15s}
+.evo-edit-row.evo-dragging{opacity:.4}
+.evo-edit-row.evo-drag-over{box-shadow:0 0 0 2px var(--brand-mid) inset}
+.evo-drag-handle{align-self:end;height:36px;display:flex;align-items:center;justify-content:center;cursor:grab;color:var(--muted);font-size:14px;letter-spacing:-1px;user-select:none;touch-action:none}
+.evo-drag-handle:active{cursor:grabbing}
 .evo-edit-row input,.evo-edit-row select{padding:7px 10px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text);width:100%;outline:none;transition:border .15s}
 .evo-edit-row input:focus,.evo-edit-row select:focus{border-color:var(--brand-mid)}
 .evo-label{font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
@@ -2055,7 +2059,8 @@ function evoAddRow(listId, data = {}) {
   if (!list) return;
   const row = document.createElement('div');
   row.className = 'evo-edit-row';
-  row.dataset.evoFromVal = data.from || ''; // preserva a seleção entre refreshes do select
+  row.dataset.evoRowId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  row.dataset.evoFromRowId = ''; // id do row do qual este evolui (estável mesmo reordenando)
 
   // Preview de sprite — só mostra se tiver cadastrado
   const spriteUrl = evoResolveSprite(data.id);
@@ -2064,6 +2069,7 @@ function evoAddRow(listId, data = {}) {
     : `<div class="evo-sprite-preview" style="display:flex;align-items:center;justify-content:center;font-size:16px;opacity:.3">?</div>`;
 
   row.innerHTML = `
+    <div class="evo-drag-handle" title="Arraste para reordenar" draggable="true">⠿</div>
     <div>
       <div class="evo-label">Nº Pokédex</div>
       <input type="text" class="evo-id" placeholder="N0001 ou 001" value="${data.id || ''}">
@@ -2118,15 +2124,47 @@ function evoAddRow(listId, data = {}) {
   });
   // Atualiza o label do select quando o nome muda
   row.querySelector('.evo-name').addEventListener('input', () => evoRefreshFromSelects(listId));
-  // Lembra a seleção atual do select "Evolui de" sempre que o usuário a mudar
-  row.querySelector('.evo-from').addEventListener('change', e => { row.dataset.evoFromVal = e.target.value; });
+  // Lembra a seleção atual do select "Evolui de" (por rowId — sobrevive a reordenação)
+  row.querySelector('.evo-from').addEventListener('change', e => { row.dataset.evoFromRowId = e.target.value; });
+
+  evoEnableDrag(row, listId);
 
   list.appendChild(row);
   evoRefreshFromSelects(listId);
 }
 
+// Habilita arrastar-e-soltar pelo handle (⠿) para reordenar os estágios.
+// As seleções "Evolui de" são mantidas por rowId estável, então sobrevivem à reordenação.
+let evoDragSrc = null;
+function evoEnableDrag(row, listId) {
+  const handle = row.querySelector('.evo-drag-handle');
+  row.addEventListener('dragstart', e => {
+    evoDragSrc = row;
+    row.classList.add('evo-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', row.dataset.evoRowId); } catch(_) {}
+  });
+  row.addEventListener('dragend', () => {
+    row.classList.remove('evo-dragging');
+    row.classList.remove('evo-drag-over');
+    evoDragSrc = null;
+    evoRefreshFromSelects(listId);
+  });
+  row.addEventListener('dragover', e => {
+    if (!evoDragSrc || evoDragSrc === row) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const list = document.getElementById(listId);
+    const rect = row.getBoundingClientRect();
+    const after = (e.clientY - rect.top) > rect.height / 2;
+    list.insertBefore(evoDragSrc, after ? row.nextSibling : row);
+  });
+  row.addEventListener('drop', e => { e.preventDefault(); });
+}
+
 // Reconstrói as opções de todos os selects "Evolui de" da lista, com base nos
-// estágios atualmente cadastrados (nº, nome e ID), preservando a seleção de cada um.
+// estágios atualmente cadastrados (nº, nome e ID). O value de cada option é o
+// rowId estável do estágio-alvo, então a seleção sobrevive à reordenação por drag.
 function evoRefreshFromSelects(listId) {
   const list = document.getElementById(listId);
   if (!list) return;
@@ -2134,31 +2172,36 @@ function evoRefreshFromSelects(listId) {
   rows.forEach((row, i) => {
     const sel = row.querySelector('.evo-from');
     if (!sel) return;
-    const myIdx = i + 1; // 1-based
+    const myRowId = row.dataset.evoRowId;
     const opts = ['<option value="">— Evolução Linear —</option>'];
     rows.forEach((r2, j) => {
-      const idx2 = j + 1;
-      if (idx2 === myIdx) return; // não pode evoluir de si mesmo
+      if (r2.dataset.evoRowId === myRowId) return; // não pode evoluir de si mesmo
+      const idx2  = j + 1;
       const id2   = r2.querySelector('.evo-id')?.value.trim()   || '';
       const name2 = r2.querySelector('.evo-name')?.value.trim() || `Estágio ${idx2}`;
       const label = `${idx2}. ${name2}${id2 ? ' ('+id2+')' : ''}`;
-      opts.push(`<option value="${idx2}">${label}</option>`);
+      opts.push(`<option value="${r2.dataset.evoRowId}">${label}</option>`);
     });
-    const wanted = row.dataset.evoFromVal || '';
+    const wanted = row.dataset.evoFromRowId || '';
     sel.innerHTML = opts.join('');
-    sel.value = [...sel.options].some(o => o.value === wanted) ? wanted : '';
+    const valid = [...sel.options].some(o => o.value === wanted);
+    sel.value = valid ? wanted : '';
+    if (!valid) row.dataset.evoFromRowId = '';
   });
 }
 
 function evoReadList(listId) {
   const list = document.getElementById(listId);
   if (!list) return [];
-  return [...list.querySelectorAll('.evo-edit-row')].map(row => {
+  const rows = [...list.querySelectorAll('.evo-edit-row')];
+  const posByRowId = {};
+  rows.forEach((row, i) => { posByRowId[row.dataset.evoRowId] = i + 1; });
+  return rows.map(row => {
     const id      = row.querySelector('.evo-id')?.value.trim()      || '';
     const name    = row.querySelector('.evo-name')?.value.trim()    || '';
     const method  = row.querySelector('.evo-trigger')?.value.trim() || '';
-    const fromRaw = row.querySelector('.evo-from')?.value.trim()    || '';
-    const from    = fromRaw && /^\d+$/.test(fromRaw) ? parseInt(fromRaw, 10) : null;
+    const fromRowId = row.querySelector('.evo-from')?.value.trim()  || '';
+    const from    = fromRowId && posByRowId[fromRowId] ? posByRowId[fromRowId] : null;
     if (!id && !name) return null;
     return { id, name, ...(method ? { method } : {}), ...(from ? { from } : {}) };
   }).filter(Boolean);
@@ -2169,6 +2212,15 @@ function evoPopulateList(listId, items = []) {
   if (!list) return;
   list.innerHTML = '';
   items.forEach(item => evoAddRow(listId, item));
+  // Resolve o índice numérico salvo ("from": 1-based, na ordem de items[]) para o
+  // rowId estável correspondente, já que os rows agora identificam alvo por rowId.
+  const rows = [...list.querySelectorAll('.evo-edit-row')];
+  items.forEach((item, i) => {
+    if (item.from && rows[item.from - 1]) {
+      rows[i].dataset.evoFromRowId = rows[item.from - 1].dataset.evoRowId;
+    }
+  });
+  evoRefreshFromSelects(listId);
 }
 
 /* ══════════════════════════════════════════
