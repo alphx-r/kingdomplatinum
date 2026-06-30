@@ -215,7 +215,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 /* Evo Chain ADM */
 /* Evo editor — estilo uwadex */
-.evo-edit-row{display:grid;grid-template-columns:110px 1fr 140px 36px;gap:8px;align-items:end;margin-bottom:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;animation:fadeUp .2s both}
+.evo-edit-row{display:grid;grid-template-columns:110px 1fr 140px 110px 36px;gap:8px;align-items:end;margin-bottom:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;animation:fadeUp .2s both}
 .evo-edit-row input{padding:7px 10px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text);width:100%;outline:none;transition:border .15s}
 .evo-edit-row input:focus{border-color:var(--brand-mid)}
 .evo-label{font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
@@ -237,6 +237,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .evo-arrow{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0 4px;margin-top:20px}
 .evo-arrow-icon{font-size:18px;color:var(--muted)}
 .evo-arrow-label{font-size:10px;color:var(--muted);font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 7px}
+.evo-chain-branched{display:flex;align-items:center;justify-content:center;gap:6px;padding:16px 12px;flex-wrap:wrap}
+.evo-branch-col{display:flex;flex-direction:column;gap:2px}
+.evo-branch-row{display:flex;align-items:center}
 /* Moveset */
 .moveset-section{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
 .moveset-section-title{font-family:var(--font-title);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--brand);margin-bottom:8px;display:flex;align-items:center;gap:6px}
@@ -2184,6 +2187,10 @@ function evoAddRow(listId, data = {}) {
     <div>
       <div class="evo-label">Condição <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
       <input type="text" class="evo-trigger" placeholder="Ex: Lv 45" value="${data.method || data.trigger || ''}">
+    </div>
+    <div>
+      <div class="evo-label">Evolui do estágio nº <span style="font-weight:400;color:var(--muted)">(vazio=anterior)</span></div>
+      <input type="text" class="evo-from" placeholder="Ex: 1 (ramificada)" value="${data.from || ''}">
     </div>`;
 
   // Preview à direita
@@ -2231,8 +2238,10 @@ function evoReadList(listId) {
     const id      = row.querySelector('.evo-id')?.value.trim()      || '';
     const name    = row.querySelector('.evo-name')?.value.trim()    || '';
     const method  = row.querySelector('.evo-trigger')?.value.trim() || '';
+    const fromRaw = row.querySelector('.evo-from')?.value.trim()    || '';
+    const from    = fromRaw && /^\d+$/.test(fromRaw) ? parseInt(fromRaw, 10) : null;
     if (!id && !name) return null;
-    return { id, name, ...(method ? { method } : {}) };
+    return { id, name, ...(method ? { method } : {}), ...(from ? { from } : {}) };
   }).filter(Boolean);
 }
 
@@ -3341,12 +3350,25 @@ function rpgPill(t) {
   return `<span class="tpill" style="background:${c.bg};color:${c.c}">${t.toUpperCase()}</span>`;
 }
 
-// Renderiza a evo chain visual no estilo uwadex
+// Renderiza a evo chain visual no estilo uwadex — suporta ramificações (ex: Eevee)
 function renderEvoChain(evolucoes, currentId) {
   if (!evolucoes || !evolucoes.length) return '';
-  const stages = evolucoes.map((stage, i) => {
+  const n = evolucoes.length;
+
+  // Resolve o "pai" de cada estágio: usa o campo "from" (1-based) quando definido,
+  // senão assume o estágio anterior (cadeia linear, comportamento legado).
+  const parentOf = evolucoes.map((st, i) => {
+    if (i === 0) return null;
+    const f = parseInt(st.from, 10);
+    return (f && f >= 1 && f <= n) ? f - 1 : i - 1;
+  });
+  const childrenOf = {};
+  parentOf.forEach((par, i) => { if (par !== null) (childrenOf[par] = childrenOf[par] || []).push(i); });
+  const hasBranch = Object.values(childrenOf).some(arr => arr.length > 1);
+
+  function stageHtml(i, withArrow) {
+    const stage = evolucoes[i];
     const isCurrent = stage.id && String(stage.id) === String(currentId);
-    // Resolve sprite: cadastrado no RPG/PK, ou PokeAPI para oficiais, ou placeholder
     let spr = null;
     if (stage.id) {
       const idStr = String(stage.id);
@@ -3361,8 +3383,7 @@ function renderEvoChain(evolucoes, currentId) {
     const sprHtml = spr
       ? `<img class="evo-stage-sprite" src="${spr}" alt="${stage.name||''}" onerror="this.style.opacity='.15'">`
       : `<div class="evo-stage-sprite" style="display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.25">?</div>`;
-    // Seta com condição (aparece ANTES do estágio, a partir do 2º)
-    const arrow = i > 0 ? `<div class="evo-arrow">
+    const arrow = withArrow ? `<div class="evo-arrow">
       <div class="evo-arrow-icon">›</div>
       ${stage.method||stage.trigger ? `<div class="evo-arrow-label">${stage.method||stage.trigger}</div>` : ''}
     </div>` : '';
@@ -3372,10 +3393,40 @@ function renderEvoChain(evolucoes, currentId) {
       <div class="evo-stage-name">${cap(stage.name||'')}</div>
       ${numLabel ? `<div class="evo-stage-num">${numLabel}</div>` : ''}
     </div>`;
+  }
+
+  let innerHtml;
+  if (!hasBranch) {
+    // Cadeia linear — mesmo layout horizontal de sempre
+    innerHtml = evolucoes.map((_, i) => stageHtml(i, i > 0)).join('');
+    return `<div class="evo-chain-wrap">
+      <div class="evo-chain-title">EVOLUTIONARY CHAIN</div>
+      <div class="evo-chain-inner">${innerHtml}</div>
+    </div>`;
+  }
+
+  // Layout ramificado (estilo Eevee): base fixa à esquerda + coluna vertical
+  // com uma linha por ramificação (cada uma pode ter sua própria sub-cadeia linear).
+  const baseIdx = parentOf.findIndex(p => p === null);
+  const baseHtml = `<div class="evo-branch-row">${stageHtml(baseIdx, false)}</div>`;
+  const branchStarts = childrenOf[baseIdx] || [];
+  const rows = branchStarts.map(startIdx => {
+    let html = stageHtml(startIdx, true);
+    let cur = startIdx;
+    // Continua a sub-cadeia enquanto houver exatamente 1 filho (ex: Wurmple → Silcoon → Beautifly)
+    while ((childrenOf[cur] || []).length === 1) {
+      cur = childrenOf[cur][0];
+      html += stageHtml(cur, true);
+    }
+    return `<div class="evo-branch-row">${html}</div>`;
   }).join('');
+
   return `<div class="evo-chain-wrap">
     <div class="evo-chain-title">EVOLUTIONARY CHAIN</div>
-    <div class="evo-chain-inner">${stages}</div>
+    <div class="evo-chain-branched">
+      ${baseHtml}
+      <div class="evo-branch-col">${rows}</div>
+    </div>
   </div>`;
 }
 
