@@ -552,7 +552,7 @@ function gridCard(p,i){
     const spriteUrl=p.sprite||'';
     const label=p.name;
     const pref=idPrefix(p.id);
-    const numLabel=pref?`${pref}#${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
+    const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
     const urlSlug=rpgUrlSlug(p);
     return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
       <div class="pk-num" style="color:var(--brand-mid)">${numLabel}</div>
@@ -578,7 +578,7 @@ function listRow(p,i){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
     const label=p.name;
     const pref=idPrefix(p.id);
-    const numLabel=pref?`${pref}#${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
+    const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
     const urlSlug=rpgUrlSlug(p);
     return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
       <div class="pl-num" style="color:var(--brand-mid)">${numLabel}</div>
@@ -1035,20 +1035,54 @@ async function renderRpgDetail(p, container){
   // Expects p.moves_level = [{name, lvl}], p.moves_egg = [name], p.moves_tutor = [name]
   // OR p.moves = [{name, method, lvl}] with method in 'level-up','egg','tutor'
   let levelMoves=[], tmMoves=[], eggMoves=[], tutorMoves=[];
-  if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m.move||m,lvl:m.lvl||m.level||0});
-  if(p.moves_tm) tmMoves=p.moves_tm.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
-  if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
-  if(p.moves_tutor) tutorMoves=p.moves_tutor.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
-  // fallback: unified moves array
-  if(!levelMoves.length&&!tmMoves.length&&!eggMoves.length&&!tutorMoves.length&&p.moves&&Array.isArray(p.moves)){
-    p.moves.forEach(m=>{
-      const nm=typeof m==='string'?{name:m,method:'level-up',lvl:0}:m;
-      const method=(nm.method||nm.learn_method||'level-up').toLowerCase();
-      if(method==='machine') tmMoves.push({name:nm.name});
-      else if(method==='egg') eggMoves.push({name:nm.name});
-      else if(method==='tutor') tutorMoves.push({name:nm.name});
-      else levelMoves.push({name:nm.name,lvl:nm.lvl||nm.level||0});
-    });
+
+  // ── Formas regionais (Alola/Galar/Paldea/Hisui) — busca o moveset direto na PokéAPI
+  // usando o slug "<nome-base>-<regiao>" (ex: "(A) Vulpix" → "vulpix-alola")
+  const REGION_SLUG_M={'A':'alola','G':'galar','P':'paldea','H':'hisui'};
+  let regionalMovesLoaded=false;
+  if(REGION_SLUG_M[pref]){
+    const baseSlug=slugify(String(p.name||'').replace(/^\([AGPH]\)\s*/i,''));
+    const regSlug=REGION_SLUG_M[pref];
+    const apiSlug=baseSlug.endsWith(`-${regSlug}`)?baseSlug:`${baseSlug}-${regSlug}`;
+    try{
+      const rMv=await fetch(`https://pokeapi.co/api/v2/pokemon/${apiSlug}`);
+      if(rMv.ok){
+        const dMv=await rMv.json();
+        dMv.moves.forEach(mv=>{
+          const vgd=mv.version_group_details;
+          const lvlUp=vgd.filter(v=>v.move_learn_method.name==='level-up');
+          const machine=vgd.some(v=>v.move_learn_method.name==='machine');
+          const egg=vgd.some(v=>v.move_learn_method.name==='egg');
+          const tutor=vgd.some(v=>v.move_learn_method.name==='tutor');
+          if(lvlUp.length){
+            const lvl=Math.max(...lvlUp.map(v=>v.level_learned_at));
+            levelMoves.push({name:mv.move.name,lvl});
+          }
+          if(machine) tmMoves.push({name:mv.move.name});
+          if(egg) eggMoves.push({name:mv.move.name});
+          if(tutor) tutorMoves.push({name:mv.move.name});
+        });
+        regionalMovesLoaded=true;
+      }
+    }catch{}
+  }
+
+  if(!regionalMovesLoaded){
+    if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m.move||m,lvl:m.lvl||m.level||0});
+    if(p.moves_tm) tmMoves=p.moves_tm.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
+    if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
+    if(p.moves_tutor) tutorMoves=p.moves_tutor.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
+    // fallback: unified moves array
+    if(!levelMoves.length&&!tmMoves.length&&!eggMoves.length&&!tutorMoves.length&&p.moves&&Array.isArray(p.moves)){
+      p.moves.forEach(m=>{
+        const nm=typeof m==='string'?{name:m,method:'level-up',lvl:0}:m;
+        const method=(nm.method||nm.learn_method||'level-up').toLowerCase();
+        if(method==='machine') tmMoves.push({name:nm.name});
+        else if(method==='egg') eggMoves.push({name:nm.name});
+        else if(method==='tutor') tutorMoves.push({name:nm.name});
+        else levelMoves.push({name:nm.name,lvl:nm.lvl||nm.level||0});
+      });
+    }
   }
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
 
