@@ -2763,6 +2763,32 @@ async function doImport() {
    CUSTOM ENTRY MODALS
 ══════════════════════════════════════════ */
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+async function uploadImgStorage(b64, bucket, path) {
+  const [header, data] = b64.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+  const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/${bucket}/${path}`, {
+    method: 'POST',
+    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': mime, 'x-upsert': 'true' },
+    body: blob
+  });
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    throw new Error('Falha no upload: ' + uploadRes.status + ' — ' + err);
+  }
+  return `${SUPA_URL}/storage/v1/object/public/${bucket}/${path}`;
+}
+function openNewAbility() { document.getElementById('new-ability-modal').classList.add('open'); }
+function openNewMove() { document.getElementById('new-move-modal').classList.add('open'); }
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-ov').forEach(ov => {
+  ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('open'); });
+});
+
 async function saveNewAbility() {
   const name = document.getElementById('nab-name').value.trim().toLowerCase().replace(/\s+/g, '-');
   const descEn = document.getElementById('nab-desc_en').value.trim();
