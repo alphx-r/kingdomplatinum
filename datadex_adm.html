@@ -334,6 +334,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="adm-desc">Gerencie traduções de Pokémon, habilidades e movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
     </div>
     <div class="adm-actions">
+      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
       <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
       <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
@@ -2770,6 +2771,33 @@ function flattenPokeapiEvoChain(rootNode) {
   }
   walk(rootNode, null);
   return result;
+}
+
+// Dispara manualmente o backup do pokemon.json (GET /api/admin/backup-pokemon-now).
+// Necessário porque o plano gratuito da Vercel só permite 1 execução de cron por dia
+// — isso dá um jeito de rodar o backup extra na hora. Usa uma rota separada da do
+// cron (/api/cron/backup-pokemon) porque aquela exige um CRON_SECRET que não pode
+// ficar exposto aqui no JS do navegador; a rota manual reaproveita a mesma lógica
+// de backup (lib/backupPokemon.js) só que sem esse header.
+async function runManualBackup() {
+  const btn = document.getElementById('btn-manual-backup');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Rodando...';
+  try {
+    const res = await fetch('/api/admin/backup-pokemon-now');
+    const ct = res.headers.get('content-type') || '';
+    const body = ct.includes('application/json') ? await res.json() : await res.text();
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+    }
+    alert('✅ Backup rodado com sucesso!\n\n' + (typeof body === 'string' ? body : JSON.stringify(body, null, 2)));
+  } catch (e) {
+    alert('❌ Falha ao rodar o backup: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 }
 
 async function importRegionalFormsFromPokeapi() {
