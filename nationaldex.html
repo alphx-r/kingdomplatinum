@@ -590,6 +590,31 @@ async function loadRpgData(){
 // Retorna o prefixo de região de um id customizado (A, G, H, P, N) ou null
 function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1].toUpperCase():null; }
 
+// Slug de região (minúsculo, como usado nos nomes vindos da PokeAPI) por prefixo de id.
+const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea'};
+
+// Formata o número exibido nos nós da cadeia evolutiva: letra do prefixo + 4 dígitos
+// (ex: id "A0019" → "A0019"; id numérico puro sem prefixo → só os 4 dígitos).
+function evoDisplayNum(id){
+  const pfx=idPrefix(id);
+  return pfx?`${pfx}${String(id).slice(1).padStart(4,'0')}`:String(id).padStart(4,'0');
+}
+
+// Formata o nome exibido nos nós da cadeia evolutiva: pra formas regionais, remove
+// o sufixo da região do nome (ex: "Rattata Alola" → "Rattata") e antepõe "(A) "
+// (ex: "(A) Rattata"). Formas não-regionais (Nendo, oficiais) mantêm o nome puro.
+function evoDisplayName(entry){
+  const pfx=idPrefix(entry.id);
+  const regSlug=REGION_SLUG_BY_PREFIX[pfx];
+  let nm=titleCase(entry.name);
+  if(regSlug){
+    nm=nm.replace(new RegExp('\\s*'+regSlug+'\\s*$','i'),'').trim();
+    return `(${pfx}) ${nm}`;
+  }
+  return nm;
+}
+
+
 // Gera o slug usado na URL para um Pokémon RPG. Se houver outro Pokémon RPG
 // com o mesmo nome (slugificado), desambigua anexando o id (ex: desert-tinyvine-n0719).
 function rpgUrlSlug(p){
@@ -1055,13 +1080,12 @@ async function renderRpgDetail(p, container){
         });
       }
       const sprite=evPk?.sprite||'';
-      const evName=evPk?titleCase(evPk.name):(ev.name?cap(ev.name):'?');
+      const evName=evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?');
       // Número exibido: sempre a partir do id canônico do registro encontrado
       // (já vem prefixado corretamente); só usa o id cru salvo em evolucoes
       // como último recurso, sem cortar dígito de números sem prefixo.
       const evId=evPk?.id||rawId||'?';
-      const evNumPref=evPk?idPrefix(evPk.id):idPrefix(rawId);
-      const evNumLabel=evNumPref?String(evId).slice(1).padStart(4,'0'):String(evId).padStart(4,'0');
+      const evNumLabel=evoDisplayNum(evId);
       const isMe=String(evId)===String(p.id);
       const method=ev.method||ev.trigger||'';
       const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
@@ -1771,12 +1795,12 @@ function regionalEvoNode(node, regEntry, det, isFirst, currentId){
   const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
   if(regEntry){
     const isMe=String(regEntry.id)===String(currentId);
-    const name=titleCase(regEntry.name);
+    const name=evoDisplayName(regEntry);
     const sprite=regEntry.sprite||'';
     return `${arrow}<button class="evo-node" onclick="${isMe?'void(0)':`goDetail('__rpg__${encodeURIComponent(regEntry.id)}','${rpgUrlSlug(regEntry)}')`}" style="${isMe?'cursor:default':''}">
       ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${name}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
       <span class="evo-node-name">${name}</span>
-      <span class="evo-node-num">${String(regEntry.id).slice(1).padStart(4,'0')}</span>
+      <span class="evo-node-num">${evoDisplayNum(regEntry.id)}</span>
     </button>`;
   }
   const name=node.species.name;
