@@ -481,21 +481,81 @@ window.addEventListener('popstate',e=>{
 });
 
 /* ═══════════════════════════════════════
+   SUPABASE — banco novo dedicado da DataDex (mesmo projeto/tabelas
+   usadas pelo admin: pokemons, abilities, moves). Fonte de verdade
+   pros Pokémon regionais/fakemon e overrides de Pokémon oficiais.
+═══════════════════════════════════════ */
+const SUPA_URL='https://fatdzivyqipmcbzaiftc.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
+const SH_ADM={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY};
+
+// PostgREST devolve no máximo 1000 linhas por request — pagina com o
+// header Range até vir tudo (mesma lógica usada no admin).
+async function sbFetchAllPages(url,headers,pageSize=1000){
+  let all=[],from=0;
+  while(true){
+    const r=await fetch(url,{headers:{...headers,Range:`${from}-${from+pageSize-1}`}});
+    if(!r.ok&&r.status!==206) throw new Error(await r.text());
+    const page=await r.json();
+    all=all.concat(page);
+    if(page.length<pageSize) break;
+    from+=pageSize;
+  }
+  return all;
+}
+async function sbSelect(table,eq=null){
+  let url=`${SUPA_URL}/rest/v1/${table}?select=*`;
+  if(eq) url+=`&${eq.col}=eq.${eq.val}`;
+  return await sbFetchAllPages(url,SH_ADM);
+}
+
+// Descrições PT das habilidades — tabela "abilities" do banco novo
+// (mesma usada pelo admin), em vez do cache antigo em localStorage.
+let _abilitiesPtCache=null;
+async function loadAbilitiesPt(){
+  if(_abilitiesPtCache) return _abilitiesPtCache;
+  try{
+    const rows=await sbSelect('abilities');
+    _abilitiesPtCache={};
+    rows.forEach(row=>{ _abilitiesPtCache[row.name]=row; });
+  }catch{ _abilitiesPtCache={}; }
+  return _abilitiesPtCache;
+}
+async function getAbilityPt(name){
+  const k=name.toLowerCase().replace(/ /g,'-');
+  const m=await loadAbilitiesPt();
+  return m[k]?.desc_pt||m[k]?.desc_en||null;
+}
+
+// Descrições PT dos moves — tabela "moves" do banco novo (mesma do admin).
+let _movesPtCache=null;
+async function loadMovesPt(){
+  if(_movesPtCache) return _movesPtCache;
+  try{
+    const rows=await sbSelect('moves');
+    _movesPtCache={};
+    rows.forEach(row=>{ _movesPtCache[row.name]=row; });
+  }catch{ _movesPtCache={}; }
+  return _movesPtCache;
+}
+
+/* ═══════════════════════════════════════
    LISTA — carregamento
 ═══════════════════════════════════════ */
 let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
 // Pokémon do Nendo (RPG customizados) — carregados do JSON
 
-// PK — PokemonStore (leitura do JSON do GitHub)
+// PK — PokemonStore (leitura direta do Supabase novo — mesma tabela do admin).
+// Antes lia de /pokemon.json (export estático, atualizado 1x/dia por cron);
+// agora lê ao vivo do Supabase, então formas regionais/fakemon aprovadas no
+// admin aparecem aqui na hora, sem esperar o próximo cron.
 const PK = (() => {
   let _data   = [];
   let _loaded = false;
   async function load() {
     if (_loaded) return _data;
     try {
-      const r = await fetch('/pokemon.json');
-      if (!r.ok) throw new Error();
-      _data = await r.json();
+      _data = await sbSelect('pokemons', { col: 'approved', val: 'true' });
       _loaded = true;
     } catch(e) { _data = []; }
     return _data;
@@ -506,12 +566,17 @@ const PK = (() => {
 
 // Pokémon RPG agrupados por nome (deduplicados dos biomas)
 let _rpgPokemon=[]; // todos do JSON (fakemon, regionais, oficiais customizados)
+// Overrides do admin pra Pokémon oficiais (id numérico): bio_pt, sprite, etc.
+// Mesmo padrão do dbMap usado no datadex_adm.
+let _pkDbMap={};
 
 async function loadRpgData(){
   try{
     const all = await PK.load();
     // Deduplica por id — cada entrada no JSON é única
     _rpgPokemon = all;
+    _pkDbMap = {};
+    all.filter(p=>/^\d+$/.test(String(p.id))).forEach(p=>{ _pkDbMap[String(p.id)]=p; });
   }catch{}
 }
 
@@ -839,7 +904,7 @@ async function renderRpgDetail(p, container){
       const r=await fetch(`https://pokeapi.co/api/v2/ability/${h.name.toLowerCase().replace(/ /g,'-')}`);
       if(r.ok){const d=await r.json();const en=d.effect_entries?.find(e=>e.language.name==='en');desc=en?en.short_effect:'';}
     }catch{}
-    if(!desc){try{const s=JSON.parse(localStorage.getItem('kdex_abilities_pt'))||{};desc=s[h.name.toLowerCase().replace(/ /g,'-')]||'';}catch{}}
+    if(!desc){try{desc=(await getAbilityPt(h.name))||'';}catch{}}
     if(!h.ha) rpgAbCounter++;
     return `<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
       ${h.ha?`<span class="ha-badge">HA</span>`:`<span class="ability-idx">${rpgAbCounter}.</span>`}
@@ -1019,18 +1084,8 @@ async function renderRpgDetail(p, container){
   // ── Moves ──
   const STYLE_COLORS={cool:'#e03030',beauty:'#2080e0',cute:'#e030a0',smart:'#30a030',tough:'#e0a020'};
   const CAT_COLORS_M={physical:'#e07030',special:'#6070e0',status:'#90a090'};
-  const SUPA_URL_NDX='https://ucbkodkjlbatttiuqjtv.supabase.co';
-  const SUPA_KEY_NDX='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
-  const SH_NDX={'apikey':SUPA_KEY_NDX,'Authorization':'Bearer '+SUPA_KEY_NDX};
-  let _movesPtCache=null;
-  async function loadMovesPt(){
-    if(_movesPtCache)return _movesPtCache;
-    try{
-      const r=await fetch(`${SUPA_URL_NDX}/rest/v1/moves_pt?select=*`,{headers:SH_NDX});
-      if(r.ok){const rows=await r.json();_movesPtCache={};rows.forEach(row=>{_movesPtCache[row.name]=row;});return _movesPtCache;}
-    }catch{}
-    _movesPtCache={};return _movesPtCache;
-  }
+  // Descrições PT dos moves: tabela "moves" do banco novo (mesma usada
+  // pelo admin), via o cache/loader global loadMovesPt() já definido acima.
 
   const moveDataCacheRpg={};
   async function fetchRpgMoveData(name){
@@ -1049,14 +1104,14 @@ async function renderRpgDetail(p, container){
           type:db?.type||d.type?.name||null,
           category:db?.damage_class||d.damage_class?.name||null,
           style:d.contest_type?.name||null,
-          desc:db?.desc||fallbackDesc
+          desc:db?.descricao||fallbackDesc
         };
         moveDataCacheRpg[k]=data;return data;
       }
     }catch{}
     // Move exclusivo RPG — não existe na PokeAPI
     if(db){
-      const data={power:db.power??null,type:db.type||null,category:db.damage_class||null,style:null,desc:db.desc||''};
+      const data={power:db.power??null,type:db.type||null,category:db.damage_class||null,style:null,desc:db.descricao||''};
       moveDataCacheRpg[k]=data;return data;
     }
     return moveDataCacheRpg[k]={power:null,type:null,category:null,style:null,desc:''};
@@ -1280,11 +1335,14 @@ async function renderDetail(p,s,container){
   const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
   applyTypeTheme(primaryType);
 
-  const genus=s.genera?.find(g=>g.language.name==='en')?.genus||'Pokémon';
+  const genusFromDb=_pkDbMap[String(id)]?.genus_en;
+  const genus=genusFromDb||s.genera?.find(g=>g.language.name==='en')?.genus||'Pokémon';
   let flavor=s.flavor_text_entries.find(f=>f.language.name==='pt-BR')
     ||s.flavor_text_entries.find(f=>f.language.name==='pt')
     ||s.flavor_text_entries.find(f=>f.language.name==='en');
-  const flavorText=flavor?flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' '):'';
+  // Bio: prioriza o texto revisado no admin (banco novo); cai pro flavor
+  // text da PokéAPI só se o admin ainda não tiver aprovado uma versão.
+  const flavorText=_pkDbMap[String(id)]?.bio||(flavor?flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' '):'');
   const gr=s.gender_rate;
   const mPct=(100-(gr/8*100)).toFixed(0);const fPct=(gr/8*100).toFixed(0);
   const genderHtml=gr===-1?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
@@ -1298,7 +1356,7 @@ async function renderDetail(p,s,container){
   let regCounter=0;
   const abHtml=await Promise.all(sortedAbs.map(async(a)=>{
     let desc='';
-    try{const ar=await fetch(a.ability.url);const ad=await ar.json();const pt=getPtBR('ability',a.ability.name);const en=ad.effect_entries.find(e=>e.language.name==='en');desc=pt||(en?en.short_effect:'');}catch{}
+    try{const ar=await fetch(a.ability.url);const ad=await ar.json();const pt=await getAbilityPt(a.ability.name);const en=ad.effect_entries.find(e=>e.language.name==='en');desc=pt||(en?en.short_effect:'');}catch{}
     const ha=a.is_hidden;
     if(!ha) regCounter++;
     return `<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
@@ -1369,7 +1427,8 @@ async function renderDetail(p,s,container){
       const CONTEST_STYLE={cool:'Cool',beauty:'Beauty',cute:'Cute',smart:'Clever',tough:'Tough'};
       const CAT_PT={physical:'Physical',special:'Special',status:'Status'};
       const desc=d.effect_entries?.find(e=>e.language.name==='en')?.short_effect||d.flavor_text_entries?.find(e=>e.language.name==='en')?.flavor_text||'';
-      const ptDesc=getPtBR('move',name);
+      const movesPt=await loadMovesPt();
+      const ptDesc=movesPt[name]?.descricao||null;
       const data={
         power:d.power||null,
         type:d.type?.name||null,
@@ -1380,11 +1439,6 @@ async function renderDetail(p,s,container){
       moveDataCache[name]=data;
       return data;
     }catch{return null;}
-  }
-
-  /* ── Traduções pt-BR do ADM ── */
-  function getPtBR(type,name){
-    try{const s=JSON.parse(localStorage.getItem(type==='ability'?'kdex_abilities_pt':'kdex_moves_pt'))||{};return s[name]||null;}catch{return null;}
   }
 
   async function movesTable(moves,showLvl=false){
