@@ -34,12 +34,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Lê todos os Pokémon do Supabase
-    const dbRes = await fetch(`${SUPA_URL}/rest/v1/pokemons?select=*`, {
-      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` }
-    });
-    if (!dbRes.ok) throw new Error('Supabase: ' + await dbRes.text());
-    const pokemons = await dbRes.json();
+    // 1. Lê todos os Pokémon do Supabase (paginado — o PostgREST limita a
+    //    1000 linhas por request por padrão, então busca em blocos até acabar)
+    const pokemons = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const dbRes = await fetch(`${SUPA_URL}/rest/v1/pokemons?select=*`, {
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: `Bearer ${SUPA_KEY}`,
+          Range: `${from}-${from + pageSize - 1}`
+        }
+      });
+      if (!dbRes.ok && dbRes.status !== 206) throw new Error('Supabase: ' + await dbRes.text());
+      const page = await dbRes.json();
+      pokemons.push(...page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
 
     // Ordena por id numérico/alfanumérico pra ficar estável no diff do git
     pokemons.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
