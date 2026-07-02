@@ -952,7 +952,14 @@ async function renderRpgDetail(p, container){
   // Para formas regionais, usa a cadeia evolutiva oficial da PokéAPI (buildEvo).
   // Para fakemon Nendo, usa o array p.evolucoes definido manualmente no JSON.
   let evoChainHtml='';
-  if(apiEvoChain?.chain){
+  if(apiEvoChain?.chain && REGION_SLUG_F[pref]){
+    // Forma regional: tenta casar cada estágio da cadeia com a variante
+    // regional equivalente (ex: Rattata → Rattata-Alola). Estágios sem
+    // contraparte regional (ex: Pichu, que não tem forma de Alola) caem
+    // de volta pra forma normal — é o comportamento correto no jogo.
+    try{ evoChainHtml=buildRegionalEvo(apiEvoChain.chain, pref, REGION_SLUG_F[pref], p.id); }
+    catch{ try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{} }
+  } else if(apiEvoChain?.chain){
     try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{}
   } else if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
     // Espera array de objetos: [{id, name, method, from}]
@@ -1667,6 +1674,74 @@ function buildEvo(chain){
   }
 
   // Mega evolutions — fetch from pokemon forms
+  return html;
+}
+
+// Nó da cadeia evolutiva regional: usa a variante regional (de _rpgPokemon)
+// quando existe; senão cai pra forma normal do estágio (comportamento
+// correto — nem toda pré-evolução tem variante regional).
+function regionalEvoNode(node, regEntry, det, isFirst, currentId){
+  const method=evoMethod(det);
+  const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
+  if(regEntry){
+    const isMe=String(regEntry.id)===String(currentId);
+    const name=titleCase(regEntry.name);
+    const sprite=regEntry.sprite||'';
+    return `${arrow}<button class="evo-node" onclick="${isMe?'void(0)':`goDetail('__rpg__${encodeURIComponent(regEntry.id)}','${rpgUrlSlug(regEntry)}')`}" style="${isMe?'cursor:default':''}">
+      ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${name}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
+      <span class="evo-node-name">${name}</span>
+      <span class="evo-node-num">${String(regEntry.id).slice(1).padStart(4,'0')}</span>
+    </button>`;
+  }
+  const name=node.species.name;
+  const id=node.species.url.split('/').filter(Boolean).pop();
+  return `${arrow}<button class="evo-node" onclick="goDetail('${name}')">
+    <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
+         onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${name}">
+    <span class="evo-node-name">${cap(name)}</span>
+    <span class="evo-node-num">#${String(id).padStart(3,'0')}</span>
+  </button>`;
+}
+
+// Constrói a cadeia evolutiva pra formas regionais, casando cada estágio
+// da evolution-chain oficial (que só conhece a forma normal) com a
+// variante regional equivalente já cadastrada em _rpgPokemon (ex:
+// "rattata" no estágio 0 → registro A0019 "rattata-alola").
+function buildRegionalEvo(chain, pref, regSlug, currentId){
+  function flatten(node,depth,result){
+    const det=node.evolution_details?.[0]||null;
+    result.push({node,det,depth,branches:node.evolves_to.length});
+    for(const child of node.evolves_to) flatten(child,depth+1,result);
+    return result;
+  }
+  const nodes=flatten(chain,0,[]);
+  function findRegional(node){
+    const wantSlug=`${node.species.name}-${regSlug}`;
+    return _rpgPokemon.find(x=>idPrefix(x.id)===pref && (rpgUrlSlug(x)===wantSlug || slugify(x.name)===wantSlug));
+  }
+  const hasBranch=nodes.some(n=>n.branches>1)||nodes.filter(n=>n.depth===1).length>1;
+  if(!hasBranch){
+    return nodes.map((n,i)=>regionalEvoNode(n.node,findRegional(n.node),n.det,i===0,currentId)).join('');
+  }
+  const base=nodes.find(n=>n.depth===0);
+  const mid=nodes.filter(n=>n.depth===1);
+  const finals=nodes.filter(n=>n.depth===2);
+  let html=`<div class="evo-branch-wrap">`;
+  html+=`<div class="evo-branch-col">${regionalEvoNode(base.node,findRegional(base.node),null,true,currentId)}</div>`;
+  if(mid.length){
+    html+=`<div class="evo-branch-col">`;
+    for(const m of mid){
+      html+=`<div class="evo-branch-row">${regionalEvoNode(m.node,findRegional(m.node),m.det,false,currentId)}`;
+      if(finals.length&&mid.length===1){
+        for(const f of finals) html+=regionalEvoNode(f.node,findRegional(f.node),f.det,false,currentId);
+      }
+      html+=`</div>`;
+    }
+    html+=`</div>`;
+  } else {
+    for(const f of finals) html+=regionalEvoNode(f.node,findRegional(f.node),f.det,false,currentId);
+  }
+  html+=`</div>`;
   return html;
 }
 
