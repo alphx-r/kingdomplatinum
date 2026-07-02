@@ -334,6 +334,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="adm-desc">Gerencie traduções de Pokémon, habilidades e movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
     </div>
     <div class="adm-actions">
+      <button class="btn btn-outline" onclick="migrateFromOldSupabase()">⬇️ Importar do banco antigo</button>
+      <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()">🔄 Migrar pokemon.json → Supabase</button>
       <button class="btn btn-outline" onclick="openImport()">⬆ Importar JSON</button>
       <button class="btn btn-success" onclick="exportAll()">⬇ Exportar JSON</button>
     </div>
@@ -1186,62 +1188,25 @@ function buildAutoSlug(nameRaw, id) {
 }
 
 /* ══════════════════════════════════════════
-   PK — PokemonStore (JSON ↔ GitHub)
+   PK — REMOVIDO. Todo o admin (Pokémon oficial + RPG) lê/grava direto
+   no Supabase agora. pokemon.json virou só um export/backup gerado
+   1x/dia pelo cron em /api/cron/backup-pokemon (lê o Supabase, não
+   o contrário). O botão "Migrar pokemon.json → Supabase" (função
+   migratePokemonJsonToSupabase) usa fetch direto no arquivo estático,
+   não precisa desse módulo.
 ══════════════════════════════════════════ */
-const PK = (() => {
-  const REPO  = 'alphx-r/kingdomplatinum';
-  const FILE  = 'pokemon.json';
-  const TOKEN = ['ghp_6zBzR','CFV7Fv7le','actYsB90Jn','tMkgLP4YGD7Z'].join('');
-  const API   = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
-  let _data   = [];
-  let _sha    = null;
-
-  let _loaded = false;
-
-  async function load() {
-    if (_loaded) return _data;
-    // Carrega do arquivo estático local; busca o sha do GitHub em paralelo para o save funcionar
-    const [localRes, ghRes] = await Promise.all([
-      fetch('/pokemon.json'),
-      fetch(API, { headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' } }).catch(()=>null)
-    ]);
-    if (!localRes.ok) throw new Error('HTTP ' + localRes.status);
-    _data = await localRes.json();
-    if (ghRes && ghRes.ok) { const meta = await ghRes.json(); _sha = meta.sha; }
-    _loaded = true;
-    return _data;
-  }
-
-  async function save() {
-    const GH = { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
-    // Sempre busca o SHA mais recente antes de salvar — evita 409
-    const metaRes = await fetch(API, { headers: GH }).catch(() => null);
-    if (metaRes && metaRes.ok) { const meta = await metaRes.json(); _sha = meta.sha; }
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(_data, null, 2))));
-    const body = { message: 'chore: update pokemon.json', content, ...(_sha ? { sha: _sha } : {}) };
-    const r = await fetch(API, { method: 'PUT', headers: GH, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error('GitHub save: ' + await r.text());
-    const res = await r.json();
-    _sha = res.content.sha;
-  }
-
-  function get(id)        { return _data.find(p => String(p.id) === String(id)); }
-  function getAll()       { return _data; }
-  function set(id, patch) {
-    const idx = _data.findIndex(p => String(p.id) === String(id));
-    if (idx >= 0) Object.assign(_data[idx], patch);
-    else _data.push({ id: String(id), ...patch });
-  }
-  function remove(id)     { _data = _data.filter(p => String(p.id) !== String(id)); }
-
-  return { load, save, get, getAll, set, remove };
-})();
 
 /* ══════════════════════════════════════════
    SUPABASE CONFIG
 ══════════════════════════════════════════ */
-const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+const SUPA_URL = 'https://fatdzivyqipmcbzaiftc.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
+
+// Projeto ANTIGO (compartilhado com o index/RPG) — usado só na migração
+// única de dados pra cá. Depois de migrar tudo, essas duas linhas podem
+// ser removidas com segurança.
+const OLD_SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const OLD_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 
 const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
 
@@ -2109,7 +2074,7 @@ async function savePkModal(approve) {
   const newIdRaw = document.getElementById('epk-pokedex').value.trim();
   const newId = newIdRaw || id;
   if (String(newId) !== String(id)) {
-    const conflito = S.pk.all.some(p => String(p.id) === String(newId) && String(p.id) !== String(id)) || !!PK.get(String(newId));
+    const conflito = S.pk.all.some(p => String(p.id) === String(newId) && String(p.id) !== String(id));
     if (conflito) { toast(`Já existe um Pokémon com o número "${newId}".`, 'err'); return; }
   }
 
@@ -2203,7 +2168,6 @@ async function savePkModal(approve) {
     const renaming = String(newId) !== String(id);
     if (renaming) {
       try { await sbDelete('pokemons', id); } catch(e) {}
-      PK.remove(String(id));
       delete S.pk.dbMap[id];
       // Atualiza referência no array in-memory
       S.pk.all.filter(p => String(p.id) === String(id)).forEach(p => { p.id = newId; });
@@ -2211,6 +2175,7 @@ async function savePkModal(approve) {
 
     const row = {
       id: String(newId), name: displayName, genus_en: genusEn,
+      url_slug: slug,
       bio: bioPt,
       sprite, sprite_shiny: spriteShiny,
       tipo1: tipo1||null, tipo2: tipo2||null,
@@ -2221,29 +2186,26 @@ async function savePkModal(approve) {
       condicao: condicao,
       hp, atk, def, spa, spd, spe,
       weight, height, egg_group,
+      evolucoes: evolucoes.length ? evolucoes : null,
+      moves_level: moves_level.length ? moves_level : null,
+      moves_tm: moves_tm.length ? moves_tm : null,
+      moves_egg: moves_egg.length ? moves_egg : null,
+      moves_tutor: moves_tutor.length ? moves_tutor : null,
       is_fakemon: !!pk._isRpg,
       source: pk._isRpg ? (pk.source||'rpg') : 'pokeapi',
       approved: approve,
       updated_at: new Date().toISOString()
     };
-    // Moves e url_slug só vão pro pokemon.json (Supabase não tem essas colunas)
-    const rowJson = { ...row, url_slug: slug, evolucoes: evolucoes.length ? evolucoes : null, moves_level: moves_level.length ? moves_level : null, moves_tm: moves_tm.length ? moves_tm : null, moves_egg: moves_egg.length ? moves_egg : null, moves_tutor: moves_tutor.length ? moves_tutor : null };
-    // 1. Grava primeiro no pokemon.json (GitHub) — é a fonte real usada pelo site público.
+    // Fonte de verdade agora é o Supabase direto — sem passo intermediário pelo GitHub.
     if (renaming) pk.id = newId;
-    PK.set(String(newId), rowJson);
-    await PK.save();
-    S.pk.dbMap[newId] = rowJson;
-    Object.assign(pk, rowJson);
+    await sbUpsert('pokemons', row);
+    S.pk.dbMap[newId] = row;
+    Object.assign(pk, row);
     updatePkStats();
     applyPkFilter();
-    // 2. Espelha no Supabase como melhor esforço — se falhar (ex: coluna NOT NULL,
-    //    linha que nunca existiu lá pra um fakemon criado via RPG), não deve derrubar
-    //    o save real, que já foi feito acima.
-    try { await sbUpsert('pokemons', row); }
-    catch (syncErr) { toast('Salvo no JSON, mas falhou ao espelhar no Supabase: ' + syncErr.message, 'err'); }
     toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
     closeModal('edit-pokemon-modal');
-  } catch(e) { toast('Erro: ' + e.message, 'err'); }
+  } catch(e) { toast('Erro ao salvar no Supabase: ' + e.message, 'err'); }
 }
 
 async function deletePkModal() {
@@ -2251,17 +2213,15 @@ async function deletePkModal() {
   if (!id) return;
   const pk = S.pk.all.find(p => String(p.id) === String(id));
   const nome = pk ? pk.name : id;
-  if (!confirm(`Deletar "${nome}" do JSON e do Supabase? Esta ação não pode ser desfeita.`)) return;
+  if (!confirm(`Deletar "${nome}" do Supabase? Esta ação não pode ser desfeita.`)) return;
   try {
     await sbDelete('pokemons', id);
-    PK.remove(String(id));
-    await PK.save();
     delete S.pk.dbMap[id];
     S.pk.all = S.pk.all.filter(p => String(p.id) !== String(id));
     applyPkFilter();
     updatePkStats();
     closeModal('edit-pokemon-modal');
-    toast('🗑 Deletado do JSON e do Supabase!', 'ok');
+    toast('🗑 Deletado do Supabase!', 'ok');
   } catch(e) { toast('Erro ao deletar: ' + e.message, 'err'); }
 }
 
@@ -2279,14 +2239,12 @@ function updatePkStats() {
 
 async function loadPokemon() {
   try {
-    // Carrega dados de bio/traducao da tabela unificada pokemons
+    // Fonte de verdade agora é o Supabase — pokemon.json virou só backup.
     const dbRows = await sbSelect('pokemons');
     S.pk.dbMap = {};
     dbRows.forEach(r => { S.pk.dbMap[r.id] = r; });
 
-    // Carrega todos os pokemon do pokemon.json (oficiais + fakemon)
-    const all = await PK.load();
-    S.pk.all = all.map(p => ({ ...p, _isRpg: !!(p.is_fakemon || /^[A-Za-z]/.test(String(p.id))) }));
+    S.pk.all = dbRows.map(p => ({ ...p, _isRpg: !!(p.is_fakemon || /^[A-Za-z]/.test(String(p.id))) }));
     S.pk.filtered = S.pk.all;
     renderPkList();
     updatePkStats();
@@ -2367,7 +2325,7 @@ async function saveAb(name, approve) {
   const descEn = item.desc || S.ab.dbMap[name]?.desc_en || '';
   try {
     const row = { name, desc_en: descEn, desc_pt: descPt, approved: approve, updated_at: new Date().toISOString() };
-    await sbUpsert('abilities_pt', row);
+    await sbUpsert('abilities', row);
     S.ab.dbMap[name] = row;
     const ind = document.getElementById('ab-ind-' + name);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
@@ -2407,7 +2365,7 @@ function nrpgPopulateAbilitySelects() {
 
 async function loadAbilities() {
   try {
-    const dbRows = await sbSelect('abilities_pt');
+    const dbRows = await sbSelect('abilities');
     S.ab.dbMap = {};
     dbRows.forEach(r => { S.ab.dbMap[r.name] = r; });
 
@@ -2473,7 +2431,7 @@ function renderMvList() {
   con.innerHTML = items.map((item, i) => {
     const db = S.mv.dbMap[item.name] || {};
     const appr = !!db.approved;
-    const hasDesc = !!(db.desc);
+    const hasDesc = !!(db.descricao);
     // Category pill
     const cat = db.damage_class || item.damage_class || '';
     const catLabel = { physical: 'Físico', special: 'Especial', status: 'Status' }[cat] || cat;
@@ -2529,7 +2487,7 @@ function renderMvList() {
 
         <div class="mv-section-lbl">📄 Descrição</div>
         <div class="field-row">
-          <textarea class="field-pt${db.desc?' filled':''}" id="mv-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" style="width:100%" oninput="markFilled(this)">${db.desc || item.desc || ''}</textarea>
+          <textarea class="field-pt${db.descricao?' filled':''}" id="mv-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" style="width:100%" oninput="markFilled(this)">${db.descricao || item.desc || ''}</textarea>
         </div>
 
         <div class="entry-foot">
@@ -2555,8 +2513,8 @@ async function saveMv(name, approve) {
   const accuracy = accRaw !== '' && accRaw !== undefined ? parseInt(accRaw) : null;
   const contest_style = styleRaw || null;
   try {
-    const row = { name, desc, type, damage_class, power, accuracy, contest_style, approved: approve, updated_at: new Date().toISOString() };
-    await sbUpsert('moves_pt', row);
+    const row = { name, descricao: desc, type, damage_class, power, accuracy, contest_style, approved: approve, updated_at: new Date().toISOString() };
+    await sbUpsert('moves', row);
     S.mv.dbMap[name] = row;
     item.type = type; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
     const ind = document.getElementById('mv-ind-' + name);
@@ -2606,7 +2564,7 @@ function updateMvStats() {
 
 async function loadMoves() {
   try {
-    const dbRows = await sbSelect('moves_pt');
+    const dbRows = await sbSelect('moves');
     S.mv.dbMap = {};
     dbRows.forEach(r => { S.mv.dbMap[r.name] = r; });
 
@@ -2622,7 +2580,7 @@ async function loadMoves() {
     const FIRST = 30;
     await Promise.all(items.slice(0, FIRST).map(async item => {
       try {
-        if (S.mv.dbMap[item.name]?.desc) { item.desc = S.mv.dbMap[item.name].desc; return; }
+        if (S.mv.dbMap[item.name]?.descricao) { item.desc = S.mv.dbMap[item.name].descricao; return; }
         const mr = await fetch(`https://pokeapi.co/api/v2/move/${item.name}`);
         const md = await mr.json();
         const en = md.effect_entries?.find(e => e.language.name === 'en');
@@ -2641,7 +2599,7 @@ async function loadMoves() {
     for (let b = FIRST; b < items.length; b += BATCH) {
       await Promise.all(items.slice(b, b + BATCH).map(async item => {
         try {
-          if (S.mv.dbMap[item.name]?.desc) { item.desc = S.mv.dbMap[item.name].desc; return; }
+          if (S.mv.dbMap[item.name]?.descricao) { item.desc = S.mv.dbMap[item.name].descricao; return; }
           const md = await mr.json();
           const en = md.effect_entries?.find(e => e.language.name === 'en');
           item.desc = en ? en.short_effect.replace(/\$effect_chance/g, md.effect_chance || '?') : '';
@@ -2706,14 +2664,163 @@ function markFilled(ta) {
 /* ══════════════════════════════════════════
    EXPORT / IMPORT
 ══════════════════════════════════════════ */
+/* ══════════════════════════════════════════
+   MIGRAÇÃO — banco Supabase ANTIGO (compartilhado com o index) → novo
+   projeto dedicado da DataDex. Só preenche campos vazios no destino —
+   não sobrescreve com null o que já foi migrado do pokemon.json (que
+   tem evolução/moves/url_slug completos e o antigo provavelmente não).
+══════════════════════════════════════════ */
+async function migrateFromOldSupabase() {
+  if (!confirm('Isso vai ler a tabela "pokemons" do banco ANTIGO (ucbkodkjlbatttiuqjtv) e trazer pra cá qualquer Pokémon que não exista ainda, ou preencher campos vazios nos que já existem. Não apaga nem sobrescreve dados já preenchidos aqui. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+
+  try {
+    const oldRes = await fetch(`${OLD_SUPA_URL}/rest/v1/pokemons?select=*`, {
+      headers: { apikey: OLD_SUPA_KEY, Authorization: `Bearer ${OLD_SUPA_KEY}` }
+    });
+    if (!oldRes.ok) throw new Error('Banco antigo: ' + await oldRes.text());
+    const oldRows = await oldRes.json();
+
+    // Snapshot atual do banco novo, pra saber o que já existe/já está preenchido
+    const currentRows = await sbSelect('pokemons');
+    const currentMap = {};
+    currentRows.forEach(r => { currentMap[String(r.id)] = r; });
+
+    const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+
+    let novos = 0, atualizados = 0, semMudanca = 0, fail = 0;
+    const erros = [];
+
+    for (const old of oldRows) {
+      const id = String(old.id);
+      const existing = currentMap[id];
+
+      let payload;
+      if (!existing) {
+        // Não existe ainda no banco novo: importa a linha inteira (menos campos vazios)
+        payload = { id };
+        Object.entries(old).forEach(([k, v]) => { if (!isEmpty(v)) payload[k] = v; });
+        novos++;
+      } else {
+        // Já existe: só completa os campos que estão vazios aqui e preenchidos lá
+        payload = { id };
+        let mudou = false;
+        Object.entries(old).forEach(([k, v]) => {
+          if (k === 'id') return;
+          if (isEmpty(existing[k]) && !isEmpty(v)) { payload[k] = v; mudou = true; }
+        });
+        if (!mudou) { semMudanca++; continue; }
+        atualizados++;
+      }
+
+      payload.updated_at = new Date().toISOString();
+      try {
+        await sbUpsert('pokemons', payload);
+      } catch (e) {
+        fail++;
+        erros.push(`${id}: ${e.message}`);
+      }
+    }
+
+    if (fail) console.warn('Falhas na importação do banco antigo:', erros);
+    toast(`Importação concluída: ${novos} novos, ${atualizados} atualizados, ${semMudanca} sem mudança${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao importar do banco antigo: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ Importar do banco antigo'; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   MIGRAÇÃO — pokemon.json (backup/legado) → Supabase
+   Botão de uso único (ou sob demanda) pra subir tudo que ainda só
+   existe no JSON estático. Usa upsert (merge-duplicates), então é
+   seguro rodar mais de uma vez — não duplica, só sobrescreve.
+══════════════════════════════════════════ */
+async function migratePokemonJsonToSupabase() {
+  if (!confirm('Isso vai ler o pokemon.json (backup) e sobrescrever no Supabase (fatdzivyqipmcbzaiftc) todos os Pokémon que estiverem lá, campo a campo. Pode demorar um pouco. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Migrando…'; }
+
+  try {
+    const all = await fetch('/pokemon.json', { cache: 'no-cache' }).then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+
+    let ok = 0, fail = 0;
+    const erros = [];
+
+    for (const p of all) {
+      const row = {
+        id: String(p.id),
+        name: p.name || '',
+        genus_en: p.genus_en || null,
+        url_slug: p.url_slug || null,
+        bio: p.bio || null,
+        sprite: p.sprite || null,
+        sprite_shiny: p.sprite_shiny || null,
+        tipo1: p.tipo1 || null,
+        tipo2: p.tipo2 || null,
+        habilidade1: p.habilidade1 || null,
+        habilidade2: p.habilidade2 || null,
+        habilidade_oculta: p.habilidade_oculta || null,
+        habilidade_mega: p.habilidade_mega || null,
+        forca_alfa: p.forca_alfa || null,
+        formas_alfa: (p.formas_alfa && p.formas_alfa.length) ? p.formas_alfa : null,
+        genero: p.genero || null,
+        raridade: p.raridade || null,
+        biomas: (p.biomas && p.biomas.length) ? p.biomas : null,
+        condicao: p.condicao || null,
+        hp: p.hp ?? null, atk: p.atk ?? null, def: p.def ?? null,
+        spa: p.spa ?? null, spd: p.spd ?? null, spe: p.spe ?? null,
+        weight: p.weight ?? null, height: p.height ?? null,
+        egg_group: p.egg_group || null,
+        evolucoes: (p.evolucoes && p.evolucoes.length) ? p.evolucoes : null,
+        moves_level: (p.moves_level && p.moves_level.length) ? p.moves_level : null,
+        moves_tm: (p.moves_tm && p.moves_tm.length) ? p.moves_tm : null,
+        moves_egg: (p.moves_egg && p.moves_egg.length) ? p.moves_egg : null,
+        moves_tutor: (p.moves_tutor && p.moves_tutor.length) ? p.moves_tutor : null,
+        is_fakemon: !!p.is_fakemon,
+        source: p.source || (p.is_fakemon ? 'rpg' : 'pokeapi'),
+        approved: p.approved !== undefined ? !!p.approved : true,
+        updated_at: new Date().toISOString()
+      };
+      try {
+        await sbUpsert('pokemons', row);
+        ok++;
+      } catch (e) {
+        fail++;
+        erros.push(`${row.id} (${row.name}): ${e.message}`);
+      }
+    }
+
+    if (fail) {
+      console.warn('Falhas na migração:', erros);
+      toast(`Migração concluída: ${ok} ok, ${fail} falharam (veja o console).`, 'err');
+    } else {
+      toast(`✓ Migração concluída: ${ok} Pokémon migrados!`, 'ok');
+    }
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao migrar: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Migrar pokemon.json → Supabase'; }
+  }
+}
+
 async function exportAll() {
   try {
     const [abRows, mvRows, pkRows] = await Promise.all([
-      sbSelect('abilities_pt'), sbSelect('moves_pt'), sbSelect('pokemons')
+      sbSelect('abilities'), sbSelect('moves'), sbSelect('pokemons')
     ]);
     const data = {
       abilities: Object.fromEntries(abRows.map(r => [r.name, { desc_en: r.desc_en, desc_pt: r.desc_pt, approved: r.approved }])),
-      moves: Object.fromEntries(mvRows.map(r => [r.name, { desc: r.desc, type: r.type, damage_class: r.damage_class, power: r.power, accuracy: r.accuracy, contest_style: r.contest_style, approved: r.approved }])),
+      moves: Object.fromEntries(mvRows.map(r => [r.name, { desc: r.descricao, type: r.type, damage_class: r.damage_class, power: r.power, accuracy: r.accuracy, contest_style: r.contest_style, approved: r.approved }])),
       pokemon: Object.fromEntries(pkRows.map(r => [r.id, { name: r.name, genus_en: r.genus_en, bio: r.bio, is_fakemon: r.is_fakemon, source: r.source, approved: r.approved }])),
       exported_at: new Date().toISOString()
     };
@@ -2736,13 +2843,13 @@ async function doImport() {
     let count = 0;
     if (data.abilities) {
       for (const [name, v] of Object.entries(data.abilities)) {
-        await sbUpsert('abilities_pt', { name, desc_en: v.desc_en||'', desc_pt: v.desc_pt||'', approved: !!v.approved, updated_at: new Date().toISOString() });
+        await sbUpsert('abilities', { name, desc_en: v.desc_en||'', desc_pt: v.desc_pt||'', approved: !!v.approved, updated_at: new Date().toISOString() });
         count++;
       }
     }
     if (data.moves) {
       for (const [name, v] of Object.entries(data.moves)) {
-        await sbUpsert('moves_pt', { name, desc: v.desc||'', type: v.type||null, damage_class: v.damage_class||null, power: v.power||null, accuracy: v.accuracy||null, approved: !!v.approved, updated_at: new Date().toISOString() });
+        await sbUpsert('moves', { name, descricao: v.desc||'', type: v.type||null, damage_class: v.damage_class||null, power: v.power||null, accuracy: v.accuracy||null, approved: !!v.approved, updated_at: new Date().toISOString() });
         count++;
       }
     }
@@ -2796,7 +2903,7 @@ async function saveNewAbility() {
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   try {
     const row = { name, desc_en: descEn, desc_pt: descPt, approved: false, updated_at: new Date().toISOString() };
-    await sbUpsert('abilities_pt', row);
+    await sbUpsert('abilities', row);
     S.ab.dbMap[name] = row;
     if (!S.ab.all.find(a => a.name === name)) {
       S.ab.all.push({ name, id: S.ab.all.length + 1, desc: descEn });
@@ -2821,8 +2928,8 @@ async function saveNewMove() {
   const accuracy = accRaw !== '' ? parseInt(accRaw) : null;
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   try {
-    const row = { name, desc, type, damage_class, power, accuracy, contest_style: contest_style||null, approved: false, updated_at: new Date().toISOString() };
-    await sbUpsert('moves_pt', row);
+    const row = { name, descricao: desc, type, damage_class, power, accuracy, contest_style: contest_style||null, approved: false, updated_at: new Date().toISOString() };
+    await sbUpsert('moves', row);
     S.mv.dbMap[name] = row;
     if (!S.mv.all.find(m => m.name === name)) {
       S.mv.all.push({ name, id: S.mv.all.length + 1, desc, type, damage_class, power, accuracy, contest_style });
@@ -2845,22 +2952,21 @@ async function saveNewMove() {
 // RPG lazy-load integrado diretamente via evento no switchTab existente
 
 async function rpgFetchAll() {
-  const all = await PK.load();
-  // Aba RPG mostra apenas fakemon (is_fakemon: true)
-  return all.filter(p => p.is_fakemon === true);
+  // Aba RPG mostra apenas fakemon (is_fakemon: true), direto do Supabase
+  const rows = await sbSelect('pokemons', { col: 'is_fakemon', val: 'true' });
+  return rows;
 }
 
 async function rpgPost(body) {
-  PK.set(body.id, body);
-  await PK.save();
-  return [body];
+  const row = { ...body, is_fakemon: true, updated_at: new Date().toISOString() };
+  await sbUpsert('pokemons', row);
+  return [row];
 }
 
 async function rpgPatch(id, body) {
-  PK.set(id, body);
-  await PK.save();
-  const p = PK.get(id);
-  return [p];
+  const row = { id: String(id), ...body, is_fakemon: true, updated_at: new Date().toISOString() };
+  await sbUpsert('pokemons', row);
+  return [row];
 }
 
 async function rpgFetchBiomas() {
@@ -3255,7 +3361,7 @@ async function saveNewRpgPokemon() {
   // Bloqueia ID duplicado (evita sobrescrever/duplicar um Pokémon existente)
   // Nota: IDs da cadeia evolutiva não são o ID do novo Pokémon — não confundir
   const jaExisteRpg = S.rpg.all.some(p => String(p.id) === String(id));
-  const jaExistePk  = !pokedexNum?.match(/^N/i) && !!PK.get(id); // IDs tipo N#### são sempre RPG, não oficial
+  const jaExistePk  = !pokedexNum?.match(/^N/i) && S.pk.all.some(p => String(p.id) === String(id)); // IDs tipo N#### são sempre RPG, não oficial
   if (jaExisteRpg || jaExistePk) {
     const origem = jaExisteRpg ? 'RPG' : 'Pokémon oficial';
     toast(`Já existe um ${origem} com o número "${id}". Deixe o campo Pokédex vazio para gerar automaticamente, ou use outro número.`, 'err');
