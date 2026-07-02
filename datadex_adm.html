@@ -334,10 +334,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="adm-desc">Gerencie traduções de Pokémon, habilidades e movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
     </div>
     <div class="adm-actions">
-      <button class="btn btn-outline" onclick="migrateFromOldSupabase()">⬇️ Importar do banco antigo</button>
-      <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()">🔄 Migrar pokemon.json → Supabase</button>
-      <button class="btn btn-outline" onclick="openImport()">⬆ Importar JSON</button>
-      <button class="btn btn-success" onclick="exportAll()">⬇ Exportar JSON</button>
+      <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
+      <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
+      <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
     </div>
   </div>
 
@@ -2709,6 +2708,180 @@ function updateProgress(current, total, extraLabel = '') {
 }
 function hideProgress() {
   document.getElementById('progress-modal').classList.remove('open');
+}
+
+/* ══════════════════════════════════════════
+   IMPORTAÇÃO — formas regionais oficiais (Alola/Galar/Hisui/Paldea)
+   direto da PokeAPI. Preenche tudo que dá pra saber automaticamente
+   (tipos, habilidades, stats, sprites, altura/peso); NÃO preenche bio
+   (fica em português e precisa de tradução manual) nem evolucoes
+   (o mapeamento pro seu esquema de ID custom exige julgamento humano
+   — ex: Rattata Alola evolui pra Raticate Alola, não pro normal).
+   Usa upsert, então é seguro rodar de novo (ex: quando saírem novas
+   formas em jogos futuros) sem duplicar.
+══════════════════════════════════════════ */
+const REGIONAL_PREFIX = { alola: 'A', galar: 'G', hisui: 'H', paldea: 'P' };
+
+function regionalIdFromDexNum(prefix, dexNum) {
+  return prefix + String(dexNum).padStart(4, '0');
+}
+
+// gender_rate da PokeAPI: -1 = sem gênero; 0-8 = oitavos que são fêmea.
+// Mantém cru/descritivo, sem tentar encaixar num valor fixo tipo "Macho"/"Fêmea"/"Ambos".
+function genderRateToText(rate) {
+  if (rate === -1 || rate === undefined || rate === null) return 'Sem gênero';
+  return `${8 - rate}/8 macho, ${rate}/8 fêmea`;
+}
+
+// Monta a condição de evolução como texto curto a partir do primeiro
+// evolution_detail retornado pela API (o mais comum pro caso).
+function evoDetailToMethod(details) {
+  if (!details || !details.length) return '';
+  const d = details[0];
+  if (d.min_level) return `Lv ${d.min_level}`;
+  if (d.item) return cap(d.item.name.replace(/-/g, ' '));
+  if (d.held_item) return `Segurando ${cap(d.held_item.name.replace(/-/g, ' '))}`;
+  if (d.known_move) return `Sabendo ${cap(d.known_move.name.replace(/-/g, ' '))}`;
+  if (d.min_happiness) return `Amizade ${d.min_happiness}+`;
+  if (d.min_affection) return `Afeição ${d.min_affection}+`;
+  if (d.trigger?.name === 'trade') return 'Troca';
+  if (d.time_of_day) return cap(d.time_of_day);
+  if (d.trigger?.name) return cap(d.trigger.name.replace(/-/g, ' '));
+  return '';
+}
+
+// Achata a evolution-chain (estrutura recursiva/ramificada da API) no formato
+// {id, name, method?, from?} usado pelo editor deste admin. "id" aqui é o
+// número da Pokédex nacional exatamente como a API devolve — sem tentar
+// mapear pra forma regional (isso fica pra revisão manual, se for o caso).
+function flattenPokeapiEvoChain(rootNode) {
+  const result = [];
+  function walk(node, parentIndex) {
+    const idMatch = node.species.url.match(/\/pokemon-species\/(\d+)\//);
+    const dexId = idMatch ? idMatch[1] : '';
+    const name = node.species.name.replace(/-/g, ' ');
+    const method = evoDetailToMethod(node.evolution_details);
+    const entry = { id: dexId, name };
+    if (method) entry.method = method;
+    if (parentIndex !== null) entry.from = parentIndex + 1; // 1-based, como o editor espera
+    const myIndex = result.length;
+    result.push(entry);
+    (node.evolves_to || []).forEach(child => walk(child, myIndex));
+  }
+  walk(rootNode, null);
+  return result;
+}
+
+async function importRegionalFormsFromPokeapi() {
+  if (!confirm('Isso vai buscar todas as formas regionais (Alola/Galar/Hisui/Paldea) na PokeAPI e subir pro Supabase: tipos, habilidades, stats, sprites, bio (flavor text da API), gênero (cru, como a API devolve) e cadeia evolutiva (como consta na API, sem tentar adivinhar forma regional nos outros estágios). Pode demorar 1-2 minutos. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
+  showProgress('Buscando formas regionais na PokeAPI…');
+
+  try {
+    const listRes = await fetch('https://pokeapi.co/api/v2/pokemon?limit=3000');
+    if (!listRes.ok) throw new Error('PokeAPI (lista): HTTP ' + listRes.status);
+    const list = (await listRes.json()).results;
+
+    // Casa nomes tipo "rattata-alola", "darmanitan-galar-zen", "tauros-paldea-combat-breed"
+    const re = /^([a-z0-9]+)-(alola|galar|hisui|paldea)(-(zen|combat-breed|blaze-breed|aqua-breed))?$/;
+    const matches = list.filter(p => re.test(p.name));
+
+    let ok = 0, fail = 0, i = 0;
+    const total = matches.length;
+    const erros = [];
+
+    for (const item of matches) {
+      i++;
+      updateProgress(i, total, item.name);
+      try {
+        const m = item.name.match(re);
+        const region = m[2];
+        const prefix = REGIONAL_PREFIX[region];
+
+        const pRes = await fetch(item.url);
+        if (!pRes.ok) throw new Error('pokemon HTTP ' + pRes.status);
+        const p = await pRes.json();
+
+        const sRes = await fetch(p.species.url);
+        if (!sRes.ok) throw new Error('species HTTP ' + sRes.status);
+        const species = await sRes.json();
+
+        const dexNum = species.id;
+        const id = regionalIdFromDexNum(prefix, dexNum);
+
+        const genusEn = species.genera?.find(g => g.language.name === 'en')?.genus || null;
+        const types = p.types.sort((a, b) => a.slot - b.slot).map(t => t.type.name);
+        const abilities = p.abilities || [];
+        const normalAbilities = abilities.filter(a => !a.is_hidden).sort((a, b) => a.slot - b.slot);
+        const hiddenAbility = abilities.find(a => a.is_hidden);
+        const statMap = {};
+        p.stats.forEach(s => { statMap[s.stat.name] = s.base_stat; });
+        const eggGroups = (species.egg_groups || []).map(e => e.name).join(', ') || null;
+
+        // Bio: primeiro flavor text disponível (prioriza inglês, senão pega o
+        // primeiro que existir) — é só texto de partida, o campo é editável.
+        const flavorEntries = species.flavor_text_entries || [];
+        const flavor = flavorEntries.find(f => f.language.name === 'en') || flavorEntries[0];
+        const bio = flavor ? flavor.flavor_text.replace(/[\n\f\r]+/g, ' ').replace(/\s+/g, ' ').trim() : null;
+
+        // Evolução: busca a evolution-chain e achata como está na API
+        let evolucoes = null;
+        if (species.evolution_chain?.url) {
+          try {
+            const evoRes = await fetch(species.evolution_chain.url);
+            if (evoRes.ok) {
+              const evoData = await evoRes.json();
+              const flat = flattenPokeapiEvoChain(evoData.chain);
+              evolucoes = flat.length ? flat : null;
+            }
+          } catch (_) { /* segue sem evolução se essa parte falhar */ }
+        }
+
+        const row = {
+          id,
+          name: item.name.replace(/-/g, ' '),
+          genus_en: genusEn,
+          url_slug: item.name,
+          bio,
+          sprite: p.sprites?.front_default || null,
+          sprite_shiny: p.sprites?.front_shiny || null,
+          tipo1: types[0] || null,
+          tipo2: types[1] || null,
+          habilidade1: normalAbilities[0]?.ability?.name || null,
+          habilidade2: normalAbilities[1]?.ability?.name || null,
+          habilidade_oculta: hiddenAbility?.ability?.name || null,
+          genero: genderRateToText(species.gender_rate),
+          egg_group: eggGroups,
+          hp: statMap.hp ?? null, atk: statMap.attack ?? null, def: statMap.defense ?? null,
+          spa: statMap['special-attack'] ?? null, spd: statMap['special-defense'] ?? null, spe: statMap.speed ?? null,
+          weight: p.weight ? p.weight / 10 : null,   // hectogramas -> kg
+          height: p.height ? p.height / 10 : null,   // decímetros -> m
+          evolucoes,
+          is_fakemon: false,
+          source: 'regional',
+          approved: false, // fica como rascunho até revisão manual
+          updated_at: new Date().toISOString()
+        };
+
+        await sbUpsert('pokemons', row);
+        ok++;
+      } catch (e) {
+        fail++;
+        erros.push(`${item.name}: ${e.message}`);
+      }
+    }
+
+    if (fail) console.warn('Falhas na importação de formas regionais:', erros);
+    toast(`Formas regionais: ${ok} importadas${fail ? `, ${fail} falharam (veja console)` : ''}. Revise bio/evolução antes de aprovar.`, fail ? 'err' : 'ok');
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao importar formas regionais: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🌍 Importar formas regionais (PokeAPI)'; }
+  }
 }
 
 /* ══════════════════════════════════════════
