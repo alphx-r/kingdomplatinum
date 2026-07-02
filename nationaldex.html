@@ -1021,19 +1021,12 @@ async function renderRpgDetail(p, container){
   </div>`:'';
 
   // ── Evo chain ──
-  // Para formas regionais, usa a cadeia evolutiva oficial da PokéAPI (buildEvo).
-  // Para fakemon Nendo, usa o array p.evolucoes definido manualmente no JSON.
+  // Prioridade: p.evolucoes (cadeia curada no admin, já com os IDs regionais
+  // corretos, ex: A0019→A0020) — é a fonte de verdade quando preenchida.
+  // Só cai pra cadeia ao vivo da PokéAPI (buildRegionalEvo/buildEvo) quando
+  // o Pokémon ainda não teve a evolução revisada manualmente.
   let evoChainHtml='';
-  if(apiEvoChain?.chain && REGION_SLUG_F[pref]){
-    // Forma regional: tenta casar cada estágio da cadeia com a variante
-    // regional equivalente (ex: Rattata → Rattata-Alola). Estágios sem
-    // contraparte regional (ex: Pichu, que não tem forma de Alola) caem
-    // de volta pra forma normal — é o comportamento correto no jogo.
-    try{ evoChainHtml=buildRegionalEvo(apiEvoChain.chain, pref, REGION_SLUG_F[pref], p.id); }
-    catch{ try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{} }
-  } else if(apiEvoChain?.chain){
-    try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{}
-  } else if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
+  if(p.evolucoes&&Array.isArray(p.evolucoes)&&p.evolucoes.length){
     // Espera array de objetos: [{id, name, method, from}]
     // "from" (1-based) indica de qual estágio anterior este evolui — permite ramificações
     // (ex: um Pokémon com 2 evoluções diferentes a partir do mesmo estágio base).
@@ -1086,6 +1079,15 @@ async function renderRpgDetail(p, container){
       html+=`</div></div>`;
       evoChainHtml=html;
     }
+  } else if(apiEvoChain?.chain && REGION_SLUG_F[pref]){
+    // Forma regional ainda sem evolução curada no admin: tenta casar cada
+    // estágio da cadeia oficial com a variante regional equivalente (ex:
+    // Rattata → Rattata-Alola). Estágios sem contraparte regional (ex:
+    // Pichu, que não tem forma de Alola) caem de volta pra forma normal.
+    try{ evoChainHtml=buildRegionalEvo(apiEvoChain.chain, pref, REGION_SLUG_F[pref], p.id); }
+    catch{ try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{} }
+  } else if(apiEvoChain?.chain){
+    try{ evoChainHtml=buildEvo(apiEvoChain.chain); }catch{}
   }
 
   // ── Moves ──
