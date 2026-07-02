@@ -745,6 +745,18 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
 <div class="toast" id="toast"></div>
 
 <!-- IMPORT MODAL -->
+<div class="modal-ov" id="progress-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title" id="progress-title">Migrando…</div>
+    <div style="background:var(--border);border-radius:8px;height:18px;overflow:hidden;margin:14px 0 8px">
+      <div id="progress-bar" style="height:100%;width:0%;background:var(--accent,#4caf50);transition:width .15s ease;border-radius:8px"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
+      <span id="progress-label">0 / 0</span>
+      <span id="progress-pct">0%</span>
+    </div>
+  </div>
+</div>
 <div class="modal-ov" id="import-modal">
   <div class="modal">
     <div class="modal-title">⬆ Importar JSON</div>
@@ -1213,9 +1225,24 @@ const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorizat
 async function sbSelect(table, eq = null) {
   let url = `${SUPA_URL}/rest/v1/${table}?select=*`;
   if (eq) url += `&${eq.col}=eq.${eq.val}`;
-  const r = await fetch(url, { headers: SH });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return await sbFetchAllPages(url, SH);
+}
+
+// PostgREST devolve no máximo 1000 linhas por request por padrão.
+// Isso pagina usando o header Range até vir tudo (ou até vir menos
+// que o tamanho da página, sinal de que acabou).
+async function sbFetchAllPages(url, headers, pageSize = 1000) {
+  let all = [];
+  let from = 0;
+  while (true) {
+    const r = await fetch(url, { headers: { ...headers, Range: `${from}-${from + pageSize - 1}` } });
+    if (!r.ok && r.status !== 206) throw new Error(await r.text());
+    const page = await r.json();
+    all = all.concat(page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
 }
 
 async function sbUpsert(table, row) {
@@ -2665,6 +2692,26 @@ function markFilled(ta) {
    EXPORT / IMPORT
 ══════════════════════════════════════════ */
 /* ══════════════════════════════════════════
+   Barra de progresso genérica — usada nas migrações
+══════════════════════════════════════════ */
+function showProgress(title) {
+  document.getElementById('progress-title').textContent = title;
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('progress-label').textContent = '0 / 0';
+  document.getElementById('progress-pct').textContent = '0%';
+  document.getElementById('progress-modal').classList.add('open');
+}
+function updateProgress(current, total, extraLabel = '') {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = `${current} / ${total}${extraLabel ? ' — ' + extraLabel : ''}`;
+  document.getElementById('progress-pct').textContent = pct + '%';
+}
+function hideProgress() {
+  document.getElementById('progress-modal').classList.remove('open');
+}
+
+/* ══════════════════════════════════════════
    MIGRAÇÃO — banco Supabase ANTIGO (compartilhado com o index) → novo
    projeto dedicado da DataDex. Só preenche campos vazios no destino —
    não sobrescreve com null o que já foi migrado do pokemon.json (que
@@ -2675,13 +2722,11 @@ async function migrateFromOldSupabase() {
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+  showProgress('Importando do banco antigo…');
 
   try {
-    const oldRes = await fetch(`${OLD_SUPA_URL}/rest/v1/pokemons?select=*`, {
-      headers: { apikey: OLD_SUPA_KEY, Authorization: `Bearer ${OLD_SUPA_KEY}` }
-    });
-    if (!oldRes.ok) throw new Error('Banco antigo: ' + await oldRes.text());
-    const oldRows = await oldRes.json();
+    const OLD_SH = { apikey: OLD_SUPA_KEY, Authorization: `Bearer ${OLD_SUPA_KEY}` };
+    const oldRows = await sbFetchAllPages(`${OLD_SUPA_URL}/rest/v1/pokemons?select=*`, OLD_SH);
 
     // Snapshot atual do banco novo, pra saber o que já existe/já está preenchido
     const currentRows = await sbSelect('pokemons');
@@ -2690,11 +2735,14 @@ async function migrateFromOldSupabase() {
 
     const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
 
-    let novos = 0, atualizados = 0, semMudanca = 0, fail = 0;
+    let novos = 0, atualizados = 0, semMudanca = 0, fail = 0, i = 0;
+    const total = oldRows.length;
     const erros = [];
 
     for (const old of oldRows) {
+      i++;
       const id = String(old.id);
+      updateProgress(i, total, old.name || id);
       const existing = currentMap[id];
 
       let payload;
@@ -2730,6 +2778,7 @@ async function migrateFromOldSupabase() {
   } catch (e) {
     toast('Erro ao importar do banco antigo: ' + e.message, 'err');
   } finally {
+    hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '⬇️ Importar do banco antigo'; }
   }
 }
@@ -2745,6 +2794,7 @@ async function migratePokemonJsonToSupabase() {
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Migrando…'; }
+  showProgress('Migrando pokemon.json → Supabase…');
 
   try {
     const all = await fetch('/pokemon.json', { cache: 'no-cache' }).then(r => {
@@ -2752,10 +2802,13 @@ async function migratePokemonJsonToSupabase() {
       return r.json();
     });
 
-    let ok = 0, fail = 0;
+    let ok = 0, fail = 0, i = 0;
+    const total = all.length;
     const erros = [];
 
     for (const p of all) {
+      i++;
+      updateProgress(i, total, p.name || p.id);
       const row = {
         id: String(p.id),
         name: p.name || '',
@@ -2809,6 +2862,7 @@ async function migratePokemonJsonToSupabase() {
   } catch (e) {
     toast('Erro ao migrar: ' + e.message, 'err');
   } finally {
+    hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Migrar pokemon.json → Supabase'; }
   }
 }
