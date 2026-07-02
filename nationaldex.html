@@ -1035,17 +1035,40 @@ async function renderRpgDetail(p, container){
     const nEv=evos.length;
 
     function rpgEvoNode(ev,isFirst){
-      const evPk=_rpgPokemon.find(x=>String(x.id)===String(ev.id)||slugify(x.name)===slugify(ev.name||''));
+      const rawId=String(ev.id||'').trim();
+      // 1. Match direto pelo id como foi salvo (ex: já veio "A0019")
+      let evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===rawId.toLowerCase());
+      // 2. Se o id salvo é só o número da Pokédex nacional (sem prefixo de região,
+      //    ex: "19" pro Rattata) e este Pokémon é uma forma regional, monta o id
+      //    regional equivalente (ex: pref "A" + "19" → "A0019") e busca por ele.
+      if(!evPk && pref && /^\d+$/.test(rawId)){
+        const composedId=`${pref}${rawId.padStart(4,'0')}`;
+        evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===composedId.toLowerCase());
+      }
+      // 3. Por nome — tenta com e sem o sufixo regional (ex: "rattata" vs "rattata alola")
+      if(!evPk){
+        const wantSlug=slugify(ev.name||'');
+        const regSlug=REGION_SLUG_F[pref];
+        evPk=_rpgPokemon.find(x=>{
+          const xs=slugify(x.name);
+          return xs===wantSlug||(regSlug&&xs===`${wantSlug}-${regSlug}`);
+        });
+      }
       const sprite=evPk?.sprite||'';
-      const evName=evPk?.name||ev.name||'?';
-      const evId=evPk?.id||ev.id||'?';
+      const evName=evPk?titleCase(evPk.name):(ev.name?cap(ev.name):'?');
+      // Número exibido: sempre a partir do id canônico do registro encontrado
+      // (já vem prefixado corretamente); só usa o id cru salvo em evolucoes
+      // como último recurso, sem cortar dígito de números sem prefixo.
+      const evId=evPk?.id||rawId||'?';
+      const evNumPref=evPk?idPrefix(evPk.id):idPrefix(rawId);
+      const evNumLabel=evNumPref?String(evId).slice(1).padStart(4,'0'):String(evId).padStart(4,'0');
       const isMe=String(evId)===String(p.id);
       const method=ev.method||ev.trigger||'';
       const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
       return `${arrow}<button class="evo-node" onclick="${isMe?'void(0)':`goDetail('__rpg__${encodeURIComponent(evId)}','${evPk?rpgUrlSlug(evPk):slugify(evName)}')`}" style="${isMe?'cursor:default':''}">
         ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${evName}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
         <span class="evo-node-name">${evName}</span>
-        <span class="evo-node-num">${String(evId).slice(1).padStart(4,'0')}</span>
+        <span class="evo-node-num">${evNumLabel}</span>
       </button>`;
     }
 
