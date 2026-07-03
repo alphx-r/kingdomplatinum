@@ -1620,24 +1620,90 @@ function epkToggleTipo2(el) {
   document.querySelectorAll('#epk-tipo2-wrap .tipo-tag').forEach(t => t.classList.remove('sel'));
   el.classList.add('sel');
 }
+/* ══════════════════════════════════════════
+   TRIM + FIT SPRITE — remove o espaço transparente ao redor
+   do desenho e centraliza dentro de um canvas 445x445,
+   preservando a proporção (contain), sem esticar o pixel art.
+══════════════════════════════════════════ */
+function trimAndFitSprite(dataUrl, canvasSize = 445) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        // 1. Desenha a imagem original num canvas temporário pra ler os pixels
+        const srcC = document.createElement('canvas');
+        srcC.width = img.naturalWidth;
+        srcC.height = img.naturalHeight;
+        const srcCtx = srcC.getContext('2d');
+        srcCtx.drawImage(img, 0, 0);
+        const { data } = srcCtx.getImageData(0, 0, srcC.width, srcC.height);
+
+        // 2. Acha o bounding box dos pixels com alpha > 0 (ignora espaço vazio)
+        let minX = srcC.width, minY = srcC.height, maxX = -1, maxY = -1;
+        for (let y = 0; y < srcC.height; y++) {
+          for (let x = 0; x < srcC.width; x++) {
+            const alpha = data[(y * srcC.width + x) * 4 + 3];
+            if (alpha > 8) { // pequena tolerância pra anti-aliasing quase invisível
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        // Imagem totalmente transparente (ou sem pixels visíveis) — usa original inteira
+        if (maxX < 0) { minX = 0; minY = 0; maxX = srcC.width - 1; maxY = srcC.height - 1; }
+
+        const trimW = maxX - minX + 1;
+        const trimH = maxY - minY + 1;
+
+        // 3. Escala mantendo proporção pra caber dentro do canvasSize (contain)
+        const scale = Math.min(canvasSize / trimW, canvasSize / trimH);
+        const destW = Math.round(trimW * scale);
+        const destH = Math.round(trimH * scale);
+        const destX = Math.round((canvasSize - destW) / 2);
+        const destY = Math.round((canvasSize - destH) / 2);
+
+        // 4. Desenha recortado + escalado, já centralizado, no canvas final 445x445
+        const outC = document.createElement('canvas');
+        outC.width = canvasSize;
+        outC.height = canvasSize;
+        const outCtx = outC.getContext('2d');
+        outCtx.imageSmoothingEnabled = scale < 1; // evita borrar pixel art ao ampliar
+        outCtx.drawImage(img, minX, minY, trimW, trimH, destX, destY, destW, destH);
+
+        resolve(outC.toDataURL('image/png'));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('Não foi possível carregar a imagem.'));
+    img.src = dataUrl;
+  });
+}
+
 function epkPreviewSpriteFile(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const prev = document.getElementById('epk-sprite-preview');
-    prev.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:contain">`;
-    prev.dataset.b64 = e.target.result;
-    document.getElementById('epk-art-preview').src = e.target.result;
+    let out = e.target.result;
+    try { out = await trimAndFitSprite(out); }
+    catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+    prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+    prev.dataset.b64 = out;
+    document.getElementById('epk-art-preview').src = out;
   };
   reader.readAsDataURL(file);
 }
 function epkPreviewSpriteShinyFile(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const prev = document.getElementById('epk-sprite-shiny-preview');
-    prev.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:contain">`;
-    prev.dataset.b64 = e.target.result;
+    let out = e.target.result;
+    try { out = await trimAndFitSprite(out); }
+    catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+    prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+    prev.dataset.b64 = out;
   };
   reader.readAsDataURL(file);
 }
@@ -1893,10 +1959,13 @@ function alfaAddRow(listId, data = {}) {
   fileInp.addEventListener('change', () => {
     const file = fileInp.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       const prev = row.querySelector('.alfa-sprite-prev');
-      prev.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:contain">`;
-      prev.dataset.b64 = e.target.result;
+      let out = e.target.result;
+      try { out = await trimAndFitSprite(out); }
+      catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
     };
     reader.readAsDataURL(file);
   });
@@ -3575,20 +3644,26 @@ function genderAutoComplete(srcId, dstId, hintId) {
 function nrpgPreviewSprite(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const prev = document.getElementById('nrpg-sprite-preview');
-    prev.innerHTML = `<img src="${e.target.result}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
-    prev.dataset.b64 = e.target.result;
+    let out = e.target.result;
+    try { out = await trimAndFitSprite(out); }
+    catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+    prev.innerHTML = `<img src="${out}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
+    prev.dataset.b64 = out;
   };
   reader.readAsDataURL(file);
 }
 function nrpgPreviewSpriteShiny(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const prev = document.getElementById('nrpg-sprite-shiny-preview');
-    prev.innerHTML = `<img src="${e.target.result}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
-    prev.dataset.b64 = e.target.result;
+    let out = e.target.result;
+    try { out = await trimAndFitSprite(out); }
+    catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+    prev.innerHTML = `<img src="${out}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
+    prev.dataset.b64 = out;
   };
   reader.readAsDataURL(file);
 }
