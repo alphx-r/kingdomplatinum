@@ -1,8 +1,8 @@
 const { fetchBuffer, normalizeBuffer, uploadToSupabase } = require('../../lib/normalizeSprite');
 
 // POST /api/admin/normalize-sprite
-// Body: { "url": "https://...png", "bucket": "sprites", "path": "normalized/25.png" }
-// Resposta: { "publicUrl": "https://.../storage/v1/object/public/sprites/normalized/25.png" }
+// Body: { "url": "https://...png", "bucket": "pokemons", "path": "normalized/25.png" }
+// Resposta: { "publicUrl": "https://.../storage/v1/object/public/pokemons/normalized/25.png" }
 //
 // Segue o mesmo padrão da rota /api/admin/backup-pokemon-now: sem CRON_SECRET,
 // pensada pra ser chamada só a partir do próprio painel admin (que já tem seu
@@ -26,10 +26,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
+  const supabaseUrl = process.env.SUPA_URL || process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPA_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) {
-    res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados nas env vars da Vercel' });
+    res.status(500).json({ error: 'SUPA_URL / SUPA_KEY não configurados nas env vars da Vercel' });
     return;
   }
 
