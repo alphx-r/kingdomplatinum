@@ -1257,6 +1257,20 @@ async function sbUpsert(table, row) {
   return text ? JSON.parse(text) : {};
 }
 
+// PATCH de verdade — atualiza só as colunas passadas em `patch`, numa linha
+// que já existe. Diferente de sbUpsert (que é um INSERT ... ON CONFLICT e
+// por isso exige todas as colunas NOT NULL mesmo quando só vai atualizar).
+async function sbPatch(table, id, patch) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: SH,
+    body: JSON.stringify(patch)
+  });
+  if (!r.ok) throw new Error(await r.text());
+  const text = await r.text();
+  return text ? JSON.parse(text) : {};
+}
+
 async function sbDelete(table, id) {
   const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -2840,7 +2854,7 @@ async function runSpriteNormalization() {
         patch.sprite_shiny = await normalizeAndUpload(p.sprite_shiny, SPRITE_SHINY_BUCKET, `normalized/${p.id}-shiny.png`);
       }
       if (Object.keys(patch).length) {
-        await sbUpsert('pokemons', { id: p.id, ...patch });
+        await sbPatch('pokemons', p.id, patch);
       }
     } catch (e) {
       erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
