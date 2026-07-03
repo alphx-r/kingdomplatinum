@@ -2486,6 +2486,7 @@ function renderMvList() {
         <span class="entry-num">#${String(item.id||0).padStart(3,'0')}</span>
         <span class="entry-name">${cap(item.name)}${typeVal?`<small>${typeVal.toUpperCase()}${cat?' · '+catLabel:''}</small>`:''}</span>
         ${catClass?`<span class="badge cat-pill ${catClass}">${catLabel}</span>`:''}
+        ${db.contest_style?`<span class="badge" style="background:#eee;color:#555">${cap(db.contest_style)}</span>`:''}
         <span class="badge ${appr?'badge-appr':hasDesc?'badge-pt':'badge-pend'}">${appr?'✓ Aprovado':hasDesc?'Rascunho':'Pendente'}</span>
         <span class="chev">▼</span>
       </div>
@@ -2613,6 +2614,26 @@ async function loadMoves() {
     const r = await fetch('https://pokeapi.co/api/v2/move?limit=1000');
     const d = await r.json();
     const items = d.results.map((m, i) => ({ name: m.name, id: i + 1, desc: '', power: null, pp: null, accuracy: null, damage_class: '', type: '' }));
+
+    // Inclui movimentos homebrew que existem no Supabase mas não na PokéAPI —
+    // sem isso, movimentos criados manualmente só apareciam para quem os criou.
+    const knownMvNames = new Set(items.map(i => i.name));
+    dbRows.forEach(row => {
+      if (!knownMvNames.has(row.name)) {
+        items.push({
+          name: row.name,
+          id: items.length + 1,
+          desc: row.descricao || '',
+          power: row.power,
+          pp: null,
+          accuracy: row.accuracy,
+          damage_class: row.damage_class || '',
+          type: row.type || ''
+        });
+        knownMvNames.add(row.name);
+      }
+    });
+
     items.sort((a, b) => a.name.localeCompare(b.name));
     S.mv.all = items;
     S.mv.filtered = items;
