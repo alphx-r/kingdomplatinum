@@ -2806,13 +2806,14 @@ async function runManualBackup() {
    entre sprite normal/shiny, chamando /api/admin/normalize-sprite
    (que baixa, recorta, recentraliza e re-sobe pro Storage).
 ══════════════════════════════════════════ */
-const SPRITE_BUCKET = 'pokemons'; // mesmo bucket já usado por uploadImgStorage
+const SPRITE_BUCKET = 'pokemons';
+const SPRITE_SHINY_BUCKET = 'pokemons';
 
-async function normalizeAndUpload(url, path) {
+async function normalizeAndUpload(url, bucket, path) {
   const res = await fetch('/api/admin/normalize-sprite', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, bucket: SPRITE_BUCKET, path })
+    body: JSON.stringify({ url, bucket, path })
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -2833,10 +2834,10 @@ async function runSpriteNormalization() {
     try {
       const patch = {};
       if (p.sprite) {
-        patch.sprite = await normalizeAndUpload(p.sprite, `normalized/${p.id}.png`);
+        patch.sprite = await normalizeAndUpload(p.sprite, SPRITE_BUCKET, `normalized/${p.id}.png`);
       }
       if (p.sprite_shiny) {
-        patch.sprite_shiny = await normalizeAndUpload(p.sprite_shiny, `normalized/${p.id}-shiny.png`);
+        patch.sprite_shiny = await normalizeAndUpload(p.sprite_shiny, SPRITE_SHINY_BUCKET, `normalized/${p.id}-shiny.png`);
       }
       if (Object.keys(patch).length) {
         await sbUpsert('pokemons', { id: p.id, ...patch });
