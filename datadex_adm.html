@@ -338,6 +338,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
       <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
+      <button class="btn btn-outline" onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
     </div>
   </div>
 
@@ -2797,6 +2798,62 @@ async function runManualBackup() {
   } finally {
     btn.disabled = false;
     btn.textContent = original;
+  }
+}
+
+/* ══════════════════════════════════════════
+   NORMALIZAÇÃO DE SPRITES — corrige zoom inconsistente
+   entre sprite normal/shiny, chamando /api/admin/normalize-sprite
+   (que baixa, recorta, recentraliza e re-sobe pro Storage).
+══════════════════════════════════════════ */
+const SPRITE_BUCKET = 'pokemons'; // mesmo bucket já usado por uploadImgStorage
+
+async function normalizeAndUpload(url, path) {
+  const res = await fetch('/api/admin/normalize-sprite', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, bucket: SPRITE_BUCKET, path })
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body.publicUrl;
+}
+
+async function runSpriteNormalization() {
+  if (!confirm('Isso vai baixar, normalizar e re-subir os sprites de todos os Pokémon. Pode levar alguns minutos. Continuar?')) return;
+
+  const rows = await sbSelect('pokemons');
+  const withSprite = rows.filter(p => p.sprite || p.sprite_shiny);
+
+  showProgress('Normalizando sprites');
+  let done = 0;
+  const erros = [];
+
+  for (const p of withSprite) {
+    try {
+      const patch = {};
+      if (p.sprite) {
+        patch.sprite = await normalizeAndUpload(p.sprite, `normalized/${p.id}.png`);
+      }
+      if (p.sprite_shiny) {
+        patch.sprite_shiny = await normalizeAndUpload(p.sprite_shiny, `normalized/${p.id}-shiny.png`);
+      }
+      if (Object.keys(patch).length) {
+        await sbUpsert('pokemons', { id: p.id, ...patch });
+      }
+    } catch (e) {
+      erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+    }
+    done++;
+    updateProgress(done, withSprite.length, p.name || p.id);
+  }
+
+  hideProgress();
+  if (erros.length) {
+    console.warn('Falhas na normalização:', erros);
+    toast(`Concluído com ${erros.length} falha(s) — veja o console.`, 'err');
+  } else {
+    toast(`✓ ${done} sprites normalizados!`, 'ok');
   }
 }
 
