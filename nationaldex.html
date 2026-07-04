@@ -511,32 +511,33 @@ async function sbSelect(table,eq=null){
 
 // Descrições PT das habilidades — tabela "abilities" do banco novo
 // (mesma usada pelo admin), em vez do cache antigo em localStorage.
-let _abilitiesPtCache=null;
-async function loadAbilitiesPt(){
-  if(_abilitiesPtCache) return _abilitiesPtCache;
+let _abilitiesCache=null;
+async function loadAbilities(){
+  if(_abilitiesCache) return _abilitiesCache;
   try{
     const rows=await sbSelect('abilities');
-    _abilitiesPtCache={};
-    rows.forEach(row=>{ _abilitiesPtCache[row.name]=row; });
-  }catch{ _abilitiesPtCache={}; }
-  return _abilitiesPtCache;
+    _abilitiesCache={};
+    rows.forEach(row=>{ _abilitiesCache[row.name]=row; });
+  }catch{ _abilitiesCache={}; }
+  return _abilitiesCache;
 }
-async function getAbilityPt(name){
+async function getAbility(name){
   const k=name.toLowerCase().replace(/ /g,'-');
-  const m=await loadAbilitiesPt();
+  const m=await loadAbilities();
   return m[k]?.ab_desc||null;
 }
 
-// Descrições PT dos moves — tabela "moves" do banco novo (mesma do admin).
-let _movesPtCache=null;
-async function loadMovesPt(){
-  if(_movesPtCache) return _movesPtCache;
+// Dados dos moves — tabela "moves" do banco novo (mesma do admin). Fonte
+// única: nenhum dos fluxos (RPG ou oficial) consulta a PokéAPI para moves.
+let _movesCache=null;
+async function loadMoves(){
+  if(_movesCache) return _movesCache;
   try{
     const rows=await sbSelect('moves');
-    _movesPtCache={};
-    rows.forEach(row=>{ _movesPtCache[row.name]=row; });
-  }catch{ _movesPtCache={}; }
-  return _movesPtCache;
+    _movesCache={};
+    rows.forEach(row=>{ _movesCache[row.name]=row; });
+  }catch{ _movesCache={}; }
+  return _movesCache;
 }
 
 /* ═══════════════════════════════════════
@@ -950,7 +951,7 @@ async function renderRpgDetail(p, container, navToken){
   let rpgAbCounter=0;
   const abHtml=await Promise.all(habEntries.map(async(h)=>{
     let desc='';
-    try{desc=(await getAbilityPt(h.name))||'';}catch{}
+    try{desc=(await getAbility(h.name))||'';}catch{}
     if(!h.ha) rpgAbCounter++;
     return `<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
       ${h.ha?`<span class="ha-badge">HA</span>`:`<span class="ability-idx">${rpgAbCounter}.</span>`}
@@ -1155,7 +1156,7 @@ async function renderRpgDetail(p, container, navToken){
   const STYLE_COLORS={cool:'#e03030',beauty:'#2080e0',beautiful:'#2080e0',cute:'#e030a0',smart:'#30a030',clever:'#30a030',tough:'#e0a020'};
   const CAT_COLORS_M={physical:'#e07030',special:'#6070e0',status:'#90a090'};
   // Descrições PT dos moves: tabela "moves" do banco novo (mesma usada
-  // pelo admin), via o cache/loader global loadMovesPt() já definido acima.
+  // pelo admin), via o cache/loader global loadMoves() já definido acima.
 
   const moveDataCacheRpg={};
   async function fetchRpgMoveData(name){
@@ -1164,8 +1165,8 @@ async function renderRpgDetail(p, container, navToken){
     // Dados do move vêm exclusivamente da tabela "moves" do Supabase (mesma
     // fonte usada pelo admin) — sem consulta à PokéAPI, mesmo quando o move
     // também existe oficialmente.
-    const mvPt=await loadMovesPt();
-    const db=mvPt[k]||null;
+    const mv=await loadMoves();
+    const db=mv[k]||null;
     const data=db
       ?{power:db.power??null,accuracy:db.accuracy??null,type:db.type||null,type2:db.type2||null,category:db.damage_class||null,style:db.contest_style||null,desc:db.descricao||''}
       :{power:null,accuracy:null,type:null,type2:null,category:null,style:null,desc:''};
@@ -1418,7 +1419,7 @@ async function renderDetail(p,s,container,navToken){
   let regCounter=0;
   const abHtml=await Promise.all(sortedAbs.map(async(a)=>{
     let desc='';
-    try{const ar=await fetch(a.ability.url);const ad=await ar.json();const pt=await getAbilityPt(a.ability.name);const en=ad.effect_entries.find(e=>e.language.name==='en');desc=pt||(en?en.short_effect:'');}catch{}
+    try{const ar=await fetch(a.ability.url);const ad=await ar.json();const pt=await getAbility(a.ability.name);const en=ad.effect_entries.find(e=>e.language.name==='en');desc=pt||(en?en.short_effect:'');}catch{}
     const ha=a.is_hidden;
     if(!ha) regCounter++;
     return `<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
@@ -1483,26 +1484,15 @@ async function renderDetail(p,s,container,navToken){
   const moveDataCache={};
   async function fetchMoveData(name){
     if(moveDataCache[name])return moveDataCache[name];
-    try{
-      const r=await fetch(`https://pokeapi.co/api/v2/move/${name}`);
-      const d=await r.json();
-      const CONTEST_STYLE={cool:'Cool',beauty:'Beauty',cute:'Cute',smart:'Clever',tough:'Tough'};
-      const CAT_PT={physical:'Physical',special:'Special',status:'Status'};
-      const desc=d.effect_entries?.find(e=>e.language.name==='en')?.short_effect||d.flavor_text_entries?.find(e=>e.language.name==='en')?.flavor_text||'';
-      const movesPt=await loadMovesPt();
-      const ptDesc=movesPt[name]?.descricao||null;
-      const data={
-        power:d.power||null,
-        accuracy:movesPt[name]?.accuracy??d.accuracy??null,
-        type:d.type?.name||null,
-        type2:movesPt[name]?.type2||null,
-        category:d.damage_class?.name||null,
-        style:movesPt[name]?.contest_style||d.contest_type?.name||null,
-        desc:(ptDesc||desc).replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' ')
-      };
-      moveDataCache[name]=data;
-      return data;
-    }catch{return null;}
+    // Dados do move vêm exclusivamente da tabela "moves" do Supabase — sem
+    // consulta à PokéAPI, mesmo para Pokémon oficiais.
+    const mv=await loadMoves();
+    const db=mv[name]||null;
+    const data=db
+      ?{power:db.power??null,accuracy:db.accuracy??null,type:db.type||null,type2:db.type2||null,category:db.damage_class||null,style:db.contest_style||null,desc:db.descricao||''}
+      :{power:null,accuracy:null,type:null,type2:null,category:null,style:null,desc:''};
+    moveDataCache[name]=data;
+    return data;
   }
 
   async function movesTable(moves,showLvl=false){
@@ -2017,8 +2007,8 @@ if(initSlug){
 let _lastRefetch=Date.now();
 function invalidateAndReload(){
   PK.reset();
-  _abilitiesPtCache=null;
-  _movesPtCache=null;
+  _abilitiesCache=null;
+  _movesCache=null;
   _lastRefetch=Date.now();
   loadRpgData().then(()=>{ applyFilters(); });
 }
