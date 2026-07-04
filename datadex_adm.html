@@ -2424,8 +2424,8 @@ function renderAbList() {
         <div class="field-row">
           <div class="field-lbl pt">📄 Descrição</div>
           <div class="translate-row">
-            <button class="translate-btn" onclick="translateField('${item.name}','ab','desc','${(item.desc||'').replace(/'/g,"\\'")}')">✦ Sugerir tradução</button>
-            <span class="translate-hint">via Google Translate (a partir do texto oficial em inglês)</span>
+            <button class="translate-btn" onclick="translateField('${item.name}','ab','desc','${(db.ab_desc||'').replace(/'/g,"\\'")}')">✦ Sugerir tradução</button>
+            <span class="translate-hint">via Google Translate (a partir do texto em inglês vindo da PokeAPI)</span>
           </div>
           <textarea class="field-pt${db.ab_desc?' filled':''}" id="ab-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" oninput="markFilled(this)">${db.ab_desc||''}</textarea>
         </div>
@@ -2487,9 +2487,7 @@ async function loadAbilities() {
     S.ab.dbMap = {};
     const items = dbRows.map(r => {
       S.ab.dbMap[r.name] = r;
-      // desc_en é só o texto de referência em inglês (vindo da importação da
-      // PokeAPI), usado pelo botão "Sugerir tradução" — nunca exibido cru.
-      return { name: r.name, id: r.dex_id || 0, desc: r.desc_en || '' };
+      return { name: r.name, id: r.dex_id || 0 };
     });
     items.sort((a, b) => (a.id || 0) - (b.id || 0) || a.name.localeCompare(b.name));
     S.ab.all = items;
@@ -2595,7 +2593,7 @@ function renderMvList() {
 
         <div class="mv-section-lbl">📄 Descrição</div>
         <div class="field-row">
-          <textarea class="field-pt${db.descricao?' filled':''}" id="mv-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" style="width:100%" oninput="markFilled(this)">${db.descricao || item.desc || ''}</textarea>
+          <textarea class="field-pt${db.descricao?' filled':''}" id="mv-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" style="width:100%" oninput="markFilled(this)">${db.descricao || ''}</textarea>
         </div>
 
         <div class="entry-foot">
@@ -2676,12 +2674,9 @@ async function loadMoves() {
     S.mv.dbMap = {};
     const items = dbRows.map(r => {
       S.mv.dbMap[r.name] = r;
-      // effect_en é só o texto de referência em inglês (vindo da importação
-      // da PokeAPI), usado pelo botão "Sugerir tradução" — nunca exibido cru.
       return {
         name: r.name,
         id: r.dex_id || 0,
-        desc: r.effect_en || '',
         power: r.power,
         pp: r.pp,
         accuracy: r.accuracy,
@@ -2709,7 +2704,7 @@ async function loadMoves() {
    campos "de referência" (tipo, poder, precisão, PP, texto em inglês, id).
 ══════════════════════════════════════════ */
 async function importAbilitiesFromPokeapi() {
-  if (!confirm('Isso vai buscar todas as habilidades da PokeAPI (~400) e subir pro Supabase: nome, número da dex e texto em inglês de referência (usado só pelo botão "Sugerir tradução"). NÃO sobrescreve descrições em português nem status de aprovação já salvos. Pode demorar ~1 minuto. Continuar?')) return;
+  if (!confirm('Isso vai buscar todas as habilidades da PokeAPI (~400) e subir pro Supabase: nome e número da dex. Se a descrição ainda estiver vazia, preenche com o texto em inglês (pra traduzir depois). NÃO sobrescreve descrições já preenchidas nem status de aprovação já salvos. Pode demorar ~1 minuto. Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
@@ -2741,8 +2736,7 @@ async function importAbilitiesFromPokeapi() {
           const existing = dbMap[item.name] || {};
           const row = {
             name: item.name,
-            ab_desc: existing.ab_desc || '',
-            desc_en: en ? en.short_effect : (existing.desc_en || null),
+            ab_desc: existing.ab_desc || (en ? en.short_effect : ''),
             dex_id: d.id,
             approved: !!existing.approved,
             updated_at: existing.updated_at || new Date().toISOString()
@@ -2765,7 +2759,7 @@ async function importAbilitiesFromPokeapi() {
 }
 
 async function importMovesFromPokeapi() {
-  if (!confirm('Isso vai buscar todos os movimentos da PokeAPI (~900) e subir pro Supabase: nome, tipo, categoria, poder, precisão, PP, número da dex e texto em inglês de referência (usado só pelo botão "Sugerir tradução"). NÃO sobrescreve descrição em português nem status de aprovação já salvos. Pode demorar 2-3 minutos. Continuar?')) return;
+  if (!confirm('Isso vai buscar todos os movimentos da PokeAPI (~900) e subir pro Supabase: nome, tipo, categoria, poder, precisão, PP e número da dex. Se a descrição ainda estiver vazia, preenche com o texto em inglês (pra traduzir depois). NÃO sobrescreve descrição já preenchida nem status de aprovação já salvos. Pode demorar 2-3 minutos. Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
@@ -2794,11 +2788,11 @@ async function importMovesFromPokeapi() {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const d = await r.json();
           const en = d.effect_entries?.find(e => e.language.name === 'en');
+          const enText = en ? en.short_effect.replace(/\$effect_chance/g, d.effect_chance || '?') : '';
           const existing = dbMap[item.name] || {};
           const row = {
             name: item.name,
-            descricao: existing.descricao || '',
-            effect_en: en ? en.short_effect.replace(/\$effect_chance/g, d.effect_chance || '?') : (existing.effect_en || null),
+            descricao: existing.descricao || enText,
             type: d.type?.name || existing.type || null,
             damage_class: d.damage_class?.name || existing.damage_class || null,
             power: d.power ?? existing.power ?? null,
@@ -3343,7 +3337,7 @@ async function doImport() {
     let count = 0;
     if (data.abilities) {
       for (const [name, v] of Object.entries(data.abilities)) {
-        await sbUpsert('abilities', { name, ab_desc: v.ab_desc||v.desc_pt||v.desc_en||'', approved: !!v.approved, updated_at: new Date().toISOString() });
+        await sbUpsert('abilities', { name, ab_desc: v.ab_desc||v.desc_pt||'', approved: !!v.approved, updated_at: new Date().toISOString() });
         count++;
       }
     }
