@@ -494,7 +494,7 @@ const SH_ADM={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY};
 async function sbFetchAllPages(url,headers,pageSize=1000){
   let all=[],from=0;
   while(true){
-    const r=await fetch(url,{headers:{...headers,Range:`${from}-${from+pageSize-1}`}});
+    const r=await fetch(url,{headers:{...headers,Range:`${from}-${from+pageSize-1}`},cache:'no-store'});
     if(!r.ok&&r.status!==206) throw new Error(await r.text());
     const page=await r.json();
     all=all.concat(page);
@@ -543,6 +543,12 @@ async function loadMovesPt(){
    LISTA — carregamento
 ═══════════════════════════════════════ */
 let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
+// Token da navegação de detalhe atual — incrementado a cada chamada de
+// loadPokemon(). Renders assíncronos (moves, evolução etc.) checam esse
+// valor antes de escrever no DOM, pra promises antigas (de um Pokémon que
+// já não está mais aberto) não sobrescreverem a ficha atual com dados do
+// Pokémon anterior.
+let _detailNavToken=0;
 // Pokémon do Nendo (RPG customizados) — carregados do JSON
 
 // PK — PokemonStore (leitura direta do Supabase novo — mesma tabela do admin).
@@ -568,7 +574,8 @@ const PK = (() => {
     return _data;
   }
   function getAll() { return _data; }
-  return { load, getAll };
+  function reset() { _loaded = false; }
+  return { load, getAll, reset };
 })();
 
 // Pokémon RPG agrupados por nome (deduplicados dos biomas)
@@ -815,6 +822,7 @@ async function loadPokemon(slug){
   window.scrollTo(0,0);
   shinyOn=false;
   document.title='Carregando… — NationalDex';
+  const navToken=++_detailNavToken;
   const dc=document.getElementById('detail-content');
   dc.innerHTML=`<div class="spinner-wrap"><div class="spinner dark"></div><div class="spinner-text dark">Consultando registros…</div></div>`;
 
@@ -822,8 +830,9 @@ async function loadPokemon(slug){
   if(slug.startsWith('__rpg__')){
     const pkId=decodeURIComponent(slug.replace('__rpg__',''));
     await loadRpgData();
+    if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
     const rpgPk=_rpgPokemon.find(p=>String(p.id)===pkId);
-    if(rpgPk){renderRpgDetail(rpgPk,dc);}
+    if(rpgPk){renderRpgDetail(rpgPk,dc,navToken);}
     else{showNotFound(dc);}
     return;
   }
@@ -831,12 +840,13 @@ async function loadPokemon(slug){
   // Caso 2: deep-link / reload — resolve apenas pelo slug canônico (rpgUrlSlug).
   // URLs com espaços ou caracteres especiais (%20, parênteses etc.) não são suportadas.
   await loadRpgData();
+  if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
   const slugNorm=slugify(slug);
   // Só considera rpgMatch para fakemon/regionais (ID não-numérico).
   // Pokémon oficiais (ID numérico) sempre usam a PokéAPI para ter a ficha completa.
   const rpgOnly=_rpgPokemon.filter(p=>!/^\d+$/.test(String(p.id)));
   const rpgMatch=rpgOnly.find(p=>rpgUrlSlug(p)===slugNorm);
-  if(rpgMatch){renderRpgDetail(rpgMatch,dc);return;}
+  if(rpgMatch){renderRpgDetail(rpgMatch,dc,navToken);return;}
 
   try{
     if(!detailCache[slug]){
@@ -847,10 +857,11 @@ async function loadPokemon(slug){
       if(!pRes.ok)throw new Error('not found');
       detailCache[slug]={p:await pRes.json(),s:await sRes.json()};
     }
+    if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
     const{p,s}=detailCache[slug];
-    renderDetail(p,s,dc);
+    renderDetail(p,s,dc,navToken);
   }catch{
-    showNotFound(dc);
+    if(navToken===_detailNavToken) showNotFound(dc);
   }
 }
 
@@ -863,7 +874,7 @@ function showNotFound(dc){
 }
 
 // Renderiza página de detalhe para Pokémon RPG customizado — mesmo layout dos oficiais
-async function renderRpgDetail(p, container){
+async function renderRpgDetail(p, container, navToken){
   const tipos=[p.tipo1,p.tipo2].filter(Boolean);
   const primaryType=tipos[0]||'normal';
   applyTypeTheme(primaryType);
@@ -1161,7 +1172,9 @@ async function renderRpgDetail(p, container){
         const fallbackDesc=en?en.short_effect.replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' '):'';
         const data={
           power:db?.power??d.power??null,
+          accuracy:db?.accuracy??d.accuracy??null,
           type:db?.type||d.type?.name||null,
+          type2:db?.type2||null,
           category:db?.damage_class||d.damage_class?.name||null,
           style:db?.contest_style||d.contest_type?.name||null,
           desc:db?.descricao||fallbackDesc
@@ -1171,10 +1184,10 @@ async function renderRpgDetail(p, container){
     }catch{}
     // Move exclusivo RPG — não existe na PokeAPI
     if(db){
-      const data={power:db.power??null,type:db.type||null,category:db.damage_class||null,style:db.contest_style||null,desc:db.descricao||''};
+      const data={power:db.power??null,accuracy:db.accuracy??null,type:db.type||null,type2:db.type2||null,category:db.damage_class||null,style:db.contest_style||null,desc:db.descricao||''};
       moveDataCacheRpg[k]=data;return data;
     }
-    return moveDataCacheRpg[k]={power:null,type:null,category:null,style:null,desc:''};
+    return moveDataCacheRpg[k]={power:null,accuracy:null,type:null,type2:null,category:null,style:null,desc:''};
   }
 
   async function rpgMovesTable(moves,showLvl=false){
@@ -1186,7 +1199,7 @@ async function renderRpgDetail(p, container){
       return`<div style="display:flex;flex-direction:column">
         ${moves.map((m,i)=>{
           const mn=m.name||m;const d=moveDetails[i];
-          const typePill=d?.type?pill(d.type):'—';
+          const typePill=d?.type?`<span style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">${pill(d.type)}${d.type2?pill(d.type2):''}</span>`:'—';
           const catColor=d?.category?CAT_COLORS_M[d.category]||'#888':'#888';
           const catLabel=d?.category?cap(d.category):'—';
           const styleColor=d?.style?STYLE_COLORS[d.style]||'#888':'transparent';
@@ -1201,7 +1214,7 @@ async function renderRpgDetail(p, container){
                   ${typePill}
                   <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
                   ${d?.style?`<span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${styleLabel}</span>`:''}
-                  ${d?.power?`<span style="font-size:10px;font-weight:700;color:var(--muted)">PWR <span style="color:var(--text);font-family:var(--font-title)">${d.power}</span></span>`:''}
+                  ${d?.power?`<span style="font-size:10px;font-weight:700;color:var(--muted)">PWR <span style="color:var(--text);font-family:var(--font-title)">${d.power}</span></span>`:''}${d?.accuracy!=null?`<span style="font-size:10px;font-weight:700;color:var(--muted)">ACC <span style="color:var(--text);font-family:var(--font-title)">${d.accuracy}%</span></span>`:''}
                 </div>
               </div>
               <span style="font-size:16px;color:var(--muted);line-height:1;flex-shrink:0">›</span>
@@ -1213,23 +1226,25 @@ async function renderRpgDetail(p, container){
     }
     return`<div><table class="moves-table" style="text-align:center;width:100%">
       <colgroup>
-        <col style="width:20%">
-        <col style="width:20%">
-        <col style="width:20%">
-        <col style="width:20%">
-        <col style="width:20%">
+        <col style="width:17%">
+        <col style="width:16%">
+        <col style="width:16%">
+        <col style="width:12%">
+        <col style="width:12%">
+        <col style="width:17%">
       </colgroup>
       <thead><tr>
         <th style="text-align:center">Nome</th>
         <th style="text-align:center">Tipo</th>
         <th style="text-align:center">Categoria</th>
         <th style="text-align:center">Poder</th>
+        <th style="text-align:center">Precisão</th>
         <th style="text-align:center">Estilo</th>
         <th class="desc-col" style="text-align:center">Descrição</th>
       </tr></thead>
       <tbody>${moves.map((m,i)=>{
         const mn=m.name||m;const d=moveDetails[i];
-        const typePill=d?.type?pill(d.type):'—';
+        const typePill=d?.type?`<span style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">${pill(d.type)}${d.type2?pill(d.type2):''}</span>`:'—';
         const catColor=d?.category?CAT_COLORS_M[d.category]||'#888':'#888';
         const catLabel=d?.category?cap(d.category):'—';
         const styleColor=d?.style?STYLE_COLORS[d.style]||'#888':'transparent';
@@ -1242,9 +1257,10 @@ async function renderRpgDetail(p, container){
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
+          <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.accuracy!=null?d.accuracy+'%':'—'}</td>
           <td style="text-align:center"><span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;${!d?.style?'background:var(--surface2);color:var(--muted)':''}">${styleLabel}</span></td>
           <td class="desc-col" style="text-align:left;font-size:11px;color:var(--muted);line-height:1.4">${d?.desc||'—'}</td>
-        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="5" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
+        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="6" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
       }).join('')}</tbody></table></div>`;
   }
 
@@ -1293,6 +1309,9 @@ async function renderRpgDetail(p, container){
   }
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
 
+  // Se o usuário já navegou pra outro Pokémon enquanto os fetches acima
+  // (apiPoke/apiSpecies/evolução) rodavam, aborta antes de escrever no DOM.
+  if(navToken!==undefined&&navToken!==_detailNavToken)return;
 
   // ── Render HTML ──
   container.innerHTML=`
@@ -1368,10 +1387,10 @@ async function renderRpgDetail(p, container){
   </div>`;
 
   // Load moves async
-  rpgMovesTable(levelMoves,true).then(html=>{const el=document.getElementById('rpg-mv-level');if(el)el.innerHTML=html;});
-  rpgMovesTable(tmMoves,false).then(html=>{const el=document.getElementById('rpg-mv-tm');if(el)el.innerHTML=html;});
-  rpgMovesTable(eggMoves,false).then(html=>{const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
-  rpgMovesTable(tutorMoves,false).then(html=>{const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
+  rpgMovesTable(levelMoves,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-level');if(el)el.innerHTML=html;});
+  rpgMovesTable(tmMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-tm');if(el)el.innerHTML=html;});
+  rpgMovesTable(eggMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
+  rpgMovesTable(tutorMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
 
   // Store sprite refs for shiny toggle
   window._rpgNormalSprite=p.sprite||'';
@@ -1387,7 +1406,7 @@ function toggleRpgShiny(){
   if(thumb) thumb.classList.toggle('active',window._rpgShinyOn);
 }
 
-async function renderDetail(p,s,container){
+async function renderDetail(p,s,container,navToken){
   const id=p.id;
   const types=p.types.map(t=>t.type.name);
   document.title=`${cap(p.name)} — NationalDex`;
@@ -1491,7 +1510,9 @@ async function renderDetail(p,s,container){
       const ptDesc=movesPt[name]?.descricao||null;
       const data={
         power:d.power||null,
+        accuracy:movesPt[name]?.accuracy??d.accuracy??null,
         type:d.type?.name||null,
+        type2:movesPt[name]?.type2||null,
         category:d.damage_class?.name||null,
         style:movesPt[name]?.contest_style||d.contest_type?.name||null,
         desc:(ptDesc||desc).replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' ')
@@ -1513,7 +1534,7 @@ async function renderDetail(p,s,container){
       return`<div style="display:flex;flex-direction:column">
         ${moves.map((m,i)=>{
           const d=moveDetails[i];
-          const typePill=d?.type?pill(d.type):'—';
+          const typePill=d?.type?`<span style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">${pill(d.type)}${d.type2?pill(d.type2):''}</span>`:'—';
           const catColor=d?.category?CAT_COLORS[d.category]||'#888':'#888';
           const catLabel=d?.category?cap(d.category):'—';
           const styleColor=d?.style?STYLE_COLORS[d.style]||'#888':'transparent';
@@ -1531,7 +1552,7 @@ async function renderDetail(p,s,container){
                   ${typePill}
                   <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
                   ${d?.style?`<span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${styleLabel}</span>`:''}
-                  ${d?.power?`<span style="font-size:10px;font-weight:700;color:var(--muted)">PWR <span style="color:var(--text);font-family:var(--font-title)">${d.power}</span></span>`:''}
+                  ${d?.power?`<span style="font-size:10px;font-weight:700;color:var(--muted)">PWR <span style="color:var(--text);font-family:var(--font-title)">${d.power}</span></span>`:''}${d?.accuracy!=null?`<span style="font-size:10px;font-weight:700;color:var(--muted)">ACC <span style="color:var(--text);font-family:var(--font-title)">${d.accuracy}%</span></span>`:''}
                 </div>
               </div>
               <span style="font-size:16px;color:var(--muted);line-height:1;flex-shrink:0">›</span>
@@ -1547,23 +1568,25 @@ async function renderDetail(p,s,container){
     // Desktop: tabela normal
     return`<div><table class="moves-table" style="text-align:center;width:100%">
       <colgroup>
-        <col style="width:20%">
-        <col style="width:20%">
-        <col style="width:20%">
-        <col style="width:20%">
-        <col style="width:20%">
+        <col style="width:17%">
+        <col style="width:16%">
+        <col style="width:16%">
+        <col style="width:12%">
+        <col style="width:12%">
+        <col style="width:17%">
       </colgroup>
       <thead><tr>
         <th style="text-align:center">Nome</th>
         <th style="text-align:center">Tipo</th>
         <th style="text-align:center">Categoria</th>
         <th style="text-align:center">Poder</th>
+        <th style="text-align:center">Precisão</th>
         <th style="text-align:center">Estilo</th>
         <th class="desc-col" style="text-align:center">Descrição</th>
       </tr></thead>
       <tbody>${moves.map((m,i)=>{
         const d=moveDetails[i];
-        const typePill=d?.type?pill(d.type):'—';
+        const typePill=d?.type?`<span style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">${pill(d.type)}${d.type2?pill(d.type2):''}</span>`:'—';
         const catColor=d?.category?CAT_COLORS[d.category]||'#888':'#888';
         const catLabel=d?.category?cap(d.category):'—';
         const styleColor=d?.style?STYLE_COLORS[d.style]||'#888':'transparent';
@@ -1575,11 +1598,16 @@ async function renderDetail(p,s,container){
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
+          <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.accuracy!=null?d.accuracy+'%':'—'}</td>
           <td style="text-align:center"><span style="background:${styleColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;${!d?.style?'background:var(--surface2);color:var(--muted)':''}">${styleLabel}</span></td>
           <td class="desc-col" style="text-align:left;font-size:11px;color:var(--muted);line-height:1.4">${d?.desc||'—'}</td>
-        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="5" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
+        </tr>${d?.desc?`<tr class="move-desc-row"><td colspan="6" style="padding:8px 16px;font-size:11px;color:var(--muted);line-height:1.5;background:var(--surface2);border-top:none;text-align:justify">${d.desc}</td></tr>`:''}`;
       }).join('')}</tbody></table></div>`;
   }
+
+  // Se o usuário já navegou pra outro Pokémon enquanto os fetches acima
+  // rodavam, aborta antes de escrever no DOM.
+  if(navToken!==undefined&&navToken!==_detailNavToken)return;
 
   container.innerHTML=`
   <div class="breadcrumb">
@@ -1677,10 +1705,10 @@ async function renderDetail(p,s,container){
   // Append megas for every species in the chain
   if(evoHtml) _evoSpeciesNames.forEach(n=>appendMegas(n, container));
   // Load moves async after DOM
-  movesTable(levelMoves,true).then(html=>{const el=document.getElementById('mv-level');if(el)el.innerHTML=html;});
-  movesTable(tmMoves,false).then(html=>{const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
-  movesTable(eggMoves,false).then(html=>{const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
-  movesTable(tutorMoves,false).then(html=>{const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
+  movesTable(levelMoves,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-level');if(el)el.innerHTML=html;});
+  movesTable(tmMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
+  movesTable(eggMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
+  movesTable(tutorMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
 }
 
 function toggleShiny(id){
@@ -1998,6 +2026,30 @@ if(initSlug){
   goList();
   initList();
 }
+
+/* ── Invalida os caches em memória (PK, abilities, moves) e recarrega
+   quando a página volta do bfcache (botão voltar/avançar do navegador)
+   ou quando a aba fica visível de novo após um tempo — sem isso, edições
+   feitas no admin não aparecem até um F5 na aba já aberta. ── */
+let _lastRefetch=Date.now();
+function invalidateAndReload(){
+  PK.reset();
+  _abilitiesPtCache=null;
+  _movesPtCache=null;
+  _lastRefetch=Date.now();
+  loadRpgData().then(()=>{ applyFilters(); });
+}
+window.addEventListener('pageshow',(e)=>{
+  if(e.persisted) invalidateAndReload(); // restaurado do bfcache
+});
+document.addEventListener('visibilitychange',()=>{
+  // Se a aba ficou oculta por mais de 60s (trocou de aba pra editar no
+  // admin, por exemplo), recarrega os dados ao voltar pra ela.
+  if(document.visibilityState==='visible' && Date.now()-_lastRefetch>60000){
+    invalidateAndReload();
+  }
+});
+
 </script>
 </body>
 </html>
