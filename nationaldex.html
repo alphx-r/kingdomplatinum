@@ -943,15 +943,14 @@ async function renderRpgDetail(p, container, navToken){
         p.habilidade2?{name:p.habilidade2,ha:false}:null,
         p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
       ].filter(Boolean);
-  // fetch descriptions from PokeAPI if available
+  // Descrição das habilidades: vem exclusivamente da tabela "abilities" do
+  // Supabase (mesma fonte usada pelo admin) — sem consulta à PokéAPI, para
+  // que a tradução PT sempre prevaleça, inclusive quando a habilidade
+  // também existe oficialmente (ex: "Blaze" num fakemon).
   let rpgAbCounter=0;
   const abHtml=await Promise.all(habEntries.map(async(h)=>{
     let desc='';
-    try{
-      const r=await fetch(`https://pokeapi.co/api/v2/ability/${h.name.toLowerCase().replace(/ /g,'-')}`);
-      if(r.ok){const d=await r.json();const en=d.effect_entries?.find(e=>e.language.name==='en');desc=en?en.short_effect:'';}
-    }catch{}
-    if(!desc){try{desc=(await getAbilityPt(h.name))||'';}catch{}}
+    try{desc=(await getAbilityPt(h.name))||'';}catch{}
     if(!h.ha) rpgAbCounter++;
     return `<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">
       ${h.ha?`<span class="ha-badge">HA</span>`:`<span class="ability-idx">${rpgAbCounter}.</span>`}
@@ -1162,32 +1161,16 @@ async function renderRpgDetail(p, container, navToken){
   async function fetchRpgMoveData(name){
     const k=name.toLowerCase().replace(/ /g,'-');
     if(moveDataCacheRpg[k])return moveDataCacheRpg[k];
+    // Dados do move vêm exclusivamente da tabela "moves" do Supabase (mesma
+    // fonte usada pelo admin) — sem consulta à PokéAPI, mesmo quando o move
+    // também existe oficialmente.
     const mvPt=await loadMovesPt();
     const db=mvPt[k]||null;
-    try{
-      const r=await fetch(`https://pokeapi.co/api/v2/move/${k}`);
-      if(r.ok){
-        const d=await r.json();
-        const en=d.effect_entries?.find(e=>e.language.name==='en');
-        const fallbackDesc=en?en.short_effect.replace(/\$effect_chance/g,d.effect_chance||'?').replace(/\n/g,' '):'';
-        const data={
-          power:db?.power??d.power??null,
-          accuracy:db?.accuracy??d.accuracy??null,
-          type:db?.type||d.type?.name||null,
-          type2:db?.type2||null,
-          category:db?.damage_class||d.damage_class?.name||null,
-          style:db?.contest_style||d.contest_type?.name||null,
-          desc:db?.descricao||fallbackDesc
-        };
-        moveDataCacheRpg[k]=data;return data;
-      }
-    }catch{}
-    // Move exclusivo RPG — não existe na PokeAPI
-    if(db){
-      const data={power:db.power??null,accuracy:db.accuracy??null,type:db.type||null,type2:db.type2||null,category:db.damage_class||null,style:db.contest_style||null,desc:db.descricao||''};
-      moveDataCacheRpg[k]=data;return data;
-    }
-    return moveDataCacheRpg[k]={power:null,accuracy:null,type:null,type2:null,category:null,style:null,desc:''};
+    const data=db
+      ?{power:db.power??null,accuracy:db.accuracy??null,type:db.type||null,type2:db.type2||null,category:db.damage_class||null,style:db.contest_style||null,desc:db.descricao||''}
+      :{power:null,accuracy:null,type:null,type2:null,category:null,style:null,desc:''};
+    moveDataCacheRpg[k]=data;
+    return data;
   }
 
   async function rpgMovesTable(moves,showLvl=false){
