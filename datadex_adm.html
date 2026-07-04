@@ -1111,6 +1111,10 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
           <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-type" list="dl-move-type" autocomplete="off" placeholder="— tipo —"><span class="cb-arrow">▾</span></div>
         </div>
         <div class="mv-meta-item">
+          <div class="mv-meta-lbl">Tipo 2 <span style="opacity:.5">(opcional)</span></div>
+          <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-type2" list="dl-move-type" autocomplete="off" placeholder="— nenhum —"><span class="cb-arrow">▾</span></div>
+        </div>
+        <div class="mv-meta-item">
           <div class="mv-meta-lbl">Categoria</div>
           <select class="mv-meta-select" id="nmv-cat">
             <option value="">—</option>
@@ -2541,11 +2545,13 @@ function renderMvList() {
     const catLabel = { physical: 'Físico', special: 'Especial', status: 'Status' }[cat] || cat;
     const catClass = { physical: 'cat-physical', special: 'cat-special', status: 'cat-status' }[cat] || '';
     const typeVal = db.type || item.type || '';
+    const type2Val = db.type2 || item.type2 || '';
+    const typeLabel = typeVal ? (typeVal.toUpperCase() + (type2Val ? ' / ' + type2Val.toUpperCase() : '')) : '';
     const powerVal = db.power !== undefined ? db.power : (item.power !== undefined ? item.power : null);
     const accVal = db.accuracy !== undefined ? db.accuracy : (item.accuracy !== undefined ? item.accuracy : null);
     return `<div class="entry${appr?' approved':''}${hasDesc?' has-pt':''}" id="mv-entry-${item.name}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="toggleEntry('mv-entry-${item.name}')">
-        <span class="entry-name">${cap(item.name)}${typeVal?`<small>${typeVal.toUpperCase()}${cat?' · '+catLabel:''}</small>`:''}</span>
+        <span class="entry-name">${cap(item.name)}${typeLabel?`<small>${typeLabel}${cat?' · '+catLabel:''}</small>`:''}</span>
         ${catClass?`<span class="badge cat-pill ${catClass}">${catLabel}</span>`:''}
         ${db.contest_style?`<span class="badge" style="background:#eee;color:#555">${cap(db.contest_style)}</span>`:''}
         <span class="badge ${appr?'badge-appr':hasDesc?'badge-pt':'badge-pend'}">${appr?'✓ Aprovado':hasDesc?'Rascunho':'Pendente'}</span>
@@ -2565,6 +2571,10 @@ function renderMvList() {
           <div class="mv-meta-item">
             <div class="mv-meta-lbl">Tipo</div>
             <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-type-${item.name}" list="dl-move-type" autocomplete="off" placeholder="— tipo —" value="${(db.type||item.type||'').replace(/\b\w/g,c=>c.toUpperCase())}"><span class="cb-arrow">▾</span></div>
+          </div>
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">Tipo 2 <span style="opacity:.5">(opcional)</span></div>
+            <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-type2-${item.name}" list="dl-move-type" autocomplete="off" placeholder="— nenhum —" value="${(db.type2||item.type2||'').replace(/\b\w/g,c=>c.toUpperCase())}"><span class="cb-arrow">▾</span></div>
           </div>
           <div class="mv-meta-item">
             <div class="mv-meta-lbl">Categoria</div>
@@ -2609,6 +2619,7 @@ async function saveMv(name, approve) {
   const mvName = document.getElementById(`mv-name-${name}`)?.value.trim() || cap(name);
   const desc = document.getElementById(`mv-desc-${name}`)?.value.trim() || '';
   const type = (document.getElementById(`mv-type-${name}`)?.value || item.type || '').toLowerCase();
+  const type2 = (document.getElementById(`mv-type2-${name}`)?.value || '').toLowerCase() || null;
   const damage_class = document.getElementById(`mv-cat-${name}`)?.value || item.damage_class || '';
   const powerRaw = document.getElementById(`mv-power-${name}`)?.value;
   const accRaw = document.getElementById(`mv-acc-${name}`)?.value;
@@ -2617,10 +2628,10 @@ async function saveMv(name, approve) {
   const accuracy = accRaw !== '' && accRaw !== undefined ? parseInt(accRaw) : null;
   const contest_style = styleRaw || null;
   try {
-    const row = { name, descricao: desc, type, damage_class, power, accuracy, contest_style, approved: approve, updated_at: new Date().toISOString() };
+    const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, approved: approve, updated_at: new Date().toISOString() };
     await sbUpsert('moves', row);
     S.mv.dbMap[name] = row;
-    item.type = type; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
+    item.type = type; item.type2 = type2; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
     const ind = document.getElementById('mv-ind-' + name);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     const entry = document.getElementById('mv-entry-' + name);
@@ -2678,7 +2689,8 @@ async function loadMoves() {
         pp: r.pp,
         accuracy: r.accuracy,
         damage_class: r.damage_class || '',
-        type: r.type || ''
+        type: r.type || '',
+        type2: r.type2 || ''
       };
     });
     items.sort((a, b) => a.name.localeCompare(b.name));
@@ -3313,7 +3325,7 @@ async function exportAll() {
     ]);
     const data = {
       abilities: Object.fromEntries(abRows.map(r => [r.name, { ab_desc: r.ab_desc, approved: r.approved }])),
-      moves: Object.fromEntries(mvRows.map(r => [r.name, { desc: r.descricao, type: r.type, damage_class: r.damage_class, power: r.power, accuracy: r.accuracy, contest_style: r.contest_style, approved: r.approved }])),
+      moves: Object.fromEntries(mvRows.map(r => [r.name, { desc: r.descricao, type: r.type, type2: r.type2, damage_class: r.damage_class, power: r.power, accuracy: r.accuracy, contest_style: r.contest_style, approved: r.approved }])),
       pokemon: Object.fromEntries(pkRows.map(r => [r.id, { name: r.name, genus_en: r.genus_en, bio: r.bio, is_fakemon: r.is_fakemon, source: r.source, approved: r.approved }])),
       exported_at: new Date().toISOString()
     };
@@ -3342,7 +3354,7 @@ async function doImport() {
     }
     if (data.moves) {
       for (const [name, v] of Object.entries(data.moves)) {
-        await sbUpsert('moves', { name, descricao: v.desc||'', type: v.type||null, damage_class: v.damage_class||null, power: v.power||null, accuracy: v.accuracy||null, approved: !!v.approved, updated_at: new Date().toISOString() });
+        await sbUpsert('moves', { name, descricao: v.desc||'', type: v.type||null, type2: v.type2||null, damage_class: v.damage_class||null, power: v.power||null, accuracy: v.accuracy||null, approved: !!v.approved, updated_at: new Date().toISOString() });
         count++;
       }
     }
@@ -3412,6 +3424,7 @@ async function saveNewMove() {
   const name = document.getElementById('nmv-name').value.trim().toLowerCase().replace(/\s+/g, '-');
   const desc = document.getElementById('nmv-desc')?.value.trim() || '';
   const type = document.getElementById('nmv-type').value.toLowerCase();
+  const type2 = document.getElementById('nmv-type2')?.value.toLowerCase() || null;
   const damage_class = document.getElementById('nmv-cat').value;
   const powerRaw = document.getElementById('nmv-power').value;
   const accRaw = document.getElementById('nmv-acc').value;
@@ -3420,17 +3433,18 @@ async function saveNewMove() {
   const accuracy = accRaw !== '' ? parseInt(accRaw) : null;
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   try {
-    const row = { name, descricao: desc, type, damage_class, power, accuracy, contest_style: contest_style||null, approved: false, updated_at: new Date().toISOString() };
+    const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style: contest_style||null, approved: false, updated_at: new Date().toISOString() };
     await sbUpsert('moves', row);
     S.mv.dbMap[name] = row;
     if (!S.mv.all.find(m => m.name === name)) {
-      S.mv.all.push({ name, id: S.mv.all.length + 1, desc, type, damage_class, power, accuracy, contest_style });
+      S.mv.all.push({ name, id: S.mv.all.length + 1, desc, type, type2, damage_class, power, accuracy, contest_style });
       S.mv.all.sort((a, b) => a.name.localeCompare(b.name));
     }
     applyMvFilter();
     closeModal('new-move-modal');
     ['nmv-name','nmv-desc','nmv-power','nmv-acc'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
     document.getElementById('nmv-type').value = '';
+    document.getElementById('nmv-type2').value = '';
     document.getElementById('nmv-cat').value = '';
     document.getElementById('nmv-style').value = '';
     toast(`Move "${name}" salvo!`, 'ok');
