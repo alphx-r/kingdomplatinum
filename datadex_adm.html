@@ -410,7 +410,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="ab-f-pend" onclick="setAbFilter('pend')">Pendentes</button>
       <button class="fbtn" id="ab-f-appr" onclick="setAbFilter('appr')">Aprovadas</button>
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
-      <button class="btn btn-primary btn-sm" onclick="openNewAbility()" style="margin-left:auto">＋ Nova Ability</button>
+      <button class="btn btn-outline btn-sm" onclick="importAbilitiesFromPokeapi()" title="Busca todas as habilidades na PokeAPI e sobe pro Supabase (sem sobrescrever traduções já feitas)" style="margin-left:auto">📥 Importar da PokeAPI</button>
+      <button class="btn btn-primary btn-sm" onclick="openNewAbility()">＋ Nova Ability</button>
     </div>
     <div id="ab-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando habilidades…</div></div></div>
   </div>
@@ -437,7 +438,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="mv-f-pend" onclick="setMvFilter('pend')">Pendentes</button>
       <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
-      <button class="btn btn-primary btn-sm" onclick="openNewMove()" style="margin-left:auto">＋ Novo Move</button>
+      <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e sobe pro Supabase (sem sobrescrever traduções já feitas)" style="margin-left:auto">📥 Importar da PokeAPI</button>
+      <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
     <div id="mv-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando movimentos…</div></div></div>
   </div>
@@ -2401,7 +2403,9 @@ function renderAbList() {
   const con = document.getElementById('ab-list');
   const items = S.ab.filtered;
   if (!items.length) {
-    con.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhuma habilidade encontrada</div></div>`;
+    con.innerHTML = S.ab.all.length
+      ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhuma habilidade encontrada</div></div>`
+      : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhuma habilidade no banco ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "📥 Importar da PokeAPI" acima para popular a lista.</div></div>`;
     return;
   }
   updateAbStats();
@@ -2481,31 +2485,18 @@ async function loadAbilities() {
   try {
     const dbRows = await sbSelect('abilities');
     S.ab.dbMap = {};
-    dbRows.forEach(r => { S.ab.dbMap[r.name] = r; });
-
-    const r = await fetch('https://pokeapi.co/api/v2/ability?limit=400');
-    const d = await r.json();
-    const items = d.results.map((a, i) => ({ name: a.name, id: i + 1, desc: '' }));
-    items.sort((a, b) => a.name.localeCompare(b.name));
+    const items = dbRows.map(r => {
+      S.ab.dbMap[r.name] = r;
+      // desc_en é só o texto de referência em inglês (vindo da importação da
+      // PokeAPI), usado pelo botão "Sugerir tradução" — nunca exibido cru.
+      return { name: r.name, id: r.dex_id || 0, desc: r.desc_en || '' };
+    });
+    items.sort((a, b) => (a.id || 0) - (b.id || 0) || a.name.localeCompare(b.name));
     S.ab.all = items;
     S.ab.filtered = items;
     renderAbList();
     nrpgPopulateAbilitySelects();
     cbBuildAbilityList();
-
-    const BATCH = 20;
-    for (let b = 0; b < items.length; b += BATCH) {
-      await Promise.all(items.slice(b, b + BATCH).map(async item => {
-        try {
-          if (S.ab.dbMap[item.name]?.ab_desc) { item.desc = S.ab.dbMap[item.name].ab_desc; return; }
-          const ar = await fetch(`https://pokeapi.co/api/v2/ability/${item.name}`);
-          const ad = await ar.json();
-          const en = ad.effect_entries?.find(e => e.language.name === 'en');
-          item.desc = en ? en.short_effect : '';
-          item.id = ad.id;
-        } catch {}
-      }));
-    }
     applyAbFilter();
   } catch (e) {
     document.getElementById('ab-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar habilidades</div></div>`;
@@ -2538,7 +2529,9 @@ function renderMvList() {
   const con = document.getElementById('mv-list');
   const items = S.mv.filtered;
   if (!items.length) {
-    con.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhum movimento encontrado</div></div>`;
+    con.innerHTML = S.mv.all.length
+      ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhum movimento encontrado</div></div>`
+      : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum movimento no banco ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "📥 Importar da PokeAPI" acima para popular a lista.</div></div>`;
     return;
   }
   updateMvStats();
@@ -2681,75 +2674,155 @@ async function loadMoves() {
   try {
     const dbRows = await sbSelect('moves');
     S.mv.dbMap = {};
-    dbRows.forEach(r => { S.mv.dbMap[r.name] = r; });
-
-    const r = await fetch('https://pokeapi.co/api/v2/move?limit=1000');
-    const d = await r.json();
-    const items = d.results.map((m, i) => ({ name: m.name, id: i + 1, desc: '', power: null, pp: null, accuracy: null, damage_class: '', type: '' }));
-
-    // Inclui movimentos homebrew que existem no Supabase mas não na PokéAPI —
-    // sem isso, movimentos criados manualmente só apareciam para quem os criou.
-    const knownMvNames = new Set(items.map(i => i.name));
-    dbRows.forEach(row => {
-      if (!knownMvNames.has(row.name)) {
-        items.push({
-          name: row.name,
-          id: items.length + 1,
-          desc: row.descricao || '',
-          power: row.power,
-          pp: null,
-          accuracy: row.accuracy,
-          damage_class: row.damage_class || '',
-          type: row.type || ''
-        });
-        knownMvNames.add(row.name);
-      }
+    const items = dbRows.map(r => {
+      S.mv.dbMap[r.name] = r;
+      // effect_en é só o texto de referência em inglês (vindo da importação
+      // da PokeAPI), usado pelo botão "Sugerir tradução" — nunca exibido cru.
+      return {
+        name: r.name,
+        id: r.dex_id || 0,
+        desc: r.effect_en || '',
+        power: r.power,
+        pp: r.pp,
+        accuracy: r.accuracy,
+        damage_class: r.damage_class || '',
+        type: r.type || ''
+      };
     });
-
-    items.sort((a, b) => a.name.localeCompare(b.name));
+    items.sort((a, b) => (a.id || 0) - (b.id || 0) || a.name.localeCompare(b.name));
     S.mv.all = items;
     S.mv.filtered = items;
     renderMvList();
     cbBuildMoveList();
-
-    const FIRST = 30;
-    await Promise.all(items.slice(0, FIRST).map(async item => {
-      try {
-        if (S.mv.dbMap[item.name]?.descricao) { item.desc = S.mv.dbMap[item.name].descricao; return; }
-        const mr = await fetch(`https://pokeapi.co/api/v2/move/${item.name}`);
-        const md = await mr.json();
-        const en = md.effect_entries?.find(e => e.language.name === 'en');
-        item.desc = en ? en.short_effect.replace(/\$effect_chance/g, md.effect_chance || '?') : '';
-        item.id = md.id;
-        item.power = md.power;
-        item.accuracy = md.accuracy;
-        item.pp = md.pp;
-        item.damage_class = md.damage_class?.name || '';
-        item.type = md.type?.name || '';
-      } catch {}
-    }));
-    applyMvFilter();
-
-    const BATCH = 30;
-    for (let b = FIRST; b < items.length; b += BATCH) {
-      await Promise.all(items.slice(b, b + BATCH).map(async item => {
-        try {
-          if (S.mv.dbMap[item.name]?.descricao) { item.desc = S.mv.dbMap[item.name].descricao; return; }
-          const md = await mr.json();
-          const en = md.effect_entries?.find(e => e.language.name === 'en');
-          item.desc = en ? en.short_effect.replace(/\$effect_chance/g, md.effect_chance || '?') : '';
-          item.id = md.id;
-          item.power = md.power;
-          item.accuracy = md.accuracy;
-          item.pp = md.pp;
-          item.damage_class = md.damage_class?.name || '';
-          item.type = md.type?.name || '';
-        } catch {}
-      }));
-    }
     applyMvFilter();
   } catch (e) {
     document.getElementById('mv-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar movimentos</div></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════
+   IMPORTAÇÃO — Abilities e Moves direto da PokeAPI pro Supabase.
+   Mesmo espírito do importRegionalFormsFromPokeapi: sobe pro banco pra
+   loadAbilities()/loadMoves() poderem ler só do Supabase (sem depender
+   da PokeAPI estar no ar toda vez que o painel carrega). Nunca sobrescreve
+   ab_desc/descricao/approved já existentes — só preenche/atualiza os
+   campos "de referência" (tipo, poder, precisão, PP, texto em inglês, id).
+══════════════════════════════════════════ */
+async function importAbilitiesFromPokeapi() {
+  if (!confirm('Isso vai buscar todas as habilidades da PokeAPI (~400) e subir pro Supabase: nome, número da dex e texto em inglês de referência (usado só pelo botão "Sugerir tradução"). NÃO sobrescreve descrições em português nem status de aprovação já salvos. Pode demorar ~1 minuto. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
+  showProgress('Buscando habilidades na PokeAPI…');
+
+  try {
+    const listRes = await fetch('https://pokeapi.co/api/v2/ability?limit=400');
+    if (!listRes.ok) throw new Error('PokeAPI: HTTP ' + listRes.status);
+    const list = (await listRes.json()).results;
+
+    const dbRows = await sbSelect('abilities');
+    const dbMap = {}; dbRows.forEach(r => { dbMap[r.name] = r; });
+
+    let ok = 0, fail = 0, i = 0;
+    const total = list.length;
+    const erros = [];
+    const BATCH = 20;
+
+    for (let b = 0; b < list.length; b += BATCH) {
+      const batch = list.slice(b, b + BATCH);
+      await Promise.all(batch.map(async item => {
+        i++;
+        updateProgress(i, total, item.name);
+        try {
+          const r = await fetch(item.url);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const d = await r.json();
+          const en = d.effect_entries?.find(e => e.language.name === 'en');
+          const existing = dbMap[item.name] || {};
+          const row = {
+            name: item.name,
+            ab_desc: existing.ab_desc || '',
+            desc_en: en ? en.short_effect : (existing.desc_en || null),
+            dex_id: d.id,
+            approved: !!existing.approved,
+            updated_at: existing.updated_at || new Date().toISOString()
+          };
+          await sbUpsert('abilities', row);
+          ok++;
+        } catch (e) { fail++; erros.push(`${item.name}: ${e.message}`); }
+      }));
+    }
+
+    if (fail) console.warn('Falhas na importação de habilidades:', erros);
+    toast(`Habilidades: ${ok} importadas/atualizadas${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
+    await loadAbilities();
+  } catch (e) {
+    toast('Erro ao importar habilidades: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '📥 Importar da PokeAPI'; }
+  }
+}
+
+async function importMovesFromPokeapi() {
+  if (!confirm('Isso vai buscar todos os movimentos da PokeAPI (~900) e subir pro Supabase: nome, tipo, categoria, poder, precisão, PP, número da dex e texto em inglês de referência (usado só pelo botão "Sugerir tradução"). NÃO sobrescreve descrição em português nem status de aprovação já salvos. Pode demorar 2-3 minutos. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
+  showProgress('Buscando movimentos na PokeAPI…');
+
+  try {
+    const listRes = await fetch('https://pokeapi.co/api/v2/move?limit=1000');
+    if (!listRes.ok) throw new Error('PokeAPI: HTTP ' + listRes.status);
+    const list = (await listRes.json()).results;
+
+    const dbRows = await sbSelect('moves');
+    const dbMap = {}; dbRows.forEach(r => { dbMap[r.name] = r; });
+
+    let ok = 0, fail = 0, i = 0;
+    const total = list.length;
+    const erros = [];
+    const BATCH = 20;
+
+    for (let b = 0; b < list.length; b += BATCH) {
+      const batch = list.slice(b, b + BATCH);
+      await Promise.all(batch.map(async item => {
+        i++;
+        updateProgress(i, total, item.name);
+        try {
+          const r = await fetch(item.url);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const d = await r.json();
+          const en = d.effect_entries?.find(e => e.language.name === 'en');
+          const existing = dbMap[item.name] || {};
+          const row = {
+            name: item.name,
+            descricao: existing.descricao || '',
+            effect_en: en ? en.short_effect.replace(/\$effect_chance/g, d.effect_chance || '?') : (existing.effect_en || null),
+            type: d.type?.name || existing.type || null,
+            damage_class: d.damage_class?.name || existing.damage_class || null,
+            power: d.power ?? existing.power ?? null,
+            accuracy: d.accuracy ?? existing.accuracy ?? null,
+            pp: d.pp ?? existing.pp ?? null,
+            contest_style: existing.contest_style || null,
+            dex_id: d.id,
+            approved: !!existing.approved,
+            updated_at: existing.updated_at || new Date().toISOString()
+          };
+          await sbUpsert('moves', row);
+          ok++;
+        } catch (e) { fail++; erros.push(`${item.name}: ${e.message}`); }
+      }));
+    }
+
+    if (fail) console.warn('Falhas na importação de movimentos:', erros);
+    toast(`Movimentos: ${ok} importados/atualizados${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
+    await loadMoves();
+  } catch (e) {
+    toast('Erro ao importar movimentos: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '📥 Importar da PokeAPI'; }
   }
 }
 
