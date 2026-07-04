@@ -421,6 +421,34 @@ const TYPE_CHART={normal:{rock:.5,ghost:0,steel:.5,light:2,scent:.5},fire:{fire:
 function pill(t,lg=false){const c=TC[t]||{bg:'#999',c:'#fff'};return `<span class="${lg?'tpill-lg':'tpill'}" style="background:${c.bg};color:${c.c}">${(TL[t]||t).toUpperCase()}</span>`;}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1).replace(/-/g,' ');}
 function titleCase(s){return s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+function moveSlug(s){return String(s||'').trim().toLowerCase().replace(/\s+/g,'-');}
+
+// ── Lista fixa de TMs do sistema ──
+// A partir de agora só existem estas 100 TMs no jogo (TM01–TM100). Qualquer
+// outro move aprendido via "machine" na PokéAPI, ou qualquer entrada de
+// moves_tm de um fakemon que não esteja nesta lista, é ignorado nas fichas.
+const TM_MOVE_NAMES=[
+"WORK UP","DRAGON CLAW","PSYSHOCK","CALM MIND","TWILIGHT SKIES","TOXIC","HAIL","BULK UP","VENOSHOCK","HIDDEN POWER",
+"SUNNY DAY","TAUNT","ICE BEAM","BLIZZARD","HYPER BEAM","LIGHT SCREEN","PROTECT","RAIN DANCE","ROOST","SAFEGUARD",
+"FRUSTRATION","SOLAR BEAM","SMACK DOWN","THUNDERBOLT","THUNDER","EARTHQUAKE","RETURN","DRAGON CHEER","PSYCHIC","SHADOW BALL",
+"BRICK BREAK","DOUBLE TEAM","REFLECT","SLUDGE WAVE","FLAMETHROWER","SLUDGE BOMB","SANDSTORM","FIRE BLAST","ROCK TOMB","AERIAL ACE",
+"TORMENT","FACADE","FLAME CHARGE","REST","ATTRACT","STROBE","LOW SWEEP","ROUND","ECHOED VOICE","OVERHEAT",
+"STEEL WING","FOCUS BLAST","ENERGY BALL","FALSE SWIPE","SCALD","FLING","CHARGE BEAM","SKY DROP","BRUTAL SWING","BULLET SEED",
+"WILL-O-WISP","ACROBATICS","EMBARGO","EXPLOSION","SHADOW CLAW","PAYBACK","SMART STRIKE","GIGA IMPACT","ROCK POLISH","AURORA VEIL",
+"STONE EDGE","VOLT SWITCH","THUNDER WAVE","GYRO BALL","SWORDS DANCE","FLY","PSYCH UP","BULLDOZE","FROST BREATH","ROCK SLIDE",
+"X-SCISSOR","DRAGON TAIL","INFESTATION","POISON JAB","DREAM EATER","GRASS KNOT","SWAGGER","SLEEP TALK","U-TURN","SUBSTITUTE",
+"FLASH CANNON","TRICK ROOM","WILD CHARGE","SURF","SNARL","NATURE POWER","DARK PULSE","WATERFALL","DAZZLING GLEAM","CONFIDE"
+];
+const TM_SLUG_TO_NUM={};
+TM_MOVE_NAMES.forEach((n,i)=>{ TM_SLUG_TO_NUM[moveSlug(n)]=i+1; });
+function tmLabel(name){ const n=TM_SLUG_TO_NUM[moveSlug(name)]; return n?('TM'+String(n).padStart(2,'0')):null; }
+// Filtra uma lista de {name,...} pra só as que estão na lista de TMs do
+// sistema, e ordena por número de TM.
+function restrictToTmList(list){
+  return (list||[])
+    .filter(m=>TM_SLUG_TO_NUM[moveSlug(m.name)])
+    .sort((a,b)=>TM_SLUG_TO_NUM[moveSlug(a.name)]-TM_SLUG_TO_NUM[moveSlug(b.name)]);
+}
 function calcDmg(types){
   const m={};for(const t of Object.keys(TYPE_CHART))m[t]=1;
   for(const def of types)for(const[atk,v]of Object.entries(TYPE_CHART))if(TYPE_CHART[atk][def]!==undefined)m[atk]*=TYPE_CHART[atk][def];
@@ -1174,7 +1202,7 @@ async function renderRpgDetail(p, container, navToken){
     return data;
   }
 
-  async function rpgMovesTable(moves,showLvl=false){
+  async function rpgMovesTable(moves,showLvl=false,tmMode=false){
     if(!moves||!moves.length)return`<div class="moves-empty">Nenhum move registrado</div>`;
     const earlyColor=(TC[tipos[0]]||{bg:'var(--brand-mid)'}).bg;
     const isMobile=window.innerWidth<=720;
@@ -1193,7 +1221,7 @@ async function renderRpgDetail(p, container, navToken){
           return`<div style="border-bottom:1px solid var(--border)">
             <div onclick="toggleMoveDesc(this)" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--surface)">
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:700;color:${nameColor};margin-bottom:4px">${titleCase(mn)}</div>
+                <div style="font-size:13px;font-weight:700;color:${nameColor};margin-bottom:4px">${tmMode&&tmLabel(mn)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(mn)}</span>`:''}${titleCase(mn)}</div>
                 <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                   ${typePill}
                   <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
@@ -1237,7 +1265,7 @@ async function renderRpgDetail(p, container, navToken){
         const nameStyle=isEarly?`font-weight:800;color:${earlyColor}`:'';
         const nameStyleFinal=`text-align:center;white-space:nowrap;font-weight:700;color:var(--text)`;
         return`<tr class="move-row" onclick="toggleMoveDesc(this)" style="cursor:pointer">
-          <td class="move-name" style="${nameStyleFinal}">${titleCase(mn)}</td>
+          <td class="move-name" style="${nameStyleFinal}">${tmMode&&tmLabel(mn)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(mn)}</span>`:''}${titleCase(mn)}</td>
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
@@ -1292,7 +1320,7 @@ async function renderRpgDetail(p, container, navToken){
     }
   }
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
-
+  tmMoves=restrictToTmList(tmMoves);
   // Se o usuário já navegou pra outro Pokémon enquanto os fetches acima
   // (apiPoke/apiSpecies/evolução) rodavam, aborta antes de escrever no DOM.
   if(navToken!==undefined&&navToken!==_detailNavToken)return;
@@ -1372,7 +1400,7 @@ async function renderRpgDetail(p, container, navToken){
 
   // Load moves async
   rpgMovesTable(levelMoves,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-level');if(el)el.innerHTML=html;});
-  rpgMovesTable(tmMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-tm');if(el)el.innerHTML=html;});
+  rpgMovesTable(tmMoves,false,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-tm');if(el)el.innerHTML=html;});
   rpgMovesTable(eggMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
   rpgMovesTable(tutorMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
 
@@ -1480,8 +1508,7 @@ async function renderDetail(p,s,container,navToken){
     });
   });
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
-
-  const moveDataCache={};
+  tmMoves=restrictToTmList(tmMoves);
   async function fetchMoveData(name){
     if(moveDataCache[name])return moveDataCache[name];
     // Dados do move vêm exclusivamente da tabela "moves" do Supabase — sem
@@ -1495,7 +1522,7 @@ async function renderDetail(p,s,container,navToken){
     return data;
   }
 
-  async function movesTable(moves,showLvl=false){
+  async function movesTable(moves,showLvl=false,tmMode=false){
     if(!moves.length)return`<div class="moves-empty">Nenhum move registrado</div>`;
     const STYLE_COLORS={cool:'#e03030',beauty:'#2080e0',beautiful:'#2080e0',cute:'#e030a0',smart:'#30a030',clever:'#30a030',tough:'#e0a020'};
     const CAT_COLORS={physical:'#e07030',special:'#6070e0',status:'#90a090'};
@@ -1520,7 +1547,7 @@ async function renderDetail(p,s,container,navToken){
           <div style="border-bottom:1px solid var(--border)">
             <div onclick="toggleMoveDesc(this)" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--surface)">
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:${nameFw};color:${nameColor};margin-bottom:4px">${titleCase(m.name)}</div>
+                <div style="font-size:13px;font-weight:${nameFw};color:${nameColor};margin-bottom:4px">${tmMode&&tmLabel(m.name)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(m.name)}</span>`:''}${titleCase(m.name)}</div>
                 <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                   ${typePill}
                   <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
@@ -1567,7 +1594,7 @@ async function renderDetail(p,s,container,navToken){
         const isEarly=showLvl&&(m.lvl===0||m.lvl<=5);
         const nameStyle=isEarly?`font-weight:800;color:${earlyColor}`:'';
         return`<tr class="move-row" onclick="toggleMoveDesc(this)" style="cursor:pointer">
-          <td class="move-name" style="text-align:center;white-space:nowrap;font-weight:700;color:var(--text)">${titleCase(m.name)}</td>
+          <td class="move-name" style="text-align:center;white-space:nowrap;font-weight:700;color:var(--text)">${tmMode&&tmLabel(m.name)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(m.name)}</span>`:''}${titleCase(m.name)}</td>
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
           <td style="text-align:center;font-family:var(--font-title);font-size:12px;font-weight:700">${d?.power??'—'}</td>
@@ -1679,7 +1706,7 @@ async function renderDetail(p,s,container,navToken){
   if(evoHtml) _evoSpeciesNames.forEach(n=>appendMegas(n, container));
   // Load moves async after DOM
   movesTable(levelMoves,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-level');if(el)el.innerHTML=html;});
-  movesTable(tmMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
+  movesTable(tmMoves,false,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
   movesTable(eggMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
   movesTable(tutorMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
 }
