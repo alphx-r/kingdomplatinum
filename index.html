@@ -6716,8 +6716,8 @@ async function adicionarPokemon(){
     id:pkId, name:nome, sprite:null, sprite_shiny:null,
     tipo1, tipo2:tipo2||null,
     habilidade1, habilidade2,
-    raridade, genero, biomas:biomasSel,
-    estacao, estacao_boost:estacaoBoost, condicao,
+    genero, biomas:biomasSel.map(b=>({nome:b, raridade, condicao})),
+    estacao, estacao_boost:estacaoBoost,
     is_fakemon: isFakemon || isRegional, source: isFakemon ? 'nendo' : isRegional ? 'regional' : 'manual', approved:false,
     updated_at:new Date().toISOString()
   };
@@ -6834,38 +6834,42 @@ function abrirModalPkUnificado(nome){
 function fecharModalPkUnificado(){
   document.getElementById('modal-pk-uni-overlay').style.display='none';
 }
+function _pkBiomaNorm(b){ return typeof b==='string' ? {nome:b, raridade:'comum', condicao:null} : {nome:b.nome, raridade:b.raridade||'comum', condicao:b.condicao||null}; }
 function _renderPkUniBiomasList(nome){
   const wrap=document.getElementById('modal-pk-uni-biomas-list');
   const linhas=_pkUniLinhas(nome);
   if(!linhas.length){wrap.innerHTML='';return;}
-  // Nova estrutura: cada registro tem biomas[] e raridade único
-  // Exibe um card por registro (geralmente 1), mostrando biomas como chips editáveis
+  // Cada registro tem biomas[] = [{nome, raridade, condicao}, ...] — raridade/condição são por bioma
   wrap.innerHTML=linhas.map(l=>{
-    const biomasArr=Array.isArray(l.biomas)?l.biomas:(l.bioma?[l.bioma]:[]);
-    const biomasChips=biomasArr.map(b=>`<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px">${b} <span style="cursor:pointer;color:var(--red)" onclick="_pkUniRemoverBioma('${l.id}','${b.replace(/'/g,"\\'")}','${nome.replace(/'/g,"\\'")}')">✕</span></span>`).join('');
+    const biomasArr=(Array.isArray(l.biomas)?l.biomas:(l.bioma?[l.bioma]:[])).map(_pkBiomaNorm);
+    const biomasCards=biomasArr.map(b=>`
+      <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;margin-bottom:4px;flex-wrap:wrap">
+        <strong style="font-size:11px;min-width:70px">${b.nome}</strong>
+        <select style="font-size:11px;padding:2px 4px;border-radius:4px;border:1px solid var(--border)" onchange="_pkUniAtualizarBiomaCampo('${l.id}','${b.nome.replace(/'/g,"\\'")}','raridade',this.value,'${nome.replace(/'/g,"\\'")}')">
+          <option value="comum"${b.raridade==='comum'?' selected':''}>Comum (52–100)</option>
+          <option value="incomum"${b.raridade==='incomum'?' selected':''}>Incomum (14–51)</option>
+          <option value="raro"${b.raridade==='raro'?' selected':''}>Raro (3–13)</option>
+          <option value="rarissimo"${b.raridade==='rarissimo'?' selected':''}>Raríssimo (1–2)</option>
+        </select>
+        <input type="text" style="font-size:11px;flex:1;min-width:130px;padding:2px 4px;border-radius:4px;border:1px solid var(--border)" value="${(b.condicao||'').replace(/"/g,'&quot;')}" placeholder="Condição (opcional)" onchange="_pkUniAtualizarBiomaCampo('${l.id}','${b.nome.replace(/'/g,"\\'")}','condicao',this.value.trim()||null,'${nome.replace(/'/g,"\\'")}')"/>
+        <span style="cursor:pointer;color:var(--red)" onclick="_pkUniRemoverBioma('${l.id}','${b.nome.replace(/'/g,"\\'")}','${nome.replace(/'/g,"\\'")}')">✕</span>
+      </div>`).join('');
     return`<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
       <div class="field" style="margin-bottom:8px">
         <label style="font-size:10px">Biomas</label>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${biomasChips||'<span style="color:var(--muted);font-size:11px">Nenhum bioma</span>'}</div>
+        <div style="margin-bottom:6px">${biomasCards||'<span style="color:var(--muted);font-size:11px">Nenhum bioma</span>'}</div>
         <div style="display:flex;gap:6px">
           <select id="add-bioma-sel-${l.id}" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid var(--border)">
             ${biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('')}
           </select>
+          <select id="add-bioma-raridade-${l.id}" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid var(--border)">
+            <option value="comum">Comum</option>
+            <option value="incomum">Incomum</option>
+            <option value="raro">Raro</option>
+            <option value="rarissimo">Raríssimo</option>
+          </select>
           <button class="btn btn-sm btn-primary" onclick="_pkUniAdicionarBiomaArr('${l.id}','${nome.replace(/'/g,"\\'")}')">+ Bioma</button>
         </div>
-      </div>
-      <div class="field" style="margin-bottom:8px">
-        <label style="font-size:10px">Raridade</label>
-        <select onchange="_pkUniAtualizarLinha('${l.id}','raridade',this.value)">
-          <option value="comum"${l.raridade==='comum'?' selected':''}>Comum (52–100)</option>
-          <option value="incomum"${l.raridade==='incomum'?' selected':''}>Incomum (14–51)</option>
-          <option value="raro"${l.raridade==='raro'?' selected':''}>Raro (3–13)</option>
-          <option value="rarissimo"${l.raridade==='rarissimo'?' selected':''}>Raríssimo (1–2)</option>
-        </select>
-      </div>
-      <div class="field" style="margin-bottom:8px">
-        <label style="font-size:10px">Condição de captura</label>
-        <input type="text" value="${(l.condicao||'').replace(/"/g,'&quot;')}" onchange="_pkUniAtualizarLinha('${l.id}','condicao',this.value.trim()||null)" placeholder="Ex: Apenas com Pokéflauta equipada"/>
       </div>
     </div>`;
   }).join('');
@@ -6874,9 +6878,11 @@ async function _pkUniAdicionarBiomaArr(id,nome){
   const p=pokemonDB.find(x=>x.id===id);if(!p)return;
   const sel=document.getElementById('add-bioma-sel-'+id);if(!sel)return;
   const bioma=sel.value;
-  const biomasArr=Array.isArray(p.biomas)?[...p.biomas]:(p.bioma?[p.bioma]:[]);
-  if(biomasArr.includes(bioma)){alert('Este bioma já está adicionado.');return;}
-  biomasArr.push(bioma);
+  const raridadeSel=document.getElementById('add-bioma-raridade-'+id);
+  const raridade=raridadeSel?raridadeSel.value:'comum';
+  const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).map(_pkBiomaNorm);
+  if(biomasArr.some(b=>b.nome===bioma)){alert('Este bioma já está adicionado.');return;}
+  biomasArr.push({nome:bioma, raridade, condicao:null});
   p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
   try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
   _renderPkUniBiomasList(nome);
@@ -6885,7 +6891,7 @@ async function _pkUniAdicionarBiomaArr(id,nome){
 }
 async function _pkUniRemoverBioma(id,bioma,nome){
   const p=pokemonDB.find(x=>x.id===id);if(!p)return;
-  const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).filter(b=>b!==bioma);
+  const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).map(_pkBiomaNorm).filter(b=>b.nome!==bioma);
   if(!biomasArr.length){alert('Não é possível remover o último bioma.');return;}
   p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
   try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
@@ -6893,9 +6899,13 @@ async function _pkUniRemoverBioma(id,bioma,nome){
   renderTbodyPokemons();renderTbodyBiomas();
   if(currentPage==='bioma') renderBiomaPage();
 }
-async function _pkUniAtualizarLinha(id,campo,valor){
+async function _pkUniAtualizarBiomaCampo(id,bioma,campo,valor,nome){
   const p=pokemonDB.find(x=>x.id===id);if(!p)return;
-  p[campo]=valor; PK.set(id,{[campo]:valor});
+  const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).map(_pkBiomaNorm);
+  const entry=biomasArr.find(b=>b.nome===bioma);
+  if(!entry)return;
+  entry[campo]=valor;
+  p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
   try{ loading(true); await PK.save(); loading(false); } catch(e){ loading(false); alert('Erro: '+e.message); return; }
   renderTbodyPokemons();renderTbodyBiomas();
   if(currentPage==='bioma') renderBiomaPage();
@@ -6977,22 +6987,14 @@ async function _pkUniAdicionarBioma(){
   const ref=linhas[0];
   const bioma=document.getElementById('modal-pk-uni-add-bioma-sel').value;
   const raridade=document.getElementById('modal-pk-uni-add-raridade-sel').value;
-  // Copia todos os campos compartilhados da primeira linha
-  const id = `${ref.id}_${bioma.replace(/\s+/g,'_')}`;
-  const payload={
-    id, name:ref.name, sprite:ref.sprite||null, sprite_shiny:ref.sprite_shiny||null,
-    tipo1:ref.tipo1||null, tipo2:ref.tipo2||null,
-    habilidade1:ref.habilidade1||null, habilidade2:ref.habilidade2||null,
-    genero:ref.genero||'1d2', estacao:ref.estacao||null, estacao_boost:ref.estacao_boost||null,
-    condicao:null, biomas:[bioma], raridade, is_fakemon:ref.is_fakemon||false,
-    source:ref.source||'manual', approved:ref.approved||false,
-    updated_at:new Date().toISOString()
-  };
+  const biomasArr=(Array.isArray(ref.biomas)?ref.biomas:(ref.bioma?[ref.bioma]:[])).map(_pkBiomaNorm);
+  if(biomasArr.some(b=>b.nome===bioma)){alert('Este bioma já está adicionado.');return;}
+  biomasArr.push({nome:bioma, raridade, condicao:null});
+  ref.biomas=biomasArr;
   loading(true);
-  PK.set(id, payload);
+  PK.set(ref.id, {biomas:biomasArr});
   try{ await PK.save(); loading(false); }
   catch(e){ loading(false); alert('Erro: '+e.message); return; }
-  pokemonDB.push(payload);
   document.getElementById('modal-pk-uni-add-bioma').style.display='none';
   _renderPkUniBiomasList(nome);
   renderTbodyPokemons();renderTbodyBiomas();
@@ -7196,10 +7198,13 @@ async function aplicarBulkRaridade(){
     setTimeout(()=>err.style.display='none',3000);return;
   }
   const novaRaridade=document.getElementById('bulk-nova-raridade').value;
+  const biomaFiltro=document.getElementById('bulk-bioma-sel')?.value||'';
   const ids=[...bulkSelecionados];
   for(const id of ids){
     const p=pokemonDB.find(x=>x.id===id);if(!p)continue;
-    p.raridade=novaRaridade; PK.set(id,{raridade:novaRaridade});
+    const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).map(b=>typeof b==='string'?{nome:b,raridade:'comum',condicao:null}:{nome:b.nome,raridade:b.raridade||'comum',condicao:b.condicao||null});
+    biomasArr.forEach(b=>{ if(!biomaFiltro||b.nome===biomaFiltro) b.raridade=novaRaridade; });
+    p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
   }
   try{ loading(true); await PK.save(); loading(false); }
   catch(e){ loading(false); alert('Erro: '+e.message); return; }
@@ -8633,8 +8638,8 @@ async function importarDaPokeAPI(){
         const newId=`${nomeFormatado.toLowerCase().replace(/\s+/g,'_')}_${bioma.replace(/\s+/g,'_')}`;
         const novo={id:newId,name:nomeFormatado,sprite,sprite_shiny:null,
           tipo1:tipos[0]||null,tipo2:tipos[1]||null,
-          habilidade1:habilidade,habilidade2,raridade,genero,
-          biomas:[bioma],estacao:null,estacao_boost:null,condicao:null,
+          habilidade1:habilidade,habilidade2,genero,
+          biomas:[{nome:bioma, raridade, condicao:null}],
           is_fakemon:false,source:'import',approved:false,
           updated_at:new Date().toISOString()};
         PK.set(newId,novo); pokemonDB.push(novo);
