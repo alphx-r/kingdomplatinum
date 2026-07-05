@@ -5090,24 +5090,41 @@ koencity: 30" style="resize:vertical"></textarea>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // ══════════════════════════════════════
-// PK — PokemonStore (JSON ↔ GitHub)
+// PK — PokemonStore
+// Lê/grava direto na tabela "pokemons" do projeto Supabase dedicado
+// ao DataDex — a mesma fonte de verdade usada pelo datadex_adm.html.
+// Mesmo padrão de lá: sbSelect (paginado via Range) + sbUpsert
+// (INSERT ... ON CONFLICT DO UPDATE só nas colunas enviadas, então
+// campos que o roller não mexe — sprite, bio, evoluções etc. — não
+// são apagados).
 // ══════════════════════════════════════
-const PK = (() => {
-  const REPO  = 'alphx-r/kingdomplatinum';
-  const FILE  = 'pokemon.json';
-  const TOKEN = ['ghp_6zBzR','CFV7Fv7le','actYsB90Jn','tMkgLP4YGD7Z'].join('');
-  const API   = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
-  let _data   = [];   // array de objetos pokémon
-  let _sha    = null; // sha atual do arquivo no GitHub
+const DATADEX_SUPA_URL = 'https://fatdzivyqipmcbzaiftc.supabase.co';
+const DATADEX_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
+const DATADEX_SH = { 'Content-Type': 'application/json', 'apikey': DATADEX_SUPA_KEY, 'Authorization': 'Bearer ' + DATADEX_SUPA_KEY };
 
+// PostgREST devolve no máximo 1000 linhas por request — pagina via Range
+// até vir menos que o tamanho da página (sinal de que acabou).
+async function dxFetchAllPages(url, headers, pageSize = 1000) {
+  let all = [], from = 0;
+  while (true) {
+    const r = await fetch(url, { headers: { ...headers, Range: `${from}-${from + pageSize - 1}` } });
+    if (!r.ok && r.status !== 206) throw new Error(await r.text());
+    const page = await r.json();
+    all = all.concat(page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
+const PK = (() => {
+  let _data   = [];   // array de objetos pokémon
   let _loaded = false;
 
   async function load() {
     if (_loaded) return _data; // já carregou — retorna cache
     try {
-      const r = await fetch('/pokemon.json');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      _data = await r.json();
+      _data = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/pokemons?select=*`, DATADEX_SH);
       _loaded = true;
     } catch (e) {
       console.error('[PK.load]', e);
@@ -5117,20 +5134,12 @@ const PK = (() => {
   }
 
   async function save() {
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(_data, null, 2))));
-    const body = { message: 'chore: update pokemon.json', content, ..._sha ? { sha: _sha } : {} };
-    const r = await fetch(API, {
-      method: 'PUT',
-      headers: {
-        Authorization: `token ${TOKEN}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
+    const r = await fetch(`${DATADEX_SUPA_URL}/rest/v1/pokemons`, {
+      method: 'POST',
+      headers: { ...DATADEX_SH, 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify(_data)
     });
-    if (!r.ok) { const t = await r.text(); throw new Error('GitHub save: ' + t); }
-    const res = await r.json();
-    _sha = res.content.sha;
+    if (!r.ok) { const t = await r.text(); throw new Error('Supabase save: ' + t); }
   }
 
   function get(id)          { return _data.find(p => String(p.id) === String(id)); }
