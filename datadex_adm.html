@@ -490,12 +490,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </div>
       <style>@media(max-width:640px){#nrpg-inline-form .two-col,#nrpg-inline-form > div[style*="grid-template-columns:1fr 1fr 110px"]{grid-template-columns:1fr!important}}</style>
 
-      <!-- Classificação -->
-      <div style="margin-bottom:10px">
-        <div class="field-lbl en" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(EN)</span></div>
-        <input class="mv-meta-input" id="nrpg-genus" type="text" placeholder="Ex: Seed Pokémon" style="width:100%">
-      </div>
-
       <!-- Habilidades -->
       <div class="two-col" style="margin-bottom:10px">
         <div>
@@ -837,10 +831,6 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
               <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
               <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%" oninput="epkSyncSlug()">
             </div>
-          </div>
-          <div>
-            <div class="field-lbl en" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(EN)</span></div>
-            <input class="mv-meta-input" id="epk-genus" type="text" placeholder="Ex: Seed Pokémon" style="width:100%">
           </div>
         </div>
         <div class="two-col">
@@ -1559,7 +1549,6 @@ async function openEditPokemon(id) {
   document.getElementById('epk-nome').value = db.name || pk.name || '';
   document.getElementById('epk-pokedex').value = idStr;
   document.getElementById('epk-slug').value = buildAutoSlug(db.name || pk.name || '', idStr);
-  document.getElementById('epk-genus').value = db.genus_en || pk._genus_en || '';
 
   // Sprites (URL)
   document.getElementById('epk-sprite').value = db.sprite || '';
@@ -1595,13 +1584,12 @@ async function openEditPokemon(id) {
   if (document.getElementById('epk-estacao-boost')) document.getElementById('epk-estacao-boost').value = db.estacao_boost || '';
 
   // Base stats
-  const bs = db.base_stats || {};
-  document.getElementById('epk-hp').value  = db.hp  || bs.hp  || '';
-  document.getElementById('epk-atk').value = db.atk || bs.attack || '';
-  document.getElementById('epk-def').value = db.def || bs.defense || '';
-  document.getElementById('epk-spa').value = db.spa || bs['special-attack'] || '';
-  document.getElementById('epk-spd').value = db.spd || bs['special-defense'] || '';
-  document.getElementById('epk-spe').value = db.spe || bs.speed || '';
+  document.getElementById('epk-hp').value  = db.hp  || '';
+  document.getElementById('epk-atk').value = db.atk || '';
+  document.getElementById('epk-def').value = db.def || '';
+  document.getElementById('epk-spa').value = db.spa || '';
+  document.getElementById('epk-spd').value = db.spd || '';
+  document.getElementById('epk-spe').value = db.spe || '';
 
   // Tipos — tags clicáveis
   document.querySelectorAll('#epk-tipo1-wrap .tipo-tag').forEach(t => t.classList.toggle('sel', t.dataset.tipo === t1));
@@ -2317,7 +2305,6 @@ async function savePkModal(approve) {
   const nomeRaw = document.getElementById('epk-nome').value.trim();
   const slugRaw = document.getElementById('epk-slug').value.trim();
   const displayName = nomeRaw || pk.name;
-  const genusEn = document.getElementById('epk-genus').value.trim() || null;
 
   // Pokédex: permite renumerar o Pokémon (id) através deste campo
   const newIdRaw = document.getElementById('epk-pokedex').value.trim();
@@ -2424,7 +2411,7 @@ async function savePkModal(approve) {
     }
 
     const row = {
-      id: String(newId), name: displayName, genus_en: genusEn,
+      id: String(newId), name: displayName,
       url_slug: slug,
       bio: bioPt,
       sprite, sprite_shiny: spriteShiny,
@@ -3209,7 +3196,6 @@ async function importRegionalFormsFromPokeapi() {
         const baseNameCap = species.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         const displayName = `(${prefix}) ${baseNameCap}`;
 
-        const genusEn = species.genera?.find(g => g.language.name === 'en')?.genus || null;
         const types = p.types.sort((a, b) => a.slot - b.slot).map(t => t.type.name);
         const abilities = p.abilities || [];
         const normalAbilities = abilities.filter(a => !a.is_hidden).sort((a, b) => a.slot - b.slot);
@@ -3240,7 +3226,6 @@ async function importRegionalFormsFromPokeapi() {
         const row = {
           id,
           name: displayName,
-          genus_en: genusEn,
           url_slug: item.name,
           bio,
           // Usa a artwork oficial (mesma qualidade usada pros Pokémon numéricos),
@@ -3307,9 +3292,17 @@ async function migrateFromOldSupabase() {
     currentRows.forEach(r => { currentMap[String(r.id)] = r; });
 
     const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
-    // raridade/condicao não existem mais como coluna solta no banco novo — agora vivem
-    // dentro de cada item do array `biomas`. Não copiar do banco antigo como estão.
-    const STALE_TOPLEVEL_FIELDS = new Set(['raridade', 'condicao']);
+    // Whitelist das colunas reais da tabela `pokemons` no banco novo (DataDex).
+    // O banco antigo pode ter campos que não existem mais aqui (ex: raridade,
+    // condicao soltos, genus_en) — copiar só o que existe evita erros PGRST204.
+    // `id`, `biomas` e `updated_at` são tratados à parte.
+    const VALID_POKEMON_COLUMNS = new Set([
+      'name', 'url_slug', 'bio', 'sprite', 'sprite_shiny', 'tipo1', 'tipo2',
+      'habilidade1', 'habilidade2', 'habilidade_oculta', 'habilidade_mega', 'forca_alfa',
+      'genero', 'hp', 'atk', 'def', 'spa', 'spd', 'spe', 'weight', 'height', 'egg_group',
+      'evolucoes', 'moves_level', 'moves_tm', 'moves_egg', 'moves_tutor',
+      'is_fakemon', 'source', 'approved', 'formas_alfa', 'estacao', 'estacao_boost'
+    ]);
     const normalizeOldBiomas = old => {
       if (!old.biomas || !old.biomas.length) return null;
       return old.biomas.map(b => typeof b === 'string'
@@ -3332,7 +3325,7 @@ async function migrateFromOldSupabase() {
         // Não existe ainda no banco novo: importa a linha inteira (menos campos vazios/obsoletos)
         payload = { id };
         Object.entries(old).forEach(([k, v]) => {
-          if (STALE_TOPLEVEL_FIELDS.has(k) || k === 'biomas') return;
+          if (!VALID_POKEMON_COLUMNS.has(k)) return;
           if (!isEmpty(v)) payload[k] = v;
         });
         const biomasNorm = normalizeOldBiomas(old);
@@ -3343,7 +3336,7 @@ async function migrateFromOldSupabase() {
         payload = { id };
         let mudou = false;
         Object.entries(old).forEach(([k, v]) => {
-          if (k === 'id' || STALE_TOPLEVEL_FIELDS.has(k) || k === 'biomas') return;
+          if (!VALID_POKEMON_COLUMNS.has(k)) return;
           if (isEmpty(existing[k]) && !isEmpty(v)) { payload[k] = v; mudou = true; }
         });
         if (isEmpty(existing.biomas)) {
@@ -3403,7 +3396,6 @@ async function migratePokemonJsonToSupabase() {
       const row = {
         id: String(p.id),
         name: p.name || '',
-        genus_en: p.genus_en || null,
         url_slug: p.url_slug || null,
         bio: p.bio || null,
         sprite: p.sprite || null,
@@ -3470,7 +3462,7 @@ async function exportAll() {
     const data = {
       abilities: Object.fromEntries(abRows.map(r => [r.name, { ab_desc: r.ab_desc, approved: r.approved }])),
       moves: Object.fromEntries(mvRows.map(r => [r.name, { desc: r.descricao, type: r.type, type2: r.type2, damage_class: r.damage_class, power: r.power, accuracy: r.accuracy, contest_style: r.contest_style, approved: r.approved }])),
-      pokemon: Object.fromEntries(pkRows.map(r => [r.id, { name: r.name, genus_en: r.genus_en, bio: r.bio, is_fakemon: r.is_fakemon, source: r.source, approved: r.approved }])),
+      pokemon: Object.fromEntries(pkRows.map(r => [r.id, { name: r.name, bio: r.bio, is_fakemon: r.is_fakemon, source: r.source, approved: r.approved }])),
       exported_at: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -3504,7 +3496,7 @@ async function doImport() {
     }
     if (data.pokemon) {
       for (const [id, v] of Object.entries(data.pokemon)) {
-        await sbUpsert('pokemons', { id, name: v.name||'', genus_en: v.genus_en||'', bio: v.bio||v.bio_pt||'', is_fakemon: !!v.is_fakemon, source: v.source||'manual', approved: !!v.approved, updated_at: new Date().toISOString() });
+        await sbUpsert('pokemons', { id, name: v.name||'', bio: v.bio||v.bio_pt||'', is_fakemon: !!v.is_fakemon, source: v.source||'manual', approved: !!v.approved, updated_at: new Date().toISOString() });
         count++;
       }
     }
@@ -3963,7 +3955,7 @@ function nrpgSetBiomaField(nome, field, value) {
 function nrpgResetForm() {
   document.querySelectorAll('#nrpg-tipo1-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('#nrpg-tipo2-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
-  ['nrpg-nome','nrpg-pokedex','nrpg-genus','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-forca-alfa','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nrpg-nome','nrpg-pokedex','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-forca-alfa','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-estacao','nrpg-estacao-boost'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-sprite-file','nrpg-sprite-shiny-file'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   const sp = document.getElementById('nrpg-sprite-preview'); if (sp) { sp.innerHTML = '<span style="font-size:18px;opacity:.3">🖼</span>'; delete sp.dataset.b64; }
@@ -3985,7 +3977,6 @@ async function saveNewRpgPokemon() {
   const spe = parseInt(document.getElementById('nrpg-spe')?.value) || null;
   const nomeRaw = document.getElementById('nrpg-nome')?.value.trim();
   const name    = nomeRaw || ''; // nome é independente — nunca slugificado
-  const genusEn = document.getElementById('nrpg-genus')?.value.trim() || null;
   const pokedexNum = document.getElementById('nrpg-pokedex')?.value.trim() || null;
   // Raridade e condição agora vivem dentro de cada bioma (ver nrpgBiomasSel)
   const biomas  = nrpgBiomasSel.map(b => ({ nome: b.nome, raridade: b.raridade || 'comum', condicao: b.condicao || null }));
@@ -4055,7 +4046,7 @@ async function saveNewRpgPokemon() {
     const formasAlfa = await alfaProcessAndRead('nrpg-formas-alfa', id);
 
     const row = {
-      id, name, url_slug: buildAutoSlug(name, id), genus_en: genusEn,
+      id, name, url_slug: buildAutoSlug(name, id),
       tipo1, tipo2,
       habilidade1, habilidade2,
       habilidade_oculta: habilidadeOculta,
