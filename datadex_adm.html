@@ -544,6 +544,34 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada bioma adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro do bioma.</div>
       </div>
 
+      <!-- Estação -->
+      <div style="margin-bottom:10px;padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
+        <div class="field-lbl en" style="margin-bottom:6px">🌦️ Estação</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <div class="field-lbl en" style="margin-bottom:4px">Estação exclusiva</div>
+            <select class="mv-meta-input" id="nrpg-estacao" style="width:100%">
+              <option value="">— Aparece em qualquer estação —</option>
+              <option value="primavera">🌱 Primavera</option>
+              <option value="verao">☀️ Verão</option>
+              <option value="outono">🍂 Outono</option>
+              <option value="inverno">❄️ Inverno</option>
+            </select>
+          </div>
+          <div>
+            <div class="field-lbl en" style="margin-bottom:4px">Boost sazonal</div>
+            <select class="mv-meta-input" id="nrpg-estacao-boost" style="width:100%">
+              <option value="">— Sem boost —</option>
+              <option value="primavera">🌱 Primavera</option>
+              <option value="verao">☀️ Verão</option>
+              <option value="outono">🍂 Outono</option>
+              <option value="inverno">❄️ Inverno</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Exclusiva: só aparece nessa estação. Boost: aparece sempre, mas com raridade promovida durante a estação.</div>
+      </div>
+
       <!-- Gênero + Weight + Height + Egg Group -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
@@ -894,6 +922,34 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
             <button type="button" class="btn btn-primary btn-sm" onclick="epkAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Bioma</button>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada bioma adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro do bioma.</div>
+        </div>
+
+        <!-- Estação -->
+        <div class="epk-card">
+          <div class="epk-card-title">🌦️ Estação</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Estação exclusiva</div>
+              <select class="mv-meta-input" id="epk-estacao" style="width:100%">
+                <option value="">— Aparece em qualquer estação —</option>
+                <option value="primavera">🌱 Primavera</option>
+                <option value="verao">☀️ Verão</option>
+                <option value="outono">🍂 Outono</option>
+                <option value="inverno">❄️ Inverno</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Boost sazonal</div>
+              <select class="mv-meta-input" id="epk-estacao-boost" style="width:100%">
+                <option value="">— Sem boost —</option>
+                <option value="primavera">🌱 Primavera</option>
+                <option value="verao">☀️ Verão</option>
+                <option value="outono">🍂 Outono</option>
+                <option value="inverno">❄️ Inverno</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Exclusiva: só aparece nessa estação. Boost: aparece sempre, mas com raridade promovida durante a estação.</div>
         </div>
       </div>
 
@@ -1533,6 +1589,10 @@ async function openEditPokemon(id) {
   if (document.getElementById('epk-weight')) document.getElementById('epk-weight').value = db.weight || '';
   if (document.getElementById('epk-height')) document.getElementById('epk-height').value = db.height || '';
   if (document.getElementById('epk-egg-group')) document.getElementById('epk-egg-group').value = db.egg_group || '';
+
+  // Estação
+  if (document.getElementById('epk-estacao')) document.getElementById('epk-estacao').value = db.estacao || '';
+  if (document.getElementById('epk-estacao-boost')) document.getElementById('epk-estacao-boost').value = db.estacao_boost || '';
 
   // Base stats
   const bs = db.base_stats || {};
@@ -2323,6 +2383,8 @@ async function savePkModal(approve) {
   const genero  = (generoM !== '' || generoF !== '') ? `${generoM||0},${generoF||0}` : null;
   // Raridade e condição agora vivem dentro de cada bioma (ver epkBiomasSel)
   const biomas  = epkBiomasSel.map(b => ({ nome: b.nome, raridade: b.raridade || 'comum', condicao: b.condicao || null }));
+  const estacao = document.getElementById('epk-estacao')?.value.trim() || null;
+  const estacaoBoost = document.getElementById('epk-estacao-boost')?.value.trim() || null;
 
   // Base stats
   const hp  = parseInt(document.getElementById('epk-hp').value) || null;
@@ -2371,6 +2433,7 @@ async function savePkModal(approve) {
       forca_alfa: forcaAlfa,
       formas_alfa: formasAlfa.length ? formasAlfa : null,
       genero, biomas: biomas.length ? biomas : null,
+      estacao, estacao_boost: estacaoBoost,
       hp, atk, def, spa, spd, spe,
       weight, height, egg_group,
       evolucoes: evolucoes.length ? evolucoes : null,
@@ -3244,6 +3307,15 @@ async function migrateFromOldSupabase() {
     currentRows.forEach(r => { currentMap[String(r.id)] = r; });
 
     const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+    // raridade/condicao não existem mais como coluna solta no banco novo — agora vivem
+    // dentro de cada item do array `biomas`. Não copiar do banco antigo como estão.
+    const STALE_TOPLEVEL_FIELDS = new Set(['raridade', 'condicao']);
+    const normalizeOldBiomas = old => {
+      if (!old.biomas || !old.biomas.length) return null;
+      return old.biomas.map(b => typeof b === 'string'
+        ? { nome: b, raridade: old.raridade || 'comum', condicao: old.condicao || null }
+        : { nome: b.nome, raridade: b.raridade || old.raridade || 'comum', condicao: b.condicao ?? old.condicao ?? null });
+    };
 
     let novos = 0, atualizados = 0, semMudanca = 0, fail = 0, i = 0;
     const total = oldRows.length;
@@ -3257,18 +3329,27 @@ async function migrateFromOldSupabase() {
 
       let payload;
       if (!existing) {
-        // Não existe ainda no banco novo: importa a linha inteira (menos campos vazios)
+        // Não existe ainda no banco novo: importa a linha inteira (menos campos vazios/obsoletos)
         payload = { id };
-        Object.entries(old).forEach(([k, v]) => { if (!isEmpty(v)) payload[k] = v; });
+        Object.entries(old).forEach(([k, v]) => {
+          if (STALE_TOPLEVEL_FIELDS.has(k) || k === 'biomas') return;
+          if (!isEmpty(v)) payload[k] = v;
+        });
+        const biomasNorm = normalizeOldBiomas(old);
+        if (biomasNorm) payload.biomas = biomasNorm;
         novos++;
       } else {
         // Já existe: só completa os campos que estão vazios aqui e preenchidos lá
         payload = { id };
         let mudou = false;
         Object.entries(old).forEach(([k, v]) => {
-          if (k === 'id') return;
+          if (k === 'id' || STALE_TOPLEVEL_FIELDS.has(k) || k === 'biomas') return;
           if (isEmpty(existing[k]) && !isEmpty(v)) { payload[k] = v; mudou = true; }
         });
+        if (isEmpty(existing.biomas)) {
+          const biomasNorm = normalizeOldBiomas(old);
+          if (biomasNorm) { payload.biomas = biomasNorm; mudou = true; }
+        }
         if (!mudou) { semMudanca++; continue; }
         atualizados++;
       }
@@ -3336,6 +3417,8 @@ async function migratePokemonJsonToSupabase() {
         forca_alfa: p.forca_alfa || null,
         formas_alfa: (p.formas_alfa && p.formas_alfa.length) ? p.formas_alfa : null,
         genero: p.genero || null,
+        estacao: p.estacao || null,
+        estacao_boost: p.estacao_boost || null,
         biomas: (p.biomas && p.biomas.length)
           ? p.biomas.map(b => typeof b === 'string'
               ? { nome: b, raridade: p.raridade || 'comum', condicao: p.condicao || null }
@@ -3881,6 +3964,7 @@ function nrpgResetForm() {
   document.querySelectorAll('#nrpg-tipo1-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('#nrpg-tipo2-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   ['nrpg-nome','nrpg-pokedex','nrpg-genus','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-forca-alfa','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nrpg-estacao','nrpg-estacao-boost'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-sprite-file','nrpg-sprite-shiny-file'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   const sp = document.getElementById('nrpg-sprite-preview'); if (sp) { sp.innerHTML = '<span style="font-size:18px;opacity:.3">🖼</span>'; delete sp.dataset.b64; }
   const ss = document.getElementById('nrpg-sprite-shiny-preview'); if (ss) { ss.innerHTML = '<span style="font-size:18px;opacity:.35">✨</span>'; delete ss.dataset.b64; }
@@ -3911,6 +3995,8 @@ async function saveNewRpgPokemon() {
   const weight   = parseFloat(document.getElementById('nrpg-weight')?.value) || null;
   const height   = parseFloat(document.getElementById('nrpg-height')?.value) || null;
   const eggGroup = document.getElementById('nrpg-egg-group')?.value.trim() || null;
+  const estacao = document.getElementById('nrpg-estacao')?.value.trim() || null;
+  const estacaoBoost = document.getElementById('nrpg-estacao-boost')?.value.trim() || null;
   const habilidade1 = abilityToSlug(document.getElementById('nrpg-hab1')?.value) || '';
   const habilidade2 = abilityToSlug(document.getElementById('nrpg-hab2')?.value) || '';
   const habilidadeOculta = abilityToSlug(document.getElementById('nrpg-hab-oculta')?.value) || null;
@@ -3978,6 +4064,7 @@ async function saveNewRpgPokemon() {
       formas_alfa: formasAlfa.length ? formasAlfa : null,
       hp, atk, def, spa, spd, spe,
       genero, weight, height, egg_group: eggGroup,
+      estacao, estacao_boost: estacaoBoost,
       biomas: biomas.length ? biomas : null,
       bio,
       sprite, sprite_shiny: spriteShiny,
