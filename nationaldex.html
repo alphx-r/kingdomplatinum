@@ -1100,12 +1100,13 @@ async function renderRpgDetail(p, container, navToken){
       ||apiSpecies.flavor_text_entries.find(f=>f.language.name==='en');
     if(flavor) bioText=flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' ');
   }
-  const bioHtml=bioText?`<div class="section" style="border-color:${TT.mid}40">
+  const temBiomas=p.biomas&&p.biomas.length;
+  const bioHtml=(bioText||temBiomas)?`<div class="section" style="border-color:${TT.mid}40">
     <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Biology</div></div>
     <div class="sec-body">
-      <div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
+      ${bioText?`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
         <strong style="color:${TT.dark}">${label}, ${genus}.</strong> ${bioText}
-      </div>
+      </div>`:''}
       ${biomasEncontradoHtml(p.biomas)}
     </div>
   </div>`:'';
@@ -1456,6 +1457,7 @@ async function renderDetail(p,s,container,navToken){
   // Bio: prioriza o texto revisado no admin (banco novo); cai pro flavor
   // text da PokéAPI só se o admin ainda não tiver aprovado uma versão.
   const flavorText=_pkDbMap[String(id)]?.bio||(flavor?flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' '):'');
+  const dbBiomasOfficial=_pkDbMap[String(id)]?.biomas;
   const gr=s.gender_rate;
   const mPct=(100-(gr/8*100)).toFixed(0);const fPct=(gr/8*100).toFixed(0);
   const genderHtml=gr===-1?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
@@ -1531,6 +1533,7 @@ async function renderDetail(p,s,container,navToken){
   });
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
   tmMoves=restrictToTmList(tmMoves);
+  const moveDataCache={};
   async function fetchMoveData(name){
     if(moveDataCache[name])return moveDataCache[name];
     // Dados do move vêm exclusivamente da tabela "moves" do Supabase — sem
@@ -1698,13 +1701,13 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">No modifiers</div>'}</div>
   </div>
 
-  ${flavorText?`<div class="section" style="border-color:${TT.mid}40">
+  ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length))?`<div class="section" style="border-color:${TT.mid}40">
     <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Biology</div></div>
     <div class="sec-body">
-      <div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
+      ${flavorText?`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
         <strong style="color:${TT.dark}">${cap(p.name)}, o ${genus}.</strong> ${flavorText}
-      </div>
-      ${biomasEncontradoHtml(p.biomas)}
+      </div>`:''}
+      ${biomasEncontradoHtml(dbBiomasOfficial)}
     </div>
   </div>`:''}
 
