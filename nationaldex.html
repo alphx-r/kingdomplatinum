@@ -629,6 +629,27 @@ function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1
 // Slug de região (minúsculo, como usado nos nomes vindos da PokeAPI) por prefixo de id.
 const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea'};
 
+// Labels de exibição pra raridade dos biomas (mesmos valores salvos pelo admin em RARIDADE_OPTS,
+// só sem as faixas numéricas — aqui é exibição pública, não a tela de edição).
+const RARIDADE_LABELS={comum:'Comum',incomum:'Incomum',raro:'Raro',rarissimo:'Raríssimo'};
+
+// Monta a lista "Pode ser encontrado em: Bioma (Raridade), Bioma (Raridade)..." a partir
+// da coluna biomas (compartilhada com o datadex_adm). Aceita tanto o formato novo
+// (array de {nome,raridade,condicao}) quanto o legado (array de strings).
+function biomasEncontradoHtml(biomas){
+  if(!biomas||!biomas.length) return '';
+  const itens=biomas.map(b=>{
+    const nome=typeof b==='string'?b:b.nome;
+    const raridade=typeof b==='string'?'comum':(b.raridade||'comum');
+    const condicao=typeof b==='string'?null:b.condicao;
+    const rarLabel=RARIDADE_LABELS[raridade]||cap(raridade);
+    return `<strong>${nome}</strong> (${rarLabel})${condicao?` — <em>${condicao}</em>`:''}`;
+  }).join(', ');
+  return `<div style="padding:0 20px 16px;margin-top:-4px;font-size:12px;color:var(--text)">
+    <strong>Pode ser encontrado em:</strong> ${itens}
+  </div>`;
+}
+
 // Formata o número exibido nos nós da cadeia evolutiva: letra do prefixo + 4 dígitos
 // (ex: id "A0019" → "A0019"; id numérico puro sem prefixo → só os 4 dígitos).
 function evoDisplayNum(id){
@@ -1085,6 +1106,7 @@ async function renderRpgDetail(p, container, navToken){
       <div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
         <strong style="color:${TT.dark}">${label}, ${genus}.</strong> ${bioText}
       </div>
+      ${biomasEncontradoHtml(p.biomas)}
     </div>
   </div>`:'';
 
@@ -1682,6 +1704,7 @@ async function renderDetail(p,s,container,navToken){
       <div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
         <strong style="color:${TT.dark}">${cap(p.name)}, o ${genus}.</strong> ${flavorText}
       </div>
+      ${biomasEncontradoHtml(p.biomas)}
     </div>
   </div>`:''}
 
