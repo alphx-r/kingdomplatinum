@@ -1093,8 +1093,11 @@ async function renderRpgDetail(p, container, navToken){
   </div>`;
 
   // ── Biology ──
+  // Bio e biomas vêm sempre do mesmo registro (p, direto do admin/Supabase).
+  // A PokéAPI só é usada como fallback pro texto quando o admin ainda não
+  // preencheu um bio próprio pra essa forma regional.
   let bioText=p.bio||'';
-  if(apiSpecies?.flavor_text_entries?.length){
+  if(!bioText&&apiSpecies?.flavor_text_entries?.length){
     const flavor=apiSpecies.flavor_text_entries.find(f=>f.language.name==='pt-BR')
       ||apiSpecies.flavor_text_entries.find(f=>f.language.name==='pt')
       ||apiSpecies.flavor_text_entries.find(f=>f.language.name==='en');
@@ -1449,15 +1452,18 @@ async function renderDetail(p,s,container,navToken){
   const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
   applyTypeTheme(primaryType);
 
-  const genusFromDb=_pkDbMap[String(id)]?.genus_en;
+  const dbRec=_pkDbMap[String(id)];
+  const genusFromDb=dbRec?.genus_en;
   const genus=genusFromDb||s.genera?.find(g=>g.language.name==='en')?.genus||'Pokémon';
   let flavor=s.flavor_text_entries.find(f=>f.language.name==='pt-BR')
     ||s.flavor_text_entries.find(f=>f.language.name==='pt')
     ||s.flavor_text_entries.find(f=>f.language.name==='en');
   // Bio: prioriza o texto revisado no admin (banco novo); cai pro flavor
   // text da PokéAPI só se o admin ainda não tiver aprovado uma versão.
-  const flavorText=_pkDbMap[String(id)]?.bio||(flavor?flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' '):'');
-  const dbBiomasOfficial=_pkDbMap[String(id)]?.biomas;
+  const flavorText=dbRec?.bio||(flavor?flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' '):'');
+  // Biomas vêm sempre do mesmo registro do admin usado pra bio acima (dbRec) —
+  // não existe equivalente de biomas na PokéAPI.
+  const dbBiomasOfficial=dbRec?.biomas;
   const gr=s.gender_rate;
   const mPct=(100-(gr/8*100)).toFixed(0);const fPct=(gr/8*100).toFixed(0);
   const genderHtml=gr===-1?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
