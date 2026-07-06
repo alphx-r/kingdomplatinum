@@ -364,6 +364,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
       <button class="btn btn-outline" onclick="runFixOfficialPokemonNames()" title="Corrige o nome de Pokémon oficiais que ficou salvo como slug (ex: iron-crown → Iron Crown)">📝 Corrigir nomes (slug→oficial)</button>
       <button class="btn btn-outline" onclick="runImportOfficialPhysicalData()" title="Preenche altura/peso/grupo de ovo dos Pokémon oficiais que ainda estão vazios">📏 Importar altura/peso/grupo de ovo</button>
+      <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um bioma/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
 
@@ -801,6 +802,39 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeImport()">Cancelar</button>
       <button class="btn btn-success" onclick="doImport()">✓ Importar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-ov" id="bulk-transfer-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">🔀 Transferência em massa — Bioma/Raridade</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Cole uma lista de Pokémon (nome ou #ID, um por linha) e escolha o bioma + raridade de destino. Se o Pokémon já tiver esse bioma, a raridade/condição são atualizadas; senão, o bioma é adicionado — os outros biomas dele não são mexidos (a menos que marque "substituir" abaixo).</p>
+    <textarea class="modal-ta" id="bt-lista" placeholder="Ex:
+Pidgey
+Rattata
+#016
+Caterpie"></textarea>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px">Bioma de destino</label>
+        <select class="mv-meta-input" id="bt-bioma" style="width:100%"><option value="">— Carregando —</option></select>
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px">Raridade de destino</label>
+        <select class="mv-meta-input" id="bt-raridade" style="width:100%"></select>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px">Condição de captura (opcional, aplicada a todos)</label>
+      <input class="mv-meta-input" type="text" id="bt-condicao" style="width:100%" placeholder="Ex: Só à noite">
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);cursor:pointer">
+      <input type="checkbox" id="bt-substituir"> Substituir todos os biomas existentes desses Pokémon por apenas este (em vez de adicionar/atualizar)
+    </label>
+    <div id="bt-resultado" style="font-size:12px;margin-top:10px;max-height:160px;overflow-y:auto"></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal('bulk-transfer-modal')">Cancelar</button>
+      <button class="btn btn-success" id="bt-apply-btn" onclick="applyBulkTransfer()">✓ Aplicar transferência</button>
     </div>
   </div>
 </div>
@@ -2491,6 +2525,95 @@ async function loadPokemon() {
   } catch (e) {
     document.getElementById('pk-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar Pokémon</div><div class="empty-desc">${e.message}</div></div>`;
   }
+}
+
+/* ══════════════════════════════════════════
+   ██ TRANSFERÊNCIA EM MASSA (bioma/raridade por lista)
+══════════════════════════════════════════ */
+function btNorm(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function btRenderBiomaSelect() {
+  const sel = document.getElementById('bt-bioma');
+  if (!sel) return;
+  const todos = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome) : EPK_BIOMAS;
+  sel.innerHTML = todos.map(b => `<option value="${b}">${b}</option>`).join('');
+  if (!S.biomas || !S.biomas.length) {
+    rpgFetchBiomas().then(lista => { if (lista && lista.length) { S.biomas = lista; btRenderBiomaSelect(); } });
+  }
+}
+
+function openBulkTransferModal() {
+  document.getElementById('bt-lista').value = '';
+  document.getElementById('bt-condicao').value = '';
+  document.getElementById('bt-substituir').checked = false;
+  document.getElementById('bt-resultado').innerHTML = '';
+  document.getElementById('bt-raridade').innerHTML = raridadeOptionsHtml('comum');
+  btRenderBiomaSelect();
+  document.getElementById('bulk-transfer-modal').classList.add('open');
+}
+
+// Acha o Pokémon pelo #ID (numérico ou com prefixo A/G/H/P/N) ou pelo nome (sem
+// diferenciar acento/maiúscula), buscando na lista já carregada em S.pk.all.
+function btFindPokemon(raw) {
+  const q = String(raw || '').replace(/^#/, '').trim();
+  if (!q) return null;
+  const qn = btNorm(q);
+  return S.pk.all.find(p => String(p.id).toLowerCase() === q.toLowerCase())
+      || S.pk.all.find(p => btNorm(p.name) === qn);
+}
+
+async function applyBulkTransfer() {
+  const linhas = document.getElementById('bt-lista').value.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!linhas.length) { toast('Cole ao menos um Pokémon na lista.', 'err'); return; }
+  const biomaDestino = document.getElementById('bt-bioma').value;
+  if (!biomaDestino) { toast('Selecione o bioma de destino.', 'err'); return; }
+  const raridadeDestino = document.getElementById('bt-raridade').value;
+  const condicaoDestino = document.getElementById('bt-condicao').value.trim() || null;
+  const substituir = document.getElementById('bt-substituir').checked;
+
+  const btn = document.getElementById('bt-apply-btn');
+  const resultEl = document.getElementById('bt-resultado');
+  btn.disabled = true;
+  const textoOriginal = btn.textContent;
+  btn.textContent = 'Aplicando…';
+  resultEl.innerHTML = '';
+
+  let ok = 0;
+  const falhas = [];
+  for (const linha of linhas) {
+    const pk = btFindPokemon(linha);
+    if (!pk) { falhas.push(`${linha} — não encontrado`); continue; }
+    try {
+      const existentes = ((S.pk.dbMap[pk.id] || {}).biomas || pk.biomas || []).slice();
+      let novos;
+      if (substituir) {
+        novos = [{ nome: biomaDestino, raridade: raridadeDestino, condicao: condicaoDestino }];
+      } else {
+        novos = existentes.filter(b => (typeof b === 'string' ? b : b.nome) !== biomaDestino);
+        novos.push({ nome: biomaDestino, raridade: raridadeDestino, condicao: condicaoDestino });
+      }
+      const payload = { id: String(pk.id), biomas: novos, updated_at: new Date().toISOString() };
+      await sbUpsert('pokemons', payload);
+      if (S.pk.dbMap[pk.id]) S.pk.dbMap[pk.id].biomas = novos;
+      else S.pk.dbMap[pk.id] = { ...pk, biomas: novos };
+      Object.assign(pk, { biomas: novos });
+      ok++;
+    } catch (e) {
+      falhas.push(`${linha} — erro: ${e.message}`);
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = textoOriginal;
+  applyPkFilter();
+  updatePkStats();
+
+  resultEl.innerHTML = `<div style="color:var(--green,#2e7d32);font-weight:700">✓ ${ok} Pokémon atualizado(s) para ${biomaDestino} (${raridadeDestino}).</div>`
+    + (falhas.length ? `<div style="color:var(--red);margin-top:6px;font-weight:700">✕ ${falhas.length} problema(s):</div><div style="opacity:.85;margin-top:2px">${falhas.map(f => `• ${f}`).join('<br>')}</div>` : '');
+
+  toast(falhas.length ? `${ok} atualizados, ${falhas.length} com problema` : `✓ ${ok} Pokémon transferidos!`, falhas.length ? 'err' : 'ok');
 }
 
 /* ══════════════════════════════════════════
