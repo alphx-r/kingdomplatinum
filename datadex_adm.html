@@ -363,6 +363,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
       <button class="btn btn-outline" onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
       <button class="btn btn-outline" onclick="runFixOfficialPokemonNames()" title="Corrige o nome de Pokémon oficiais que ficou salvo como slug (ex: iron-crown → Iron Crown)">📝 Corrigir nomes (slug→oficial)</button>
+      <button class="btn btn-outline" onclick="runImportOfficialPhysicalData()" title="Preenche altura/peso/grupo de ovo dos Pokémon oficiais que ainda estão vazios">📏 Importar altura/peso/grupo de ovo</button>
     </div>
   </div>
 
@@ -3244,6 +3245,68 @@ async function runFixOfficialPokemonNames() {
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📝 Corrigir nomes (slug→oficial)'; }
+  }
+}
+
+// Preenche altura/peso/grupo de ovo de Pokémon oficiais (id numérico) que
+// ainda não têm esses campos no Supabase. A importação de formas regionais
+// já busca isso (importRegionalFormsFromPokeapi); os Pokémon base nunca
+// tiveram um importador equivalente, então esses campos ficaram vazios.
+// Só preenche o que estiver faltando — não sobrescreve nada já cadastrado.
+async function runImportOfficialPhysicalData() {
+  if (!confirm('Isso vai buscar altura, peso e grupo de ovo de cada Pokémon oficial (id numérico) na PokeAPI e preencher só o que estiver vazio no Supabase — não sobrescreve nada que já esteja cadastrado. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+
+  try {
+    const rows = await sbSelect('pokemons');
+    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)) && (!p.height || !p.weight || !p.egg_group));
+
+    showProgress('Importando altura/peso/grupo de ovo (PokeAPI)…');
+    let ok = 0, fail = 0;
+    const erros = [];
+
+    for (let i = 0; i < oficiais.length; i++) {
+      const p = oficiais[i];
+      updateProgress(i + 1, oficiais.length, p.name || p.id);
+      try {
+        const [pr, sr] = await Promise.all([
+          fetch(`https://pokeapi.co/api/v2/pokemon/${p.id}`),
+          fetch(`https://pokeapi.co/api/v2/pokemon-species/${p.id}`)
+        ]);
+        if (!pr.ok) throw new Error(`pokemon HTTP ${pr.status}`);
+        if (!sr.ok) throw new Error(`species HTTP ${sr.status}`);
+        const pd = await pr.json();
+        const sd = await sr.json();
+
+        const patch = {};
+        if (!p.height && pd.height) patch.height = pd.height / 10;   // decímetros -> m
+        if (!p.weight && pd.weight) patch.weight = pd.weight / 10;   // hectogramas -> kg
+        if (!p.egg_group) {
+          const eggGroups = (sd.egg_groups || []).map(e => e.name).join(', ') || null;
+          if (eggGroups) patch.egg_group = eggGroups;
+        }
+        if (Object.keys(patch).length) {
+          await sbPatch('pokemons', p.id, patch);
+          ok++;
+        }
+      } catch (e) {
+        fail++;
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    hideProgress();
+    if (erros.length) {
+      console.warn('Falhas ao importar dados físicos:', erros);
+      toast(`✓ ${ok} atualizado(s), ${fail} falha(s) — veja o console.`, 'err');
+    } else {
+      toast(`✓ ${ok} Pokémon atualizado(s) com altura/peso/grupo de ovo!`, 'ok');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📏 Importar altura/peso/grupo de ovo'; }
   }
 }
 
