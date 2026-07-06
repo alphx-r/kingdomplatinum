@@ -962,6 +962,25 @@ async function renderRpgDetail(p, container, navToken){
       }
     }catch{}
   }
+  // Pokémon oficial "base" (sem prefixo de região, id numérico puro): tipos,
+  // stats, habilidades e gênero já vêm certos do banco local, então não
+  // buscamos apiPoke/apiSpecies pra esses (evita sobrescrever qualquer ajuste
+  // manual feito no admin). Só complementamos ao vivo os 4 campos que hoje
+  // não são importados pra Pokémon base: altura, peso, grupo de ovo e
+  // classificação (genus) — usados só como fallback quando o banco não tiver.
+  let baseFallbackPoke=null, baseFallbackSpecies=null;
+  if(!pref && /^\d+$/.test(String(p.id)) && (!p.height||!p.weight||!p.egg_group)){
+    try{
+      const[fr,sr]=await Promise.all([
+        fetch(`https://pokeapi.co/api/v2/pokemon/${p.id}`),
+        fetch(`https://pokeapi.co/api/v2/pokemon-species/${p.id}`)
+      ]);
+      if(fr.ok) baseFallbackPoke=await fr.json();
+      if(sr.ok) baseFallbackSpecies=await sr.json();
+    }catch{}
+  }
+  const heightWeightSrc=apiPoke||baseFallbackPoke;
+  const classificationSrc=apiSpecies||baseFallbackSpecies;
   // Tipos — sobrescreve com os da PokéAPI quando disponível
   if(apiPoke?.types?.length){
     tipos.length=0;
@@ -1050,14 +1069,14 @@ async function renderRpgDetail(p, container, navToken){
   }
 
   // ── Egg groups ──
-  const eggs=apiSpecies?.egg_groups?.length
-    ? apiSpecies.egg_groups.map(e=>cap(e.name)).join(', ')
+  const eggs=classificationSrc?.egg_groups?.length
+    ? classificationSrc.egg_groups.map(e=>cap(e.name)).join(', ')
     : (p.egg_group
         ? String(p.egg_group).split(',').map(s=>s.trim()).filter(Boolean).map(cap).join(', ')
         : ([p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—'));
 
   // ── Genus / Classification ──
-  const genusFromApi=apiSpecies?.genera?.find(g=>g.language.name==='en')?.genus||'';
+  const genusFromApi=classificationSrc?.genera?.find(g=>g.language.name==='en')?.genus||'';
   const genusRaw=genusFromApi||p.genus_en||p.genus_pt||'';
   const genus=genusRaw?(genusRaw.toLowerCase().endsWith('pokémon')||genusRaw.toLowerCase().endsWith('pokemon')?genusRaw:genusRaw+' Pokémon'):'Pokémon';
 
@@ -1445,8 +1464,8 @@ async function renderRpgDetail(p, container, navToken){
         <div class="info-flat">
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> ${genus}</div>
           <div class="info-flat-row info-flat-split">
-            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> ${apiPoke?.height?(apiPoke.height/10)+' m':(p.height?p.height+' m':'—')}</div>
-            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> ${apiPoke?.weight?(apiPoke.weight/10)+' kg':(p.weight?p.weight+' kg':'—')}</div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> ${heightWeightSrc?.height?(heightWeightSrc.height/10)+' m':(p.height?p.height+' m':'—')}</div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> ${heightWeightSrc?.weight?(heightWeightSrc.weight/10)+' kg':(p.weight?p.weight+' kg':'—')}</div>
           </div>
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">GENDER RATIO:</span> ${genderHtml}</div>
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> ${eggs}</div>
