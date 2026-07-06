@@ -358,10 +358,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
       <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
-      <button class="btn btn-outline" onclick="importMovesetsFromPokeapi()" title="Busca o moveset (nível/TM/ovo/tutor) de todos os Pokémon oficiais na PokeAPI e salva no Supabase">⚔️ Importar movesets</button>
       <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
       <button class="btn btn-outline" onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
+      <button class="btn btn-outline" onclick="runFixOfficialPokemonNames()" title="Corrige o nome de Pokémon oficiais que ficou salvo como slug (ex: iron-crown → Iron Crown)">📝 Corrigir nomes (slug→oficial)</button>
     </div>
   </div>
 
@@ -2942,84 +2942,6 @@ async function importMovesFromPokeapi() {
 }
 
 /* ══════════════════════════════════════════
-   IMPORTAÇÃO — Moveset (nível/TM/ovo/tutor) dos Pokémon oficiais, direto da
-   PokeAPI pro Supabase. Preenche moves_level/moves_tm/moves_egg/moves_tutor
-   na tabela "pokemons" (mesmas colunas usadas pelo editor de formas
-   regionais/fakemon), pra que a NationalDex nunca mais precise consultar a
-   PokeAPI pra montar o moveset de Pokémon oficiais.
-   Só atualiza Pokémon (id numérico) que já existem no Supabase — não mexe
-   em nenhum outro campo do registro, só nas 4 colunas de moveset.
-══════════════════════════════════════════ */
-async function importMovesetsFromPokeapi() {
-  if (!confirm('Isso vai buscar o moveset (por nível, TM, ovo e tutor) de todos os Pokémon oficiais na PokeAPI e salvar nas colunas de moveset da tabela pokemons no Supabase. SOBRESCREVE o moveset já salvo desses Pokémon (não mexe em nenhum outro campo). Só atualiza quem já existe no banco. Pode demorar alguns minutos. Continuar?')) return;
-
-  const btn = event?.target;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
-  showProgress('Buscando movesets na PokeAPI…');
-
-  try {
-    const dbRows = await sbSelect('pokemons');
-    const ids = dbRows
-      .filter(r => /^\d+$/.test(String(r.id)))
-      .map(r => parseInt(r.id, 10))
-      .sort((a, b) => a - b);
-
-    let ok = 0, fail = 0, i = 0;
-    const total = ids.length;
-    const erros = [];
-    const BATCH = 15;
-
-    for (let b = 0; b < ids.length; b += BATCH) {
-      const batchIds = ids.slice(b, b + BATCH);
-      await Promise.all(batchIds.map(async id => {
-        i++;
-        updateProgress(i, total, `#${id}`);
-        try {
-          const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const d = await r.json();
-
-          const levelMoves = [], tmMoves = [], eggMoves = [], tutorMoves = [];
-          (d.moves || []).forEach(mv => {
-            const vgd = mv.version_group_details || [];
-            const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
-            const machine = vgd.some(v => v.move_learn_method.name === 'machine');
-            const egg = vgd.some(v => v.move_learn_method.name === 'egg');
-            const tutor = vgd.some(v => v.move_learn_method.name === 'tutor');
-            if (lvlUp.length) {
-              const level = Math.max(...lvlUp.map(v => v.level_learned_at));
-              levelMoves.push({ move: mv.move.name, level });
-            }
-            if (machine) tmMoves.push({ move: mv.move.name });
-            if (egg) eggMoves.push({ move: mv.move.name });
-            if (tutor) tutorMoves.push({ move: mv.move.name });
-          });
-          levelMoves.sort((a, b) => a.level - b.level);
-
-          await sbPatch('pokemons', id, {
-            moves_level: levelMoves.length ? levelMoves : null,
-            moves_tm: tmMoves.length ? tmMoves : null,
-            moves_egg: eggMoves.length ? eggMoves : null,
-            moves_tutor: tutorMoves.length ? tutorMoves : null,
-            updated_at: new Date().toISOString()
-          });
-          ok++;
-        } catch (e) { fail++; erros.push(`#${id}: ${e.message}`); }
-      }));
-    }
-
-    if (fail) console.warn('Falhas na importação de movesets:', erros);
-    toast(`Movesets: ${ok} Pokémon atualizados${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
-    await loadPokemon();
-  } catch (e) {
-    toast('Erro ao importar movesets: ' + e.message, 'err');
-  } finally {
-    hideProgress();
-    if (btn) { btn.disabled = false; btn.textContent = '⚔️ Importar movesets'; }
-  }
-}
-
-/* ══════════════════════════════════════════
    TRANSLATE FIELD
 ══════════════════════════════════════════ */
 async function translateField(id, type, field, enText) {
@@ -3191,6 +3113,59 @@ async function normalizeAndUpload(url, bucket, path) {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body.publicUrl;
+}
+
+// Corrige o campo `name` de Pokémon oficiais (id numérico puro) que ficou salvo
+// como slug cru da PokeAPI (ex: "iron-crown", "pecharunt") em vez do nome
+// oficial formatado (ex: "Iron Crown", "Pecharunt"). Usa o endpoint
+// pokemon-species, que devolve o nome já formatado corretamente pela própria
+// PokeAPI (respeita hífen legítimo como em "Ho-Oh", ponto como em "Mime Jr.",
+// apóstrofo como em "Farfetch'd", símbolos de gênero como em "Nidoran♀" etc.
+// — por isso não dá pra reconstruir isso só com replace/capitalize no slug).
+async function runFixOfficialPokemonNames() {
+  if (!confirm('Isso vai buscar o nome oficial de cada Pokémon oficial (id numérico) na PokeAPI e corrigir a coluna "name" quando ela estiver salva como slug. Só mexe em Pokémon oficiais — fakemon e formas regionais (id com letra) não são tocados. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Corrigindo nomes…'; }
+
+  try {
+    const rows = await sbSelect('pokemons');
+    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)));
+
+    showProgress('Corrigindo nomes oficiais (PokeAPI)…');
+    let corrigidos = 0, jaCorretos = 0;
+    const erros = [];
+
+    for (let i = 0; i < oficiais.length; i++) {
+      const p = oficiais[i];
+      updateProgress(i + 1, oficiais.length, p.name || p.id);
+      try {
+        const r = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${p.id}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        const nomeOficial = d.names?.find(n => n.language.name === 'en')?.name;
+        if (nomeOficial && nomeOficial !== p.name) {
+          await sbPatch('pokemons', p.id, { name: nomeOficial });
+          corrigidos++;
+        } else {
+          jaCorretos++;
+        }
+      } catch (e) {
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    hideProgress();
+    if (erros.length) {
+      console.warn('Falhas ao corrigir nomes:', erros);
+      toast(`✓ ${corrigidos} corrigido(s), ${jaCorretos} já ok, ${erros.length} falha(s) — veja o console.`, 'err');
+    } else {
+      toast(`✓ ${corrigidos} nome(s) corrigido(s)! (${jaCorretos} já estavam certos)`, 'ok');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📝 Corrigir nomes (slug→oficial)'; }
+  }
 }
 
 async function runSpriteNormalization() {
