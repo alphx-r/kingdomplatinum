@@ -358,6 +358,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
       <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
+      <button class="btn btn-outline" onclick="importMovesetsFromPokeapi()" title="Busca o moveset (nível/TM/ovo/tutor) de todos os Pokémon oficiais na PokeAPI e salva no Supabase">⚔️ Importar movesets</button>
       <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
       <button class="btn btn-outline" onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
@@ -2938,6 +2939,84 @@ async function importMovesFromPokeapi() {
   } finally {
     hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '📥 Importar da PokeAPI'; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   IMPORTAÇÃO — Moveset (nível/TM/ovo/tutor) dos Pokémon oficiais, direto da
+   PokeAPI pro Supabase. Preenche moves_level/moves_tm/moves_egg/moves_tutor
+   na tabela "pokemons" (mesmas colunas usadas pelo editor de formas
+   regionais/fakemon), pra que a NationalDex nunca mais precise consultar a
+   PokeAPI pra montar o moveset de Pokémon oficiais.
+   Só atualiza Pokémon (id numérico) que já existem no Supabase — não mexe
+   em nenhum outro campo do registro, só nas 4 colunas de moveset.
+══════════════════════════════════════════ */
+async function importMovesetsFromPokeapi() {
+  if (!confirm('Isso vai buscar o moveset (por nível, TM, ovo e tutor) de todos os Pokémon oficiais na PokeAPI e salvar nas colunas de moveset da tabela pokemons no Supabase. SOBRESCREVE o moveset já salvo desses Pokémon (não mexe em nenhum outro campo). Só atualiza quem já existe no banco. Pode demorar alguns minutos. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
+  showProgress('Buscando movesets na PokeAPI…');
+
+  try {
+    const dbRows = await sbSelect('pokemons');
+    const ids = dbRows
+      .filter(r => /^\d+$/.test(String(r.id)))
+      .map(r => parseInt(r.id, 10))
+      .sort((a, b) => a - b);
+
+    let ok = 0, fail = 0, i = 0;
+    const total = ids.length;
+    const erros = [];
+    const BATCH = 15;
+
+    for (let b = 0; b < ids.length; b += BATCH) {
+      const batchIds = ids.slice(b, b + BATCH);
+      await Promise.all(batchIds.map(async id => {
+        i++;
+        updateProgress(i, total, `#${id}`);
+        try {
+          const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const d = await r.json();
+
+          const levelMoves = [], tmMoves = [], eggMoves = [], tutorMoves = [];
+          (d.moves || []).forEach(mv => {
+            const vgd = mv.version_group_details || [];
+            const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
+            const machine = vgd.some(v => v.move_learn_method.name === 'machine');
+            const egg = vgd.some(v => v.move_learn_method.name === 'egg');
+            const tutor = vgd.some(v => v.move_learn_method.name === 'tutor');
+            if (lvlUp.length) {
+              const level = Math.max(...lvlUp.map(v => v.level_learned_at));
+              levelMoves.push({ move: mv.move.name, level });
+            }
+            if (machine) tmMoves.push({ move: mv.move.name });
+            if (egg) eggMoves.push({ move: mv.move.name });
+            if (tutor) tutorMoves.push({ move: mv.move.name });
+          });
+          levelMoves.sort((a, b) => a.level - b.level);
+
+          await sbPatch('pokemons', id, {
+            moves_level: levelMoves.length ? levelMoves : null,
+            moves_tm: tmMoves.length ? tmMoves : null,
+            moves_egg: eggMoves.length ? eggMoves : null,
+            moves_tutor: tutorMoves.length ? tutorMoves : null,
+            updated_at: new Date().toISOString()
+          });
+          ok++;
+        } catch (e) { fail++; erros.push(`#${id}: ${e.message}`); }
+      }));
+    }
+
+    if (fail) console.warn('Falhas na importação de movesets:', erros);
+    toast(`Movesets: ${ok} Pokémon atualizados${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao importar movesets: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '⚔️ Importar movesets'; }
   }
 }
 
