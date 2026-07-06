@@ -683,13 +683,14 @@ function rpgUrlSlug(p){
 }
 
 async function initList(){
-  // Carrega dados RPG em paralelo com PokeAPI
-  const [pokeApiRes] = await Promise.all([
-    fetch('https://pokeapi.co/api/v2/pokemon?limit=1025'),
-    loadRpgData()
-  ]);
-  const d=await pokeApiRes.json();
-  all=d.results.map((p,i)=>({...p,id:i+1}));
+  await loadRpgData();
+  // Lista base (Pokémon oficiais) agora vem inteiramente do Supabase — mesma
+  // tabela "pokemons" usada pro resto do site. Cada registro é marcado como
+  // _isRpg pra reaproveitar o mesmo card/rota (__rpg__) usado por formas
+  // regionais e fakemon, sem nenhuma chamada à PokéAPI.
+  all=Object.keys(_pkDbMap)
+    .map(idStr=>({..._pkDbMap[idStr], id:parseInt(idStr,10), _isRpg:true}))
+    .sort((a,b)=>a.id-b.id);
   applyFilters();
 }
 
@@ -701,15 +702,14 @@ function renderList(){
   } else {
     c.innerHTML=`<div class="plist">${filtered.map((p,i)=>listRow(p,i)).join('')}</div>`;
   }
-  batchTypes(filtered.filter(p=>!typeCache[p.id]).map(p=>p.id));
 }
 
 function gridCard(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
-    const spriteUrl=p.sprite||'';
     const label=p.name;
     const pref=idPrefix(p.id);
+    const spriteUrl=p.sprite||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:'');
     const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
     const urlSlug=rpgUrlSlug(p);
     return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
@@ -736,11 +736,12 @@ function listRow(p,i){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
     const label=p.name;
     const pref=idPrefix(p.id);
+    const spriteUrl=p.sprite||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:'');
     const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
     const urlSlug=rpgUrlSlug(p);
     return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
       <div class="pl-num" style="color:var(--brand-mid)">${numLabel}</div>
-      ${p.sprite?`<img class="pl-sprite" loading="lazy" src="${p.sprite}" onerror="this.style.opacity='.3'" alt="${label}">`
+      ${spriteUrl?`<img class="pl-sprite" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pl-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`}
       <div class="pl-name">${label.toUpperCase()}</div>
       <div class="pl-types">${tipos}</div>
@@ -813,7 +814,7 @@ async function applyFilters(){
 
   // Primeiro filtra por região e nome (sem depender de cache de tipos)
   const byRegion=all.filter(p=>{
-    const nm=!q||p.name.includes(q)||String(p.id).includes(q);
+    const nm=!q||(p.name||'').toLowerCase().includes(q)||String(p.id).includes(q);
     const rng=GR[curGen];
     const gm=!!rng&&p.id>=rng[0]&&p.id<=rng[1];
     return nm&&gm;
@@ -823,13 +824,8 @@ async function applyFilters(){
     // Sem filtro de tipo: exibe tudo da região + regionais do Supabase
     filtered=[...byRegion, ...regionais];
   } else {
-    // Com filtro de tipo: inclui quem tem cache e bate o tipo
-    const withCache=byRegion.filter(p=>typeCache[p.id]);
-    const withoutCache=byRegion.filter(p=>!typeCache[p.id]);
-    filtered=[...withCache.filter(p=>typeCache[p.id].includes(tp)), ...regionais];
-    if(withoutCache.length){
-      batchTypesAndRefilter(withoutCache.map(p=>p.id));
-    }
+    // Com filtro de tipo: tipos já vêm do Supabase (tipo1/tipo2), sem PokeAPI
+    filtered=[...byRegion.filter(p=>p.tipo1===tp||p.tipo2===tp), ...regionais];
   }
 
   document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
@@ -892,10 +888,11 @@ async function loadPokemon(slug){
   await loadRpgData();
   if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
   const slugNorm=slugify(slug);
-  // Só considera rpgMatch para fakemon/regionais (ID não-numérico).
-  // Pokémon oficiais (ID numérico) sempre usam a PokéAPI para ter a ficha completa.
-  const rpgOnly=_rpgPokemon.filter(p=>!/^\d+$/.test(String(p.id)));
-  const rpgMatch=rpgOnly.find(p=>rpgUrlSlug(p)===slugNorm);
+  // Resolve pelo slug canônico (rpgUrlSlug) contra TODOS os registros do
+  // Supabase — oficiais (id numérico), formas regionais e fakemon Nendo.
+  // A PokéAPI só é usada mais abaixo como fallback pra quem ainda não foi
+  // importado pro Supabase.
+  const rpgMatch=_rpgPokemon.find(p=>rpgUrlSlug(p)===slugNorm);
   if(rpgMatch){renderRpgDetail(rpgMatch,dc,navToken);return;}
 
   try{
@@ -934,8 +931,8 @@ async function renderRpgDetail(p, container, navToken){
   const pref=idPrefix(p.id);
   const regionName={'A':'Alola','G':'Galar','H':'Hisui','P':'Paldea','N':'Nendo'}[pref]||'';
   const baseNum=pref?String(p.id).slice(1).padStart(4,'0'):String(p.id).padStart(4,'0');
-  const numDisplay=`#${String(p.id)}`;
-  const originLabel=pref&&pref!=='N'?`Forma Regional de ${regionName}`:'Pokémon Nendo — Kingdom Platinum';
+  const numDisplay=pref?`#${String(p.id)}`:'#'+String(p.id).padStart(4,'0');
+  const originLabel=pref==='N'?'Pokémon Nendo — Kingdom Platinum':pref?`Forma Regional de ${regionName}`:'Pokémon Oficial';
   document.title=`${label} — NationalDex`;
 
   // ── Dados via PokéAPI para formas regionais (Alola/Galar/Paldea/Hisui) ──
@@ -943,6 +940,10 @@ async function renderRpgDetail(p, container, navToken){
   // biografia e cadeia evolutiva) é puxado diretamente da PokéAPI, usando o slug
   // "<nome-base>-<regiao>" (ex: "(A) Vulpix" → "vulpix-alola").
   const REGION_SLUG_F={'A':'alola','G':'galar','P':'paldea','H':'hisui'};
+  // Ordem das regiões pra encadear a navegação entre elas (segue a ordem de
+  // geração usada nas próprias abas do site: Hisui=gen4, Alola=gen7,
+  // Galar=gen8, Paldea=gen9).
+  const REGION_ORDER=['H','A','G','P'];
   let apiPoke=null, apiSpecies=null, apiEvoChain=null;
   if(REGION_SLUG_F[pref]){
     const baseSlug=slugify(label.replace(/^\([AGPH]\)\s*/i,''));
@@ -1061,19 +1062,78 @@ async function renderRpgDetail(p, container, navToken){
   const genus=genusRaw?(genusRaw.toLowerCase().endsWith('pokémon')||genusRaw.toLowerCase().endsWith('pokemon')?genusRaw:genusRaw+' Pokémon'):'Pokémon';
 
   // ── Shiny ──
-  const hasShiny=!!p.sprite_shiny;
+  const shinySprite=p.sprite_shiny||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${p.id}.png`:'');
+  const hasShiny=!!shinySprite;
   const shinyHtml=hasShiny?`<div class="shiny-row">
-    <img class="shiny-thumb" id="rpg-shiny-thumb" src="${p.sprite_shiny}" onclick="toggleRpgShiny()" title="✦ Ver Shiny" alt="shiny">
+    <img class="shiny-thumb" id="rpg-shiny-thumb" src="${shinySprite}" onclick="toggleRpgShiny()" title="✦ Ver Shiny" alt="shiny">
     <span class="shiny-lbl">✦ SHINY</span>
   </div>`:'';
 
-  // ── Nav arrows (prev/next within nendo list) ──
+  // ── Nav arrows (prev/next) ──
+  // Nendo: navega dentro da lista de fakemon Nendo. Oficiais (id numérico puro):
+  // navega pelo id-1/id+1, ambos direto do Supabase (_pkDbMap), sem PokeAPI.
+  // As duas listas são encadeadas: do último oficial avança pro primeiro
+  // Nendo, e do primeiro Nendo volta pro último oficial.
+  function navLabel(id){
+    const pf=idPrefix(id);
+    return pf?String(id).slice(1).padStart(4,'0'):'#'+String(id).padStart(4,'0');
+  }
+  function navBtn(target,dir){
+    const arrow=dir==='prev'?`<span class="adir">‹</span>`:`<span class="adir">›</span>`;
+    const cls=dir==='prev'?'nav-arrow':'nav-arrow right';
+    return `<button class="${cls}" onclick="goDetail('__rpg__${encodeURIComponent(target.id)}','${rpgUrlSlug(target)}')">${arrow}<span class="aname"><strong>${navLabel(target.id)}</strong> ${target.name}</span></button>`;
+  }
+  let prevHtml='<span></span>', nextHtml='<span></span>';
+  const officialIds=Object.keys(_pkDbMap).map(Number).sort((a,b)=>a-b);
   const nendoList=_rpgPokemon.filter(x=>idPrefix(x.id)==='N').sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
-  const curIdx=nendoList.findIndex(x=>String(x.id)===String(p.id));
-  const prevPk=curIdx>0?nendoList[curIdx-1]:null;
-  const nextPk=curIdx<nendoList.length-1?nendoList[curIdx+1]:null;
-  const prevHtml=prevPk?`<button class="nav-arrow" onclick="goDetail('__rpg__${encodeURIComponent(prevPk.id)}','${rpgUrlSlug(prevPk)}')"><span class="adir">‹</span><span class="aname"><strong>${String(prevPk.id).slice(1).padStart(4,'0')}</strong> ${prevPk.name}</span></button>`:`<span></span>`;
-  const nextHtml=nextPk?`<button class="nav-arrow right" onclick="goDetail('__rpg__${encodeURIComponent(nextPk.id)}','${rpgUrlSlug(nextPk)}')"><span class="adir">›</span><span class="aname"><strong>${String(nextPk.id).slice(1).padStart(4,'0')}</strong> ${nextPk.name}</span></button>`:`<span></span>`;
+  if(pref==='N'){
+    const curIdx=nendoList.findIndex(x=>String(x.id)===String(p.id));
+    let prevPk=curIdx>0?nendoList[curIdx-1]:null;
+    const nextPk=curIdx<nendoList.length-1?nendoList[curIdx+1]:null;
+    // Primeiro Nendo → volta pro último oficial
+    if(!prevPk&&officialIds.length) prevPk=_pkDbMap[String(officialIds[officialIds.length-1])];
+    if(prevPk) prevHtml=navBtn(prevPk,'prev');
+    if(nextPk) nextHtml=navBtn(nextPk,'next');
+  } else if(!pref){
+    const idNum=parseInt(p.id,10);
+    const idxInOfficial=officialIds.indexOf(idNum);
+    const prevPk=idxInOfficial>0?_pkDbMap[String(officialIds[idxInOfficial-1])]:null;
+    let nextPk=(idxInOfficial>=0&&idxInOfficial<officialIds.length-1)?_pkDbMap[String(officialIds[idxInOfficial+1])]:null;
+    // Último oficial → avança pro primeiro Nendo
+    if(!nextPk&&nendoList.length) nextPk=nendoList[0];
+    if(prevPk) prevHtml=navBtn(prevPk,'prev');
+    if(nextPk) nextHtml=navBtn(nextPk,'next');
+  } else if(REGION_ORDER.includes(pref)){
+    // Formas regionais: navega dentro da própria região (ordem por dex number).
+    // No primeiro da região, "anterior" pula pro ÚLTIMO POKÉMON NATIVO da
+    // região anterior na ordem (ex: saindo do primeiro Alolan, cai no #809,
+    // último da Gen 7 — não no último com forma Alolan).
+    // No último da região, "próximo" pula pro PRIMEIRO POKÉMON NATIVO da
+    // próxima região (ex: saindo do último Alolan, cai no Grookey #810,
+    // primeiro nativo de Galar — não no primeiro com forma Galarian).
+    const REGION_GEN={'H':4,'A':7,'G':8,'P':9};
+    const regionList=(pf=>_rpgPokemon.filter(x=>idPrefix(x.id)===pf).sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1))))(pref);
+    const curIdx=regionList.findIndex(x=>String(x.id)===String(p.id));
+    let prevPk=curIdx>0?regionList[curIdx-1]:null;
+    let nextPk=curIdx<regionList.length-1?regionList[curIdx+1]:null;
+    const regionIdx=REGION_ORDER.indexOf(pref);
+    if(!prevPk){
+      for(let ri=regionIdx-1;ri>=0;ri--){
+        const range=GR[REGION_GEN[REGION_ORDER[ri]]];
+        const cand=range&&_pkDbMap[String(range[1])];
+        if(cand){ prevPk=cand; break; }
+      }
+    }
+    if(!nextPk){
+      for(let ri=regionIdx+1;ri<REGION_ORDER.length;ri++){
+        const range=GR[REGION_GEN[REGION_ORDER[ri]]];
+        const cand=range&&_pkDbMap[String(range[0])];
+        if(cand){ nextPk=cand; break; }
+      }
+    }
+    if(prevPk) prevHtml=navBtn(prevPk,'prev');
+    if(nextPk) nextHtml=navBtn(nextPk,'next');
+  }
 
   // ── Damage taken ──
   const dmg=calcDmg(tipos);
@@ -1351,6 +1411,10 @@ async function renderRpgDetail(p, container, navToken){
   // (apiPoke/apiSpecies/evolução) rodavam, aborta antes de escrever no DOM.
   if(navToken!==undefined&&navToken!==_detailNavToken)return;
 
+  // Sprite: prioriza o cadastrado no Supabase; oficiais sem sprite próprio
+  // caem pro artwork oficial da PokéAPI só como último recurso visual.
+  const heroSprite=p.sprite||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:'');
+
   // ── Render HTML ──
   container.innerHTML=`
   <div class="breadcrumb">
@@ -1364,9 +1428,9 @@ async function renderRpgDetail(p, container, navToken){
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">${numDisplay}</div>
         <img class="hero-art" id="rpg-main-art"
-          src="${p.sprite||''}"
+          src="${heroSprite}"
           onerror="this.style.opacity='.2'" alt="${label}"
-          style="${!p.sprite?'opacity:.15':''}">
+          style="${!heroSprite?'opacity:.15':''}">
         <div class="hero-type-icons">
           ${tipos.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${TL[t]||t}">`).join('')}
         </div>
@@ -1431,8 +1495,8 @@ async function renderRpgDetail(p, container, navToken){
   rpgMovesTable(tutorMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
 
   // Store sprite refs for shiny toggle
-  window._rpgNormalSprite=p.sprite||'';
-  window._rpgShinySprite=p.sprite_shiny||'';
+  window._rpgNormalSprite=heroSprite;
+  window._rpgShinySprite=shinySprite||'';
   window._rpgShinyOn=false;
 }
 
@@ -1455,12 +1519,9 @@ async function renderDetail(p,s,container,navToken){
   const dbRec=_pkDbMap[String(id)];
   const genusFromDb=dbRec?.genus_en;
   const genus=genusFromDb||s.genera?.find(g=>g.language.name==='en')?.genus||'Pokémon';
-  let flavor=s.flavor_text_entries.find(f=>f.language.name==='pt-BR')
-    ||s.flavor_text_entries.find(f=>f.language.name==='pt')
-    ||s.flavor_text_entries.find(f=>f.language.name==='en');
-  // Bio: prioriza o texto revisado no admin (banco novo); cai pro flavor
-  // text da PokéAPI só se o admin ainda não tiver aprovado uma versão.
-  const flavorText=dbRec?.bio||(flavor?flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' '):'');
+  // Bio: vem exclusivamente do registro do admin (Supabase) — já está tudo
+  // cadastrado lá, sem consulta/fallback à PokéAPI.
+  const flavorText=dbRec?.bio||'';
   // Biomas vêm sempre do mesmo registro do admin usado pra bio acima (dbRec) —
   // não existe equivalente de biomas na PokéAPI.
   const dbBiomasOfficial=dbRec?.biomas;
