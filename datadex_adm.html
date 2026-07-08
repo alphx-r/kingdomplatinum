@@ -364,6 +364,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
       <button class="btn btn-outline" onclick="runFixOfficialPokemonNames()" title="Corrige o nome de Pokémon oficiais que ficou salvo como slug (ex: iron-crown → Iron Crown)">📝 Corrigir nomes (slug→oficial)</button>
       <button class="btn btn-outline" onclick="runImportOfficialPhysicalData()" title="Preenche altura/peso/grupo de ovo dos Pokémon oficiais que ainda estão vazios">📏 Importar altura/peso/grupo de ovo</button>
+      <button class="btn btn-outline" onclick="runImportOfficialClassificacao()" title="Preenche a classificação (genus, ex: Pokémon Rato) dos Pokémon oficiais que ainda estão vazios">🏷️ Importar classificação</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um bioma/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
@@ -3442,6 +3443,57 @@ async function runImportOfficialPhysicalData() {
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📏 Importar altura/peso/grupo de ovo'; }
+  }
+}
+
+// Preenche a classificação (genus, ex: "Pokémon Rato") de Pokémon oficiais
+// (id numérico) que ainda não têm esse campo no Supabase. Busca na PokeAPI
+// (prioriza o texto em inglês) e só preenche o que estiver vazio — não
+// sobrescreve nenhuma classificação já cadastrada manualmente.
+async function runImportOfficialClassificacao() {
+  if (!confirm('Isso vai buscar a classificação (ex: "Pokémon Rato") de cada Pokémon oficial (id numérico) na PokeAPI e preencher só o que estiver vazio no Supabase — não sobrescreve nada que já esteja cadastrado. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+
+  try {
+    const rows = await sbSelect('pokemons');
+    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)) && !p.classificacao);
+
+    showProgress('Importando classificação (PokeAPI)…');
+    let ok = 0, fail = 0, semGenus = 0;
+    const erros = [];
+
+    for (let i = 0; i < oficiais.length; i++) {
+      const p = oficiais[i];
+      updateProgress(i + 1, oficiais.length, p.name || p.id);
+      try {
+        const sr = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${p.id}`);
+        if (!sr.ok) throw new Error(`species HTTP ${sr.status}`);
+        const sd = await sr.json();
+        const genus = sd.genera?.find(g => g.language.name === 'en')?.genus || null;
+        if (genus) {
+          await sbPatch('pokemons', p.id, { classificacao: genus });
+          ok++;
+        } else {
+          semGenus++;
+        }
+      } catch (e) {
+        fail++;
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    hideProgress();
+    if (erros.length) {
+      console.warn('Falhas ao importar classificação:', erros);
+      toast(`✓ ${ok} atualizado(s), ${semGenus} sem genus na PokeAPI, ${fail} falha(s) — veja o console.`, 'err');
+    } else {
+      toast(`✓ ${ok} Pokémon atualizado(s) com classificação!${semGenus ? ` (${semGenus} sem genus na PokeAPI)` : ''}`, 'ok');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🏷️ Importar classificação'; }
   }
 }
 
