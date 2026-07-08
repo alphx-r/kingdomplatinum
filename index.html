@@ -2444,12 +2444,6 @@ function calcSyncSelects(){
 <div class="page" id="page-bioma">
   <div style="padding-top:8px;margin-bottom:20px">
     <h2 style="font-family:var(--font-title);font-size:20px;color:var(--text);font-weight:700;margin-bottom:16px">Bioma</h2>
-    <div class="ctrl-group" style="max-width:320px;margin-bottom:16px">
-      <label>Personagem <span style="font-weight:400;color:var(--muted);font-size:11px">(define quais estágios de evolução aparecem)</span></label>
-      <select id="bioma-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim());renderBiomaConteudo();">
-        <option value="">— Selecione o personagem —</option>
-      </select>
-    </div>
     <div id="bioma-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;justify-content:center"></div>
   </div>
   <div id="bioma-content"></div>
@@ -5389,7 +5383,7 @@ async function init(){
     // Restaura último nome de personagem salvo
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem') || '';
     if(ultimoPersonagem){
-      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
         const el = document.getElementById(id);
         if(el && !el.value) el.value = ultimoPersonagem;
       });
@@ -5426,13 +5420,13 @@ async function iniciarSessaoPlayer(){
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem')||'';
     const meus = personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase());
     if(ultimoPersonagem && meus.find(p=>p.nome===ultimoPersonagem)){
-      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
         const el = document.getElementById(id);
         if(el && !el.value) el.value=ultimoPersonagem;
       });
     } else if(meus.length===1){
       // auto-preenche se só tem um personagem
-      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
         const el = document.getElementById(id);
         if(el && !el.value) el.value=meus[0].nome;
       });
@@ -5657,12 +5651,6 @@ function renderBiomaPage(){
     <button class="bioma-tab-btn${b.nome===biomaAtivo?' active':''}" onclick="selecionarBioma('${b.nome}',this)">
       ${b.nome}
     </button>`).join('');
-  // Restaura o último personagem selecionado, se ainda existir entre as opções
-  const selPers = document.getElementById('bioma-personagem');
-  if(selPers && !selPers.value){
-    const ultimo = localStorage.getItem('ultimo_personagem')||'';
-    if(ultimo && [...selPers.options].some(o=>o.value===ultimo)) selPers.value = ultimo;
-  }
   renderBiomaConteudo();
 }
 function selecionarBioma(nome, el){
@@ -5672,10 +5660,11 @@ function selecionarBioma(nome, el){
   renderBiomaConteudo();
 }
 
-// ── Estágio de evolução x Ranking do personagem ──
+// ── Estágio de evolução ──
 // Calcula a profundidade (0 = forma base) do Pokémon dentro da própria
 // cadeia evolutiva (p.evolucoes), seguindo os ponteiros "from" (1-based)
 // até chegar na raiz. Funciona também para cadeias ramificadas (ex: Eevee).
+// No Bioma só exibimos Pokémon na forma base (depth 0).
 function pkEvoDepth(p){
   const chain = p.evolucoes;
   if(!chain || !chain.length) return 0;
@@ -5689,8 +5678,8 @@ function pkEvoDepth(p){
   }
   return depth;
 }
-// Ranking mínimo do personagem para este Pokémon aparecer no bioma:
-// forma base (depth 0) = sempre visível; 2º estágio (depth 1) = ranking 2+;
+// Ranking mínimo do personagem para este Pokémon poder ser encontrado:
+// forma base (depth 0) = sempre disponível; 2º estágio (depth 1) = ranking 2+;
 // estágio final (depth 2+) = ranking 3+.
 function pkRankingNecessario(p){
   const depth = pkEvoDepth(p);
@@ -5705,26 +5694,15 @@ function getPersonagemRanking(nome){
 }
 function renderBiomaConteudo(){
   const cont = document.getElementById('bioma-content');
-  const personagemSel = document.getElementById('bioma-personagem')?.value || '';
-  const rankingAtivo = getPersonagemRanking(personagemSel);
-  const todos = pokemonDB.filter(p=>pkTemBioma(p,biomaAtivo));
-  const pokes = todos.filter(p=>pkRankingNecessario(p)<=rankingAtivo);
-  const ocultos = todos.length - pokes.length;
-  if(!todos.length){
-    cont.innerHTML='<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste bioma.</div>';
-    return;
-  }
-  const aviso = !personagemSel
-    ? `<div style="font-size:12px;color:var(--muted);background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:16px">Selecione um personagem acima para revelar formas evoluídas que ele já pode encontrar de acordo com o ranking dele. Sem personagem selecionado, só aparecem formas base.</div>`
-    : (ocultos>0 ? `<div style="font-size:12px;color:var(--muted);background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:16px">${ocultos} Pokémon deste bioma exigem um ranking mais alto de ${personagemSel} para aparecer aqui.</div>` : '');
+  const pokes = pokemonDB.filter(p=>pkTemBioma(p,biomaAtivo) && pkEvoDepth(p)===0);
   if(!pokes.length){
-    cont.innerHTML=aviso+'<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon disponível neste bioma para o ranking atual.</div>';
+    cont.innerHTML='<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste bioma.</div>';
     return;
   }
   const ordem = ['comum','incomum','raro','rarissimo'];
   const nomes  = {rarissimo:'Raríssimo',raro:'Raro',incomum:'Incomum',comum:'Comum'};
   const rcls   = {comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
-  cont.innerHTML = aviso + ordem.map(r=>{
+  cont.innerHTML = ordem.map(r=>{
     const grupo = pokes.filter(p=>pkInfoNoBioma(p,biomaAtivo)?.raridade===r).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
     if(!grupo.length) return '';
     const cards = grupo.map(p=>{
@@ -5973,7 +5951,7 @@ async function fazerLogoutPlayer(){
   localStorage.removeItem('player_session');
   mostrarBadgePlayer();
   renderPersonagensDatalist();
-  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
+  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.value='';
   });
@@ -8842,7 +8820,7 @@ function renderPersonagensDatalist(){
   const opcoesHtml = '<option value="">— Selecione o personagem —</option>' +
     filtrados.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('');
 
-  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
+  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
     const valorAtual = el.value;
@@ -9907,13 +9885,15 @@ async function rolarEncontro(){
   }
   atualizarHoneyStatus();
 
-  // Monta os pools por raridade para este bioma (aplica filtro de estação)
+  // Monta os pools por raridade para este bioma (aplica filtro de estação
+  // e de estágio de evolução conforme o ranking do personagem)
+  const rankingAtivo = getPersonagemRanking(personagem);
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={};
   const usedIds={};
   for(const r of raridades){
     // inclui pokémon sem estação exclusiva + exclusivos da estação ativa
-    pools[r]=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva); });
+    pools[r]=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
     usedIds[r]=new Set();
   }
   // pool de boost: pokémon com estacao_boost da estação ativa entram na raridade promovida
@@ -9923,7 +9903,7 @@ async function rolarEncontro(){
   if(estacaoAtiva){
     for(const r of raridades){
       const alvo=BOOST_MAP[r];
-      const comBoost=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao; });
+      const comBoost=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
       if(comBoost.length) boostedPools[alvo]=[...(boostedPools[alvo]||[]),...comBoost];
     }
   }
@@ -12519,8 +12499,9 @@ async function rolarEncontroEvento(){
   const total = 3 + adicionais;
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={}, usedIds={};
+  const rankingAtivoEvento = getPersonagemRanking(personagem);
   for(const r of raridades){
-    pools[r]=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r; });
+    pools[r]=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
     usedIds[r]=new Set();
   }
   function rollRarity(){ const r=Math.ceil(Math.random()*100); if(r<=2)return 'rarissimo'; if(r<=13)return 'raro'; if(r<=51)return 'incomum'; return 'comum'; }
