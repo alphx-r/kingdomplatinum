@@ -2444,6 +2444,12 @@ function calcSyncSelects(){
 <div class="page" id="page-bioma">
   <div style="padding-top:8px;margin-bottom:20px">
     <h2 style="font-family:var(--font-title);font-size:20px;color:var(--text);font-weight:700;margin-bottom:16px">Bioma</h2>
+    <div class="ctrl-group" style="max-width:320px;margin-bottom:16px">
+      <label>Personagem <span style="font-weight:400;color:var(--muted);font-size:11px">(define quais estágios de evolução aparecem)</span></label>
+      <select id="bioma-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim());renderBiomaConteudo();">
+        <option value="">— Selecione o personagem —</option>
+      </select>
+    </div>
     <div id="bioma-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;justify-content:center"></div>
   </div>
   <div id="bioma-content"></div>
@@ -5383,7 +5389,7 @@ async function init(){
     // Restaura último nome de personagem salvo
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem') || '';
     if(ultimoPersonagem){
-      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
         const el = document.getElementById(id);
         if(el && !el.value) el.value = ultimoPersonagem;
       });
@@ -5420,13 +5426,13 @@ async function iniciarSessaoPlayer(){
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem')||'';
     const meus = personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase());
     if(ultimoPersonagem && meus.find(p=>p.nome===ultimoPersonagem)){
-      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
         const el = document.getElementById(id);
         if(el && !el.value) el.value=ultimoPersonagem;
       });
     } else if(meus.length===1){
       // auto-preenche se só tem um personagem
-      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
         const el = document.getElementById(id);
         if(el && !el.value) el.value=meus[0].nome;
       });
@@ -5651,6 +5657,12 @@ function renderBiomaPage(){
     <button class="bioma-tab-btn${b.nome===biomaAtivo?' active':''}" onclick="selecionarBioma('${b.nome}',this)">
       ${b.nome}
     </button>`).join('');
+  // Restaura o último personagem selecionado, se ainda existir entre as opções
+  const selPers = document.getElementById('bioma-personagem');
+  if(selPers && !selPers.value){
+    const ultimo = localStorage.getItem('ultimo_personagem')||'';
+    if(ultimo && [...selPers.options].some(o=>o.value===ultimo)) selPers.value = ultimo;
+  }
   renderBiomaConteudo();
 }
 function selecionarBioma(nome, el){
@@ -5659,17 +5671,60 @@ function selecionarBioma(nome, el){
   el.classList.add('active');
   renderBiomaConteudo();
 }
+
+// ── Estágio de evolução x Ranking do personagem ──
+// Calcula a profundidade (0 = forma base) do Pokémon dentro da própria
+// cadeia evolutiva (p.evolucoes), seguindo os ponteiros "from" (1-based)
+// até chegar na raiz. Funciona também para cadeias ramificadas (ex: Eevee).
+function pkEvoDepth(p){
+  const chain = p.evolucoes;
+  if(!chain || !chain.length) return 0;
+  const idx = chain.findIndex(e=>String(e.id)===String(p.id));
+  if(idx===-1) return 0;
+  let depth=0, cur=chain[idx], guard=0;
+  while(cur && cur.from && guard<10){
+    depth++;
+    cur = chain[cur.from-1];
+    guard++;
+  }
+  return depth;
+}
+// Ranking mínimo do personagem para este Pokémon aparecer no bioma:
+// forma base (depth 0) = sempre visível; 2º estágio (depth 1) = ranking 2+;
+// estágio final (depth 2+) = ranking 3+.
+function pkRankingNecessario(p){
+  const depth = pkEvoDepth(p);
+  if(depth<=0) return 0;
+  if(depth===1) return 2;
+  return 3;
+}
+function getPersonagemRanking(nome){
+  if(!nome) return 0;
+  const p = personagens.find(pp=>pp.nome===nome);
+  return p ? (p.ranking||0) : 0;
+}
 function renderBiomaConteudo(){
   const cont = document.getElementById('bioma-content');
-  const pokes = pokemonDB.filter(p=>pkTemBioma(p,biomaAtivo));
-  if(!pokes.length){
+  const personagemSel = document.getElementById('bioma-personagem')?.value || '';
+  const rankingAtivo = getPersonagemRanking(personagemSel);
+  const todos = pokemonDB.filter(p=>pkTemBioma(p,biomaAtivo));
+  const pokes = todos.filter(p=>pkRankingNecessario(p)<=rankingAtivo);
+  const ocultos = todos.length - pokes.length;
+  if(!todos.length){
     cont.innerHTML='<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste bioma.</div>';
+    return;
+  }
+  const aviso = !personagemSel
+    ? `<div style="font-size:12px;color:var(--muted);background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:16px">Selecione um personagem acima para revelar formas evoluídas que ele já pode encontrar de acordo com o ranking dele. Sem personagem selecionado, só aparecem formas base.</div>`
+    : (ocultos>0 ? `<div style="font-size:12px;color:var(--muted);background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:16px">${ocultos} Pokémon deste bioma exigem um ranking mais alto de ${personagemSel} para aparecer aqui.</div>` : '');
+  if(!pokes.length){
+    cont.innerHTML=aviso+'<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon disponível neste bioma para o ranking atual.</div>';
     return;
   }
   const ordem = ['comum','incomum','raro','rarissimo'];
   const nomes  = {rarissimo:'Raríssimo',raro:'Raro',incomum:'Incomum',comum:'Comum'};
   const rcls   = {comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
-  cont.innerHTML = ordem.map(r=>{
+  cont.innerHTML = aviso + ordem.map(r=>{
     const grupo = pokes.filter(p=>pkInfoNoBioma(p,biomaAtivo)?.raridade===r).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
     if(!grupo.length) return '';
     const cards = grupo.map(p=>{
@@ -5918,7 +5973,7 @@ async function fazerLogoutPlayer(){
   localStorage.removeItem('player_session');
   mostrarBadgePlayer();
   renderPersonagensDatalist();
-  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.value='';
   });
@@ -8787,7 +8842,7 @@ function renderPersonagensDatalist(){
   const opcoesHtml = '<option value="">— Selecione o personagem —</option>' +
     filtrados.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('');
 
-  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+  ['personagem','dice-personagem','evento-personagem','evento-dice-personagem','bioma-personagem'].forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
     const valorAtual = el.value;
