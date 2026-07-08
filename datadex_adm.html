@@ -492,6 +492,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <input class="mv-meta-input" id="nrpg-pokedex" type="text" placeholder="Vazio = automático" style="width:100%" oninput="nrpgSyncSlug()">
         </div>
       </div>
+      <div style="margin-bottom:10px">
+        <div class="field-lbl pt" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(ex: Pokémon Rato, Pokémon Semente)</span></div>
+        <input class="mv-meta-input" id="nrpg-classificacao" type="text" placeholder="Ex: Pokémon Rato" style="width:100%">
+      </div>
       <style>@media(max-width:640px){#nrpg-inline-form .two-col,#nrpg-inline-form > div[style*="grid-template-columns:1fr 1fr 110px"]{grid-template-columns:1fr!important}}</style>
 
       <!-- Habilidades -->
@@ -868,6 +872,10 @@ Caterpie"></textarea>
               <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
               <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%" oninput="epkSyncSlug()">
             </div>
+          </div>
+          <div>
+            <div class="field-lbl pt" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(ex: Pokémon Rato, Pokémon Semente)</span></div>
+            <input class="mv-meta-input" id="epk-classificacao" type="text" placeholder="Ex: Pokémon Rato" style="width:100%">
           </div>
         </div>
         <div class="two-col">
@@ -1586,6 +1594,7 @@ async function openEditPokemon(id) {
   document.getElementById('epk-nome').value = db.name || pk.name || '';
   document.getElementById('epk-pokedex').value = idStr;
   document.getElementById('epk-slug').value = buildAutoSlug(db.name || pk.name || '', idStr);
+  document.getElementById('epk-classificacao').value = db.classificacao || '';
 
   // Sprites (URL)
   document.getElementById('epk-sprite').value = db.sprite || '';
@@ -1662,6 +1671,8 @@ async function openEditPokemon(id) {
       const flavor = sd.flavor_text_entries?.find(f => f.language.name === 'en');
       const bio = flavor ? flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' ') : '';
       if (bio) { const el = document.getElementById('epk-bio_pt'); if(el && !el.value) el.value = bio; }
+      const genus = sd.genera?.find(g => g.language.name === 'en')?.genus || '';
+      if (genus) { const el = document.getElementById('epk-classificacao'); if(el && !el.value) el.value = genus; }
       if (!t1 && pk.types?.length) {
         const pT1 = pk.types[0]?.type?.name || '';
         const pT2 = pk.types[1]?.type?.name || '';
@@ -2339,6 +2350,7 @@ async function savePkModal(approve) {
   if (!pk) return;
 
   const bioPt   = document.getElementById('epk-bio_pt').value.trim();
+  const classificacao = document.getElementById('epk-classificacao')?.value.trim() || null;
   const nomeRaw = document.getElementById('epk-nome').value.trim();
   const slugRaw = document.getElementById('epk-slug').value.trim();
   const displayName = nomeRaw || pk.name;
@@ -2451,6 +2463,7 @@ async function savePkModal(approve) {
       id: String(newId), name: displayName,
       url_slug: slug,
       bio: bioPt,
+      classificacao,
       sprite, sprite_shiny: spriteShiny,
       tipo1: tipo1||null, tipo2: tipo2||null,
       habilidade1, habilidade2, habilidade_oculta, habilidade_mega,
@@ -3522,6 +3535,10 @@ async function importRegionalFormsFromPokeapi() {
         p.stats.forEach(s => { statMap[s.stat.name] = s.base_stat; });
         const eggGroups = (species.egg_groups || []).map(e => e.name).join(', ') || null;
 
+        // Classificação (genus): ex "Mouse Pokémon" — prioriza inglês.
+        const generaEntries = species.genera || [];
+        const genus = generaEntries.find(g => g.language.name === 'en')?.genus || null;
+
         // Bio: primeiro flavor text disponível (prioriza inglês, senão pega o
         // primeiro que existir) — é só texto de partida, o campo é editável.
         const flavorEntries = species.flavor_text_entries || [];
@@ -3546,6 +3563,7 @@ async function importRegionalFormsFromPokeapi() {
           name: displayName,
           url_slug: item.name,
           bio,
+          classificacao: genus,
           // Usa a artwork oficial (mesma qualidade usada pros Pokémon numéricos),
           // não o sprite pixelado antigo — front_default só como fallback.
           sprite: p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || null,
@@ -3615,7 +3633,7 @@ async function migrateFromOldSupabase() {
     // condicao soltos, genus_en) — copiar só o que existe evita erros PGRST204.
     // `id`, `biomas` e `updated_at` são tratados à parte.
     const VALID_POKEMON_COLUMNS = new Set([
-      'name', 'url_slug', 'bio', 'sprite', 'sprite_shiny', 'tipo1', 'tipo2',
+      'name', 'url_slug', 'bio', 'classificacao', 'sprite', 'sprite_shiny', 'tipo1', 'tipo2',
       'habilidade1', 'habilidade2', 'habilidade_oculta', 'habilidade_mega', 'forca_alfa',
       'genero', 'hp', 'atk', 'def', 'spa', 'spd', 'spe', 'weight', 'height', 'egg_group',
       'evolucoes', 'moves_level', 'moves_tm', 'moves_egg', 'moves_tutor',
@@ -4273,7 +4291,7 @@ function nrpgSetBiomaField(nome, field, value) {
 function nrpgResetForm() {
   document.querySelectorAll('#nrpg-tipo1-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('#nrpg-tipo2-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
-  ['nrpg-nome','nrpg-pokedex','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-forca-alfa','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nrpg-nome','nrpg-pokedex','nrpg-classificacao','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-forca-alfa','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-estacao','nrpg-estacao-boost'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nrpg-sprite-file','nrpg-sprite-shiny-file'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   const sp = document.getElementById('nrpg-sprite-preview'); if (sp) { sp.innerHTML = '<span style="font-size:18px;opacity:.3">🖼</span>'; delete sp.dataset.b64; }
@@ -4295,6 +4313,7 @@ async function saveNewRpgPokemon() {
   const spe = parseInt(document.getElementById('nrpg-spe')?.value) || null;
   const nomeRaw = document.getElementById('nrpg-nome')?.value.trim();
   const name    = nomeRaw || ''; // nome é independente — nunca slugificado
+  const classificacao = document.getElementById('nrpg-classificacao')?.value.trim() || null;
   const pokedexNum = document.getElementById('nrpg-pokedex')?.value.trim() || null;
   // Raridade e condição agora vivem dentro de cada bioma (ver nrpgBiomasSel)
   const biomas  = nrpgBiomasSel.map(b => ({ nome: b.nome, raridade: b.raridade || 'comum', condicao: b.condicao || null }));
@@ -4365,6 +4384,7 @@ async function saveNewRpgPokemon() {
 
     const row = {
       id, name, url_slug: buildAutoSlug(name, id),
+      classificacao,
       tipo1, tipo2,
       habilidade1, habilidade2,
       habilidade_oculta: habilidadeOculta,
