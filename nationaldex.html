@@ -1567,6 +1567,8 @@ async function renderRpgDetail(p, container, navToken){
     <div class="sec-body"><div class="evo-chain">${evoChainHtml}</div></div>
   </div>`:''}
 
+  ${renderAltFormsHtml(p)}
+
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
       <button class="moves-tab active" onclick="switchMovesTab(this,'rpg-mv-level')">Moves por Nível</button>
@@ -1873,6 +1875,8 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body"><div class="evo-chain" id="evo-chain-wrap">${evoHtml}</div></div>
   </div>`:''}
 
+  ${renderAltFormsHtml({id:p.id, formas_alt: dbRec?.formas_alt})}
+
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
       <button class="moves-tab active" onclick="switchMovesTab(this,'mv-level')">Moves por Nível</button>
@@ -2071,6 +2075,87 @@ function buildRegionalEvo(chain, pref, regSlug, currentId){
 }
 
 const MEGA_BADGE_SVG=`<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 1L12.5 7H19L13.5 11L15.5 17L10 13L4.5 17L6.5 11L1 7H7.5L10 1Z"/><circle cx="10" cy="10" r="3" fill="rgba(255,255,255,0.3)"/><text x="10" y="14" text-anchor="middle" font-size="7" font-weight="900" fill="white" font-family="sans-serif">M</text></svg>`;
+
+/* ── Formas Alternativas (ex: Oricorio Estilo Pom-Pom) ──
+   Variações permanentes e independentes do Pokémon, cadastradas no admin
+   (campo formas_alt na tabela pokemons). Ao contrário das Formas Alfa
+   (Mega/Gigantamax), não são "transformações de batalha" — são identidades
+   próprias do Pokémon, com tipo/habilidade/stats/sprite independentes. */
+function renderAltFormsHtml(p){
+  if(!p.formas_alt||!p.formas_alt.length) return '';
+  const STAT_N={hp:'HP',atk:'ATK',def:'DEF',spa:'SP.ATK',spd:'SP.DEF',spe:'SPD'};
+  const STAT_C={hp:'#e05050',atk:'#e07030',def:'#e0b030',spa:'#7070e0',spd:'#4aaa6a',spe:'#e04aaa'};
+  const nodes=p.formas_alt.map((f,i)=>{
+    const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
+    const typeIconsHtml=fTypes.map(t=>`<img style="width:24px;height:24px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18))" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}">`).join('');
+    const statKeys=['hp','atk','def','spa','spd','spe'];
+    const bst=f.bst||statKeys.reduce((a,k)=>a+(f[k]||0),0);
+    const statsHtml=statKeys.filter(k=>f[k]).map(k=>`<span style="display:inline-flex;flex-direction:column;align-items:center;background:#e2f7f5;border:1px solid #0d8a8a40;border-radius:6px;padding:4px 8px;min-width:44px">
+      <span style="font-family:var(--font-title);font-size:8px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.3px">${STAT_N[k]}</span>
+      <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${STAT_C[k]}">${f[k]}</span>
+    </span>`).join('');
+    const abName=f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'';
+
+    const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
+      ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${f.nome}">`:''}
+      <span style="font-family:var(--font-title);font-size:10px;font-weight:600;color:#0d8a8a;text-transform:uppercase;letter-spacing:.3px;text-align:center">${f.nome}</span>
+    </div>`;
+
+    const infoHtml=`
+    <div id="alt-info-${p.id}-${i}" style="display:none;margin-top:16px;padding:16px;background:#f0fbfa;border:1.5px solid #4ac0c0;border-radius:10px;animation:fadeUp .3s both">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px">
+          ${f.sprite?`<img style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(13,138,138,.2))" src="${f.sprite}" alt="${f.nome}">`:''}
+          <div style="display:flex;gap:6px">${typeIconsHtml}</div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#0a6a6a;margin-bottom:10px;letter-spacing:.5px">${f.nome}</div>
+          ${abName?`<div style="margin-bottom:10px">
+            <div style="font-family:var(--font-title);font-size:9px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidade</div>
+            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:#0a6a6a">${abName}</span>
+          </div>`:''}
+          ${statsHtml?`<div>
+            <div style="font-family:var(--font-title);font-size:9px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Base Stats</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+              ${statsHtml}
+              <span style="display:inline-flex;flex-direction:column;align-items:center;background:#0a6a6a;border-radius:6px;padding:4px 8px;min-width:44px">
+                <span style="font-family:var(--font-title);font-size:8px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.3px">BST</span>
+                <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#fff">${bst}</span>
+              </span>
+            </div>
+          </div>`:''}
+        </div>
+      </div>
+    </div>`;
+
+    return {nodeHtml,infoHtml};
+  });
+
+  const nodesHtml=nodes.map((n,i)=>`
+    <div onclick="toggleAltFormInfo('${p.id}',${i})" style="cursor:pointer;border-radius:10px;transition:background .2s" onmouseenter="this.style.background='rgba(13,138,138,.06)'" onmouseleave="this.style.background='transparent'">
+      ${n.nodeHtml}
+      <div style="font-family:var(--font-title);font-size:8px;color:#0d8a8a;text-align:center;letter-spacing:.4px;margin-top:-4px">▼ ver detalhes</div>
+    </div>`).join('');
+  const infosHtml=nodes.map(n=>n.infoHtml).join('');
+
+  return `<div class="section" style="border-color:#0d8a8a40">
+    <div class="sec-header" style="background:#0a6a6a"><div class="sec-title">Formas Alternativas</div></div>
+    <div class="sec-body">
+      <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+        ${nodesHtml}
+      </div>
+      ${infosHtml}
+    </div>
+  </div>`;
+}
+
+function toggleAltFormInfo(pkId,i){
+  const el=document.getElementById(`alt-info-${pkId}-${i}`);
+  if(!el)return;
+  const isHidden=el.style.display==='none';
+  document.querySelectorAll(`[id^="alt-info-${pkId}-"]`).forEach(e=>e.style.display='none');
+  el.style.display=isHidden?'block':'none';
+}
 
 async function appendMegas(speciesName, container){
   try{
