@@ -5682,6 +5682,7 @@ function pkEvoDepth(p){
 // forma base (depth 0) = sempre disponível; 2º estágio (depth 1) = ranking 2+;
 // estágio final (depth 2+) = ranking 3+.
 function pkRankingNecessario(p){
+  if(p._rankingNecessario!==undefined) return p._rankingNecessario;
   const depth = pkEvoDepth(p);
   if(depth<=0) return 0;
   if(depth===1) return 2;
@@ -5694,7 +5695,7 @@ function getPersonagemRanking(nome){
 }
 function renderBiomaConteudo(){
   const cont = document.getElementById('bioma-content');
-  const pokes = pokemonDB.filter(p=>pkTemBioma(p,biomaAtivo) && pkEvoDepth(p)===0);
+  const pokes = getEncounterUnits(pokemonDB).filter(p=>pkTemBioma(p,biomaAtivo) && pkEvoDepth(p)===0);
   if(!pokes.length){
     cont.innerHTML='<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste bioma.</div>';
     return;
@@ -9654,6 +9655,43 @@ function pkTemBioma(p, bioma){
   return (p.biomas||[]).some(b=>(typeof b==='string'?b:b.nome)===bioma);
 }
 
+// ── Formas Alternativas (ex: Oricorio Estilo Pom-Pom) como unidades de
+// encontro independentes ──
+// Cada forma alternativa (p.formas_alt) que tenha seus PRÓPRIOS biomas
+// cadastrados (independente dos biomas da forma principal) vira uma unidade
+// "sintética" própria, que pode ser sorteada no roller com seus dados
+// próprios (tipo, habilidade, sprite). Formas sem biomas próprios não entram
+// no pool (não é possível encontrá-las sem que o admin defina onde vivem).
+function pkAltFormUnits(p){
+  if(!p.formas_alt||!p.formas_alt.length) return [];
+  return p.formas_alt.map((f,i)=>{
+    if(!f.biomas||!f.biomas.length) return null;
+    return {
+      id:`${p.id}::alt${i}`,
+      name:f.nome, nome:f.nome,
+      tipo1:f.tipo1||p.tipo1||null, tipo2:f.tipo2||p.tipo2||null,
+      habilidade1:f.habilidade||p.habilidade1||null,
+      sprite:f.sprite||p.sprite||null, sprite_shiny:p.sprite_shiny||null,
+      emoji:p.emoji||'❓', genero:p.genero,
+      estacao:p.estacao||null, estacao_boost:p.estacao_boost||null,
+      biomas:f.biomas,
+      _rankingNecessario:pkRankingNecessario(p),
+      _isAltForm:true, _baseId:p.id, _altIndex:i
+    };
+  }).filter(Boolean);
+}
+// Retorna a lista "achatada" de pokemonDB + todas as formas alternativas
+// roláveis (com bioma próprio), pronta pra usar nos pools do roller.
+function getEncounterUnits(db){
+  const units=[];
+  for(const p of db){
+    units.push(p);
+    units.push(...pkAltFormUnits(p));
+  }
+  return units;
+}
+
+
 function pickFromPool(pool, usedIds, rarity, bioma){
   if(!pool||pool.length===0){
     const gender=rollGender('1d2');
@@ -9891,9 +9929,12 @@ async function rolarEncontro(){
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={};
   const usedIds={};
+  // Inclui formas alternativas (ex: Oricorio Estilo Pom-Pom) que tenham
+  // bioma próprio cadastrado — elas entram como unidades independentes.
+  const encounterUnits = getEncounterUnits(pokemonDB);
   for(const r of raridades){
     // inclui pokémon sem estação exclusiva + exclusivos da estação ativa
-    pools[r]=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
+    pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
     usedIds[r]=new Set();
   }
   // pool de boost: pokémon com estacao_boost da estação ativa entram na raridade promovida
@@ -9903,7 +9944,7 @@ async function rolarEncontro(){
   if(estacaoAtiva){
     for(const r of raridades){
       const alvo=BOOST_MAP[r];
-      const comBoost=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
+      const comBoost=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
       if(comBoost.length) boostedPools[alvo]=[...(boostedPools[alvo]||[]),...comBoost];
     }
   }
@@ -9921,7 +9962,7 @@ async function rolarEncontro(){
       const frcEntry = forcadoIds[i];
       const pkId = frcEntry ? (frcEntry.id || frcEntry) : null;
       if(pkId){
-        const pkData = pokemonDB.find(p=>p.id===pkId);
+        const pkData = encounterUnits.find(p=>p.id===pkId);
         if(pkData){
           const gender=rollGender(pkData.genero);
           // Aplica customizações salvas pelo admin
@@ -12500,8 +12541,9 @@ async function rolarEncontroEvento(){
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={}, usedIds={};
   const rankingAtivoEvento = getPersonagemRanking(personagem);
+  const encounterUnitsEvento = getEncounterUnits(pokemonDB);
   for(const r of raridades){
-    pools[r]=pokemonDB.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
+    pools[r]=encounterUnitsEvento.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
     usedIds[r]=new Set();
   }
   function rollRarity(){ const r=Math.ceil(Math.random()*100); if(r<=2)return 'rarissimo'; if(r<=13)return 'raro'; if(r<=51)return 'incomum'; return 'comum'; }
@@ -14787,7 +14829,7 @@ function toggleMapaBiomaPanel(nomeBioma, bg, cor, btn) {
   document.querySelectorAll('.mapa-ficha-bioma-tag').forEach(b => b.style.outline = '');
   btn.style.outline = `2px solid ${cor}`;
 
-  const pokes = (typeof pokemonDB !== 'undefined' ? pokemonDB : []).filter(p => pkTemBioma(p,nomeBioma));
+  const pokes = (typeof pokemonDB !== 'undefined' ? getEncounterUnits(pokemonDB) : []).filter(p => pkTemBioma(p,nomeBioma));
   if (!pokes.length) {
     panel.innerHTML = `<div class="mapa-bioma-poke-panel"><div class="mapa-bioma-poke-panel-header"><span>${nomeBioma}</span><button class="mapa-bioma-poke-panel-close" onclick="document.getElementById('mapaPopupBiomaPanel').innerHTML='';document.getElementById('mapaPopupBiomaPanel')._biomaAtivo=null;document.querySelectorAll('.mapa-ficha-bioma-tag').forEach(b=>b.style.outline='')">×</button></div><div class="mapa-bioma-poke-panel-body" style="font-size:12px;color:var(--muted);text-align:center;padding:14px">Nenhum Pokémon cadastrado neste bioma.</div></div>`;
     return;
