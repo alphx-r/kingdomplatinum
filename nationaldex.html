@@ -355,8 +355,8 @@ html{
   <div class="nav-links">
     <a class="nav-link" href="/datadex">Home</a>
     <a class="nav-link active" href="/datadex/nationaldex">NationalDex</a>
-    <a class="nav-link locked" title="Em breve">MoveDex</a>
-    <a class="nav-link locked" title="Em breve">AbilityDex</a>
+    <a class="nav-link" href="/datadex/movedex">MoveDex</a>
+    <a class="nav-link" href="/datadex/abilitydex">AbilityDex</a>
     <a class="nav-link locked" title="Em breve">ItemDex</a>
   </div>
   <div class="nav-right">
@@ -369,8 +369,8 @@ html{
 <div class="nav-dropdown" id="nav-dropdown">
   <a class="nav-link" href="/datadex">Home</a>
   <a class="nav-link active" href="/datadex/nationaldex">NationalDex</a>
-  <a class="nav-link locked" title="Em breve">MoveDex</a>
-  <a class="nav-link locked" title="Em breve">AbilityDex</a>
+  <a class="nav-link" href="/datadex/movedex">MoveDex</a>
+  <a class="nav-link" href="/datadex/abilitydex">AbilityDex</a>
   <a class="nav-link locked" title="Em breve">ItemDex</a>
 </div>
 
@@ -1875,7 +1875,19 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body"><div class="evo-chain" id="evo-chain-wrap">${evoHtml}</div></div>
   </div>`:''}
 
-  ${renderAltFormsHtml({id:p.id, formas_alt: dbRec?.formas_alt})}
+  ${renderAltFormsHtml({
+    id:p.id, name:dbRec?.name||cap(p.name), tipo1:types[0], tipo2:types[1],
+    habilidade1:regularAbs[0]?.ability.name, habilidade2:regularAbs[1]?.ability.name,
+    habilidade_oculta:hiddenAbs[0]?.ability.name,
+    hp:p.stats.find(s=>s.stat.name==='hp')?.base_stat,
+    atk:p.stats.find(s=>s.stat.name==='attack')?.base_stat,
+    def:p.stats.find(s=>s.stat.name==='defense')?.base_stat,
+    spa:p.stats.find(s=>s.stat.name==='special-attack')?.base_stat,
+    spd:p.stats.find(s=>s.stat.name==='special-defense')?.base_stat,
+    spe:p.stats.find(s=>s.stat.name==='speed')?.base_stat,
+    sprite:`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`,
+    formas_alt: dbRec?.formas_alt
+  })}
 
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
@@ -2081,20 +2093,44 @@ const MEGA_BADGE_SVG=`<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg
    (campo formas_alt na tabela pokemons). Ao contrário das Formas Alfa
    (Mega/Gigantamax), não são "transformações de batalha" — são identidades
    próprias do Pokémon, com tipo/habilidade/stats/sprite independentes. */
+/* ── Formas (ex: Oricorio) ──
+   Quando o Pokémon tem formas alternativas cadastradas (p.formas_alt), a
+   forma "principal" (o próprio registro p) não é tratada como padrão/canônica
+   — ela entra na lista de Formas com o mesmo peso visual que as demais.
+   A divisão "forma principal vs. forma alternativa" existe só por
+   necessidade técnica (precisa de um registro raiz no banco pra pendurar
+   as outras) — na tela, todas aparecem como opções equivalentes. */
 function renderAltFormsHtml(p){
   if(!p.formas_alt||!p.formas_alt.length) return '';
   const STAT_N={hp:'HP',atk:'ATK',def:'DEF',spa:'SP.ATK',spd:'SP.DEF',spe:'SPD'};
   const STAT_C={hp:'#e05050',atk:'#e07030',def:'#e0b030',spa:'#7070e0',spd:'#4aaa6a',spe:'#e04aaa'};
-  const nodes=p.formas_alt.map((f,i)=>{
+
+  // Normaliza a forma principal pro mesmo formato das formas alternativas,
+  // pra poder renderizar tudo com exatamente o mesmo código/estilo.
+  const mainAbilities=[p.habilidade1,p.habilidade2,p.habilidade_oculta].filter(Boolean);
+  const mainForm={
+    nome:p.name||p.nome, tipo1:p.tipo1, tipo2:p.tipo2,
+    habilidadeLabel:mainAbilities.map(a=>a.toUpperCase().replace(/-/g,' ')).join(', '),
+    hp:p.hp,atk:p.atk,def:p.def,spa:p.spa,spd:p.spd,spe:p.spe,
+    sprite:p.sprite
+  };
+  const altForms=p.formas_alt.map(f=>({
+    nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
+    habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
+    hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
+    sprite:f.sprite
+  }));
+  const allForms=[mainForm,...altForms];
+
+  const nodes=allForms.map((f,i)=>{
     const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
     const typeIconsHtml=fTypes.map(t=>`<img style="width:24px;height:24px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18))" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}">`).join('');
     const statKeys=['hp','atk','def','spa','spd','spe'];
-    const bst=f.bst||statKeys.reduce((a,k)=>a+(f[k]||0),0);
+    const bst=statKeys.reduce((a,k)=>a+(f[k]||0),0);
     const statsHtml=statKeys.filter(k=>f[k]).map(k=>`<span style="display:inline-flex;flex-direction:column;align-items:center;background:#e2f7f5;border:1px solid #0d8a8a40;border-radius:6px;padding:4px 8px;min-width:44px">
       <span style="font-family:var(--font-title);font-size:8px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.3px">${STAT_N[k]}</span>
       <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${STAT_C[k]}">${f[k]}</span>
     </span>`).join('');
-    const abName=f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'';
 
     const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
       ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${f.nome}">`:''}
@@ -2110,9 +2146,9 @@ function renderAltFormsHtml(p){
         </div>
         <div style="flex:1;min-width:200px">
           <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#0a6a6a;margin-bottom:10px;letter-spacing:.5px">${f.nome}</div>
-          ${abName?`<div style="margin-bottom:10px">
+          ${f.habilidadeLabel?`<div style="margin-bottom:10px">
             <div style="font-family:var(--font-title);font-size:9px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidade</div>
-            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:#0a6a6a">${abName}</span>
+            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:#0a6a6a">${f.habilidadeLabel}</span>
           </div>`:''}
           ${statsHtml?`<div>
             <div style="font-family:var(--font-title);font-size:9px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Base Stats</div>
@@ -2139,7 +2175,7 @@ function renderAltFormsHtml(p){
   const infosHtml=nodes.map(n=>n.infoHtml).join('');
 
   return `<div class="section" style="border-color:#0d8a8a40">
-    <div class="sec-header" style="background:#0a6a6a"><div class="sec-title">Formas Alternativas</div></div>
+    <div class="sec-header" style="background:#0a6a6a"><div class="sec-title">Formas</div></div>
     <div class="sec-body">
       <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;margin-bottom:8px">
         ${nodesHtml}
