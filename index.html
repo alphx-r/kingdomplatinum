@@ -9709,6 +9709,22 @@ function pickFromPool(pool, usedIds, rarity, bioma){
   const condicao=info?info.condicao:(p.condicao||null);
   return{nome:p.name||p.nome,tipos:[p.tipo1,p.tipo2].filter(Boolean),emoji:p.emoji||'❓',sprite:p.sprite||null,sprite_shiny:p.sprite_shiny||null,habilidade:p.habilidade1,condicao,rarity,genderS:gender.s,genderC:gender.c,nature:rollNature(),isShiny:rollShiny()};
 }
+// Busca em cascata: se o pool da raridade sorteada estiver vazio (nada
+// disponível pro personagem naquele bioma+raridade), tenta as outras
+// raridades daquele MESMO bioma antes de desistir. Só retorna "???" se o
+// bioma estiver realmente sem nenhum Pokémon disponível em raridade nenhuma
+// — isso deve sempre indicar um problema de cadastro (bioma vazio), nunca
+// azar do sorteio.
+function pickFromPoolCascade(poolsObj, usedIdsObj, rarity, bioma){
+  const ordem=[rarity, ...['comum','incomum','raro','rarissimo'].filter(r=>r!==rarity)];
+  for(const r of ordem){
+    const pool=poolsObj[r];
+    if(pool && pool.length){
+      return pickFromPool(pool, usedIdsObj[r], r, bioma);
+    }
+  }
+  return pickFromPool([], usedIdsObj[rarity], rarity, bioma);
+}
 
 function buildCardHtml(pk,delay){
   const pills=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('');
@@ -9977,18 +9993,18 @@ async function rolarEncontro(){
           continue;
         }
       }
-      // slot sem forçado: sorteia normalmente
+      // slot sem forçado: sorteia normalmente (em cascata pelas raridades do bioma)
       const rarity=rollRarity();
-      const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
-      const pkForcado=pickFromPool(pool,usedIds[rarity],rarity,bioma);
+      const poolsAtivos=estacaoAtiva?boostedPools:pools;
+      const pkForcado=pickFromPoolCascade(poolsAtivos,usedIds,rarity,bioma);
       if(pkForcado) pkForcado.isHoney=honeyAtivoNestaRolagem&&i>=nEncontrarBase;
       pokes.push(pkForcado);
     }
   } else {
     for(let i=0;i<total;i++){
       const rarity=rollRarity();
-      const pool=estacaoAtiva?(boostedPools[rarity]||pools[rarity]):pools[rarity];
-      const pk=pickFromPool(pool,usedIds[rarity],rarity,bioma);
+      const poolsAtivos=estacaoAtiva?boostedPools:pools;
+      const pk=pickFromPoolCascade(poolsAtivos,usedIds,rarity,bioma);
       if(pk) pk.isHoney=honeyAtivoNestaRolagem&&i>=nEncontrarBase;
       pokes.push(pk);
     }
@@ -12550,7 +12566,7 @@ async function rolarEncontroEvento(){
   const pokes=[];
   for(let i=0;i<total;i++){
     const rarity=rollRarity();
-    const pk=pickFromPool(pools[rarity],usedIds[rarity],rarity,bioma);
+    const pk=pickFromPoolCascade(pools,usedIds,rarity,bioma);
     pokes.push(pk);
   }
   const section=document.getElementById('evento-results');
