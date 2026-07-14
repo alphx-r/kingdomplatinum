@@ -2350,7 +2350,7 @@ function calcSyncSelects(){
   </div>
 
   <!-- tabs de personagens -->
-  <div id="rolagens-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;padding-bottom:16px;border-bottom:1.5px solid var(--border)"></div>
+  <div id="rolagens-tabs" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:20px;padding-bottom:16px;border-bottom:1.5px solid var(--border)"></div>
   <!-- conteúdo do personagem selecionado -->
   <div id="rolagens-container"></div>
 </div>
@@ -8825,7 +8825,7 @@ function renderPersonagensDatalist(){
   // Quando o admin está logado, adiciona uma opção "ADM" nos rollers de Pokémon
   // e de dados — usada só para testes, não é um personagem novo/cadastrado.
   const opcoesHtmlComAdm = admLogado
-    ? opcoesHtml + '<option value="ADM">Adm</option>'
+    ? opcoesHtml + '<option value="ADM">⚙️ ADM (teste)</option>'
     : opcoesHtml;
 
   ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
@@ -10168,23 +10168,36 @@ function renderRolagens(){
     return;
   }
 
-  tabsEl.innerHTML=chaves.map(k=>{
+  // Chaves "especiais" (uso administrativo/teste, não são personagens de jogador)
+  // ficam num grupo à parte, separadas visualmente dos personagens reais.
+  const CHAVES_ESPECIAIS=['adm','juiz de batalha'];
+  const chavesEspeciais=chaves.filter(k=>CHAVES_ESPECIAIS.includes(k));
+  const chavesReais=chaves.filter(k=>!CHAVES_ESPECIAIS.includes(k));
+
+  const renderTab=(k,especial)=>{
     const g=mapa[k];
     const p=personagens.find(x=>normKey(x.nome)===k);
-    const cor=p?.cor||'var(--brand)';
+    const cor=especial?'var(--muted)':(p?.cor||'var(--brand)');
     const img=p?.img||null;
     const isAtivo=rolagemAtivaKey===k;
     const avatarHtml=img
       ?`<img src="${img}" style="width:22px;height:22px;object-fit:cover;border-radius:50%;flex-shrink:0;pointer-events:none"/>`
-      :`<span style="font-size:14px;flex-shrink:0;pointer-events:none">👤</span>`;
-    return`<button class="rol-tab-btn${isAtivo?' active':''}" data-rkey="${k}"
-      style="${isAtivo?`background:${cor}!important;border-color:${cor}!important;color:#fff!important`:''}"
+      :`<span style="font-size:14px;flex-shrink:0;pointer-events:none">${especial?'⚙️':'👤'}</span>`;
+    return`<button class="rol-tab-btn${isAtivo?' active':''}${especial?' rol-tab-btn-especial':''}" data-rkey="${k}"
+      style="${isAtivo?`background:${cor}!important;border-color:${cor}!important;color:#fff!important`:(especial?`border-style:dashed;color:var(--muted)`:'')}"
       onclick="selecionarRolagemTab('${k}')">
       ${avatarHtml}
       <span style="pointer-events:none">${g.canon}</span>
       <span style="font-size:10px;opacity:.7;margin-left:2px;pointer-events:none">(${g.rolls.length})</span>
     </button>`;
-  }).join('');
+  };
+
+  const htmlEspeciais=chavesEspeciais.map(k=>renderTab(k,true)).join('');
+  const htmlReais=chavesReais.map(k=>renderTab(k,false)).join('');
+  const divisor=(chavesEspeciais.length&&chavesReais.length)
+    ?'<div style="width:1px;align-self:stretch;background:var(--border);margin:2px 4px"></div>'
+    :'';
+  tabsEl.innerHTML=`<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">${htmlEspeciais}</div>${divisor}<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">${htmlReais}</div>`;
 
   if(!rolagemAtivaKey){
     container.innerHTML='<div style="color:var(--muted);font-size:14px;padding:24px 0;text-align:center">Selecione um personagem acima para ver os rolls.</div>';
