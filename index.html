@@ -4322,7 +4322,7 @@ function calcSyncSelects(){
 
         <!-- MAPA ADM -->
         <div class="adm-section" id="sec-bonus-adm">
-          <div class="sec-title">Bônus de Shiny</div>
+          <div class="sec-title">Bônus</div>
           <div class="sec-sub">Configure os bônus que aumentam a chance de encontrar Pokémon shiny no Rolador de Encontro</div>
           <div id="bonus-adm-lista" style="display:flex;flex-direction:column;gap:12px;margin-top:16px"></div>
           <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">
@@ -4334,6 +4334,10 @@ function calcSyncSelects(){
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Taxa base</div>
             <div style="font-size:13px;color:var(--text)">1 em 500 rolagens <span style="color:var(--muted)">(0.2%)</span></div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">Os bônus somam ao threshold — ex: +7 significa 8 em 500 com Shiny Charm ativo</div>
+          </div>
+          <div style="margin-top:20px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1.5px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Bônus ativos agora</div>
+            <div id="bonus-ativos-adm-lista" style="display:flex;flex-direction:column;gap:8px"></div>
           </div>
         </div>
 
@@ -5737,7 +5741,7 @@ function toggleRaridade(r){
   document.getElementById('acc-'+r).classList.toggle('open');
 }
 function admTab(sec,el){
-  if(sec==='bonus-adm') setTimeout(renderBonusAdmLista,50);
+  if(sec==='bonus-adm'){ setTimeout(renderBonusAdmLista,50); setTimeout(renderBonusAtivosAdmLista,50); }
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
   if(sec==='mapa-adm'){ setTimeout(async ()=>{
@@ -9901,9 +9905,35 @@ function atualizarHoneyStatus(){
     status.innerHTML = '';
   }
 }
+
+// ── ADM: lista de bônus ativos agora (Honey por bioma), com opção de desativar antes das 24h ──
+function renderBonusAtivosAdmLista(){
+  const wrap = document.getElementById('bonus-ativos-adm-lista');
+  if(!wrap) return;
+  const agora = Date.now();
+  const ativos = Object.entries(HONEY_STATE).filter(([,exp])=>exp>agora);
+  if(!ativos.length){
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted)">Nenhum bônus ativo no momento.</div>';
+    return;
+  }
+  wrap.innerHTML = ativos.map(([biomaKey,exp])=>{
+    const restante = formatarTempoRestante(exp-agora);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+      <span style="font-size:13px;color:var(--text)">🍯 <strong>Honey</strong> em <strong>${biomaKey}</strong> — expira em ${restante}</span>
+      <button class="btn btn-sm" style="background:#ffe0e0;color:#b02020;border:1px solid #e8b0b0" onclick="desativarHoneyBioma('${biomaKey}')">Desativar</button>
+    </div>`;
+  }).join('');
+}
+
+async function desativarHoneyBioma(biomaKey){
+  delete HONEY_STATE[biomaKey];
+  await _salvarHoneyState(HONEY_STATE);
+  atualizarHoneyStatus();
+  renderBonusAtivosAdmLista();
+}
 // Atualiza o relógio a cada minuto e revalida com o banco periodicamente
 // (caso outro jogador tenha ativado o Honey enquanto esta aba estava aberta)
-setInterval(()=>{ if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); }, 60000);
+setInterval(()=>{ if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); if(typeof renderBonusAtivosAdmLista==='function') renderBonusAtivosAdmLista(); }, 60000);
 setInterval(()=>{ if(_honeyStateCarregado && typeof carregarHoneyState==='function') carregarHoneyState(); }, 120000);
 
 async function rolarEncontro(){
@@ -14174,7 +14204,7 @@ function mapaAdmTab(tab, btn) {
   if(tabFiltros) tabFiltros.style.display = tab === 'filtros' ? '' : 'none';
   if(tab === 'filtros') mapaFiltrosCarregarInputs();
   if(tab === 'locais')  mapaAdmRenderCards('');
-  if(tab === 'bonus-adm') renderBonusAdmLista();
+  if(tab === 'bonus-adm'){ renderBonusAdmLista(); renderBonusAtivosAdmLista(); }
 }
 
 // ── Novo local — posicionar no mapa ───────────────────────
