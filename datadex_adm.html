@@ -159,6 +159,24 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .modal-ta:focus{border-color:var(--brand-mid)}
 .modal-foot{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
 
+/* ── Ajuste manual de sprite (drag + zoom dentro do canvas) ── */
+.spr-adj-trigger{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-body);font-size:10px;font-weight:700;padding:4px 9px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;transition:all .18s;white-space:nowrap;flex-shrink:0}
+.spr-adj-trigger:hover{border-color:var(--brand-mid);color:var(--brand)}
+.spr-adj-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:flex;align-items:center;justify-content:center;padding:20px}
+.spr-adj-modal{background:var(--surface);border-radius:var(--r);padding:18px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.spr-adj-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-family:var(--font-title);font-size:14px;color:var(--brand);letter-spacing:.3px}
+.spr-adj-close{border:none;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;line-height:1;padding:2px 6px;border-radius:5px}
+.spr-adj-close:hover{background:var(--surface2);color:var(--red)}
+.spr-adj-canvas-wrap{display:flex;justify-content:center;background:repeating-conic-gradient(#e2e8f2 0% 25%,#f0f3f8 0% 50%) 50%/16px 16px;border-radius:8px;border:1.5px solid var(--border);overflow:hidden}
+.spr-adj-canvas{width:300px;height:300px;cursor:grab;touch-action:none;display:block}
+.spr-adj-canvas:active{cursor:grabbing}
+.spr-adj-controls{margin-top:12px}
+.spr-adj-zoom-lbl{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px}
+.spr-adj-zoom-val{color:var(--brand-mid)}
+.spr-adj-zoom{width:100%;accent-color:var(--brand-mid)}
+.spr-adj-hint{font-size:10.5px;color:var(--muted);margin-top:6px;text-align:center}
+.spr-adj-btns{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap}
+
 /* Modal de edição de Pokémon: ocupa toda a tela abaixo do topnav */
 #edit-pokemon-modal{top:52px;left:0;right:0;bottom:0;padding:0;align-items:stretch;justify-content:stretch}
 #edit-pokemon-modal .modal{max-width:none;width:100%;height:100%;margin:0;border-radius:0;box-shadow:none;overflow-y:auto;padding:24px 28px;font-size:120%}
@@ -645,6 +663,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             <div id="nrpg-sprite-preview" style="width:48px;height:48px;background:var(--surface2);border-radius:8px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden">
               <span style="font-size:18px;opacity:.3">🖼</span>
             </div>
+            <button type="button" class="spr-adj-trigger" onclick="nrpgOpenSpriteAdjust(false)" title="Ajustar posição/zoom do sprite">🎯 Ajustar</button>
           </div>
         </div>
         <div>
@@ -654,6 +673,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             <div id="nrpg-sprite-shiny-preview" style="width:48px;height:48px;background:var(--surface2);border-radius:8px;border:1.5px solid #f0c040;display:flex;align-items:center;justify-content:center;overflow:hidden">
               <span style="font-size:18px;opacity:.35">✨</span>
             </div>
+            <button type="button" class="spr-adj-trigger" onclick="nrpgOpenSpriteAdjust(true)" title="Ajustar posição/zoom do sprite shiny">🎯 Ajustar</button>
           </div>
         </div>
       </div>
@@ -919,6 +939,7 @@ Caterpie"></textarea>
                 <span style="font-size:18px;opacity:.3">🖼</span>
               </div>
               <input class="mv-meta-input" id="epk-sprite" type="text" placeholder="ou cole uma URL" style="flex:1;font-size:11px" oninput="epkPreviewArt()">
+              <button type="button" class="spr-adj-trigger" onclick="epkOpenSpriteAdjust(false)" title="Ajustar posição/zoom do sprite">🎯</button>
             </div>
           </div>
           <div>
@@ -929,6 +950,7 @@ Caterpie"></textarea>
                 <span style="font-size:20px;opacity:1">✨</span>
               </div>
               <input class="mv-meta-input" id="epk-sprite_shiny" type="text" placeholder="ou cole uma URL" style="flex:1;font-size:11px">
+              <button type="button" class="spr-adj-trigger" onclick="epkOpenSpriteAdjust(true)" title="Ajustar posição/zoom do sprite shiny">🎯</button>
             </div>
           </div>
         </div>
@@ -1900,6 +1922,143 @@ function trimAndFitSprite(dataUrl, canvasSize = 475, fillRatio = 0.80, threshold
   });
 }
 
+/* ══════════════════════════════════════════
+   AJUSTE MANUAL DE SPRITE — canvas com arrastar + zoom
+   Abre um modal onde dá pra reposicionar e escalar a imagem
+   à mão dentro do canvas quadrado (mesma resolução usada pelo
+   trimAndFitSprite), pra corrigir sprites que o recorte
+   automático não centralizou/enquadrou bem.
+══════════════════════════════════════════ */
+let _sprAdj = null;
+
+function openSpriteAdjuster(dataUrl, onApply, canvasSize = 475) {
+  closeSpriteAdjuster();
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const overlay = document.createElement('div');
+    overlay.className = 'spr-adj-overlay';
+    overlay.innerHTML = `
+      <div class="spr-adj-modal">
+        <div class="spr-adj-head">
+          <span>🎯 Ajustar sprite</span>
+          <button type="button" class="spr-adj-close" onclick="closeSpriteAdjuster()">✕</button>
+        </div>
+        <div class="spr-adj-canvas-wrap">
+          <canvas class="spr-adj-canvas" width="${canvasSize}" height="${canvasSize}"></canvas>
+        </div>
+        <div class="spr-adj-hint">Arraste o sprite pra reposicionar · use o slider (ou a roda do mouse) pro zoom</div>
+        <div class="spr-adj-controls">
+          <label class="spr-adj-zoom-lbl"><span>🔍 Zoom</span><span class="spr-adj-zoom-val">100%</span></label>
+          <input type="range" class="spr-adj-zoom" min="20" max="300" value="100" step="1">
+        </div>
+        <div class="spr-adj-btns">
+          <button type="button" class="btn btn-outline btn-sm" onclick="sprAdjReset()">↺ Centralizar</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="closeSpriteAdjuster()">Cancelar</button>
+          <button type="button" class="btn btn-success btn-sm" onclick="sprAdjApply()">✓ Aplicar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const canvas = overlay.querySelector('.spr-adj-canvas');
+    const zoomInp = overlay.querySelector('.spr-adj-zoom');
+    const zoomVal = overlay.querySelector('.spr-adj-zoom-val');
+
+    _sprAdj = {
+      overlay, canvas, ctx: canvas.getContext('2d'), img, canvasSize,
+      zoom: 1, offX: 0, offY: 0, dragging: false, lastX: 0, lastY: 0, onApply
+    };
+
+    sprAdjDraw();
+
+    canvas.addEventListener('mousedown', e => { _sprAdj.dragging = true; _sprAdj.lastX = e.clientX; _sprAdj.lastY = e.clientY; });
+    window.addEventListener('mousemove', sprAdjOnMove);
+    window.addEventListener('mouseup', sprAdjOnUp);
+    canvas.addEventListener('touchstart', e => {
+      const t = e.touches[0]; _sprAdj.dragging = true; _sprAdj.lastX = t.clientX; _sprAdj.lastY = t.clientY;
+    }, { passive: true });
+    canvas.addEventListener('touchmove', e => {
+      const t = e.touches[0]; sprAdjOnMove({ clientX: t.clientX, clientY: t.clientY });
+    }, { passive: true });
+    canvas.addEventListener('touchend', sprAdjOnUp);
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const next = Math.min(300, Math.max(20, parseFloat(zoomInp.value) - Math.sign(e.deltaY) * 5));
+      zoomInp.value = next;
+      zoomInp.dispatchEvent(new Event('input'));
+    }, { passive: false });
+    zoomInp.addEventListener('input', () => {
+      _sprAdj.zoom = parseFloat(zoomInp.value) / 100;
+      zoomVal.textContent = zoomInp.value + '%';
+      sprAdjDraw();
+    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeSpriteAdjuster(); });
+  };
+  img.onerror = () => toast('Não foi possível carregar o sprite pra ajustar.', 'err');
+  img.src = dataUrl;
+}
+function sprAdjOnMove(e) {
+  const st = _sprAdj; if (!st || !st.dragging) return;
+  const rect = st.canvas.getBoundingClientRect();
+  const f = st.canvasSize / rect.width;
+  st.offX += (e.clientX - st.lastX) * f;
+  st.offY += (e.clientY - st.lastY) * f;
+  st.lastX = e.clientX; st.lastY = e.clientY;
+  sprAdjDraw();
+}
+function sprAdjOnUp() { if (_sprAdj) _sprAdj.dragging = false; }
+function sprAdjDraw() {
+  const st = _sprAdj; if (!st) return;
+  const { ctx, canvasSize, img, zoom, offX, offY } = st;
+  ctx.clearRect(0, 0, canvasSize, canvasSize);
+  const sq = canvasSize / 20;
+  for (let y = 0; y < canvasSize; y += sq) for (let x = 0; x < canvasSize; x += sq) {
+    ctx.fillStyle = ((x / sq + y / sq) % 2 === 0) ? '#f0f3f8' : '#e2e8f2';
+    ctx.fillRect(x, y, sq, sq);
+  }
+  const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom;
+  const x = (canvasSize - w) / 2 + offX, y = (canvasSize - h) / 2 + offY;
+  ctx.imageSmoothingEnabled = zoom < 1;
+  ctx.drawImage(img, x, y, w, h);
+  ctx.strokeStyle = 'rgba(37,99,168,.25)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(canvasSize / 2, 0); ctx.lineTo(canvasSize / 2, canvasSize);
+  ctx.moveTo(0, canvasSize / 2); ctx.lineTo(canvasSize, canvasSize / 2);
+  ctx.stroke();
+}
+function sprAdjReset() {
+  const st = _sprAdj; if (!st) return;
+  st.zoom = 1; st.offX = 0; st.offY = 0;
+  st.overlay.querySelector('.spr-adj-zoom').value = 100;
+  st.overlay.querySelector('.spr-adj-zoom-val').textContent = '100%';
+  sprAdjDraw();
+}
+function sprAdjApply() {
+  const st = _sprAdj; if (!st) return;
+  let out;
+  try { out = st.canvas.toDataURL('image/png'); }
+  catch (e) { toast('Erro ao aplicar ajuste (imagem de origem externa bloqueou o canvas): ' + e.message, 'err'); return; }
+  const cb = st.onApply;
+  closeSpriteAdjuster();
+  if (cb) cb(out);
+}
+function closeSpriteAdjuster() {
+  if (_sprAdj) {
+    window.removeEventListener('mousemove', sprAdjOnMove);
+    window.removeEventListener('mouseup', sprAdjOnUp);
+    _sprAdj.overlay.remove();
+    _sprAdj = null;
+  }
+}
+// Helper genérico: abre o ajuste manual em cima da preview atual de um elemento
+// (usa dataset.b64 se já tiver um upload pendente, senão o src da <img> visível)
+function sprAdjFromPreview(prevEl, applyFn) {
+  if (!prevEl) return;
+  const cur = prevEl.dataset.b64 || prevEl.querySelector('img')?.src;
+  if (!cur) { toast('Envie um sprite primeiro.', 'err'); return; }
+  openSpriteAdjuster(cur, applyFn);
+}
+
 function epkPreviewSpriteFile(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -1926,6 +2085,17 @@ function epkPreviewSpriteShinyFile(input) {
     prev.dataset.b64 = out;
   };
   reader.readAsDataURL(file);
+}
+// Abre o ajuste manual (drag+zoom) em cima do sprite normal ou shiny já carregado no form principal
+function epkOpenSpriteAdjust(shiny) {
+  const prevId = shiny ? 'epk-sprite-shiny-preview' : 'epk-sprite-preview';
+  const prev = document.getElementById(prevId);
+  sprAdjFromPreview(prev, out => {
+    prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+    prev.dataset.b64 = out;
+    if (!shiny) document.getElementById('epk-art-preview').src = out;
+    toast('Sprite ajustado.', 'ok');
+  });
 }
 
 
@@ -2168,6 +2338,14 @@ function alfaAddRow(listId, data = {}) {
       <div class="alfa-sprite-prev">${data.sprite ? `<img src="${data.sprite}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:14px;opacity:.3">🖼</span>'}</div>
       <input type="file" class="alfa-sprite-file" accept="image/*">
       <input type="hidden" class="alfa-sprite-url" value="${data.sprite || ''}">
+      <button type="button" class="spr-adj-trigger alfa-sprite-adjust" title="Ajustar posição/zoom do sprite">🎯</button>
+    </div>
+    <div class="alfa-sprite-row" style="margin-top:6px">
+      <span style="font-size:9px;font-weight:700;color:#c08000;text-transform:uppercase;letter-spacing:.3px;flex-shrink:0">✨ Shiny</span>
+      <div class="alfa-sprite-prev alfa-sprite-shiny-prev" style="background:#fff8e6;border-color:#f0c040">${data.sprite_shiny ? `<img src="${data.sprite_shiny}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:14px;opacity:.35">✨</span>'}</div>
+      <input type="file" class="alfa-sprite-shiny-file" accept="image/*">
+      <input type="hidden" class="alfa-sprite-shiny-url" value="${data.sprite_shiny || ''}">
+      <button type="button" class="spr-adj-trigger alfa-sprite-shiny-adjust" title="Ajustar posição/zoom do sprite shiny">🎯</button>
     </div>`;
   // habilidade combobox behaviour
   cbInit(row.querySelector('.alfa-hab'));
@@ -2189,6 +2367,37 @@ function alfaAddRow(listId, data = {}) {
     };
     reader.readAsDataURL(file);
   });
+  row.querySelector('.alfa-sprite-adjust').addEventListener('click', () => {
+    const prev = row.querySelector('.alfa-sprite-prev');
+    sprAdjFromPreview(prev, out => {
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
+      toast('Sprite ajustado.', 'ok');
+    });
+  });
+  // sprite shiny preview
+  const fileInpShiny = row.querySelector('.alfa-sprite-shiny-file');
+  fileInpShiny.addEventListener('change', () => {
+    const file = fileInpShiny.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async e => {
+      const prev = row.querySelector('.alfa-sprite-shiny-prev');
+      let out = e.target.result;
+      try { out = await trimAndFitSprite(out); }
+      catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
+    };
+    reader.readAsDataURL(file);
+  });
+  row.querySelector('.alfa-sprite-shiny-adjust').addEventListener('click', () => {
+    const prev = row.querySelector('.alfa-sprite-shiny-prev');
+    sprAdjFromPreview(prev, out => {
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
+      toast('Sprite shiny ajustado.', 'ok');
+    });
+  });
   list.appendChild(row);
 }
 // Lê as formas alfa de uma lista (sem sprite ainda pendente de upload — usa URL já existente)
@@ -2209,7 +2418,8 @@ function alfaReadListSync(listId) {
     const spe = parseInt(row.querySelector('.alfa-spe').value) || null;
     const bst = alfaRecalcBst(row);
     const sprite = row.querySelector('.alfa-sprite-url')?.value || null;
-    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite };
+    const sprite_shiny = row.querySelector('.alfa-sprite-shiny-url')?.value || null;
+    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny };
   }).filter(Boolean);
 }
 // Faz upload de qualquer sprite pendente (arquivo escolhido) para cada forma, e retorna a lista final pronta pra salvar.
@@ -2219,11 +2429,11 @@ async function alfaProcessAndRead(listId, baseId) {
   if (!list) return [];
   const rows = [...list.querySelectorAll('.alfa-row')];
   for (const row of rows) {
+    const nome = row.querySelector('.alfa-nome')?.value.trim() || 'forma';
+    const slug = toSlugBase(nome) || 'forma';
     const prev = row.querySelector('.alfa-sprite-prev');
     const b64 = prev?.dataset.b64;
     if (b64 && b64.startsWith('data:')) {
-      const nome = row.querySelector('.alfa-nome')?.value.trim() || 'forma';
-      const slug = toSlugBase(nome) || 'forma';
       const ext = b64.includes('image/png') ? 'png' : 'jpg';
       try {
         const url = await uploadImgStorage(b64, 'pokemons', `${baseId}-alfa-${slug}.${ext}`);
@@ -2231,6 +2441,18 @@ async function alfaProcessAndRead(listId, baseId) {
         delete prev.dataset.b64;
       } catch (e) {
         toast('Erro ao enviar sprite de "' + nome + '": ' + e.message, 'err');
+      }
+    }
+    const prevShiny = row.querySelector('.alfa-sprite-shiny-prev');
+    const b64Shiny = prevShiny?.dataset.b64;
+    if (b64Shiny && b64Shiny.startsWith('data:')) {
+      const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
+      try {
+        const url = await uploadImgStorage(b64Shiny, 'pokemons', `${baseId}-alfa-${slug}-shiny.${ext}`);
+        row.querySelector('.alfa-sprite-shiny-url').value = url + '?t=' + Date.now();
+        delete prevShiny.dataset.b64;
+      } catch (e) {
+        toast('Erro ao enviar sprite shiny de "' + nome + '": ' + e.message, 'err');
       }
     }
   }
@@ -2288,6 +2510,14 @@ function faltAddRow(listId, data = {}) {
       <div class="falt-sprite-prev">${data.sprite ? `<img src="${data.sprite}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:14px;opacity:.3">🖼</span>'}</div>
       <input type="file" class="falt-sprite-file" accept="image/*">
       <input type="hidden" class="falt-sprite-url" value="${data.sprite || ''}">
+      <button type="button" class="spr-adj-trigger falt-sprite-adjust" title="Ajustar posição/zoom do sprite">🎯</button>
+    </div>
+    <div class="falt-sprite-row" style="margin-top:6px">
+      <span style="font-size:9px;font-weight:700;color:#c08000;text-transform:uppercase;letter-spacing:.3px;flex-shrink:0">✨ Shiny</span>
+      <div class="falt-sprite-prev falt-sprite-shiny-prev" style="background:#fff8e6;border-color:#f0c040">${data.sprite_shiny ? `<img src="${data.sprite_shiny}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:14px;opacity:.35">✨</span>'}</div>
+      <input type="file" class="falt-sprite-shiny-file" accept="image/*">
+      <input type="hidden" class="falt-sprite-shiny-url" value="${data.sprite_shiny || ''}">
+      <button type="button" class="spr-adj-trigger falt-sprite-shiny-adjust" title="Ajustar posição/zoom do sprite shiny">🎯</button>
     </div>
     <div class="falt-biomas-section" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
       <span class="falt-field-lbl" style="margin-bottom:6px">Biomas desta forma <span style="font-weight:400;text-transform:none;color:var(--muted)">(independente da forma principal)</span></span>
@@ -2320,6 +2550,37 @@ function faltAddRow(listId, data = {}) {
     };
     reader.readAsDataURL(file);
   });
+  row.querySelector('.falt-sprite-adjust').addEventListener('click', () => {
+    const prev = row.querySelector('.falt-sprite-prev');
+    sprAdjFromPreview(prev, out => {
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
+      toast('Sprite ajustado.', 'ok');
+    });
+  });
+  const fileInpShiny = row.querySelector('.falt-sprite-shiny-file');
+  fileInpShiny.addEventListener('change', () => {
+    const file = fileInpShiny.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      let out = e.target.result;
+      try { out = await trimAndFitSprite(out); }
+      catch { toast('Aviso: não foi possível ajustar automaticamente o sprite.', 'err'); }
+      const prev = row.querySelector('.falt-sprite-shiny-prev');
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
+    };
+    reader.readAsDataURL(file);
+  });
+  row.querySelector('.falt-sprite-shiny-adjust').addEventListener('click', () => {
+    const prev = row.querySelector('.falt-sprite-shiny-prev');
+    sprAdjFromPreview(prev, out => {
+      prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
+      prev.dataset.b64 = out;
+      toast('Sprite shiny ajustado.', 'ok');
+    });
+  });
   list.appendChild(row);
 }
 // Lê as formas alternativas de uma lista (sem sprite ainda pendente de upload — usa URL já existente)
@@ -2340,8 +2601,9 @@ function faltReadListSync(listId) {
     const spe = parseInt(row.querySelector('.falt-spe').value) || null;
     const bst = faltRecalcBst(row);
     const sprite = row.querySelector('.falt-sprite-url')?.value || null;
+    const sprite_shiny = row.querySelector('.falt-sprite-shiny-url')?.value || null;
     const biomas = faltGetBiomas(row);
-    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite, biomas: biomas.length ? biomas : null };
+    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny, biomas: biomas.length ? biomas : null };
   }).filter(Boolean);
 }
 // Faz upload de qualquer sprite pendente (arquivo escolhido) para cada forma, e retorna a lista final pronta pra salvar.
@@ -2351,11 +2613,11 @@ async function faltProcessAndRead(listId, baseId) {
   if (!list) return [];
   const rows = [...list.querySelectorAll('.falt-row')];
   for (const row of rows) {
+    const nome = row.querySelector('.falt-nome')?.value.trim() || 'forma';
+    const slug = toSlugBase(nome) || 'forma';
     const prev = row.querySelector('.falt-sprite-prev');
     const b64 = prev?.dataset.b64;
     if (b64 && b64.startsWith('data:')) {
-      const nome = row.querySelector('.falt-nome')?.value.trim() || 'forma';
-      const slug = toSlugBase(nome) || 'forma';
       const ext = b64.includes('image/png') ? 'png' : 'jpg';
       try {
         const url = await uploadImgStorage(b64, 'pokemons', `${baseId}-alt-${slug}.${ext}`);
@@ -2363,6 +2625,18 @@ async function faltProcessAndRead(listId, baseId) {
         delete prev.dataset.b64;
       } catch (e) {
         toast('Erro ao enviar sprite de "' + nome + '": ' + e.message, 'err');
+      }
+    }
+    const prevShiny = row.querySelector('.falt-sprite-shiny-prev');
+    const b64Shiny = prevShiny?.dataset.b64;
+    if (b64Shiny && b64Shiny.startsWith('data:')) {
+      const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
+      try {
+        const url = await uploadImgStorage(b64Shiny, 'pokemons', `${baseId}-alt-${slug}-shiny.${ext}`);
+        row.querySelector('.falt-sprite-shiny-url').value = url + '?t=' + Date.now();
+        delete prevShiny.dataset.b64;
+      } catch (e) {
+        toast('Erro ao enviar sprite shiny de "' + nome + '": ' + e.message, 'err');
       }
     }
   }
@@ -4557,6 +4831,15 @@ function nrpgPreviewSpriteShiny(input) {
     prev.dataset.b64 = out;
   };
   reader.readAsDataURL(file);
+}
+// Abre o ajuste manual (drag+zoom) em cima do sprite normal ou shiny do form de novo RPG
+function nrpgOpenSpriteAdjust(shiny) {
+  const prev = document.getElementById(shiny ? 'nrpg-sprite-shiny-preview' : 'nrpg-sprite-preview');
+  sprAdjFromPreview(prev, out => {
+    prev.innerHTML = `<img src="${out}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated"/>`;
+    prev.dataset.b64 = out;
+    toast('Sprite ajustado.', 'ok');
+  });
 }
 
 // Toggle tipo no modal de novo RPG
