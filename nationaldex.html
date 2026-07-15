@@ -1567,6 +1567,8 @@ async function renderRpgDetail(p, container, navToken){
     <div class="sec-body"><div class="evo-chain">${evoChainHtml}</div></div>
   </div>`:''}
 
+  ${renderAlfaFormsHtml(p)}
+
   ${renderAltFormsHtml(p)}
 
   <div class="ficha-moves-wrap">
@@ -1875,6 +1877,8 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body"><div class="evo-chain" id="evo-chain-wrap">${evoHtml}</div></div>
   </div>`:''}
 
+  ${renderAlfaFormsHtml({id:p.id, formas_alfa: dbRec?.formas_alfa})}
+
   ${renderAltFormsHtml({
     id:p.id, name:dbRec?.name||cap(p.name), tipo1:types[0], tipo2:types[1],
     habilidade1:regularAbs[0]?.ability.name, habilidade2:regularAbs[1]?.ability.name,
@@ -1886,6 +1890,7 @@ async function renderDetail(p,s,container,navToken){
     spd:p.stats.find(s=>s.stat.name==='special-defense')?.base_stat,
     spe:p.stats.find(s=>s.stat.name==='speed')?.base_stat,
     sprite:`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`,
+    sprite_shiny: dbRec?.sprite_shiny || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${p.id}.png`,
     formas_alt: dbRec?.formas_alt
   })}
 
@@ -2088,11 +2093,12 @@ function buildRegionalEvo(chain, pref, regSlug, currentId){
 
 const MEGA_BADGE_SVG=`<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 1L12.5 7H19L13.5 11L15.5 17L10 13L4.5 17L6.5 11L1 7H7.5L10 1Z"/><circle cx="10" cy="10" r="3" fill="rgba(255,255,255,0.3)"/><text x="10" y="14" text-anchor="middle" font-size="7" font-weight="900" fill="white" font-family="sans-serif">M</text></svg>`;
 
-/* ── Formas Alternativas (ex: Oricorio Estilo Pom-Pom) ──
-   Variações permanentes e independentes do Pokémon, cadastradas no admin
-   (campo formas_alt na tabela pokemons). Ao contrário das Formas Alfa
-   (Mega/Gigantamax), não são "transformações de batalha" — são identidades
-   próprias do Pokémon, com tipo/habilidade/stats/sprite independentes. */
+/* ── Formas Alternativas (ex: Oricorio Estilo Pom-Pom) e Formas Alfa
+   (Mega/Gigantamax custom de fakemon) ──
+   Variações permanentes (Formas) ou transformações de batalha (Formas Alfa)
+   do Pokémon, cadastradas no admin (campos formas_alt / formas_alfa na
+   tabela pokemons). Compartilham a mesma estrutura visual — só muda o
+   tema de cor e o rótulo da seção. */
 /* ── Formas (ex: Oricorio) ──
    Quando o Pokémon tem formas alternativas cadastradas (p.formas_alt), a
    forma "principal" (o próprio registro p) não é tratada como padrão/canônica
@@ -2100,82 +2106,121 @@ const MEGA_BADGE_SVG=`<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg
    A divisão "forma principal vs. forma alternativa" existe só por
    necessidade técnica (precisa de um registro raiz no banco pra pendurar
    as outras) — na tela, todas aparecem como opções equivalentes. */
-function renderAltFormsHtml(p){
-  if(!p.formas_alt||!p.formas_alt.length) return '';
-  const STAT_N={hp:'HP',atk:'ATK',def:'DEF',spa:'SP.ATK',spd:'SP.DEF',spe:'SPD'};
-  const STAT_C={hp:'#e05050',atk:'#e07030',def:'#e0b030',spa:'#7070e0',spd:'#4aaa6a',spe:'#e04aaa'};
+const FORM_STAT_N={hp:'HP',atk:'ATK',def:'DEF',spa:'SP.ATK',spd:'SP.DEF',spe:'SPD'};
+const FORM_STAT_C={hp:'#e05050',atk:'#e07030',def:'#e0b030',spa:'#7070e0',spd:'#4aaa6a',spe:'#e04aaa'};
 
-  // Normaliza a forma principal pro mesmo formato das formas alternativas,
-  // pra poder renderizar tudo com exatamente o mesmo código/estilo.
-  const mainAbilities=[p.habilidade1,p.habilidade2,p.habilidade_oculta].filter(Boolean);
-  const mainForm={
-    nome:p.name||p.nome, tipo1:p.tipo1, tipo2:p.tipo2,
-    habilidadeLabel:mainAbilities.map(a=>a.toUpperCase().replace(/-/g,' ')).join(', '),
-    hp:p.hp,atk:p.atk,def:p.def,spa:p.spa,spd:p.spd,spe:p.spe,
-    sprite:p.sprite
-  };
-  const altForms=p.formas_alt.map(f=>({
-    nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
-    habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
-    hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
-    sprite:f.sprite
-  }));
-  const allForms=[mainForm,...altForms];
+// Tabela compacta de "Damage Taken" (fraquezas/resistências/imunidades) pra
+// mostrar dentro do card expandido de cada forma — mesma lógica do calcDmg
+// usado na seção principal, só que num layout mais enxuto.
+function formDmgTakenHtml(types){
+  if(!types||!types.length) return '';
+  const dmg=calcDmg(types);
+  const mults=[{k:0,lbl:'×0'},{k:.25,lbl:'×¼'},{k:.5,lbl:'×½'},{k:2,lbl:'×2'},{k:4,lbl:'×4'}];
+  const rows=mults.filter(r=>dmg[r.k]&&dmg[r.k].length);
+  if(!rows.length) return '';
+  return `<div style="margin-top:12px">
+    <div style="font-family:var(--font-title);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Damage Taken</div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      ${rows.map(r=>{
+        const isImmune=r.k===0;const isResist=r.k>0&&r.k<1;const isWeak=r.k>=2;
+        const multColor=isImmune?'#e05050':isResist?'#2a7a2a':isWeak?'#c03030':'#888';
+        const multBg=isImmune?'#ffeaea':isResist?'#eaffea':isWeak?'#fff0f0':'#f5f5f5';
+        return `<div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--font-title);font-size:10px;font-weight:700;min-width:26px;text-align:center;padding:2px 5px;border-radius:5px;background:${multBg};color:${multColor};border:1px solid ${multColor}40">${r.lbl}</span>
+          <div style="display:flex;flex-wrap:wrap;gap:3px">${dmg[r.k].map(t=>pill(t)).join('')}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
 
-  const nodes=allForms.map((f,i)=>{
+// Registro em memória do sprite normal/shiny de cada nó de forma renderizado,
+// pra permitir alternar a imagem no clique sem re-renderizar o card inteiro.
+window._formSpriteReg=window._formSpriteReg||{};
+function toggleFormShiny(key){
+  const d=window._formSpriteReg[key]; if(!d||!d.shiny) return;
+  d.on=!d.on;
+  const img=document.getElementById('fspr-'+key);
+  const thumb=document.getElementById('fthumb-'+key);
+  if(img) img.src=d.on?d.shiny:d.normal;
+  if(thumb) thumb.classList.toggle('active',d.on);
+}
+
+// Monta a seção completa de formas (compartilhada entre "Formas" e "Formas Alfa").
+// opts.forms = [{nome,tipo1,tipo2,habilidadeLabel,hp,atk,def,spa,spd,spe,sprite,sprite_shiny}]
+// Cada forma usa as cores da sua própria tipagem principal (f.tipo1) — o
+// tema passado em opts (headerBg) serve só pro cabeçalho da seção, que
+// acompanha a cor do resto da ficha (TT.dark do Pokémon "raiz").
+function renderFormsSection(opts){
+  const {sectionTitle,headerBg,idPrefix,pkId,forms}=opts;
+  if(!forms||!forms.length) return '';
+
+  const nodes=forms.map((f,i)=>{
+    const fTheme=TYPE_THEME[f.tipo1]||TYPE_THEME.normal;
+    const mid=fTheme.mid, dark=fTheme.dark, light=fTheme.light, statBg=fTheme.light, borderA=fTheme.mid;
     const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
     const typeIconsHtml=fTypes.map(t=>`<img style="width:24px;height:24px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18))" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}">`).join('');
     const statKeys=['hp','atk','def','spa','spd','spe'];
     const bst=statKeys.reduce((a,k)=>a+(f[k]||0),0);
-    const statsHtml=statKeys.filter(k=>f[k]).map(k=>`<span style="display:inline-flex;flex-direction:column;align-items:center;background:#e2f7f5;border:1px solid #0d8a8a40;border-radius:6px;padding:4px 8px;min-width:44px">
-      <span style="font-family:var(--font-title);font-size:8px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.3px">${STAT_N[k]}</span>
-      <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${STAT_C[k]}">${f[k]}</span>
+    const statsHtml=statKeys.filter(k=>f[k]).map(k=>`<span style="display:inline-flex;flex-direction:column;align-items:center;background:${statBg};border:1px solid ${mid}40;border-radius:6px;padding:4px 8px;min-width:44px">
+      <span style="font-family:var(--font-title);font-size:8px;color:${mid};text-transform:uppercase;letter-spacing:.3px">${FORM_STAT_N[k]}</span>
+      <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${FORM_STAT_C[k]}">${f[k]}</span>
     </span>`).join('');
+
+    const key=`${idPrefix}-${pkId}-${i}`;
+    window._formSpriteReg[key]={normal:f.sprite||'',shiny:f.sprite_shiny||'',on:false};
 
     const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
       ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${f.nome}">`:''}
-      <span style="font-family:var(--font-title);font-size:10px;font-weight:600;color:#0d8a8a;text-transform:uppercase;letter-spacing:.3px;text-align:center">${f.nome}</span>
+      <span style="font-family:var(--font-title);font-size:10px;font-weight:600;color:${mid};text-transform:uppercase;letter-spacing:.3px;text-align:center">${f.nome}</span>
     </div>`;
 
+    const shinyToggleHtml=f.sprite_shiny?`<div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+      <img class="shiny-thumb" id="fthumb-${key}" src="${f.sprite_shiny}" onclick="event.stopPropagation();toggleFormShiny('${key}')" title="✦ Ver Shiny" alt="shiny">
+      <span style="font-family:var(--font-title);font-size:9px;color:${mid};letter-spacing:.3px">✦ SHINY</span>
+    </div>`:'';
+
     const infoHtml=`
-    <div id="alt-info-${p.id}-${i}" style="display:none;margin-top:16px;padding:16px;background:#f0fbfa;border:1.5px solid #4ac0c0;border-radius:10px;animation:fadeUp .3s both">
+    <div id="${idPrefix}-info-${pkId}-${i}" style="display:none;margin-top:16px;padding:16px;background:${light};border:1.5px solid ${borderA};border-radius:10px;animation:fadeUp .3s both">
       <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
         <div style="display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px">
-          ${f.sprite?`<img style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(13,138,138,.2))" src="${f.sprite}" alt="${f.nome}">`:''}
+          ${f.sprite?`<img id="fspr-${key}" style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px ${mid}33)" src="${f.sprite}" alt="${f.nome}">`:''}
           <div style="display:flex;gap:6px">${typeIconsHtml}</div>
+          ${shinyToggleHtml}
         </div>
         <div style="flex:1;min-width:200px">
-          <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#0a6a6a;margin-bottom:10px;letter-spacing:.5px">${f.nome}</div>
+          <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${dark};margin-bottom:10px;letter-spacing:.5px">${f.nome}</div>
           ${f.habilidadeLabel?`<div style="margin-bottom:10px">
-            <div style="font-family:var(--font-title);font-size:9px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidade</div>
-            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:#0a6a6a">${f.habilidadeLabel}</span>
+            <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidade</div>
+            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:${dark}">${f.habilidadeLabel}</span>
           </div>`:''}
           ${statsHtml?`<div>
-            <div style="font-family:var(--font-title);font-size:9px;color:#0d8a8a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Base Stats</div>
+            <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Base Stats</div>
             <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
               ${statsHtml}
-              <span style="display:inline-flex;flex-direction:column;align-items:center;background:#0a6a6a;border-radius:6px;padding:4px 8px;min-width:44px">
+              <span style="display:inline-flex;flex-direction:column;align-items:center;background:${dark};border-radius:6px;padding:4px 8px;min-width:44px">
                 <span style="font-family:var(--font-title);font-size:8px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.3px">BST</span>
                 <span style="font-family:var(--font-title);font-size:14px;font-weight:700;color:#fff">${bst}</span>
               </span>
             </div>
           </div>`:''}
+          ${formDmgTakenHtml(fTypes)}
         </div>
       </div>
     </div>`;
 
-    return {nodeHtml,infoHtml};
+    return {nodeHtml,infoHtml,mid};
   });
 
   const nodesHtml=nodes.map((n,i)=>`
-    <div onclick="toggleAltFormInfo('${p.id}',${i})" style="cursor:pointer;border-radius:10px;transition:background .2s" onmouseenter="this.style.background='rgba(13,138,138,.06)'" onmouseleave="this.style.background='transparent'">
+    <div onclick="toggleFormInfo('${idPrefix}','${pkId}',${i})" style="cursor:pointer;border-radius:10px;transition:background .2s" onmouseenter="this.style.background='${n.mid}10'" onmouseleave="this.style.background='transparent'">
       ${n.nodeHtml}
-      <div style="font-family:var(--font-title);font-size:8px;color:#0d8a8a;text-align:center;letter-spacing:.4px;margin-top:-4px">▼ ver detalhes</div>
+      <div style="font-family:var(--font-title);font-size:8px;color:${n.mid};text-align:center;letter-spacing:.4px;margin-top:-4px">▼ ver detalhes</div>
     </div>`).join('');
   const infosHtml=nodes.map(n=>n.infoHtml).join('');
 
-  return `<div class="section" style="border-color:#0d8a8a40">
-    <div class="sec-header" style="background:#0a6a6a"><div class="sec-title">Formas</div></div>
+  return `<div class="section" style="border-color:${headerBg}40">
+    <div class="sec-header" style="background:${headerBg}"><div class="sec-title">${sectionTitle}</div></div>
     <div class="sec-body">
       <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;margin-bottom:8px">
         ${nodesHtml}
@@ -2185,12 +2230,59 @@ function renderAltFormsHtml(p){
   </div>`;
 }
 
-function toggleAltFormInfo(pkId,i){
-  const el=document.getElementById(`alt-info-${pkId}-${i}`);
+function toggleFormInfo(idPrefix,pkId,i){
+  const el=document.getElementById(`${idPrefix}-info-${pkId}-${i}`);
   if(!el)return;
   const isHidden=el.style.display==='none';
-  document.querySelectorAll(`[id^="alt-info-${pkId}-"]`).forEach(e=>e.style.display='none');
+  document.querySelectorAll(`[id^="${idPrefix}-info-${pkId}-"]`).forEach(e=>e.style.display='none');
   el.style.display=isHidden?'block':'none';
+}
+// Compat com chamadas antigas de toggleAltFormInfo (onclick já renderizado em cache/bfcache)
+function toggleAltFormInfo(pkId,i){ toggleFormInfo('alt',pkId,i); }
+
+function renderAltFormsHtml(p){
+  if(!p.formas_alt||!p.formas_alt.length) return '';
+  // Normaliza a forma principal pro mesmo formato das formas alternativas,
+  // pra poder renderizar tudo com exatamente o mesmo código/estilo.
+  const mainAbilities=[p.habilidade1,p.habilidade2,p.habilidade_oculta].filter(Boolean);
+  const mainForm={
+    nome:p.name||p.nome, tipo1:p.tipo1, tipo2:p.tipo2,
+    habilidadeLabel:mainAbilities.map(a=>a.toUpperCase().replace(/-/g,' ')).join(', '),
+    hp:p.hp,atk:p.atk,def:p.def,spa:p.spa,spd:p.spd,spe:p.spe,
+    sprite:p.sprite, sprite_shiny:p.sprite_shiny
+  };
+  const altForms=p.formas_alt.map(f=>({
+    nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
+    habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
+    hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
+    sprite:f.sprite, sprite_shiny:f.sprite_shiny
+  }));
+  // Cabeçalho da seção acompanha a cor do tipo principal do Pokémon (mesma
+  // cor usada em Damage Taken/Biology/Evolutionary Chain), em vez de um
+  // teal fixo — cada forma individual mantém sua própria cor de tipagem.
+  const rootTheme=TYPE_THEME[p.tipo1]||TYPE_THEME.normal;
+  return renderFormsSection({
+    sectionTitle:'Formas', headerBg:rootTheme.dark,
+    idPrefix:'alt', pkId:p.id, forms:[mainForm,...altForms]
+  });
+}
+
+// ── Formas Alfa (ex: Mega/Gigantamax custom de fakemon, campo formas_alfa) ──
+// Mesma estrutura de renderAltFormsHtml, mas com tema roxo (igual ao das
+// Forças Alfas oficiais buscadas via PokeAPI em appendMegas) e sem incluir
+// a forma "principal" — Formas Alfa são sempre transformações adicionais.
+function renderAlfaFormsHtml(p){
+  if(!p.formas_alfa||!p.formas_alfa.length) return '';
+  const alfaForms=p.formas_alfa.map(f=>({
+    nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
+    habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
+    hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
+    sprite:f.sprite, sprite_shiny:f.sprite_shiny
+  }));
+  return renderFormsSection({
+    sectionTitle:'Formas Alfa', headerBg:'#5020a0',
+    idPrefix:'alfa', pkId:p.id, forms:alfaForms
+  });
 }
 
 async function appendMegas(speciesName, container){
