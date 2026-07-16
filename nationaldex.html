@@ -293,6 +293,13 @@ html{
 .hero-type-icons{display:flex;gap:8px;justify-content:center;margin-top:4px}
 .type-icon{width:36px;height:36px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18));transition:transform .2s}
 .type-icon:hover{transform:scale(1.12)}
+.form-switch-row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;max-width:220px}
+.form-switch-btn{display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:4px 5px 3px;cursor:pointer;transition:all .15s ease;width:44px;box-sizing:border-box}
+.form-switch-btn img{width:26px;height:26px;object-fit:contain;pointer-events:none}
+.form-switch-btn span{font-family:var(--font-title);font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.2px;color:var(--muted);text-align:center;line-height:1.15;max-width:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
+.form-switch-btn:hover{border-color:var(--brand-mid);background:var(--border)}
+.form-switch-btn.active{border-color:var(--accent);background:rgba(232,160,32,.15);box-shadow:0 0 0 2px rgba(232,160,32,.25)}
+.form-switch-btn.active span{color:var(--text)}
 
 /* Evo branch */
 .evo-branch-wrap{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;width:100%}
@@ -529,6 +536,120 @@ function calcDmg(types){
   const g={0:[],0.25:[],0.5:[],2:[],4:[]};
   for(const[t,v]of Object.entries(m)){const k=v===0?0:v<=.26?.25:v<=.51?.5:v<=1?null:v<=2?2:4;if(k!==null)g[k].push(t);}
   return g;
+}
+
+/* ═══════════════════════════════════════
+   FORM SWITCH — botões inline (abaixo dos ícones de tipagem) que trocam
+   toda a ficha (sprite, nome, tipos, habilidades, stats, damage taken e
+   movimentos) pra forma selecionada, sem sair da página. Substitui a
+   antiga aba "Formas".
+═══════════════════════════════════════ */
+window._pkFormsRegistry=window._pkFormsRegistry||{};
+function applyPokemonForm(pkKey,idx){
+  const reg=window._pkFormsRegistry[pkKey];
+  if(reg&&reg.apply) reg.apply(idx);
+}
+
+// Lê o moveset de uma forma alternativa — mesma convenção de 4 campos já
+// usada no registro principal (moves_level/moves_tm/moves_egg/moves_tutor),
+// cada um com itens {move,level?} ou {name,lvl?} (aceita ambos os formatos).
+function formAltMoves(f){
+  const norm=(arr,withLvl)=>(arr||[]).map(m=>{
+    if(!m) return null;
+    if(typeof m==='string') return withLvl?{name:m,lvl:0}:{name:m};
+    const nm=m.name||m.move;
+    if(!nm) return null;
+    return withLvl?{name:nm,lvl:m.lvl??m.level??0}:{name:nm};
+  }).filter(Boolean);
+  const level=norm(f.moves_level,true).sort((a,b)=>a.lvl-b.lvl);
+  return {
+    level,
+    tm:restrictToTmList(norm(f.moves_tm,false)),
+    egg:norm(f.moves_egg,false),
+    tutor:norm(f.moves_tutor,false)
+  };
+}
+
+// Monta o bloco "Damage Taken" (usado tanto no primeiro render quanto ao
+// trocar de forma) — mesmo layout já usado nas fichas oficiais/RPG.
+function buildDmgTakenHtml(types){
+  const dmg=calcDmg(types);
+  const allMults=[{k:0,lbl:'×0'},{k:0.25,lbl:'×¼'},{k:0.5,lbl:'×½'},{k:1,lbl:'×1'},{k:2,lbl:'×2'},{k:4,lbl:'×4'}];
+  const allTypes=Object.keys(TYPE_CHART);
+  dmg[1]=allTypes.filter(t=>!(dmg[0].includes(t)||dmg[0.25].includes(t)||dmg[0.5].includes(t)||dmg[2].includes(t)||dmg[4].includes(t)));
+  const rows=allMults.filter(r=>dmg[r.k]&&dmg[r.k].length);
+  if(!rows.length) return `<div style="font-size:12px;color:var(--muted)">No modifiers</div>`;
+  return `<div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px">
+    ${rows.map(r=>{
+      const isImmune=r.k===0;const isResist=r.k>0&&r.k<1;const isWeak=r.k>=2;
+      const multColor=isImmune?'#e05050':isResist?'#2a7a2a':isWeak?'#c03030':'#888';
+      const multBg=isImmune?'#ffeaea':isResist?'#eaffea':isWeak?'#fff0f0':'#f5f5f5';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <span style="font-family:var(--font-title);font-size:12px;font-weight:700;min-width:30px;text-align:center;padding:3px 6px;border-radius:5px;background:${multBg};color:${multColor};border:1px solid ${multColor}40">${r.lbl}</span>
+        <div style="display:flex;flex-wrap:wrap;gap:3px">${dmg[r.k].map(t=>pill(t)).join('')}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// Monta a lista de habilidades (mesmo estilo usado nas fichas), buscando a
+// descrição PT direto da tabela "abilities" do Supabase.
+async function buildAbilitiesHtmlSimple(entries){
+  if(!entries||!entries.length) return `<div style="font-size:11px;color:var(--muted)">—</div>`;
+  const regularEntries=entries.filter(h=>!h.ha);
+  const items=await Promise.all(entries.map(async(h)=>{
+    let desc=''; try{desc=(await getAbility(h.name))||'';}catch{}
+    const idxNum=h.ha?null:regularEntries.indexOf(h)+1;
+    return `<div style="line-height:1.6">
+      ${h.ha?`<span class="ha-badge">HA</span>`:`<span class="ability-idx">${idxNum}.</span>`}
+      <span class="ability-name-lbl ${h.ha?'ha':''}">${h.name.toUpperCase().replace(/-/g,' ')}</span>${desc?`: <span style="color:var(--text);font-weight:400;font-size:11px">${desc}</span>`:''}
+    </div>`;
+  }));
+  return items.join('');
+}
+
+// Monta o grid de base stats (mesmo layout já usado) a partir de um objeto
+// {hp,attack,defense,'special-attack','special-defense',speed}.
+function buildStatsGridHtml(statFields,TT){
+  const statKeys=['hp','attack','defense','special-attack','special-defense','speed'];
+  const bst=statKeys.reduce((a,k)=>a+(parseInt(statFields[k])||0),0);
+  return `<div class="base-stats-grid">
+    ${statKeys.map(k=>`<div style="text-align:center">
+      <div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">${STAT_NAMES[k]}</div>
+      <div style="font-size:12px;font-weight:700;color:${STAT_COLORS[k]||'var(--brand)'}">${statFields[k]||'—'}</div>
+    </div>`).join('')}
+    <div style="text-align:center">
+      <div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">BST</div>
+      <div style="font-size:12px;font-weight:700;color:${TT.dark}">${bst||'—'}</div>
+    </div>
+  </div>`;
+}
+
+// Encurta o nome de uma forma pro rótulo do botão (remove o nome base
+// repetido, ex: "Oricorio (Baila Style)" com base "Oricorio" → "Baila Style").
+function formShortLabel(nome,baseName){
+  if(!nome) return '';
+  let s=String(nome);
+  if(baseName){
+    const esc=String(baseName).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    s=s.replace(new RegExp('^'+esc+'\\s*','i'),'');
+  }
+  s=s.replace(/^[\(\-–]\s*/,'').replace(/\)\s*$/,'').trim();
+  if(!s) s=nome;
+  return s.length>11?s.slice(0,10)+'…':s;
+}
+
+// Monta a fileira de botões de forma, exibida logo abaixo dos ícones de
+// tipagem — cada botão troca em tela sprite, nome, tipos, habilidades,
+// stats, damage taken e movimentos, sem recarregar a página.
+function formSwitchButtonsHtml(forms,activeIdx,pkKey,baseName){
+  if(!forms||forms.length<2) return '';
+  return `<div class="form-switch-row">
+    ${forms.map((f,i)=>`<div class="form-switch-btn${i===activeIdx?' active':''}" id="fswbtn-${pkKey}-${i}" onclick="applyPokemonForm('${pkKey}',${i})" title="${(f.nome||'').replace(/"/g,'&quot;')}">
+      ${f.sprite?`<img src="${f.sprite}" alt="${f.nome||''}" onerror="this.style.visibility='hidden'">`:''}
+      <span>${formShortLabel(f.nome,baseName)}</span>
+    </div>`).join('')}
+  </div>`;
 }
 
 /* ═══════════════════════════════════════
@@ -1507,6 +1628,32 @@ async function renderRpgDetail(p, container, navToken){
   // caem pro artwork oficial da PokéAPI só como último recurso visual.
   const heroSprite=p.sprite||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:'');
 
+  // ── Formas (botões inline abaixo da tipagem) ──
+  // forms[0] = forma principal (dados já computados acima); demais vêm de
+  // p.formas_alt, cada uma com seu próprio moveset (campo "moves").
+  const rpgFormsPkKey=String(p.id);
+  const rpgForms=[{
+    nome:label, tipo1:tipos[0], tipo2:tipos[1],
+    abilityEntries:habEntries,
+    sprite:heroSprite, sprite_shiny:shinySprite,
+    hp:statFields.hp, attack:statFields.attack, defense:statFields.defense,
+    'special-attack':statFields['special-attack'], 'special-defense':statFields['special-defense'], speed:statFields.speed,
+    moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves}
+  }];
+  if(p.formas_alt&&p.formas_alt.length){
+    p.formas_alt.forEach(f=>{
+      const fMoves=formAltMoves(f);
+      rpgForms.push({
+        nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
+        abilityEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
+        sprite:f.sprite, sprite_shiny:f.sprite_shiny,
+        hp:f.hp, attack:f.atk, defense:f.def,
+        'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
+        moves:fMoves
+      });
+    });
+  }
+
   // ── Render HTML ──
   container.innerHTML=`
   <div class="breadcrumb">
@@ -1523,16 +1670,17 @@ async function renderRpgDetail(p, container, navToken){
           src="${heroSprite}"
           onerror="this.style.opacity='.2'" alt="${label}"
           style="${!heroSprite?'opacity:.15':''}">
-        <div class="hero-type-icons">
+        <div class="hero-type-icons" id="rpg-type-icons">
           ${tipos.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${TL[t]||t}">`).join('')}
         </div>
+        <div id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,0,rpgFormsPkKey,label)}</div>
         ${shinyHtml}
         <div class="nav-arrows">${prevHtml}${nextHtml}</div>
       </div>
 
       <div class="hero-right">
-        <div class="hero-header" style="background:${TT.dark}">
-          <div class="hero-name">${label}</div>
+        <div class="hero-header" style="background:${TT.dark}" id="rpg-hero-header">
+          <div class="hero-name" id="rpg-hero-name">${label}</div>
         </div>
         <div class="info-flat">
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> ${genus}</div>
@@ -1544,20 +1692,20 @@ async function renderRpgDetail(p, container, navToken){
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> ${eggs}</div>
           <div class="info-flat-row info-flat-abilities">
             <div class="info-flat-lbl" style="color:${TT.mid};margin-bottom:6px">ABILITIES:</div>
-            <div style="display:flex;flex-direction:column;gap:5px">${abHtml.join('')}</div>
+            <div style="display:flex;flex-direction:column;gap:5px" id="rpg-abilities-list">${abHtml.join('')}</div>
           </div>
           <div class="info-flat-row info-flat-stats">
             <span class="info-flat-lbl" style="color:${TT.mid}">BASE STATS:</span>
-            ${statsHtml}
+            <div id="rpg-stats-grid">${statsHtml}</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="section" style="border-color:${TT.mid}40">
+  <div class="section" style="border-color:${TT.mid}40" id="rpg-dmg-section">
     <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Damage Taken</div></div>
-    <div class="sec-body">${dmgHtml}</div>
+    <div class="sec-body" id="rpg-dmg-body">${dmgHtml}</div>
   </div>
 
   ${bioHtml}
@@ -1568,8 +1716,6 @@ async function renderRpgDetail(p, container, navToken){
   </div>`:''}
 
   ${renderAlfaFormsHtml(p)}
-
-  ${renderAltFormsHtml(p)}
 
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
@@ -1594,6 +1740,66 @@ async function renderRpgDetail(p, container, navToken){
   window._rpgNormalSprite=heroSprite;
   window._rpgShinySprite=shinySprite||'';
   window._rpgShinyOn=false;
+
+  // ── Troca de forma (botões abaixo da tipagem) ──
+  async function applyRpgForm(idx){
+    const f=rpgForms[idx];
+    if(!f) return;
+    const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
+    const fPrimary=fTypes[0]||'normal';
+    const fTT=TYPE_THEME[fPrimary]||TYPE_THEME.normal;
+
+    const artEl=document.getElementById('rpg-main-art');
+    if(artEl){ artEl.src=f.sprite||''; artEl.style.opacity=f.sprite?'':'.15'; }
+    window._rpgNormalSprite=f.sprite||'';
+    window._rpgShinySprite=f.sprite_shiny||'';
+    window._rpgShinyOn=false;
+    const thumb=document.getElementById('rpg-shiny-thumb');
+    if(thumb){
+      thumb.parentElement.style.display=f.sprite_shiny?'':'none';
+      thumb.classList.remove('active');
+      if(f.sprite_shiny) thumb.src=f.sprite_shiny;
+    }
+
+    const typesEl=document.getElementById('rpg-type-icons');
+    if(typesEl) typesEl.innerHTML=fTypes.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${TL[t]||t}">`).join('');
+
+    const heroLeftEl=artEl?.closest('.hero-left');
+    if(heroLeftEl){ heroLeftEl.style.background=fTT.light; heroLeftEl.style.borderColor=fTT.mid+'40'; }
+    const nameEl=document.getElementById('rpg-hero-name');
+    if(nameEl) nameEl.textContent=f.nome;
+    const headerEl=document.getElementById('rpg-hero-header');
+    if(headerEl) headerEl.style.background=fTT.dark;
+    document.title=`${f.nome} — NationalDex`;
+
+    const abEl=document.getElementById('rpg-abilities-list');
+    if(abEl){
+      abEl.innerHTML='<div style="font-size:11px;color:var(--muted)">Carregando…</div>';
+      buildAbilitiesHtmlSimple(f.abilityEntries).then(html=>{const el=document.getElementById('rpg-abilities-list');if(el)el.innerHTML=html;});
+    }
+
+    const statsEl=document.getElementById('rpg-stats-grid');
+    if(statsEl) statsEl.innerHTML=buildStatsGridHtml(f,fTT);
+
+    const dmgEl=document.getElementById('rpg-dmg-body');
+    if(dmgEl) dmgEl.innerHTML=buildDmgTakenHtml(fTypes);
+    const dmgHeaderEl=document.querySelector('#rpg-dmg-section .sec-header');
+    if(dmgHeaderEl) dmgHeaderEl.style.background=fTT.dark;
+
+    ['rpg-mv-level','rpg-mv-tm','rpg-mv-egg','rpg-mv-tutor'].forEach(elId=>{
+      const el=document.getElementById(elId);
+      if(el) el.innerHTML='<div class="moves-empty">Carregando…</div>';
+    });
+    rpgMovesTable(f.moves.level,true).then(html=>{const el=document.getElementById('rpg-mv-level');if(el)el.innerHTML=html;});
+    rpgMovesTable(f.moves.tm,false,true).then(html=>{const el=document.getElementById('rpg-mv-tm');if(el)el.innerHTML=html;});
+    rpgMovesTable(f.moves.egg,false).then(html=>{const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
+    rpgMovesTable(f.moves.tutor,false).then(html=>{const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
+
+    document.querySelectorAll(`[id^="fswbtn-${rpgFormsPkKey}-"]`).forEach(b=>b.classList.remove('active'));
+    const btn=document.getElementById(`fswbtn-${rpgFormsPkKey}-${idx}`);
+    if(btn) btn.classList.add('active');
+  }
+  window._pkFormsRegistry[rpgFormsPkKey]={forms:rpgForms, apply:applyRpgForm};
 }
 
 function toggleRpgShiny(){
@@ -1795,6 +2001,39 @@ async function renderDetail(p,s,container,navToken){
   // rodavam, aborta antes de escrever no DOM.
   if(navToken!==undefined&&navToken!==_detailNavToken)return;
 
+  // ── Formas (botões inline abaixo da tipagem) ──
+  // forms[0] = espécie base (dados oficiais já computados acima); demais
+  // vêm de dbRec.formas_alt, cada uma com seu próprio moveset ("moves").
+  const officialFormsPkKey=String(id);
+  const officialSpriteMain=`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+  const officialShinyMain=dbRec?.sprite_shiny||`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${id}.png`;
+  const officialForms=[{
+    nome:dbRec?.name||cap(p.name), tipo1:types[0], tipo2:types[1],
+    abilityEntries:sortedAbs.map(a=>({name:a.ability.name,ha:a.is_hidden})),
+    abilitiesHtmlCache:abHtml.join(''),
+    sprite:officialSpriteMain, sprite_shiny:officialShinyMain,
+    hp:p.stats.find(st=>st.stat.name==='hp')?.base_stat,
+    attack:p.stats.find(st=>st.stat.name==='attack')?.base_stat,
+    defense:p.stats.find(st=>st.stat.name==='defense')?.base_stat,
+    'special-attack':p.stats.find(st=>st.stat.name==='special-attack')?.base_stat,
+    'special-defense':p.stats.find(st=>st.stat.name==='special-defense')?.base_stat,
+    speed:p.stats.find(st=>st.stat.name==='speed')?.base_stat,
+    moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves}
+  }];
+  if(dbRec?.formas_alt&&dbRec.formas_alt.length){
+    dbRec.formas_alt.forEach(f=>{
+      const fMoves=formAltMoves(f);
+      officialForms.push({
+        nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
+        abilityEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
+        sprite:f.sprite, sprite_shiny:f.sprite_shiny,
+        hp:f.hp, attack:f.atk, defense:f.def,
+        'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
+        moves:fMoves
+      });
+    });
+  }
+
   container.innerHTML=`
   <div class="breadcrumb">
     <button onclick="goList()">NationalDex</button>
@@ -1809,9 +2048,10 @@ async function renderDetail(p,s,container,navToken){
         <img class="hero-art" id="main-art"
           src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
           onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${p.name}">
-        <div class="hero-type-icons">
+        <div class="hero-type-icons" id="type-icons-main">
           ${types.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${(TL[t]||t)}">`).join('')}
         </div>
+        <div id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(p.name))}</div>
         <div class="shiny-row">
           <img class="shiny-thumb" id="shiny-thumb"
             src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png"
@@ -1822,8 +2062,8 @@ async function renderDetail(p,s,container,navToken){
       </div>
 
       <div class="hero-right">
-        <div class="hero-header" style="background:${TT.dark}">
-          <div class="hero-name">${cap(p.name)}</div>
+        <div class="hero-header" style="background:${TT.dark}" id="hero-header-main">
+          <div class="hero-name" id="hero-name-main">${cap(p.name)}</div>
         </div>
         <div class="info-flat">
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> ${genus}</div>
@@ -1835,12 +2075,13 @@ async function renderDetail(p,s,container,navToken){
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> ${eggs}</div>
           <div class="info-flat-row info-flat-abilities">
             <div class="info-flat-lbl" style="color:${TT.mid};margin-bottom:6px">ABILITIES:</div>
-            <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;flex-direction:column;gap:5px" id="abilities-list-main">
               ${abHtml.join('')}
             </div>
           </div>
           <div class="info-flat-row info-flat-stats">
             <span class="info-flat-lbl" style="color:${TT.mid}">BASE STATS:</span>
+            <div id="stats-grid-main">
             <div class="base-stats-grid">
               ${p.stats.map(st=>`<div style="text-align:center">
                 <div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">${STAT_NAMES[st.stat.name]||st.stat.name}</div>
@@ -1851,15 +2092,16 @@ async function renderDetail(p,s,container,navToken){
                 <div style="font-size:12px;font-weight:700;color:${TT.dark}">${bst}</div>
               </div>
             </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="section" style="border-color:${TT.mid}40">
+  <div class="section" style="border-color:${TT.mid}40" id="official-dmg-section">
     <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Damage Taken</div></div>
-    <div class="sec-body">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">No modifiers</div>'}</div>
+    <div class="sec-body" id="dmg-body-main">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">No modifiers</div>'}</div>
   </div>
 
   ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length))?`<div class="section" style="border-color:${TT.mid}40">
@@ -1878,21 +2120,6 @@ async function renderDetail(p,s,container,navToken){
   </div>`:''}
 
   ${renderAlfaFormsHtml({id:p.id, formas_alfa: dbRec?.formas_alfa})}
-
-  ${renderAltFormsHtml({
-    id:p.id, name:dbRec?.name||cap(p.name), tipo1:types[0], tipo2:types[1],
-    habilidade1:regularAbs[0]?.ability.name, habilidade2:regularAbs[1]?.ability.name,
-    habilidade_oculta:hiddenAbs[0]?.ability.name,
-    hp:p.stats.find(s=>s.stat.name==='hp')?.base_stat,
-    atk:p.stats.find(s=>s.stat.name==='attack')?.base_stat,
-    def:p.stats.find(s=>s.stat.name==='defense')?.base_stat,
-    spa:p.stats.find(s=>s.stat.name==='special-attack')?.base_stat,
-    spd:p.stats.find(s=>s.stat.name==='special-defense')?.base_stat,
-    spe:p.stats.find(s=>s.stat.name==='speed')?.base_stat,
-    sprite:`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`,
-    sprite_shiny: dbRec?.sprite_shiny || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${p.id}.png`,
-    formas_alt: dbRec?.formas_alt
-  })}
 
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
@@ -1913,15 +2140,82 @@ async function renderDetail(p,s,container,navToken){
   movesTable(tmMoves,false,true).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
   movesTable(eggMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
   movesTable(tutorMoves,false).then(html=>{if(navToken!==_detailNavToken)return;const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
+
+  // Sprites ativos pro toggle de shiny (acompanha a forma selecionada)
+  window._officialActiveFormSprites={normal:officialSpriteMain,shiny:officialShinyMain};
+
+  // ── Troca de forma (botões abaixo da tipagem) ──
+  async function applyOfficialForm(idx){
+    const f=officialForms[idx];
+    if(!f) return;
+    const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
+    const fPrimary=fTypes[0]||'normal';
+    const fTT=TYPE_THEME[fPrimary]||TYPE_THEME.normal;
+
+    const artEl=document.getElementById('main-art');
+    if(artEl) artEl.src=f.sprite||'';
+    window._officialActiveFormSprites={normal:f.sprite||'',shiny:f.sprite_shiny||''};
+    shinyOn=false;
+    const thumb=document.getElementById('shiny-thumb');
+    if(thumb){
+      thumb.parentElement.style.display=f.sprite_shiny?'':'none';
+      thumb.classList.remove('active');
+      if(f.sprite_shiny) thumb.src=f.sprite_shiny;
+    }
+
+    const typesEl=document.getElementById('type-icons-main');
+    if(typesEl) typesEl.innerHTML=fTypes.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${TL[t]||t}">`).join('');
+
+    const heroLeftEl=artEl?.closest('.hero-left');
+    if(heroLeftEl){ heroLeftEl.style.background=fTT.light; heroLeftEl.style.borderColor=fTT.mid+'40'; }
+    const nameEl=document.getElementById('hero-name-main');
+    if(nameEl) nameEl.textContent=f.nome;
+    const headerEl=document.getElementById('hero-header-main');
+    if(headerEl) headerEl.style.background=fTT.dark;
+    document.title=`${f.nome} — NationalDex`;
+
+    const abEl=document.getElementById('abilities-list-main');
+    if(abEl){
+      if(idx===0&&f.abilitiesHtmlCache){
+        abEl.innerHTML=f.abilitiesHtmlCache;
+      } else {
+        abEl.innerHTML='<div style="font-size:11px;color:var(--muted)">Carregando…</div>';
+        buildAbilitiesHtmlSimple(f.abilityEntries).then(html=>{const el=document.getElementById('abilities-list-main');if(el)el.innerHTML=html;});
+      }
+    }
+
+    const statsEl=document.getElementById('stats-grid-main');
+    if(statsEl) statsEl.innerHTML=buildStatsGridHtml(f,fTT);
+
+    const dmgEl=document.getElementById('dmg-body-main');
+    if(dmgEl) dmgEl.innerHTML=buildDmgTakenHtml(fTypes);
+    const dmgHeaderEl=document.querySelector('#official-dmg-section .sec-header');
+    if(dmgHeaderEl) dmgHeaderEl.style.background=fTT.dark;
+
+    ['mv-level','mv-tm','mv-egg','mv-tutor'].forEach(elId=>{
+      const el=document.getElementById(elId);
+      if(el) el.innerHTML='<div class="moves-empty">Carregando…</div>';
+    });
+    movesTable(f.moves.level,true).then(html=>{const el=document.getElementById('mv-level');if(el)el.innerHTML=html;});
+    movesTable(f.moves.tm,false,true).then(html=>{const el=document.getElementById('mv-tm');if(el)el.innerHTML=html;});
+    movesTable(f.moves.egg,false).then(html=>{const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
+    movesTable(f.moves.tutor,false).then(html=>{const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
+
+    document.querySelectorAll(`[id^="fswbtn-${officialFormsPkKey}-"]`).forEach(b=>b.classList.remove('active'));
+    const btn=document.getElementById(`fswbtn-${officialFormsPkKey}-${idx}`);
+    if(btn) btn.classList.add('active');
+  }
+  window._pkFormsRegistry[officialFormsPkKey]={forms:officialForms, apply:applyOfficialForm};
 }
 
 function toggleShiny(id){
   shinyOn=!shinyOn;
   const a=document.getElementById('main-art');
   const thumb=document.getElementById('shiny-thumb');
+  const ov=window._officialActiveFormSprites;
   if(a)a.src=shinyOn
-    ?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${id}.png`
-    :`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+    ?(ov?.shiny||`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${id}.png`)
+    :(ov?.normal||`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`);
   if(thumb) thumb.classList.toggle('active',shinyOn);
 }
 
