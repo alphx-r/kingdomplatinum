@@ -164,7 +164,7 @@ html{
 .hero-left{background:var(--surface2);border-right:1.5px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px 48px;gap:10px;position:relative}
 .hero-dex-num-row{position:absolute;top:12px;left:14px;right:52px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .hero-dex-num{font-family:var(--font-title);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;flex-shrink:0}
-.hero-art{width:190px;height:190px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.14));transition:transform .3s}
+.hero-art{width:190px;height:190px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.14));transition:transform .3s;margin-top:5px}
 .hero-art:hover{transform:scale(1.05)}
 .shiny-row{position:absolute;top:10px;right:10px}
 .shiny-thumb{width:32px;height:32px;object-fit:contain;border-radius:50%;border:1.5px solid var(--border);padding:3px;background:var(--surface);cursor:pointer;opacity:.55;transition:all .2s;display:block}
@@ -292,7 +292,7 @@ html{
 
 /* Type icons abaixo da artwork */
 .hero-type-icons{display:flex;gap:8px;justify-content:center;margin-top:4px}
-.type-icon{width:36px;height:36px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18));transition:transform .2s}
+.type-icon{width:29px;height:29px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18));transition:transform .2s}
 .type-icon:hover{transform:scale(1.12)}
 .form-switch-row{display:flex;gap:4px;flex-wrap:wrap}
 .form-switch-btn{display:flex;align-items:center;justify-content:center;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;padding:2px;cursor:pointer;transition:all .15s ease;width:22px;height:22px;box-sizing:border-box}
@@ -622,6 +622,20 @@ function buildStatsGridHtml(statFields,TT){
       <div style="font-size:12px;font-weight:700;color:${TT.dark}">${bst||'—'}</div>
     </div>
   </div>`;
+}
+
+// Monta o conteúdo (texto + biomas) da seção "Biology" — usado tanto no
+// primeiro render quanto ao trocar de forma, já que cada forma pode ter
+// sua própria descrição/biomas (ex: cada estilo de Oricorio).
+function buildBioBodyHtml(bioText,biomas,label,types,genus,TT){
+  let html='';
+  if(bioText){
+    html+=`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
+      <strong style="color:${TT.dark}">${label}${genus?`, o ${genus}`:''}.${types&&types.length?` Um ${types.map(cap).join('/')}-type.`:''}</strong> ${bioText}
+    </div>`;
+  }
+  html+=biomasEncontradoHtml(biomas);
+  return html;
 }
 
 // Encurta o nome de uma forma pro rótulo do botão (remove o nome base
@@ -1375,15 +1389,13 @@ async function renderRpgDetail(p, container, navToken){
     if(flavor) bioText=flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' ');
   }
   const temBiomas=p.biomas&&p.biomas.length;
-  const bioHtml=(bioText||temBiomas)?`<div class="section" style="border-color:${TT.mid}40">
-    <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Biology</div></div>
-    <div class="sec-body">
-      ${bioText?`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
-        <strong style="color:${TT.dark}">${label}, o ${genus}. Um ${tipos.map(cap).join('/')}-type.</strong> ${bioText}
-      </div>`:''}
-      ${biomasEncontradoHtml(p.biomas)}
-    </div>
-  </div>`:'';
+  rpgForms[0].bio=bioText;
+  rpgForms[0].biomas=p.biomas||null;
+  const bioBodyInner=buildBioBodyHtml(bioText,p.biomas,label,tipos,genus,TT);
+  const bioHtml=`<div class="section" style="border-color:${TT.mid}40${(bioText||temBiomas)?'':';display:none'}" id="rpg-bio-section">
+    <div class="sec-header" style="background:${TT.dark}" id="rpg-bio-header"><div class="sec-title">Biology</div></div>
+    <div class="sec-body" id="rpg-bio-body">${bioBodyInner}</div>
+  </div>`;
 
   // ── Evo chain ──
   // Prioridade: p.evolucoes (cadeia curada no admin, já com os IDs regionais
@@ -1647,7 +1659,7 @@ async function renderRpgDetail(p, container, navToken){
         sprite:f.sprite, sprite_shiny:f.sprite_shiny,
         hp:f.hp, attack:f.atk, defense:f.def,
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
-        moves:fMoves
+        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null
       });
     });
   }
@@ -1785,6 +1797,14 @@ async function renderRpgDetail(p, container, navToken){
     if(dmgEl) dmgEl.innerHTML=buildDmgTakenHtml(fTypes);
     const dmgHeaderEl=document.querySelector('#rpg-dmg-section .sec-header');
     if(dmgHeaderEl) dmgHeaderEl.style.background=fTT.dark;
+
+    const bioSectionEl=document.getElementById('rpg-bio-section');
+    const bioBodyEl=document.getElementById('rpg-bio-body');
+    const bioHeaderEl=document.getElementById('rpg-bio-header');
+    const hasBio=!!(f.bio||(f.biomas&&f.biomas.length));
+    if(bioSectionEl) bioSectionEl.style.display=hasBio?'':'none';
+    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,f.nome,fTypes,genus,fTT):'';
+    if(bioHeaderEl) bioHeaderEl.style.background=fTT.dark;
 
     ['rpg-mv-level','rpg-mv-tm','rpg-mv-egg','rpg-mv-tutor'].forEach(elId=>{
       const el=document.getElementById(elId);
@@ -2018,7 +2038,8 @@ async function renderDetail(p,s,container,navToken){
     'special-attack':p.stats.find(st=>st.stat.name==='special-attack')?.base_stat,
     'special-defense':p.stats.find(st=>st.stat.name==='special-defense')?.base_stat,
     speed:p.stats.find(st=>st.stat.name==='speed')?.base_stat,
-    moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves}
+    moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves},
+    bio:flavorText, biomas:dbBiomasOfficial||null
   }];
   if(dbRec?.formas_alt&&dbRec.formas_alt.length){
     dbRec.formas_alt.forEach(f=>{
@@ -2029,7 +2050,7 @@ async function renderDetail(p,s,container,navToken){
         sprite:f.sprite, sprite_shiny:f.sprite_shiny,
         hp:f.hp, attack:f.atk, defense:f.def,
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
-        moves:fMoves
+        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null
       });
     });
   }
@@ -2106,15 +2127,13 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body" id="dmg-body-main">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">No modifiers</div>'}</div>
   </div>
 
-  ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length))?`<div class="section" style="border-color:${TT.mid}40">
-    <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Biology</div></div>
-    <div class="sec-body">
-      ${flavorText?`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
-        <strong style="color:${TT.dark}">${cap(p.name)}, o ${genus}. Um ${types.map(cap).join('/')}-type.</strong> ${flavorText}
-      </div>`:''}
-      ${biomasEncontradoHtml(dbBiomasOfficial)}
-    </div>
-  </div>`:''}
+  ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length))?`<div class="section" style="border-color:${TT.mid}40" id="official-bio-section">
+    <div class="sec-header" style="background:${TT.dark}" id="official-bio-header"><div class="sec-title">Biology</div></div>
+    <div class="sec-body" id="official-bio-body">${buildBioBodyHtml(flavorText,dbBiomasOfficial,cap(p.name),types,genus,TT)}</div>
+  </div>`:`<div class="section" style="border-color:${TT.mid}40;display:none" id="official-bio-section">
+    <div class="sec-header" style="background:${TT.dark}" id="official-bio-header"><div class="sec-title">Biology</div></div>
+    <div class="sec-body" id="official-bio-body"></div>
+  </div>`}
 
   ${evoHtml?`<div class="section" style="border-color:${TT.mid}40">
     <div class="sec-header" style="background:${TT.dark}"><div class="sec-title">Evolutionary Chain</div></div>
@@ -2193,6 +2212,14 @@ async function renderDetail(p,s,container,navToken){
     if(dmgEl) dmgEl.innerHTML=buildDmgTakenHtml(fTypes);
     const dmgHeaderEl=document.querySelector('#official-dmg-section .sec-header');
     if(dmgHeaderEl) dmgHeaderEl.style.background=fTT.dark;
+
+    const bioSectionEl=document.getElementById('official-bio-section');
+    const bioBodyEl=document.getElementById('official-bio-body');
+    const bioHeaderEl=document.getElementById('official-bio-header');
+    const hasBio=!!(f.bio||(f.biomas&&f.biomas.length));
+    if(bioSectionEl) bioSectionEl.style.display=hasBio?'':'none';
+    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,f.nome,fTypes,genus,fTT):'';
+    if(bioHeaderEl) bioHeaderEl.style.background=fTT.dark;
 
     ['mv-level','mv-tm','mv-egg','mv-tutor'].forEach(elId=>{
       const el=document.getElementById(elId);
