@@ -162,8 +162,8 @@ html{
 
 /* Hero esquerdo */
 .hero-left{background:var(--surface2);border-right:1.5px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px 48px;gap:10px;position:relative}
-.hero-dex-num-row{position:absolute;top:12px;left:14px;right:52px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.hero-dex-num{font-family:var(--font-title);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;flex-shrink:0}
+.hero-dex-num{position:absolute;top:12px;left:14px;font-family:var(--font-title);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;z-index:2}
+.form-switch-wrap{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:center}
 .hero-art{width:190px;height:190px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.14));transition:transform .3s;margin-top:15px}
 .hero-art:hover{transform:scale(1.05)}
 .shiny-row{position:absolute;top:10px;right:10px}
@@ -295,7 +295,6 @@ html{
 .type-icon{width:29px;height:29px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.18));transition:transform .2s}
 .type-icon:hover{transform:scale(1.12)}
 .form-switch-row{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
-.form-switch-wrap{flex:1;display:flex}
 .form-switch-btn{display:flex;align-items:center;justify-content:center;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;padding:2px;cursor:pointer;transition:all .15s ease;width:22px;height:22px;box-sizing:border-box}
 .form-switch-btn img{width:16px;height:16px;object-fit:contain;pointer-events:none}
 .form-switch-btn:hover{border-color:var(--brand-mid);background:var(--border)}
@@ -656,12 +655,22 @@ function formShortLabel(nome,baseName){
 // Monta a fileira de botões de forma, exibida logo abaixo dos ícones de
 // tipagem — cada botão troca em tela sprite, nome, tipos, habilidades,
 // stats, damage taken e movimentos, sem recarregar a página.
-function formSwitchButtonsHtml(forms,activeIdx,pkKey,baseName){
+// Estilo (borda/fundo) de um botão de forma — segue a MESMA cor de tema
+// já usada no resto do documento (nav, cabeçalho) na forma atualmente
+// selecionada, não a cor de tipo de cada forma individual.
+function formSwitchBtnStyle(TT,isActive){
+  return `border-color:${TT.mid}${isActive?'':'80'};background:${TT.light}${isActive?`;box-shadow:0 0 0 2px ${TT.mid}66`:''}`;
+}
+
+function formSwitchButtonsHtml(forms,activeIdx,pkKey,baseName,TT){
   if(!forms||forms.length<2) return '';
   return `<div class="form-switch-row">
-    ${forms.map((f,i)=>`<div class="form-switch-btn${i===activeIdx?' active':''}" id="fswbtn-${pkKey}-${i}" onclick="applyPokemonForm('${pkKey}',${i})" title="${(f.nome||'').replace(/"/g,'&quot;')}">
+    ${forms.map((f,i)=>{
+      const isActive=i===activeIdx;
+      return `<div class="form-switch-btn${isActive?' active':''}" id="fswbtn-${pkKey}-${i}" onclick="applyPokemonForm('${pkKey}',${i})" title="${(f.nome||'').replace(/"/g,'&quot;')}" style="${formSwitchBtnStyle(TT,isActive)}">
       ${f.sprite?`<img src="${f.sprite}" alt="${f.nome||''}" onerror="this.style.visibility='hidden'">`:''}
-    </div>`).join('')}
+    </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -1675,10 +1684,8 @@ async function renderRpgDetail(p, container, navToken){
   <div class="main-card" style="border-color:${TT.mid}40">
     <div class="hero">
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
-        <div class="hero-dex-num-row">
-          <span class="hero-dex-num">${numDisplay}</span>
-          <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,0,rpgFormsPkKey,label)}</div>
-        </div>
+        <div class="hero-dex-num">${numDisplay}</div>
+        <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,0,rpgFormsPkKey,label,TT)}</div>
         <img class="hero-art" id="rpg-main-art"
           src="${heroSprite}"
           onerror="this.style.opacity='.2'" alt="${label}"
@@ -1816,9 +1823,13 @@ async function renderRpgDetail(p, container, navToken){
     rpgMovesTable(f.moves.egg,false).then(html=>{const el=document.getElementById('rpg-mv-egg');if(el)el.innerHTML=html;});
     rpgMovesTable(f.moves.tutor,false).then(html=>{const el=document.getElementById('rpg-mv-tutor');if(el)el.innerHTML=html;});
 
-    document.querySelectorAll(`[id^="fswbtn-${rpgFormsPkKey}-"]`).forEach(b=>b.classList.remove('active'));
-    const btn=document.getElementById(`fswbtn-${rpgFormsPkKey}-${idx}`);
-    if(btn) btn.classList.add('active');
+    rpgForms.forEach((rf,i)=>{
+      const b=document.getElementById(`fswbtn-${rpgFormsPkKey}-${i}`);
+      if(!b) return;
+      const isActive=i===idx;
+      b.classList.toggle('active',isActive);
+      b.setAttribute('style',formSwitchBtnStyle(fTT,isActive));
+    });
   }
   window._pkFormsRegistry[rpgFormsPkKey]={forms:rpgForms, apply:applyRpgForm};
 }
@@ -2066,10 +2077,8 @@ async function renderDetail(p,s,container,navToken){
   <div class="main-card" style="border-color:${TT.mid}40">
     <div class="hero">
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
-        <div class="hero-dex-num-row">
-          <span class="hero-dex-num">#${String(id).padStart(3,'0')}</span>
-          <div class="form-switch-wrap" id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(p.name))}</div>
-        </div>
+        <div class="hero-dex-num">#${String(id).padStart(3,'0')}</div>
+        <div class="form-switch-wrap" id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(p.name),TT)}</div>
         <img class="hero-art" id="main-art"
           src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
           onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${p.name}">
@@ -2232,9 +2241,13 @@ async function renderDetail(p,s,container,navToken){
     movesTable(f.moves.egg,false).then(html=>{const el=document.getElementById('mv-egg');if(el)el.innerHTML=html;});
     movesTable(f.moves.tutor,false).then(html=>{const el=document.getElementById('mv-tutor');if(el)el.innerHTML=html;});
 
-    document.querySelectorAll(`[id^="fswbtn-${officialFormsPkKey}-"]`).forEach(b=>b.classList.remove('active'));
-    const btn=document.getElementById(`fswbtn-${officialFormsPkKey}-${idx}`);
-    if(btn) btn.classList.add('active');
+    officialForms.forEach((rf,i)=>{
+      const b=document.getElementById(`fswbtn-${officialFormsPkKey}-${i}`);
+      if(!b) return;
+      const isActive=i===idx;
+      b.classList.toggle('active',isActive);
+      b.setAttribute('style',formSwitchBtnStyle(fTT,isActive));
+    });
   }
   window._pkFormsRegistry[officialFormsPkKey]={forms:officialForms, apply:applyOfficialForm};
 }
