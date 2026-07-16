@@ -2508,6 +2508,10 @@ function faltAddRow(listId, data = {}) {
       <div><span class="falt-field-lbl">SPD</span><input type="number" class="falt-spe" min="1" max="255" value="${data.spe ?? ''}"></div>
       <div class="falt-bst"><span class="falt-bst-lbl">BST</span><span class="falt-bst-val">0</span></div>
     </div>
+    <div class="falt-sprite-row" style="margin-bottom:6px">
+      <input type="text" class="falt-pokeapi-slug" placeholder="slug PokeAPI (ex: oricorio-pom-pom)" style="flex:1;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)">
+      <button type="button" class="btn btn-outline btn-sm falt-pokeapi-btn" onclick="faltFetchFromPokeapi(this)" style="flex-shrink:0">🌐 Puxar do PokeAPI</button>
+    </div>
     <div class="falt-sprite-row">
       <div class="falt-sprite-prev">${data.sprite ? `<img src="${data.sprite}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:14px;opacity:.3">🖼</span>'}</div>
       <input type="file" class="falt-sprite-file" accept="image/*">
@@ -2625,6 +2629,46 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
     });
   });
   list.appendChild(row);
+}
+// Puxa o artwork oficial (normal + shiny) direto do PokeAPI pra uma forma
+// alternativa, a partir do slug do endpoint /pokemon/{slug} (ex: Oricorio
+// tem uma "espécie" por estilo: oricorio, oricorio-pom-pom, oricorio-pau,
+// oricorio-sensu — o padrão "baile" é só "oricorio").
+async function faltFetchFromPokeapi(btn) {
+  const row = btn.closest('.falt-row');
+  const input = row.querySelector('.falt-pokeapi-slug');
+  const slug = (input?.value || '').trim().toLowerCase().replace(/\s+/g, '-');
+  if (!slug) { toast('Digite o slug do PokeAPI (ex: oricorio-pom-pom).', 'err'); return; }
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Buscando…';
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${slug}`);
+    if (!res.ok) throw new Error(res.status === 404 ? 'forma não encontrada nesse slug' : `erro ${res.status}`);
+    const data = await res.json();
+    const art = data.sprites?.other?.['official-artwork'] || {};
+    const normal = art.front_default || data.sprites?.front_default || '';
+    const shiny = art.front_shiny || data.sprites?.front_shiny || '';
+    if (!normal && !shiny) throw new Error('essa forma não tem sprite cadastrado no PokeAPI');
+    if (normal) {
+      row.querySelector('.falt-sprite-url').value = normal;
+      const prev = row.querySelector('.falt-sprite-prev');
+      prev.innerHTML = `<img src="${normal}" style="width:100%;height:100%;object-fit:contain">`;
+      delete prev.dataset.b64;
+    }
+    if (shiny) {
+      row.querySelector('.falt-sprite-shiny-url').value = shiny;
+      const prevShiny = row.querySelector('.falt-sprite-shiny-prev');
+      prevShiny.innerHTML = `<img src="${shiny}" style="width:100%;height:100%;object-fit:contain">`;
+      delete prevShiny.dataset.b64;
+    }
+    toast('Sprite puxado do PokeAPI com sucesso.', 'ok');
+  } catch (e) {
+    toast('Erro ao buscar no PokeAPI: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+  }
 }
 // Lê as formas alternativas de uma lista (sem sprite ainda pendente de upload — usa URL já existente)
 function faltReadListSync(listId) {
