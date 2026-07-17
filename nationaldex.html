@@ -609,6 +609,46 @@ async function buildAbilitiesHtmlSimple(entries){
 
 // Monta o grid de base stats (mesmo layout já usado) a partir de um objeto
 // {hp,attack,defense,'special-attack','special-defense',speed}.
+// Formata o texto de gênero (campo "genero" salvo direto no banco, sem
+// depender da PokéAPI) — usado ao trocar de forma alternativa/regional,
+// já que cada forma pode ter uma proporção de gênero diferente.
+function formGenderHtml(generoRaw){
+  const g=String(generoRaw||'').trim();
+  if(!g||g==='genderless'||/sem gên/i.test(g)) return 'Sem gênero (⚲)';
+  if(g.includes(',')){
+    const parts=g.split(',');
+    const m=parseFloat(parts[0])||0;
+    const f=parseFloat(parts[1])||0;
+    if(m===0&&f===0) return 'Sem gênero (⚲)';
+    return `<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+  }
+  const mMatch=g.match(/(\d+(?:\.\d+)?)\s*%\s*(?:macho|male)/i);
+  const fMatch=g.match(/(\d+(?:\.\d+)?)\s*%\s*(?:f[êe]mea|female)/i);
+  if(mMatch||fMatch){
+    const m=mMatch?parseFloat(mMatch[1]):(fMatch?100-parseFloat(fMatch[1]):50);
+    const f=fMatch?parseFloat(fMatch[1]):100-m;
+    return `<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+  }
+  return g;
+}
+// Formata os grupos de ovo (campo "egg_group" salvo direto no banco).
+function formEggHtml(eggGroupRaw){
+  return eggGroupRaw?String(eggGroupRaw).split(',').map(s=>s.trim()).filter(Boolean).map(cap).join(', '):'—';
+}
+// Formata a classificação/genus (ex: "Fox Pokémon"), garantindo o sufixo.
+function formGenusHtml(classificationRaw){
+  const genusRaw=classificationRaw||'';
+  return genusRaw?(genusRaw.toLowerCase().endsWith('pokémon')||genusRaw.toLowerCase().endsWith('pokemon')?genusRaw:genusRaw+' Pokémon'):'Pokémon';
+}
+// Formata altura/peso (metros/kg), com fallback pro texto default já calculado
+// pra forma principal quando a forma alternativa não tem valor próprio.
+function formHeightHtml(heightVal,fallbackHtml){
+  return heightVal?heightVal+' m':fallbackHtml;
+}
+function formWeightHtml(weightVal,fallbackHtml){
+  return weightVal?weightVal+' kg':fallbackHtml;
+}
+
 function buildStatsGridHtml(statFields,TT){
   const statKeys=['hp','attack','defense','special-attack','special-defense','speed'];
   const bst=statKeys.reduce((a,k)=>a+(parseInt(statFields[k])||0),0);
@@ -1669,16 +1709,32 @@ async function renderRpgDetail(p, container, navToken){
   if(p.formas_alt&&p.formas_alt.length){
     p.formas_alt.forEach(f=>{
       const fMoves=formAltMoves(f);
+      // Habilidades: suporta tanto o formato antigo (campo único "habilidade",
+      // usado pelos estilos do Oricorio) quanto o formato completo com
+      // habilidade1/2/oculta (usado nas formas regionais migradas).
+      const fAbilityEntries=[
+        f.habilidade1?{name:f.habilidade1,ha:false}:null,
+        f.habilidade2?{name:f.habilidade2,ha:false}:null,
+        f.habilidade_oculta?{name:f.habilidade_oculta,ha:true}:null,
+        (!f.habilidade1&&!f.habilidade2&&!f.habilidade_oculta&&f.habilidade)?{name:f.habilidade,ha:false}:null
+      ].filter(Boolean);
       rpgForms.push({
         nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
-        abilityEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
+        abilityEntries:fAbilityEntries,
         sprite:f.sprite, sprite_shiny:f.sprite_shiny,
         hp:f.hp, attack:f.atk, defense:f.def,
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
-        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null
+        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null,
+        height:f.height||null, weight:f.weight||null,
+        genero:f.genero||null, classification:f.classification||null, egg_group:f.egg_group||null
       });
     });
   }
+
+  // Altura/peso da forma principal, pré-computados aqui pra servir de
+  // fallback quando uma forma alternativa/regional não tem valor próprio.
+  const baseHeightHtml=heightWeightSrc?.height?(heightWeightSrc.height/10)+' m':(p.height?p.height+' m':'—');
+  const baseWeightHtml=heightWeightSrc?.weight?(heightWeightSrc.weight/10)+' kg':(p.weight?p.weight+' kg':'—');
 
   // ── Render HTML ──
   container.innerHTML=`
@@ -1709,13 +1765,13 @@ async function renderRpgDetail(p, container, navToken){
           <div class="hero-name" id="rpg-hero-name">${label}</div>
         </div>
         <div class="info-flat">
-          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> ${genus}</div>
+          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> <span id="rpg-classification-val">${genus}</span></div>
           <div class="info-flat-row info-flat-split">
-            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> ${heightWeightSrc?.height?(heightWeightSrc.height/10)+' m':(p.height?p.height+' m':'—')}</div>
-            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> ${heightWeightSrc?.weight?(heightWeightSrc.weight/10)+' kg':(p.weight?p.weight+' kg':'—')}</div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">HEIGHT:</span> <span id="rpg-height-val">${baseHeightHtml}</span></div>
+            <div><span class="info-flat-lbl" style="color:${TT.mid}">WEIGHT:</span> <span id="rpg-weight-val">${baseWeightHtml}</span></div>
           </div>
-          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">GENDER RATIO:</span> ${genderHtml}</div>
-          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> ${eggs}</div>
+          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">GENDER RATIO:</span> <span id="rpg-gender-val">${genderHtml}</span></div>
+          <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">EGG GROUP(S):</span> <span id="rpg-egg-val">${eggs}</span></div>
           <div class="info-flat-row info-flat-abilities">
             <div class="info-flat-lbl" style="color:${TT.mid};margin-bottom:6px">ABILITIES:</div>
             <div style="display:flex;flex-direction:column;gap:5px" id="rpg-abilities-list">${abHtml.join('')}</div>
@@ -1815,6 +1871,20 @@ async function renderRpgDetail(p, container, navToken){
 
     const statsEl=document.getElementById('rpg-stats-grid');
     if(statsEl) statsEl.innerHTML=buildStatsGridHtml(f,fTT);
+
+    // Classificação/altura/peso/gênero/grupos de ovo — cada forma alternativa
+    // (regional ou não) pode ter os seus próprios; cai pro valor da forma
+    // principal quando a forma não tiver um valor específico salvo.
+    const classEl=document.getElementById('rpg-classification-val');
+    if(classEl) classEl.textContent=f.classification?formGenusHtml(f.classification):genus;
+    const heightEl=document.getElementById('rpg-height-val');
+    if(heightEl) heightEl.textContent=formHeightHtml(f.height,baseHeightHtml);
+    const weightEl=document.getElementById('rpg-weight-val');
+    if(weightEl) weightEl.textContent=formWeightHtml(f.weight,baseWeightHtml);
+    const genderEl=document.getElementById('rpg-gender-val');
+    if(genderEl) genderEl.innerHTML=f.genero?formGenderHtml(f.genero):genderHtml;
+    const eggEl=document.getElementById('rpg-egg-val');
+    if(eggEl) eggEl.innerHTML=f.egg_group?formEggHtml(f.egg_group):eggs;
 
     const dmgEl=document.getElementById('rpg-dmg-body');
     if(dmgEl) dmgEl.innerHTML=buildDmgTakenHtml(fTypes);
