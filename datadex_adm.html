@@ -598,13 +598,12 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           </div>
         </div>
 
-        <!-- Formas Alternativas (variações permanentes e independentes, ex: Oricorio Estilo Pom-Pom) -->
-        <div class="epk-card" id="epk-formas-alt-card">
-          <div class="epk-card-title" id="epk-formas-alt-card-title">◆ Formas Alternativas <span class="epk-acc-hint">(variações permanentes, ex: Oricorio Estilo Pom-Pom)</span></div>
-          <div class="epk-acc-body" id="epk-formas-alt-body" style="display:block;margin-top:0">
-            <div class="falt-list" id="epk-formas-alt"></div>
-            <button type="button" class="falt-add-btn" id="epk-formas-alt-addbtn" onclick="faltAddRowFromMain('epk-formas-alt','epk')">＋ Adicionar forma alternativa</button>
-          </div>
+        <!-- Formas Alternativas (variações permanentes e independentes, ex: Oricorio Estilo Pom-Pom).
+             Sem título/botão próprios: a navegação e a criação de formas agora
+             são feitas pelas pills no topo do modal (epk-forms-nav). Este card
+             só aparece quando uma forma específica está sendo editada. -->
+        <div class="epk-card" id="epk-formas-alt-card" style="display:none">
+          <div class="falt-list" id="epk-formas-alt"></div>
         </div>
 
         <!-- Bioma + Raridade + Condição de Captura -->
@@ -1714,7 +1713,7 @@ async function openEditPokemon(id) {
   if (document.getElementById('epk-forca-alfa')) document.getElementById('epk-forca-alfa').value = db.forca_alfa || '';
   alfaPopulateList('epk-formas-alfa', db.formas_alfa || []);
   faltPopulateList('epk-formas-alt', db.formas_alt || []);
-  epkShowBase(false); // sempre abre o modal na forma base, com todas as formas visíveis na lista
+  epkShowBase(false); // sempre abre o modal na forma base; card de formas alt. só aparece ao clicar numa pill
 
   // Gênero
   { const g=(db.genero||'').split(','); document.getElementById('epk-genero-m').value=g[0]||''; document.getElementById('epk-genero-f').value=g[1]||''; const h=document.getElementById('epk-genero-hint'); if(h){const m=parseFloat(g[0])||0,f=parseFloat(g[1])||0; h.style.display=(m===0&&f===0&&db.genero)?'block':'none';} }
@@ -2522,6 +2521,21 @@ function alfaPopulateList(listId, items = []) {
 function faltTypeOptions(selected) {
   return alfaTypeOptions(selected);
 }
+// Remove uma linha de forma alternativa. Se ela pertencer à lista de edição
+// (epk-formas-alt) e for a forma que está sendo editada no momento, volta
+// pra forma base — já que o card só fica visível enquanto uma forma está
+// selecionada, não pode sobrar vazio na tela.
+function faltRemoveRow(btn) {
+  const row = btn.closest('.falt-row');
+  const list = row?.closest('.falt-list');
+  const uid = row?.dataset.uid;
+  row?.remove();
+  if (list?.id === 'epk-formas-alt' && window._epkActiveForm === uid) {
+    epkShowBase(false);
+  } else {
+    epkRefreshFormsNav();
+  }
+}
 function faltRecalcBst(row) {
   const stats = ['hp','atk','def','spa','spd','spe'].map(s => parseInt(row.querySelector(`.falt-${s}`)?.value) || 0);
   const bst = stats.reduce((a, b) => a + b, 0);
@@ -2539,7 +2553,7 @@ function faltAddRow(listId, data = {}) {
   row.innerHTML = `
     <div class="falt-row-head">
       <input type="text" class="falt-nome" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}" oninput="epkRefreshFormsNav()">
-      <button type="button" class="falt-del" title="Remover forma" onclick="this.closest('.falt-row').remove();epkRefreshFormsNav()">✕</button>
+      <button type="button" class="falt-del" title="Remover forma" onclick="faltRemoveRow(this)">✕</button>
     </div>
     <div class="falt-grid">
       <div><span class="falt-field-lbl">Tipo Primário</span><select class="falt-tipo1">${faltTypeOptions(data.tipo1 || '')}</select></div>
@@ -2699,6 +2713,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
   });
   list.appendChild(row);
   evoPopulateList(`falt-evo-${uid}`, data.evolucoes || []);
+  return row;
 }
 // Puxa o artwork oficial (normal + shiny) direto do PokeAPI pra uma forma
 // alternativa, a partir do slug do endpoint /pokemon/{slug} (ex: Oricorio
@@ -2956,13 +2971,14 @@ function faltAddRowFromMain(listId, prefix) {
   const habInput = document.getElementById(`${prefix}-hab1`);
   const habilidade = habInput ? (abilityToSlug(habInput.value) || '') : '';
   const num = id => { const v = parseInt(document.getElementById(id)?.value); return Number.isFinite(v) ? v : ''; };
-  faltAddRow(listId, {
+  const row = faltAddRow(listId, {
     nome: '',
     tipo1, tipo2, habilidade,
     hp: num(`${prefix}-hp`), atk: num(`${prefix}-atk`), def: num(`${prefix}-def`),
     spa: num(`${prefix}-spa`), spd: num(`${prefix}-spd`), spe: num(`${prefix}-spe`)
   });
   epkRefreshFormsNav();
+  return row;
 }
 
 /* ── Pills de navegação de formas (cabeçalho do modal de edição) ──
@@ -3019,13 +3035,8 @@ function epkFlashHighlight(el) {
 function epkShowBase(scrollAndFocus = true) {
   window._epkActiveForm = null;
   document.querySelectorAll('#edit-pokemon-modal .epk-base-only').forEach(el => el.style.display = '');
-  const titleEl = document.getElementById('epk-formas-alt-card-title');
-  const accHead = document.getElementById('epk-formas-alt-acchead');
-  const addBtn = document.getElementById('epk-formas-alt-addbtn');
-  document.getElementById('epk-formas-alt-card')?.classList.remove('epk-form-fullwidth');
-  if (titleEl) titleEl.style.display = '';
-  if (accHead) accHead.style.display = '';
-  if (addBtn) addBtn.style.display = '';
+  const altCard = document.getElementById('epk-formas-alt-card');
+  if (altCard) { altCard.style.display = 'none'; altCard.classList.remove('epk-form-fullwidth'); }
   document.querySelectorAll('#epk-formas-alt .falt-row').forEach(r => r.style.display = '');
   const banner = document.getElementById('epk-form-active-banner');
   if (banner) banner.classList.remove('show');
@@ -3048,15 +3059,8 @@ function epkShowForm(uid) {
   if (!row) return;
   window._epkActiveForm = uid;
   document.querySelectorAll('#edit-pokemon-modal .epk-base-only').forEach(el => el.style.display = 'none');
-  const titleEl = document.getElementById('epk-formas-alt-card-title');
-  const accHead = document.getElementById('epk-formas-alt-acchead');
-  const accBody = document.getElementById('epk-formas-alt-body');
-  const addBtn = document.getElementById('epk-formas-alt-addbtn');
-  document.getElementById('epk-formas-alt-card')?.classList.add('epk-form-fullwidth');
-  if (titleEl) titleEl.style.display = 'none';
-  if (accHead) accHead.style.display = 'none';
-  if (accBody) accBody.style.display = 'block';
-  if (addBtn) addBtn.style.display = 'none';
+  const altCard = document.getElementById('epk-formas-alt-card');
+  if (altCard) { altCard.style.display = ''; altCard.classList.add('epk-form-fullwidth'); }
   document.querySelectorAll('#epk-formas-alt .falt-row').forEach(r => r.style.display = (r === row ? '' : 'none'));
   const nome = (row.querySelector('.falt-nome')?.value || '').trim();
   const banner = document.getElementById('epk-form-active-banner');
@@ -3074,14 +3078,9 @@ function epkShowForm(uid) {
 function epkScrollToBase() { epkShowBase(); }
 function epkScrollToForm(uid) { epkShowForm(uid); }
 function epkAddFormFromNav() {
-  faltAddRowFromMain('epk-formas-alt', 'epk'); // já chama epkRefreshFormsNav() no final
-  const rows = document.querySelectorAll('#epk-formas-alt .falt-row');
-  const last = rows[rows.length - 1];
-  if (!last) return;
-  if (window._epkActiveForm !== null) epkShowBase(false); // garante que a nova forma fique visível na lista
-  last.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  epkFlashHighlight(last);
-  last.querySelector('.falt-nome')?.focus();
+  const row = faltAddRowFromMain('epk-formas-alt', 'epk'); // já chama epkRefreshFormsNav() no final
+  if (!row) return;
+  epkShowForm(row.dataset.uid); // a nova forma some da lista quando não está sendo editada, então já abre ela direto
 }
 
 /* ══════════════════════════════════════════
