@@ -2975,6 +2975,24 @@ function faltAddRowFromMain(listId, prefix) {
    da forma selecionada, como se fossem abas. */
 window._epkActiveForm = window._epkActiveForm || null; // null = forma base, senão = uid da forma_alt ativa
 
+// Converte nomes de forma no padrão "Meowth (Alola Form)" / "Meowth Alola" /
+// "Meowth (Galar)" pro padrão compacto "(A) Meowth" — mesma convenção de
+// prefixo de região usada no resto do projeto (A/G/H/P/N). Se o nome não
+// bater com nenhuma região conhecida (ex: "Oricorio Estilo Pom-Pom"), mostra
+// o nome como está, só capitalizado.
+const EPK_REGION_CODE = { alola: 'A', galar: 'G', hisui: 'H', paldea: 'P', nendo: 'N' };
+function epkFormLabel(nome) {
+  const raw = (nome || '').trim();
+  if (!raw) return 'Forma sem nome';
+  const m = raw.match(/^(.*?)[\s(–-]+(alola|galar|hisui|paldea|nendo)\)?\s*(forma?|form)?\)?\.?$/i);
+  if (m) {
+    const base = m[1].trim().replace(/[()\s]+$/, '').trim();
+    const code = EPK_REGION_CODE[m[2].toLowerCase()];
+    if (base && code) return `(${code}) ${cap(base)}`;
+  }
+  return cap(raw);
+}
+
 function epkRefreshFormsNav() {
   const nav = document.getElementById('epk-forms-nav');
   if (!nav) return;
@@ -2984,10 +3002,10 @@ function epkRefreshFormsNav() {
   nav.innerHTML = `
     <button type="button" class="epk-form-pill epk-form-pill-base${active === null ? ' epk-form-pill-selected' : ''}" onclick="epkShowBase()" title="Editar dados da forma base">${cap(baseName)}</button>
     ${rows.map(row => {
-      const nome = (row.querySelector('.falt-nome')?.value || '').trim() || 'Forma sem nome';
+      const nome = (row.querySelector('.falt-nome')?.value || '').trim();
       const uid = row.dataset.uid || '';
       const sel = active === uid ? ' epk-form-pill-selected' : '';
-      return `<button type="button" class="epk-form-pill${sel}" onclick="epkShowForm('${uid}')" title="Editar esta forma">${cap(nome)}</button>`;
+      return `<button type="button" class="epk-form-pill${sel}" onclick="epkShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button>`;
     }).join('')}
     <button type="button" class="epk-form-pill epk-form-pill-add" onclick="epkAddFormFromNav()" title="Adicionar nova forma alternativa">＋</button>
   `;
@@ -3040,12 +3058,12 @@ function epkShowForm(uid) {
   if (accBody) accBody.style.display = 'block';
   if (addBtn) addBtn.style.display = 'none';
   document.querySelectorAll('#epk-formas-alt .falt-row').forEach(r => r.style.display = (r === row ? '' : 'none'));
-  const nome = (row.querySelector('.falt-nome')?.value || '').trim() || 'Forma sem nome';
+  const nome = (row.querySelector('.falt-nome')?.value || '').trim();
   const banner = document.getElementById('epk-form-active-banner');
   if (banner) {
     banner.classList.add('show');
     const nameEl = document.getElementById('epk-form-active-name');
-    if (nameEl) nameEl.textContent = cap(nome);
+    if (nameEl) nameEl.textContent = epkFormLabel(nome);
   }
   epkRefreshFormsNav();
   row.scrollIntoView({ behavior: 'smooth', block: 'start' });
