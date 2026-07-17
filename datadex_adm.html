@@ -410,7 +410,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" onclick="runFixOfficialPokemonNames()" title="Corrige o nome de Pokémon oficiais que ficou salvo como slug (ex: iron-crown → Iron Crown)">📝 Corrigir nomes (slug→oficial)</button>
       <button class="btn btn-outline" onclick="runImportOfficialPhysicalData()" title="Preenche altura/peso/grupo de ovo dos Pokémon oficiais que ainda estão vazios">📏 Importar altura/peso/grupo de ovo</button>
       <button class="btn btn-outline" onclick="runImportOfficialClassificacao()" title="Preenche a classificação (genus, ex: Pokémon Rato) dos Pokémon oficiais que ainda estão vazios">🏷️ Importar classificação</button>
-      <button class="btn btn-outline" onclick="runImportOfficialGenero()" title="Busca o gender_rate na PokeAPI e preenche o campo 'genero' dos Pokémon oficiais que ainda estão vazios (não sobrescreve ajustes manuais)">⚥ Atualizar gênero</button>
+      <button class="btn btn-outline" onclick="runImportOfficialGenero()" title="Busca o gender_rate na PokeAPI e SOBRESCREVE o campo 'genero' de todos os Pokémon oficiais (inclusive ajustes manuais)">⚥ Atualizar gênero</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um bioma/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
@@ -4168,19 +4168,18 @@ async function runImportOfficialPhysicalData() {
   }
 }
 
-// Preenche o campo "genero" (ex: "50,50" ou "genderless") de Pokémon oficiais
-// (id numérico) que ainda não têm esse campo no Supabase. Busca o gender_rate
-// na PokeAPI e só preenche o que estiver vazio — não sobrescreve nenhum
-// ajuste manual já cadastrado (ex: espécies com gênero atípico tipo Oricorio).
+// Atualiza o campo "genero" (ex: "50,50" ou "genderless") de todos os
+// Pokémon oficiais (id numérico) com o gender_rate da PokeAPI. SOBRESCREVE
+// qualquer valor já cadastrado, inclusive ajustes manuais.
 async function runImportOfficialGenero() {
-  if (!confirm('Isso vai buscar o gender_rate de cada Pokémon oficial (id numérico) na PokeAPI e preencher só o campo "genero" que estiver vazio no Supabase — não sobrescreve nada que já esteja cadastrado manualmente. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
+  if (!confirm('Isso vai buscar o gender_rate de cada Pokémon oficial (id numérico) na PokeAPI e SOBRESCREVER o campo "genero" no Supabase — inclusive ajustes manuais já feitos. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
 
   try {
     const rows = await sbSelect('pokemons');
-    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)) && !p.genero);
+    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)));
 
     showProgress('Importando gênero (PokeAPI)…');
     let ok = 0, fail = 0;
