@@ -177,9 +177,11 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .spr-adj-hint{font-size:10.5px;color:var(--muted);margin-top:6px;text-align:center}
 .spr-adj-btns{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap}
 
-/* Modal de edição de Pokémon: ocupa toda a tela abaixo do topnav */
-#edit-pokemon-modal{top:52px;left:0;right:0;bottom:0;padding:0;align-items:stretch;justify-content:stretch}
-#edit-pokemon-modal .modal{max-width:none;width:100%;height:100%;margin:0;border-radius:0;box-shadow:none;overflow-y:auto;padding:24px 28px;font-size:120%}
+/* Editor de Pokémon: inline dentro do painel-pokemon (substitui a lista
+   quando aberto), não é mais um overlay/modal fullscreen */
+#edit-pokemon-modal{position:static;inset:auto;background:none;z-index:auto;padding:0;display:none;align-items:stretch;justify-content:stretch}
+#edit-pokemon-modal.open{display:block}
+#edit-pokemon-modal .modal{position:relative;max-width:none;width:100%;margin:0;border-radius:var(--r);box-shadow:none;padding:20px 24px;font-size:120%;background:var(--surface);border:1.5px solid var(--border)}
 #edit-pokemon-modal .modal input,
 #edit-pokemon-modal .modal select,
 #edit-pokemon-modal .modal textarea,
@@ -408,6 +410,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" onclick="runFixOfficialPokemonNames()" title="Corrige o nome de Pokémon oficiais que ficou salvo como slug (ex: iron-crown → Iron Crown)">📝 Corrigir nomes (slug→oficial)</button>
       <button class="btn btn-outline" onclick="runImportOfficialPhysicalData()" title="Preenche altura/peso/grupo de ovo dos Pokémon oficiais que ainda estão vazios">📏 Importar altura/peso/grupo de ovo</button>
       <button class="btn btn-outline" onclick="runImportOfficialClassificacao()" title="Preenche a classificação (genus, ex: Pokémon Rato) dos Pokémon oficiais que ainda estão vazios">🏷️ Importar classificação</button>
+      <button class="btn btn-outline" onclick="runImportOfficialGenero()" title="Busca o gender_rate na PokeAPI e preenche o campo 'genero' dos Pokémon oficiais que ainda estão vazios (não sobrescreve ajustes manuais)">⚥ Atualizar gênero</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um bioma/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
@@ -421,6 +424,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
   <!-- POKÉMON -->
   <div class="panel active" id="panel-pokemon">
+    <div id="pk-list-view">
     <div class="stats-bar">
       <div class="stat-item"><span class="stat-val" id="pk-total">—</span><span class="stat-lbl">Total</span></div>
       <div class="sdiv"></div>
@@ -456,6 +460,366 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="pk-f-appr" onclick="setPkFilter('appr')">Aprovados</button>
     </div>
     <div id="pk-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando Pokémon…</div></div></div>
+    </div>
+    <!-- Editor de Pokémon: substitui a lista acima (inline, não é overlay) -->
+<div class="modal-ov" id="edit-pokemon-modal">
+  <div class="modal" style="position:relative">
+    <button type="button" onclick="closeModal('edit-pokemon-modal')" aria-label="Fechar" style="position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.15);z-index:20">✕</button>
+    <input type="hidden" id="epk-id">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <img id="epk-art-preview" src="" style="width:72px;height:72px;object-fit:contain;border-radius:8px;background:var(--surface2);flex-shrink:0" onerror="this.style.opacity='.2'">
+      <div style="flex:1">
+        <div class="modal-title" id="epk-modal-title" style="margin-bottom:4px">Editar Pokémon</div>
+        <div style="font-size:11px;color:var(--muted)" id="epk-modal-sub"></div>
+      </div>
+    </div>
+
+    <!-- Identidade: Nome + Slug + Pokédex + Classificação | Sprites -->
+    <div class="epk-card">
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start">
+        <div>
+          <div class="epk-card-title">🏷️ Identidade</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:10px;margin-bottom:10px">
+            <div>
+              <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
+              <input class="mv-meta-input" id="epk-nome" type="text" placeholder="Ex: Pikachu" style="width:100%" oninput="epkSyncSlug()">
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted);font-size:10px">(gerado automático)</span></div>
+              <input class="mv-meta-input" id="epk-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)">
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
+              <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%" oninput="epkSyncSlug()">
+            </div>
+          </div>
+          <div>
+            <div class="field-lbl pt" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(ex: Pokémon Rato, Pokémon Semente)</span></div>
+            <input class="mv-meta-input" id="epk-classificacao" type="text" placeholder="Ex: Pokémon Rato" style="width:100%">
+          </div>
+        </div>
+        <div class="two-col">
+          <div>
+            <div class="field-lbl en" style="margin-bottom:4px">Sprite do Pokémon</div>
+            <input type="file" id="epk-sprite-file" accept="image/*" onchange="epkPreviewSpriteFile(this)" style="font-size:12px;width:100%">
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+              <div id="epk-sprite-preview" style="width:48px;height:48px;background:var(--surface2);border-radius:8px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden">
+                <span style="font-size:18px;opacity:.3">🖼</span>
+              </div>
+              <input class="mv-meta-input" id="epk-sprite" type="text" placeholder="ou cole uma URL" style="flex:1;font-size:11px" oninput="epkPreviewArt()">
+              <button type="button" class="spr-adj-trigger" onclick="epkOpenSpriteAdjust(false)" title="Ajustar posição/zoom do sprite">🎯</button>
+            </div>
+          </div>
+          <div>
+            <div class="field-lbl en" style="margin-bottom:4px">✨ Sprite Shiny <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
+            <input type="file" id="epk-sprite-shiny-file" accept="image/*" onchange="epkPreviewSpriteShinyFile(this)" style="font-size:12px;width:100%">
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+              <div id="epk-sprite-shiny-preview" style="width:48px;height:48px;background:#fff8e6;border-radius:8px;border:1.5px solid #f0c040;display:flex;align-items:center;justify-content:center;overflow:hidden">
+                <span style="font-size:20px;opacity:1">✨</span>
+              </div>
+              <input class="mv-meta-input" id="epk-sprite_shiny" type="text" placeholder="ou cole uma URL" style="flex:1;font-size:11px">
+              <button type="button" class="spr-adj-trigger" onclick="epkOpenSpriteAdjust(true)" title="Ajustar posição/zoom do sprite shiny">🎯</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="epk-grid-2">
+      <!-- Coluna esquerda -->
+      <div>
+        <!-- Habilidades -->
+        <div class="epk-card">
+          <div class="epk-card-title">✦ Habilidades</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Habilidade 1</div>
+              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-hab1" list="dl-ability" autocomplete="off" placeholder="— Selecione —"><span class="cb-arrow">▾</span></div>
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Habilidade 2</div>
+              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-hab2" list="dl-ability" autocomplete="off" placeholder="— (opcional) —"><span class="cb-arrow">▾</span></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Hidden Ability</div>
+              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-haboculta" list="dl-ability" autocomplete="off" placeholder="— (opcional) —"><span class="cb-arrow">▾</span></div>
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Mega Ability</div>
+              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-habmega" list="dl-ability" autocomplete="off" placeholder="— (opcional) —"><span class="cb-arrow">▾</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Força Alfa + Formas Alfa (gimmicks: Mega, Gigantamax, Terastalização, etc) -->
+        <div class="epk-card">
+          <div class="epk-card-title">🌀 Forma Alfa</div>
+          <div style="margin-bottom:10px">
+            <div class="field-lbl en" style="margin-bottom:4px">Força Alfa <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
+            <input class="mv-meta-input" id="epk-forca-alfa" type="text" placeholder="Ex: Mega Evolução, Gigantamax" style="width:100%">
+          </div>
+          <div class="epk-acc-head" onclick="epkToggleAcc(this)">
+            <span class="field-lbl en">Formas Alfa detalhadas <span class="epk-acc-hint">(uma forma completa por gimmick)</span></span>
+            <span class="epk-acc-chev">▾</span>
+          </div>
+          <div class="epk-acc-body">
+            <div class="alfa-list" id="epk-formas-alfa"></div>
+            <button type="button" class="alfa-add-btn" onclick="alfaAddRow('epk-formas-alfa')">＋ Adicionar forma alfa</button>
+          </div>
+        </div>
+
+        <!-- Formas Alternativas (variações permanentes e independentes, ex: Oricorio Estilo Pom-Pom) -->
+        <div class="epk-card">
+          <div class="epk-card-title">◆ Formas Alternativas</div>
+          <div class="epk-acc-head" onclick="epkToggleAcc(this)">
+            <span class="field-lbl en">Formas alternativas <span class="epk-acc-hint">(variações permanentes, ex: Oricorio Estilo Pom-Pom)</span></span>
+            <span class="epk-acc-chev">▾</span>
+          </div>
+          <div class="epk-acc-body">
+            <div class="falt-list" id="epk-formas-alt"></div>
+            <button type="button" class="falt-add-btn" onclick="faltAddRowFromMain('epk-formas-alt','epk')">＋ Adicionar forma alternativa</button>
+          </div>
+        </div>
+
+        <!-- Bioma + Raridade + Condição de Captura -->
+        <div class="epk-card">
+          <div class="epk-card-title">🗺️ Bioma(s), raridade e condição</div>
+          <div id="epk-biomas-tags" style="margin-bottom:8px"></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select class="mv-meta-input" id="epk-bioma-select" style="width:100%"><option value="">— Carregando —</option></select>
+            <button type="button" class="btn btn-primary btn-sm" onclick="epkAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Bioma</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada bioma adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro do bioma.</div>
+        </div>
+
+        <!-- Estação -->
+        <div class="epk-card">
+          <div class="epk-card-title">🌦️ Estação</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Estação exclusiva</div>
+              <select class="mv-meta-input" id="epk-estacao" style="width:100%">
+                <option value="">— Aparece em qualquer estação —</option>
+                <option value="primavera">🌱 Primavera</option>
+                <option value="verao">☀️ Verão</option>
+                <option value="outono">🍂 Outono</option>
+                <option value="inverno">❄️ Inverno</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Boost sazonal</div>
+              <select class="mv-meta-input" id="epk-estacao-boost" style="width:100%">
+                <option value="">— Sem boost —</option>
+                <option value="primavera">🌱 Primavera</option>
+                <option value="verao">☀️ Verão</option>
+                <option value="outono">🍂 Outono</option>
+                <option value="inverno">❄️ Inverno</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Exclusiva: só aparece nessa estação. Boost: aparece sempre, mas com raridade promovida durante a estação.</div>
+        </div>
+      </div>
+
+      <!-- Coluna direita -->
+      <div>
+        <!-- Gênero + Weight + Height + Egg Group -->
+        <div class="epk-card">
+          <div class="epk-card-title">📐 Físico</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(% M / % F)</span></div>
+              <div style="display:flex;gap:5px;align-items:center">
+                <input class="mv-meta-input" id="epk-genero-m" type="number" min="0" max="100" step="0.1" placeholder="♂ %" style="width:50%;text-align:center" oninput="genderAutoComplete('epk-genero-m','epk-genero-f','epk-genero-hint')">
+                <input class="mv-meta-input" id="epk-genero-f" type="number" min="0" max="100" step="0.1" placeholder="♀ %" style="width:50%;text-align:center" oninput="genderAutoComplete('epk-genero-f','epk-genero-m','epk-genero-hint')">
+              </div>
+              <div id="epk-genero-hint" style="display:none;font-size:10px;color:var(--muted);margin-top:3px">⚲ Genderless</div>
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Egg Group</div>
+              <input class="mv-meta-input" id="epk-egg-group" type="text" placeholder="Ex: Field, Fairy" style="width:100%">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Weight</div>
+              <div style="display:flex;align-items:center;gap:5px">
+                <input class="mv-meta-input" id="epk-weight" type="number" min="0" step="0.1" placeholder="Ex: 6.9" style="flex:1;text-align:center">
+                <span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">kg</span>
+              </div>
+            </div>
+            <div>
+              <div class="field-lbl en" style="margin-bottom:4px">Height</div>
+              <div style="display:flex;align-items:center;gap:5px">
+                <input class="mv-meta-input" id="epk-height" type="number" min="0" step="0.01" placeholder="Ex: 0.4" style="flex:1;text-align:center" onblur="epkNormalizeHeight(this)">
+                <span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">m</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tipos -->
+        <div class="epk-card">
+          <div class="epk-card-title">🏷️ Tipos</div>
+          <div style="margin-bottom:10px">
+            <div class="field-lbl en" style="margin-bottom:4px">Primário <span style="color:var(--red)">*</span></div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px" id="epk-tipo1-wrap">
+              <span class="tipo-tag" data-tipo="fire" onclick="epkToggleTipo1(this)">🔥 Fire</span>
+              <span class="tipo-tag" data-tipo="water" onclick="epkToggleTipo1(this)">💧 Water</span>
+              <span class="tipo-tag" data-tipo="grass" onclick="epkToggleTipo1(this)">🌿 Grass</span>
+              <span class="tipo-tag" data-tipo="electric" onclick="epkToggleTipo1(this)">⚡ Electric</span>
+              <span class="tipo-tag" data-tipo="normal" onclick="epkToggleTipo1(this)">⬜ Normal</span>
+              <span class="tipo-tag" data-tipo="psychic" onclick="epkToggleTipo1(this)">🔮 Psychic</span>
+              <span class="tipo-tag" data-tipo="steel" onclick="epkToggleTipo1(this)">⚙️ Steel</span>
+              <span class="tipo-tag" data-tipo="fairy" onclick="epkToggleTipo1(this)">🌸 Fairy</span>
+              <span class="tipo-tag" data-tipo="ghost" onclick="epkToggleTipo1(this)">👻 Ghost</span>
+              <span class="tipo-tag" data-tipo="dragon" onclick="epkToggleTipo1(this)">🐉 Dragon</span>
+              <span class="tipo-tag" data-tipo="ice" onclick="epkToggleTipo1(this)">❄️ Ice</span>
+              <span class="tipo-tag" data-tipo="fighting" onclick="epkToggleTipo1(this)">🥊 Fighting</span>
+              <span class="tipo-tag" data-tipo="rock" onclick="epkToggleTipo1(this)">🪨 Rock</span>
+              <span class="tipo-tag" data-tipo="ground" onclick="epkToggleTipo1(this)">🌍 Ground</span>
+              <span class="tipo-tag" data-tipo="poison" onclick="epkToggleTipo1(this)">☠️ Poison</span>
+              <span class="tipo-tag" data-tipo="bug" onclick="epkToggleTipo1(this)">🐛 Bug</span>
+              <span class="tipo-tag" data-tipo="dark" onclick="epkToggleTipo1(this)">🌑 Dark</span>
+              <span class="tipo-tag" data-tipo="flying" onclick="epkToggleTipo1(this)">🦅 Flying</span>
+              <span class="tipo-tag" data-tipo="light" onclick="epkToggleTipo1(this)">✨ Light</span>
+              <span class="tipo-tag" data-tipo="scent" onclick="epkToggleTipo1(this)">🌸 Scent</span>
+            </div>
+          </div>
+          <div>
+            <div class="field-lbl en" style="margin-bottom:4px">Secundário <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px" id="epk-tipo2-wrap">
+              <span class="tipo-tag sel" data-tipo="" onclick="epkToggleTipo2(this)">— Nenhum —</span>
+              <span class="tipo-tag" data-tipo="fire" onclick="epkToggleTipo2(this)">🔥 Fire</span>
+              <span class="tipo-tag" data-tipo="water" onclick="epkToggleTipo2(this)">💧 Water</span>
+              <span class="tipo-tag" data-tipo="grass" onclick="epkToggleTipo2(this)">🌿 Grass</span>
+              <span class="tipo-tag" data-tipo="electric" onclick="epkToggleTipo2(this)">⚡ Electric</span>
+              <span class="tipo-tag" data-tipo="normal" onclick="epkToggleTipo2(this)">⬜ Normal</span>
+              <span class="tipo-tag" data-tipo="psychic" onclick="epkToggleTipo2(this)">🔮 Psychic</span>
+              <span class="tipo-tag" data-tipo="steel" onclick="epkToggleTipo2(this)">⚙️ Steel</span>
+              <span class="tipo-tag" data-tipo="fairy" onclick="epkToggleTipo2(this)">🌸 Fairy</span>
+              <span class="tipo-tag" data-tipo="ghost" onclick="epkToggleTipo2(this)">👻 Ghost</span>
+              <span class="tipo-tag" data-tipo="dragon" onclick="epkToggleTipo2(this)">🐉 Dragon</span>
+              <span class="tipo-tag" data-tipo="ice" onclick="epkToggleTipo2(this)">❄️ Ice</span>
+              <span class="tipo-tag" data-tipo="fighting" onclick="epkToggleTipo2(this)">🥊 Fighting</span>
+              <span class="tipo-tag" data-tipo="rock" onclick="epkToggleTipo2(this)">🪨 Rock</span>
+              <span class="tipo-tag" data-tipo="ground" onclick="epkToggleTipo2(this)">🌍 Ground</span>
+              <span class="tipo-tag" data-tipo="poison" onclick="epkToggleTipo2(this)">☠️ Poison</span>
+              <span class="tipo-tag" data-tipo="bug" onclick="epkToggleTipo2(this)">🐛 Bug</span>
+              <span class="tipo-tag" data-tipo="dark" onclick="epkToggleTipo2(this)">🌑 Dark</span>
+              <span class="tipo-tag" data-tipo="flying" onclick="epkToggleTipo2(this)">🦅 Flying</span>
+              <span class="tipo-tag" data-tipo="light" onclick="epkToggleTipo2(this)">✨ Light</span>
+              <span class="tipo-tag" data-tipo="scent" onclick="epkToggleTipo2(this)">🌸 Scent</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bio -->
+    <div class="epk-card">
+      <div class="epk-card-title">📝 Biografia</div>
+      <textarea class="field-pt" id="epk-bio_pt" rows="3" placeholder="Descrição…" oninput="markFilled(this)" style="width:100%"></textarea>
+    </div>
+
+    <!-- Moveset -->
+    <div class="epk-card">
+      <div class="epk-acc-head" onclick="epkToggleAcc(this)">
+        <span class="epk-card-title" style="margin-bottom:0">⚡ Moveset</span>
+        <span class="epk-acc-chev">▾</span>
+      </div>
+      <div class="epk-acc-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+        <div class="moveset-section" style="margin-bottom:0">
+          <div class="moveset-section-title" onclick="movesetToggleSection(this)">Por Nível<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
+          <div class="moveset-list" id="epk-moves-level"></div>
+          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-level','level')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_level_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_level_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+Flamethrower
+Fire Blast
+Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-level','level','epk_moves_level_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_level_bulk')">Cancelar</button></div></div>
+        </div>
+        <div class="moveset-section" style="margin-bottom:0">
+          <div class="moveset-section-title" onclick="movesetToggleSection(this)">TM<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
+          <div class="moveset-list" id="epk-moves-tm"></div>
+          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-tm','tm')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_tm_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_tm_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+Flamethrower
+Fire Blast
+Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-tm','tm','epk_moves_tm_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_tm_bulk')">Cancelar</button></div></div>
+        </div>
+        <div class="moveset-section" style="margin-bottom:0">
+          <div class="moveset-section-title" onclick="movesetToggleSection(this)">Egg Moves<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
+          <div class="moveset-list" id="epk-moves-egg"></div>
+          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-egg','egg')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_egg_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_egg_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+Flamethrower
+Fire Blast
+Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-egg','egg','epk_moves_egg_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_egg_bulk')">Cancelar</button></div></div>
+        </div>
+        <div class="moveset-section" style="margin-bottom:0">
+          <div class="moveset-section-title" onclick="movesetToggleSection(this)">Tutor Moves<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
+          <div class="moveset-list" id="epk-moves-tutor"></div>
+          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-tutor','tutor')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_tutor_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_tutor_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+Flamethrower
+Fire Blast
+Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-tutor','tutor','epk_moves_tutor_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_tutor_bulk')">Cancelar</button></div></div>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <!-- Evolutionary Chain -->
+    <div class="epk-card">
+      <div class="epk-acc-head" onclick="epkToggleAcc(this)">
+        <span class="epk-card-title" style="margin-bottom:0">🔗 Evolutionary Chain <span class="epk-acc-hint">— cada estágio em ordem, inclua este Pokémon</span></span>
+        <span class="epk-acc-chev">▾</span>
+      </div>
+      <div class="epk-acc-body">
+        <div id="epk-evo-list"></div>
+        <button type="button" class="moveset-add-btn" style="margin-top:6px" onclick="evoAddRow('epk-evo-list')">＋ Adicionar estágio</button>
+      </div>
+    </div>
+
+    <!-- Base Stats -->
+    <div class="epk-card" style="margin-bottom:16px">
+      <div class="epk-card-title">📊 Base Stats</div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">HP</div>
+          <input class="mv-meta-input" id="epk-hp" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Ataque</div>
+          <input class="mv-meta-input" id="epk-atk" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Defesa</div>
+          <input class="mv-meta-input" id="epk-def" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Atq. Esp.</div>
+          <input class="mv-meta-input" id="epk-spa" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Def. Esp.</div>
+          <input class="mv-meta-input" id="epk-spd" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Velocidade</div>
+          <input class="mv-meta-input" id="epk-spe" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <span class="save-ind" id="epk-ind" style="margin-right:auto">✓ Salvo!</span>
+      <button class="btn btn-outline" style="color:#c0392b;border-color:#c0392b;margin-right:auto" onclick="deletePkModal()">🗑 Deletar</button>
+      <button class="btn btn-outline" onclick="closeModal('edit-pokemon-modal')">Cancelar</button>
+      <button class="btn btn-outline btn-sm" onclick="savePkModal(false)">💾 Rascunho</button>
+      <button class="btn btn-success" onclick="savePkModal(true)">✓ Aprovar e publicar</button>
+    </div>
+  </div>
+</div>
   </div>
 
   <!-- ABILITIES -->
@@ -892,364 +1256,6 @@ Caterpie"></textarea>
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeModal('bulk-transfer-modal')">Cancelar</button>
       <button class="btn btn-success" id="bt-apply-btn" onclick="applyBulkTransfer()">✓ Aplicar transferência</button>
-    </div>
-  </div>
-</div>
-<div class="modal-ov" id="edit-pokemon-modal">
-  <div class="modal" style="position:relative">
-    <button type="button" onclick="closeModal('edit-pokemon-modal')" aria-label="Fechar" style="position:fixed;top:64px;right:24px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.15);z-index:8500">✕</button>
-    <input type="hidden" id="epk-id">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <img id="epk-art-preview" src="" style="width:72px;height:72px;object-fit:contain;border-radius:8px;background:var(--surface2);flex-shrink:0" onerror="this.style.opacity='.2'">
-      <div style="flex:1">
-        <div class="modal-title" id="epk-modal-title" style="margin-bottom:4px">Editar Pokémon</div>
-        <div style="font-size:11px;color:var(--muted)" id="epk-modal-sub"></div>
-      </div>
-    </div>
-
-    <!-- Identidade: Nome + Slug + Pokédex + Classificação | Sprites -->
-    <div class="epk-card">
-      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start">
-        <div>
-          <div class="epk-card-title">🏷️ Identidade</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:10px;margin-bottom:10px">
-            <div>
-              <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
-              <input class="mv-meta-input" id="epk-nome" type="text" placeholder="Ex: Pikachu" style="width:100%" oninput="epkSyncSlug()">
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted);font-size:10px">(gerado automático)</span></div>
-              <input class="mv-meta-input" id="epk-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)">
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
-              <input class="mv-meta-input" id="epk-pokedex" type="text" placeholder="Ex: N0001" style="width:100%" oninput="epkSyncSlug()">
-            </div>
-          </div>
-          <div>
-            <div class="field-lbl pt" style="margin-bottom:4px">Classificação <span style="font-weight:400;color:var(--muted);font-size:10px">(ex: Pokémon Rato, Pokémon Semente)</span></div>
-            <input class="mv-meta-input" id="epk-classificacao" type="text" placeholder="Ex: Pokémon Rato" style="width:100%">
-          </div>
-        </div>
-        <div class="two-col">
-          <div>
-            <div class="field-lbl en" style="margin-bottom:4px">Sprite do Pokémon</div>
-            <input type="file" id="epk-sprite-file" accept="image/*" onchange="epkPreviewSpriteFile(this)" style="font-size:12px;width:100%">
-            <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-              <div id="epk-sprite-preview" style="width:48px;height:48px;background:var(--surface2);border-radius:8px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden">
-                <span style="font-size:18px;opacity:.3">🖼</span>
-              </div>
-              <input class="mv-meta-input" id="epk-sprite" type="text" placeholder="ou cole uma URL" style="flex:1;font-size:11px" oninput="epkPreviewArt()">
-              <button type="button" class="spr-adj-trigger" onclick="epkOpenSpriteAdjust(false)" title="Ajustar posição/zoom do sprite">🎯</button>
-            </div>
-          </div>
-          <div>
-            <div class="field-lbl en" style="margin-bottom:4px">✨ Sprite Shiny <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
-            <input type="file" id="epk-sprite-shiny-file" accept="image/*" onchange="epkPreviewSpriteShinyFile(this)" style="font-size:12px;width:100%">
-            <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-              <div id="epk-sprite-shiny-preview" style="width:48px;height:48px;background:#fff8e6;border-radius:8px;border:1.5px solid #f0c040;display:flex;align-items:center;justify-content:center;overflow:hidden">
-                <span style="font-size:20px;opacity:1">✨</span>
-              </div>
-              <input class="mv-meta-input" id="epk-sprite_shiny" type="text" placeholder="ou cole uma URL" style="flex:1;font-size:11px">
-              <button type="button" class="spr-adj-trigger" onclick="epkOpenSpriteAdjust(true)" title="Ajustar posição/zoom do sprite shiny">🎯</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="epk-grid-2">
-      <!-- Coluna esquerda -->
-      <div>
-        <!-- Habilidades -->
-        <div class="epk-card">
-          <div class="epk-card-title">✦ Habilidades</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Habilidade 1</div>
-              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-hab1" list="dl-ability" autocomplete="off" placeholder="— Selecione —"><span class="cb-arrow">▾</span></div>
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Habilidade 2</div>
-              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-hab2" list="dl-ability" autocomplete="off" placeholder="— (opcional) —"><span class="cb-arrow">▾</span></div>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Hidden Ability</div>
-              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-haboculta" list="dl-ability" autocomplete="off" placeholder="— (opcional) —"><span class="cb-arrow">▾</span></div>
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Mega Ability</div>
-              <div class="cb-wrap"><input class="cb-input mv-meta-input" id="epk-habmega" list="dl-ability" autocomplete="off" placeholder="— (opcional) —"><span class="cb-arrow">▾</span></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Força Alfa + Formas Alfa (gimmicks: Mega, Gigantamax, Terastalização, etc) -->
-        <div class="epk-card">
-          <div class="epk-card-title">🌀 Forma Alfa</div>
-          <div style="margin-bottom:10px">
-            <div class="field-lbl en" style="margin-bottom:4px">Força Alfa <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
-            <input class="mv-meta-input" id="epk-forca-alfa" type="text" placeholder="Ex: Mega Evolução, Gigantamax" style="width:100%">
-          </div>
-          <div class="epk-acc-head" onclick="epkToggleAcc(this)">
-            <span class="field-lbl en">Formas Alfa detalhadas <span class="epk-acc-hint">(uma forma completa por gimmick)</span></span>
-            <span class="epk-acc-chev">▾</span>
-          </div>
-          <div class="epk-acc-body">
-            <div class="alfa-list" id="epk-formas-alfa"></div>
-            <button type="button" class="alfa-add-btn" onclick="alfaAddRow('epk-formas-alfa')">＋ Adicionar forma alfa</button>
-          </div>
-        </div>
-
-        <!-- Formas Alternativas (variações permanentes e independentes, ex: Oricorio Estilo Pom-Pom) -->
-        <div class="epk-card">
-          <div class="epk-card-title">◆ Formas Alternativas</div>
-          <div class="epk-acc-head" onclick="epkToggleAcc(this)">
-            <span class="field-lbl en">Formas alternativas <span class="epk-acc-hint">(variações permanentes, ex: Oricorio Estilo Pom-Pom)</span></span>
-            <span class="epk-acc-chev">▾</span>
-          </div>
-          <div class="epk-acc-body">
-            <div class="falt-list" id="epk-formas-alt"></div>
-            <button type="button" class="falt-add-btn" onclick="faltAddRowFromMain('epk-formas-alt','epk')">＋ Adicionar forma alternativa</button>
-          </div>
-        </div>
-
-        <!-- Bioma + Raridade + Condição de Captura -->
-        <div class="epk-card">
-          <div class="epk-card-title">🗺️ Bioma(s), raridade e condição</div>
-          <div id="epk-biomas-tags" style="margin-bottom:8px"></div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <select class="mv-meta-input" id="epk-bioma-select" style="width:100%"><option value="">— Carregando —</option></select>
-            <button type="button" class="btn btn-primary btn-sm" onclick="epkAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Bioma</button>
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada bioma adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro do bioma.</div>
-        </div>
-
-        <!-- Estação -->
-        <div class="epk-card">
-          <div class="epk-card-title">🌦️ Estação</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Estação exclusiva</div>
-              <select class="mv-meta-input" id="epk-estacao" style="width:100%">
-                <option value="">— Aparece em qualquer estação —</option>
-                <option value="primavera">🌱 Primavera</option>
-                <option value="verao">☀️ Verão</option>
-                <option value="outono">🍂 Outono</option>
-                <option value="inverno">❄️ Inverno</option>
-              </select>
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Boost sazonal</div>
-              <select class="mv-meta-input" id="epk-estacao-boost" style="width:100%">
-                <option value="">— Sem boost —</option>
-                <option value="primavera">🌱 Primavera</option>
-                <option value="verao">☀️ Verão</option>
-                <option value="outono">🍂 Outono</option>
-                <option value="inverno">❄️ Inverno</option>
-              </select>
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:6px">Exclusiva: só aparece nessa estação. Boost: aparece sempre, mas com raridade promovida durante a estação.</div>
-        </div>
-      </div>
-
-      <!-- Coluna direita -->
-      <div>
-        <!-- Gênero + Weight + Height + Egg Group -->
-        <div class="epk-card">
-          <div class="epk-card-title">📐 Físico</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Gênero <span style="font-weight:400;color:var(--muted)">(% M / % F)</span></div>
-              <div style="display:flex;gap:5px;align-items:center">
-                <input class="mv-meta-input" id="epk-genero-m" type="number" min="0" max="100" step="0.1" placeholder="♂ %" style="width:50%;text-align:center" oninput="genderAutoComplete('epk-genero-m','epk-genero-f','epk-genero-hint')">
-                <input class="mv-meta-input" id="epk-genero-f" type="number" min="0" max="100" step="0.1" placeholder="♀ %" style="width:50%;text-align:center" oninput="genderAutoComplete('epk-genero-f','epk-genero-m','epk-genero-hint')">
-              </div>
-              <div id="epk-genero-hint" style="display:none;font-size:10px;color:var(--muted);margin-top:3px">⚲ Genderless</div>
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Egg Group</div>
-              <input class="mv-meta-input" id="epk-egg-group" type="text" placeholder="Ex: Field, Fairy" style="width:100%">
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Weight</div>
-              <div style="display:flex;align-items:center;gap:5px">
-                <input class="mv-meta-input" id="epk-weight" type="number" min="0" step="0.1" placeholder="Ex: 6.9" style="flex:1;text-align:center">
-                <span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">kg</span>
-              </div>
-            </div>
-            <div>
-              <div class="field-lbl en" style="margin-bottom:4px">Height</div>
-              <div style="display:flex;align-items:center;gap:5px">
-                <input class="mv-meta-input" id="epk-height" type="number" min="0" step="0.01" placeholder="Ex: 0.4" style="flex:1;text-align:center" onblur="epkNormalizeHeight(this)">
-                <span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">m</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tipos -->
-        <div class="epk-card">
-          <div class="epk-card-title">🏷️ Tipos</div>
-          <div style="margin-bottom:10px">
-            <div class="field-lbl en" style="margin-bottom:4px">Primário <span style="color:var(--red)">*</span></div>
-            <div style="display:flex;flex-wrap:wrap;gap:4px" id="epk-tipo1-wrap">
-              <span class="tipo-tag" data-tipo="fire" onclick="epkToggleTipo1(this)">🔥 Fire</span>
-              <span class="tipo-tag" data-tipo="water" onclick="epkToggleTipo1(this)">💧 Water</span>
-              <span class="tipo-tag" data-tipo="grass" onclick="epkToggleTipo1(this)">🌿 Grass</span>
-              <span class="tipo-tag" data-tipo="electric" onclick="epkToggleTipo1(this)">⚡ Electric</span>
-              <span class="tipo-tag" data-tipo="normal" onclick="epkToggleTipo1(this)">⬜ Normal</span>
-              <span class="tipo-tag" data-tipo="psychic" onclick="epkToggleTipo1(this)">🔮 Psychic</span>
-              <span class="tipo-tag" data-tipo="steel" onclick="epkToggleTipo1(this)">⚙️ Steel</span>
-              <span class="tipo-tag" data-tipo="fairy" onclick="epkToggleTipo1(this)">🌸 Fairy</span>
-              <span class="tipo-tag" data-tipo="ghost" onclick="epkToggleTipo1(this)">👻 Ghost</span>
-              <span class="tipo-tag" data-tipo="dragon" onclick="epkToggleTipo1(this)">🐉 Dragon</span>
-              <span class="tipo-tag" data-tipo="ice" onclick="epkToggleTipo1(this)">❄️ Ice</span>
-              <span class="tipo-tag" data-tipo="fighting" onclick="epkToggleTipo1(this)">🥊 Fighting</span>
-              <span class="tipo-tag" data-tipo="rock" onclick="epkToggleTipo1(this)">🪨 Rock</span>
-              <span class="tipo-tag" data-tipo="ground" onclick="epkToggleTipo1(this)">🌍 Ground</span>
-              <span class="tipo-tag" data-tipo="poison" onclick="epkToggleTipo1(this)">☠️ Poison</span>
-              <span class="tipo-tag" data-tipo="bug" onclick="epkToggleTipo1(this)">🐛 Bug</span>
-              <span class="tipo-tag" data-tipo="dark" onclick="epkToggleTipo1(this)">🌑 Dark</span>
-              <span class="tipo-tag" data-tipo="flying" onclick="epkToggleTipo1(this)">🦅 Flying</span>
-              <span class="tipo-tag" data-tipo="light" onclick="epkToggleTipo1(this)">✨ Light</span>
-              <span class="tipo-tag" data-tipo="scent" onclick="epkToggleTipo1(this)">🌸 Scent</span>
-            </div>
-          </div>
-          <div>
-            <div class="field-lbl en" style="margin-bottom:4px">Secundário <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
-            <div style="display:flex;flex-wrap:wrap;gap:4px" id="epk-tipo2-wrap">
-              <span class="tipo-tag sel" data-tipo="" onclick="epkToggleTipo2(this)">— Nenhum —</span>
-              <span class="tipo-tag" data-tipo="fire" onclick="epkToggleTipo2(this)">🔥 Fire</span>
-              <span class="tipo-tag" data-tipo="water" onclick="epkToggleTipo2(this)">💧 Water</span>
-              <span class="tipo-tag" data-tipo="grass" onclick="epkToggleTipo2(this)">🌿 Grass</span>
-              <span class="tipo-tag" data-tipo="electric" onclick="epkToggleTipo2(this)">⚡ Electric</span>
-              <span class="tipo-tag" data-tipo="normal" onclick="epkToggleTipo2(this)">⬜ Normal</span>
-              <span class="tipo-tag" data-tipo="psychic" onclick="epkToggleTipo2(this)">🔮 Psychic</span>
-              <span class="tipo-tag" data-tipo="steel" onclick="epkToggleTipo2(this)">⚙️ Steel</span>
-              <span class="tipo-tag" data-tipo="fairy" onclick="epkToggleTipo2(this)">🌸 Fairy</span>
-              <span class="tipo-tag" data-tipo="ghost" onclick="epkToggleTipo2(this)">👻 Ghost</span>
-              <span class="tipo-tag" data-tipo="dragon" onclick="epkToggleTipo2(this)">🐉 Dragon</span>
-              <span class="tipo-tag" data-tipo="ice" onclick="epkToggleTipo2(this)">❄️ Ice</span>
-              <span class="tipo-tag" data-tipo="fighting" onclick="epkToggleTipo2(this)">🥊 Fighting</span>
-              <span class="tipo-tag" data-tipo="rock" onclick="epkToggleTipo2(this)">🪨 Rock</span>
-              <span class="tipo-tag" data-tipo="ground" onclick="epkToggleTipo2(this)">🌍 Ground</span>
-              <span class="tipo-tag" data-tipo="poison" onclick="epkToggleTipo2(this)">☠️ Poison</span>
-              <span class="tipo-tag" data-tipo="bug" onclick="epkToggleTipo2(this)">🐛 Bug</span>
-              <span class="tipo-tag" data-tipo="dark" onclick="epkToggleTipo2(this)">🌑 Dark</span>
-              <span class="tipo-tag" data-tipo="flying" onclick="epkToggleTipo2(this)">🦅 Flying</span>
-              <span class="tipo-tag" data-tipo="light" onclick="epkToggleTipo2(this)">✨ Light</span>
-              <span class="tipo-tag" data-tipo="scent" onclick="epkToggleTipo2(this)">🌸 Scent</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bio -->
-    <div class="epk-card">
-      <div class="epk-card-title">📝 Biografia</div>
-      <textarea class="field-pt" id="epk-bio_pt" rows="3" placeholder="Descrição…" oninput="markFilled(this)" style="width:100%"></textarea>
-    </div>
-
-    <!-- Moveset -->
-    <div class="epk-card">
-      <div class="epk-acc-head" onclick="epkToggleAcc(this)">
-        <span class="epk-card-title" style="margin-bottom:0">⚡ Moveset</span>
-        <span class="epk-acc-chev">▾</span>
-      </div>
-      <div class="epk-acc-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
-        <div class="moveset-section" style="margin-bottom:0">
-          <div class="moveset-section-title" onclick="movesetToggleSection(this)">Por Nível<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
-          <div class="moveset-list" id="epk-moves-level"></div>
-          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-level','level')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_level_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_level_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
-Flamethrower
-Fire Blast
-Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-level','level','epk_moves_level_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_level_bulk')">Cancelar</button></div></div>
-        </div>
-        <div class="moveset-section" style="margin-bottom:0">
-          <div class="moveset-section-title" onclick="movesetToggleSection(this)">TM<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
-          <div class="moveset-list" id="epk-moves-tm"></div>
-          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-tm','tm')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_tm_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_tm_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
-Flamethrower
-Fire Blast
-Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-tm','tm','epk_moves_tm_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_tm_bulk')">Cancelar</button></div></div>
-        </div>
-        <div class="moveset-section" style="margin-bottom:0">
-          <div class="moveset-section-title" onclick="movesetToggleSection(this)">Egg Moves<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
-          <div class="moveset-list" id="epk-moves-egg"></div>
-          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-egg','egg')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_egg_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_egg_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
-Flamethrower
-Fire Blast
-Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-egg','egg','epk_moves_egg_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_egg_bulk')">Cancelar</button></div></div>
-        </div>
-        <div class="moveset-section" style="margin-bottom:0">
-          <div class="moveset-section-title" onclick="movesetToggleSection(this)">Tutor Moves<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
-          <div class="moveset-list" id="epk-moves-tutor"></div>
-          <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('epk-moves-tutor','tutor')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('epk_moves_tutor_bulk')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="epk_moves_tutor_bulk"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
-Flamethrower
-Fire Blast
-Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('epk-moves-tutor','tutor','epk_moves_tutor_bulk')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('epk_moves_tutor_bulk')">Cancelar</button></div></div>
-        </div>
-      </div>
-      </div>
-    </div>
-
-    <!-- Evolutionary Chain -->
-    <div class="epk-card">
-      <div class="epk-acc-head" onclick="epkToggleAcc(this)">
-        <span class="epk-card-title" style="margin-bottom:0">🔗 Evolutionary Chain <span class="epk-acc-hint">— cada estágio em ordem, inclua este Pokémon</span></span>
-        <span class="epk-acc-chev">▾</span>
-      </div>
-      <div class="epk-acc-body">
-        <div id="epk-evo-list"></div>
-        <button type="button" class="moveset-add-btn" style="margin-top:6px" onclick="evoAddRow('epk-evo-list')">＋ Adicionar estágio</button>
-      </div>
-    </div>
-
-    <!-- Base Stats -->
-    <div class="epk-card" style="margin-bottom:16px">
-      <div class="epk-card-title">📊 Base Stats</div>
-      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">HP</div>
-          <input class="mv-meta-input" id="epk-hp" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Ataque</div>
-          <input class="mv-meta-input" id="epk-atk" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Defesa</div>
-          <input class="mv-meta-input" id="epk-def" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Atq. Esp.</div>
-          <input class="mv-meta-input" id="epk-spa" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Def. Esp.</div>
-          <input class="mv-meta-input" id="epk-spd" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Velocidade</div>
-          <input class="mv-meta-input" id="epk-spe" type="number" min="1" max="255" placeholder="—" style="width:100%;text-align:center">
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-foot">
-      <span class="save-ind" id="epk-ind" style="margin-right:auto">✓ Salvo!</span>
-      <button class="btn btn-outline" style="color:#c0392b;border-color:#c0392b;margin-right:auto" onclick="deletePkModal()">🗑 Deletar</button>
-      <button class="btn btn-outline" onclick="closeModal('edit-pokemon-modal')">Cancelar</button>
-      <button class="btn btn-outline btn-sm" onclick="savePkModal(false)">💾 Rascunho</button>
-      <button class="btn btn-success" onclick="savePkModal(true)">✓ Aprovar e publicar</button>
     </div>
   </div>
 </div>
@@ -1730,7 +1736,10 @@ async function openEditPokemon(id) {
   movesetPopulateList('epk-moves-tutor', 'tutor', db.moves_tutor || []);
 
   document.getElementById('epk-ind').classList.remove('show');
+  const pkListView = document.getElementById('pk-list-view');
+  if (pkListView) pkListView.style.display = 'none';
   document.getElementById('edit-pokemon-modal').classList.add('open');
+  document.getElementById('panel-pokemon').scrollIntoView({ block: 'start' });
 
   // Busca bio EN da PokeAPI se não tiver no DB e for oficial
   if (!db.bio && !pk._isRpg && !pk._loaded) {
@@ -4159,7 +4168,64 @@ async function runImportOfficialPhysicalData() {
   }
 }
 
-// Preenche a classificação (genus, ex: "Pokémon Rato") de Pokémon oficiais
+// Preenche o campo "genero" (ex: "50,50" ou "genderless") de Pokémon oficiais
+// (id numérico) que ainda não têm esse campo no Supabase. Busca o gender_rate
+// na PokeAPI e só preenche o que estiver vazio — não sobrescreve nenhum
+// ajuste manual já cadastrado (ex: espécies com gênero atípico tipo Oricorio).
+async function runImportOfficialGenero() {
+  if (!confirm('Isso vai buscar o gender_rate de cada Pokémon oficial (id numérico) na PokeAPI e preencher só o campo "genero" que estiver vazio no Supabase — não sobrescreve nada que já esteja cadastrado manualmente. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+
+  try {
+    const rows = await sbSelect('pokemons');
+    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)) && !p.genero);
+
+    showProgress('Importando gênero (PokeAPI)…');
+    let ok = 0, fail = 0;
+    const erros = [];
+
+    for (let i = 0; i < oficiais.length; i++) {
+      const p = oficiais[i];
+      updateProgress(i + 1, oficiais.length, p.name || p.id);
+      try {
+        const sr = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${p.id}`);
+        if (!sr.ok) throw new Error(`species HTTP ${sr.status}`);
+        const sd = await sr.json();
+
+        const gr = sd.gender_rate;
+        let genero;
+        if (gr === -1) {
+          genero = 'genderless';
+        } else {
+          const fPct = (gr / 8 * 100).toFixed(1).replace(/\.0$/, '');
+          const mPct = (100 - gr / 8 * 100).toFixed(1).replace(/\.0$/, '');
+          genero = `${mPct},${fPct}`;
+        }
+        await sbPatch('pokemons', p.id, { genero });
+        ok++;
+      } catch (e) {
+        fail++;
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    hideProgress();
+    if (erros.length) {
+      console.warn('Falhas ao importar gênero:', erros);
+      toast(`✓ ${ok} atualizado(s), ${fail} falha(s) — veja o console.`, 'err');
+    } else {
+      toast(`✓ ${ok} Pokémon atualizado(s) com gênero!`, 'ok');
+    }
+    await loadPokemon();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚥ Atualizar gênero'; }
+  }
+}
+
+
 // (id numérico) que ainda não têm esse campo no Supabase. Busca na PokeAPI
 // (prioriza o texto em inglês) e só preenche o que estiver vazio — não
 // sobrescreve nenhuma classificação já cadastrada manualmente.
@@ -4705,7 +4771,13 @@ async function doImport() {
 /* ══════════════════════════════════════════
    CUSTOM ENTRY MODALS
 ══════════════════════════════════════════ */
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  if (id === 'edit-pokemon-modal') {
+    const pkListView = document.getElementById('pk-list-view');
+    if (pkListView) pkListView.style.display = '';
+  }
+}
 async function uploadImgStorage(b64, bucket, path) {
   const [header, data] = b64.split(',');
   const mime = header.match(/:(.*?);/)[1];
@@ -4729,7 +4801,7 @@ function openNewMove() { document.getElementById('new-move-modal').classList.add
 
 // Close modals on overlay click
 document.querySelectorAll('.modal-ov').forEach(ov => {
-  ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('open'); });
+  ov.addEventListener('click', e => { if (e.target === ov) closeModal(ov.id); });
 });
 
 async function saveNewAbility() {
