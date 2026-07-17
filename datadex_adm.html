@@ -416,6 +416,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
       <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
       <button class="btn btn-outline" onclick="migrarFormasRegionaisParaAlt()" title="Converte os registros separados de Alola/Galar/Hisui/Paldea/Nendo em formas alternativas clicáveis (formas_alt) do Pokémon base">🔀 Unificar formas regionais</button>
+      <button class="btn btn-outline" onclick="limparFormasAltDuplicadas()" title="Procura e remove formas_alt duplicadas (ex: rodou 'Unificar formas regionais' mais de uma vez)">🧹 Remover formas alt. duplicadas</button>
+      <button class="btn btn-outline" onclick="renomearFormasRegionaisAntigas()" title="Renomeia formas_alt no padrão antigo ('Forma de Alola' ou '(A) Rattata') pro padrão atual: 'Rattata (Alola Form)'">🏷️ Renomear formas regionais antigas</button>
       <button class="btn btn-outline" onclick="importMovesetsFromPokeapi()" title="Busca o moveset (nível/TM/ovo/tutor) de todos os Pokémon oficiais na PokeAPI e salva no Supabase">⚔️ Importar movesets</button>
       <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
@@ -4432,11 +4434,12 @@ async function importRegionalFormsFromPokeapi() {
 
         const dexNum = species.id;
         const id = regionalIdFromDexNum(prefix, dexNum);
-        // Nome final de exibição: "(A) Rattata" — prefixo da região + nome
-        // base (sem o sufixo "-alola" etc), já no formato usado no site,
-        // pra não depender de rodar migração toda vez que reimportar.
+        // Nome final de exibição: "Rattata (Alola Form)" — nome base (sem o
+        // sufixo "-alola" etc) + região por extenso, já no formato usado no
+        // site, pra não depender de rodar migração toda vez que reimportar.
         const baseNameCap = species.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        const displayName = `(${prefix}) ${baseNameCap}`;
+        const regionCap = region.charAt(0).toUpperCase() + region.slice(1);
+        const displayName = `${baseNameCap} (${regionCap} Form)`;
 
         const types = p.types.sort((a, b) => a.slot - b.slot).map(t => t.type.name);
         const abilities = p.abilities || [];
@@ -4533,7 +4536,7 @@ async function importRegionalFormsFromPokeapi() {
    "base" pra anexá-los — aparecem no console como "sem base
    correspondente" pra revisão manual.
 ══════════════════════════════════════════ */
-const REGIONAL_ALT_NOME_POR_PREFIXO = { A: 'Forma de Alola', G: 'Forma de Galar', H: 'Forma de Hisui', P: 'Forma de Paldea', N: 'Forma de Nendo' };
+const REGIONAL_ALT_REGIAO_POR_PREFIXO = { A: 'Alola', G: 'Galar', H: 'Hisui', P: 'Paldea', N: 'Nendo' };
 
 async function migrarFormasRegionaisParaAlt() {
   if (!confirm('Isso vai converter todo Pokémon com id prefixado (A/G/H/P/N — Alola/Galar/Hisui/Paldea/Nendo) em forma alternativa (formas_alt) dentro do Pokémon base correspondente. Os registros antigos NÃO são apagados automaticamente — isso é perguntado separadamente ao final, depois de dar tempo de revisar. Continuar?')) return;
@@ -4563,19 +4566,29 @@ async function migrarFormasRegionaisParaAlt() {
       (groups[dexNum] = groups[dexNum] || []).push({ row: r, prefix });
     });
 
-    let migrated = 0, i = 0;
+    let migrated = 0, skipped = 0, i = 0;
     const total = regionalRows.length - semBase.length;
     const migratedIds = [];
 
     for (const [dexNum, entries] of Object.entries(groups)) {
       const baseRow = byId[dexNum];
       const existingAlt = baseRow.formas_alt || [];
-      const newEntries = entries.map(({ row, prefix }) => {
+      const existingNames = new Set(existingAlt.map(e => (e.nome || '').trim().toLowerCase()));
+      const newEntries = [];
+      entries.forEach(({ row, prefix }) => {
         i++;
         updateProgress(i, total, row.name || dexNum);
+        // Nome no mesmo padrão usado na importação direta: "Raichu (Alola Form)".
+        const regiao = REGIONAL_ALT_REGIAO_POR_PREFIXO[prefix] || prefix;
+        const nome = `${cap(baseRow.name || dexNum)} (${regiao} Form)`;
+        // Já rodou essa migração antes e essa forma já está em formas_alt
+        // (mesmo nome) — pula pra não duplicar. O registro antigo (A/G/H/P/N)
+        // ainda entra na lista de "migrados" pra continuar podendo ser
+        // oferecido pra exclusão ao final.
+        if (existingNames.has(nome.trim().toLowerCase())) { skipped++; migratedIds.push(row.id); return; }
         migratedIds.push(row.id);
-        return {
-          nome: REGIONAL_ALT_NOME_POR_PREFIXO[prefix] || `Forma ${prefix}`,
+        newEntries.push({
+          nome,
           tipo1: row.tipo1 || null, tipo2: row.tipo2 || null,
           habilidade1: row.habilidade1 || null, habilidade2: row.habilidade2 || null, habilidade_oculta: row.habilidade_oculta || null,
           classification: row.classification || null, height: row.height || null, weight: row.weight || null,
@@ -4584,14 +4597,15 @@ async function migrarFormasRegionaisParaAlt() {
           sprite: row.sprite || null, sprite_shiny: row.sprite_shiny || null,
           bio: row.bio || null, biomas: row.biomas || null,
           moves_level: row.moves_level || null, moves_tm: row.moves_tm || null, moves_egg: row.moves_egg || null, moves_tutor: row.moves_tutor || null
-        };
+        });
       });
+      if (!newEntries.length) continue;
       await sbPatch('pokemons', dexNum, { formas_alt: existingAlt.concat(newEntries), updated_at: new Date().toISOString() });
       migrated += newEntries.length;
     }
 
     if (semBase.length) console.warn('Formas regionais sem Pokémon base encontrado (não migradas, revise manualmente):', semBase);
-    toast(`${migrated} forma(s) migrada(s) para formas_alt em ${Object.keys(groups).length} Pokémon base.${semBase.length ? ` ${semBase.length} sem base correspondente (veja console).` : ''} Os registros antigos ainda não foram apagados.`, 'ok');
+    toast(`${migrated} forma(s) migrada(s) para formas_alt em ${Object.keys(groups).length} Pokémon base.${skipped ? ` ${skipped} já existia(m) e foram puladas (sem duplicar).` : ''}${semBase.length ? ` ${semBase.length} sem base correspondente (veja console).` : ''} Os registros antigos ainda não foram apagados.`, 'ok');
 
     if (migrated && confirm(`Migração concluída. Depois de revisar o resultado no site, quer apagar agora os ${migratedIds.length} registro(s) antigo(s) já migrado(s)? Essa ação é irreversível.`)) {
       let del = 0;
@@ -4607,6 +4621,120 @@ async function migrarFormasRegionaisParaAlt() {
   } finally {
     hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '🔀 Unificar formas regionais'; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   RENOMEAR — corrige formas_alt já migradas antes da mudança de padrão de
+   nome, que ficaram como "Forma de Alola" (sem o nome do Pokémon) ou
+   "(A) Rattata" (registro antigo), pro padrão atual "Rattata (Alola Form)".
+══════════════════════════════════════════ */
+const REGIONAL_ALT_NOME_ANTIGO_RE = /^Forma de (Alola|Galar|Hisui|Paldea|Nendo)$/i;
+const REGIONAL_ALT_PREFIXO_RE = /^\(([AGHPN])\)\s*(.+)$/i;
+
+async function renomearFormasRegionaisAntigas() {
+  if (!confirm('Isso vai procurar, em todos os Pokémon, formas alternativas com o nome no padrão antigo ("Forma de Alola" ou "(A) Rattata") e renomear pro padrão atual: "Rattata (Alola Form)". Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Renomeando…'; }
+  showProgress('Lendo Pokémon…');
+
+  try {
+    const allRows = await sbSelect('pokemons');
+    let pokemonsAfetados = 0, totalRenomeadas = 0, i = 0;
+
+    for (const row of allRows) {
+      i++;
+      updateProgress(i, allRows.length, row.name || row.id);
+      const alt = row.formas_alt;
+      if (!Array.isArray(alt) || !alt.length) continue;
+
+      let mudou = false;
+      const novo = alt.map(entry => {
+        const nomeAtual = (entry.nome || '').trim();
+        const mOld = nomeAtual.match(REGIONAL_ALT_NOME_ANTIGO_RE);
+        const mPrefix = nomeAtual.match(REGIONAL_ALT_PREFIXO_RE);
+        let novoNome = null;
+        if (mOld) novoNome = `${cap(row.name || row.id)} (${cap(mOld[1])} Form)`;
+        else if (mPrefix) {
+          const regiao = REGIONAL_ALT_REGIAO_POR_PREFIXO[mPrefix[1].toUpperCase()];
+          if (regiao) novoNome = `${cap(mPrefix[2].trim())} (${regiao} Form)`;
+        }
+        if (novoNome && novoNome !== nomeAtual) { mudou = true; totalRenomeadas++; return { ...entry, nome: novoNome }; }
+        return entry;
+      });
+      if (mudou) {
+        await sbPatch('pokemons', row.id, { formas_alt: novo, updated_at: new Date().toISOString() });
+        pokemonsAfetados++;
+      }
+    }
+
+    toast(totalRenomeadas ? `${totalRenomeadas} forma(s) renomeada(s) em ${pokemonsAfetados} Pokémon.` : 'Nenhuma forma com nome no padrão antigo encontrada.', 'ok');
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao renomear formas regionais: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🏷️ Renomear formas regionais antigas'; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   LIMPEZA — remove formas_alt duplicadas (ex: "Unificar formas regionais"
+   rodado mais de uma vez, que faz existingAlt.concat(newEntries) sem
+   checar se a forma já existia).
+
+   Regra: entradas 100% idênticas (mesmo JSON) → mantém só a primeira,
+   remove o resto automaticamente. Entradas com o MESMO nome mas dados
+   diferentes (ex: editou manualmente uma das cópias) NÃO são apagadas
+   sozinhas — ficam as duas e o caso vai pro console pra revisão manual,
+   pra nunca arriscar apagar uma edição feita à mão sem querer.
+══════════════════════════════════════════ */
+async function limparFormasAltDuplicadas() {
+  if (!confirm('Isso vai procurar, em todos os Pokémon, formas alternativas (formas_alt) com dados 100% idênticos e manter só a primeira ocorrência de cada uma. Casos com o mesmo nome mas dados diferentes NÃO são apagados automaticamente — só avisados no console pra revisão manual. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando…'; }
+  showProgress('Lendo Pokémon…');
+
+  try {
+    const allRows = await sbSelect('pokemons');
+    let pokemonsAfetados = 0, totalRemovidas = 0, i = 0;
+    const avisosMesmoNome = [];
+
+    for (const row of allRows) {
+      i++;
+      updateProgress(i, allRows.length, row.name || row.id);
+      const alt = row.formas_alt;
+      if (!Array.isArray(alt) || alt.length < 2) continue;
+
+      const kept = [];
+      let removidasAqui = 0;
+      for (const entry of alt) {
+        const entryJson = JSON.stringify(entry);
+        const isExactDup = kept.some(k => JSON.stringify(k) === entryJson);
+        if (isExactDup) { removidasAqui++; continue; }
+        const sameName = kept.find(k => (k.nome || '').trim().toLowerCase() === (entry.nome || '').trim().toLowerCase());
+        if (sameName) avisosMesmoNome.push(`${row.name || row.id}: "${entry.nome}"`);
+        kept.push(entry);
+      }
+      if (removidasAqui > 0) {
+        await sbPatch('pokemons', row.id, { formas_alt: kept, updated_at: new Date().toISOString() });
+        pokemonsAfetados++;
+        totalRemovidas += removidasAqui;
+      }
+    }
+
+    if (avisosMesmoNome.length) console.warn('Formas alternativas com mesmo nome mas dados diferentes (revise manualmente):', avisosMesmoNome);
+    const avisoTxt = avisosMesmoNome.length ? ` ${avisosMesmoNome.length} caso(s) com mesmo nome mas dados diferentes — veja o console.` : '';
+    toast(totalRemovidas ? `${totalRemovidas} forma(s) duplicada(s) removida(s) em ${pokemonsAfetados} Pokémon.${avisoTxt}` : `Nenhuma duplicata idêntica encontrada.${avisoTxt}`, 'ok');
+
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao limpar duplicatas: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🧹 Remover formas alt. duplicadas'; }
   }
 }
 
