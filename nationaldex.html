@@ -1293,19 +1293,13 @@ async function renderRpgDetail(p, container, navToken){
   }));
 
   // ── Gender ──
+  // Prioriza o campo "genero" cadastrado no admin (mesma regra de
+  // stats/habilidades: não sobrescrever ajuste manual feito no banco). Só
+  // cai pro gender_rate da PokéAPI quando o campo não estiver preenchido.
   let genderHtml='—';
-  if(apiSpecies){
-    const gr=apiSpecies.gender_rate;
-    if(gr===-1){
-      genderHtml='Sem gênero (⚲)';
-    } else {
-      const fPct=(gr/8*100).toFixed(0);
-      const mPct=(100-(gr/8*100)).toFixed(0);
-      genderHtml=`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
-    }
-  } else {
-    const genderRaw=(p.genero||'').trim();
-    if(!genderRaw||genderRaw==='genderless'||/sem gên/i.test(genderRaw)){
+  const genderRaw=(p.genero||'').trim();
+  if(genderRaw){
+    if(genderRaw==='genderless'||/sem gên/i.test(genderRaw)){
       genderHtml='Sem gênero (⚲)';
     } else if(genderRaw.includes(',')) {
       // Novo formato: "ValorMale,ValorFemale"
@@ -1328,6 +1322,15 @@ async function renderRpgDetail(p, container, navToken){
       } else {
         genderHtml=genderRaw;
       }
+    }
+  } else if(apiSpecies){
+    const gr=apiSpecies.gender_rate;
+    if(gr===-1){
+      genderHtml='Sem gênero (⚲)';
+    } else {
+      const fPct=(gr/8*100).toFixed(0);
+      const mPct=(100-(gr/8*100)).toFixed(0);
+      genderHtml=`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
     }
   }
 
@@ -1708,7 +1711,16 @@ async function renderRpgDetail(p, container, navToken){
   }];
   if(p.formas_alt&&p.formas_alt.length){
     p.formas_alt.forEach(f=>{
-      const fMoves=formAltMoves(f);
+      const fMovesRaw=formAltMoves(f);
+      // Movimentos: assim como classificação/altura/peso/gênero/grupo de ovo,
+      // cada categoria (nível/TM/ovo/tutor) cai pro moveset da forma principal
+      // quando a forma alternativa não tiver a sua própria lista preenchida.
+      const fMoves={
+        level:(fMovesRaw.level&&fMovesRaw.level.length)?fMovesRaw.level:levelMoves,
+        tm:(fMovesRaw.tm&&fMovesRaw.tm.length)?fMovesRaw.tm:tmMoves,
+        egg:(fMovesRaw.egg&&fMovesRaw.egg.length)?fMovesRaw.egg:eggMoves,
+        tutor:(fMovesRaw.tutor&&fMovesRaw.tutor.length)?fMovesRaw.tutor:tutorMoves
+      };
       // Habilidades: suporta tanto o formato antigo (campo único "habilidade",
       // usado pelos estilos do Oricorio) quanto o formato completo com
       // habilidade1/2/oculta (usado nas formas regionais migradas).
@@ -1946,9 +1958,34 @@ async function renderDetail(p,s,container,navToken){
   // Biomas vêm sempre do mesmo registro do admin usado pra bio acima (dbRec) —
   // não existe equivalente de biomas na PokéAPI.
   const dbBiomasOfficial=dbRec?.biomas;
-  const gr=s.gender_rate;
-  const mPct=(100-(gr/8*100)).toFixed(0);const fPct=(gr/8*100).toFixed(0);
-  const genderHtml=gr===-1?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
+  // Gênero: prioriza o campo cadastrado no admin (dbRec.genero), igual à
+  // classificação/bio/biomas acima; só cai pro gender_rate da PokéAPI
+  // quando o banco não tiver nada preenchido.
+  const genderRawOfficial=(dbRec?.genero||'').trim();
+  let genderHtml;
+  if(genderRawOfficial){
+    if(genderRawOfficial==='genderless'||/sem gên/i.test(genderRawOfficial)){
+      genderHtml='Sem gênero (⚲)';
+    } else if(genderRawOfficial.includes(',')){
+      const parts=genderRawOfficial.split(',');
+      const m=parseFloat(parts[0])||0, f=parseFloat(parts[1])||0;
+      genderHtml=(m===0&&f===0)?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+    } else {
+      const mMatch=genderRawOfficial.match(/(\d+(?:\.\d+)?)\s*%\s*(?:macho|male)/i);
+      const fMatch=genderRawOfficial.match(/(\d+(?:\.\d+)?)\s*%\s*(?:f[êe]mea|female)/i);
+      if(mMatch||fMatch){
+        const m=mMatch?parseFloat(mMatch[1]):(fMatch?100-parseFloat(fMatch[1]):50);
+        const f=fMatch?parseFloat(fMatch[1]):100-m;
+        genderHtml=`<span style="color:#5588cc;font-weight:700">${m}% Male</span>, <span style="color:#cc5588;font-weight:700">${f}% Female</span>`;
+      } else {
+        genderHtml=genderRawOfficial;
+      }
+    }
+  } else {
+    const gr=s.gender_rate;
+    const mPct=(100-(gr/8*100)).toFixed(0);const fPct=(gr/8*100).toFixed(0);
+    genderHtml=gr===-1?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
+  }
   const eggs=s.egg_groups.map(e=>cap(e.name)).join(', ')||'—';
   const bst=p.stats.reduce((a,b)=>a+b.base_stat,0);
 
@@ -2142,7 +2179,13 @@ async function renderDetail(p,s,container,navToken){
   }];
   if(dbRec?.formas_alt&&dbRec.formas_alt.length){
     dbRec.formas_alt.forEach(f=>{
-      const fMoves=formAltMoves(f);
+      const fMovesRaw=formAltMoves(f);
+      const fMoves={
+        level:(fMovesRaw.level&&fMovesRaw.level.length)?fMovesRaw.level:levelMoves,
+        tm:(fMovesRaw.tm&&fMovesRaw.tm.length)?fMovesRaw.tm:tmMoves,
+        egg:(fMovesRaw.egg&&fMovesRaw.egg.length)?fMovesRaw.egg:eggMoves,
+        tutor:(fMovesRaw.tutor&&fMovesRaw.tutor.length)?fMovesRaw.tutor:tutorMoves
+      };
       officialForms.push({
         nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
         abilityEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
