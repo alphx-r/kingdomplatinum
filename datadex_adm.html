@@ -235,10 +235,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 /* RPG tipo tags */
 .rpg-tipo-tag{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;background:var(--tc,var(--brand-mid));border:1.5px solid var(--tc,var(--border));color:#000;cursor:pointer;user-select:none;transition:all .15s}
 .rpg-tipo-tag:hover{opacity:.85}
-.rpg-tipo-tag.sel{opacity:.5}
+.rpg-tipo-tag.sel{opacity:.5;outline:2px solid var(--tc,var(--brand-mid));outline-offset:2px}
 .tipo-tag{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;background:var(--tc,var(--brand-mid));border:1.5px solid var(--tc,var(--border));color:#000;cursor:pointer;user-select:none;transition:all .15s}
 .tipo-tag:hover{opacity:.85}
-.tipo-tag.sel{opacity:.5}
+.tipo-tag.sel{opacity:.5;outline:2px solid var(--tc,var(--brand-mid));outline-offset:2px}
 .pk-bioma-tag{display:inline-flex;align-items:center;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;background:var(--surface);border:1.5px solid var(--border);cursor:pointer;user-select:none;transition:all .15s}
 .pk-bioma-tag:hover{border-color:var(--accent)}
 .pk-bioma-tag.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -4400,10 +4400,29 @@ async function runImportOfficialGenero() {
   }
 }
 
+// A PokeAPI ainda usa os nomes ANTIGOS (pré Diamond/Pearl, era Stadium 2) pra
+// alguns egg groups no campo "name" — ex: retorna "ground" pro grupo que hoje
+// se chama "Field" em todo lugar (Bulbapedia, jogos atuais, etc). Sem esse
+// mapa, a importação direta da API grava o nome errado/desatualizado.
+const EGG_GROUP_PT_LABELS = {
+  'ground': 'Field',
+  'plant': 'Grass',
+  'humanshape': 'Human-Like',
+  'indeterminate': 'Amorphous',
+  'no-eggs': 'Undiscovered',
+  'water1': 'Water 1',
+  'water2': 'Water 2',
+  'water3': 'Water 3'
+};
+function eggGroupModernName(slug) {
+  if (EGG_GROUP_PT_LABELS[slug]) return EGG_GROUP_PT_LABELS[slug];
+  return slug.charAt(0).toUpperCase() + slug.slice(1);
+}
+
 // Atualiza o campo "egg_group" de todos os Pokémon oficiais (id numérico)
 // com os egg_groups da PokeAPI. SOBRESCREVE qualquer valor já cadastrado,
 // inclusive ajustes manuais — use pra corrigir grupos errados (ex: Meowth
-// salvo como "Ground" em vez de "Field, Water 1").
+// salvo como "Ground" em vez de "Field").
 async function runImportOfficialEggGroup() {
   if (!confirm('Isso vai buscar o egg_group de cada Pokémon oficial (id numérico) na PokeAPI e SOBRESCREVER o campo "egg_group" no Supabase — inclusive ajustes manuais já feitos e valores errados. Pode levar alguns minutos (1 requisição por Pokémon). Continuar?')) return;
 
@@ -4426,7 +4445,7 @@ async function runImportOfficialEggGroup() {
         if (!sr.ok) throw new Error(`species HTTP ${sr.status}`);
         const sd = await sr.json();
 
-        const eggGroups = (sd.egg_groups || []).map(e => e.name).join(', ') || null;
+        const eggGroups = (sd.egg_groups || []).map(e => eggGroupModernName(e.name)).join(', ') || null;
         if (!eggGroups) { skip++; continue; }
 
         await sbPatch('pokemons', p.id, { egg_group: eggGroups });
