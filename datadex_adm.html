@@ -2019,16 +2019,17 @@ function sprAdjOnUp() { if (_sprAdj) _sprAdj.dragging = false; }
 function sprAdjDraw() {
   const st = _sprAdj; if (!st) return;
   const { ctx, canvasSize, img, zoom, offX, offY } = st;
+  // Só limpa (transparente) — o quadriculado de fundo já vem do CSS do
+  // wrapper (.spr-adj-canvas-wrap), então não precisa (e não deve) ser
+  // pintado neste canvas, que é o mesmo usado depois pra exportar o PNG.
   ctx.clearRect(0, 0, canvasSize, canvasSize);
-  const sq = canvasSize / 20;
-  for (let y = 0; y < canvasSize; y += sq) for (let x = 0; x < canvasSize; x += sq) {
-    ctx.fillStyle = ((x / sq + y / sq) % 2 === 0) ? '#f0f3f8' : '#e2e8f2';
-    ctx.fillRect(x, y, sq, sq);
-  }
   const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom;
   const x = (canvasSize - w) / 2 + offX, y = (canvasSize - h) / 2 + offY;
   ctx.imageSmoothingEnabled = zoom < 1;
   ctx.drawImage(img, x, y, w, h);
+  // Linhas-guia de centralização: desenhadas só pra referência visual do
+  // usuário. sprAdjApply() reexporta a imagem num canvas limpo à parte,
+  // então essas linhas nunca vão parar no PNG salvo.
   ctx.strokeStyle = 'rgba(37,99,168,.25)'; ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(canvasSize / 2, 0); ctx.lineTo(canvasSize / 2, canvasSize);
@@ -2044,8 +2045,20 @@ function sprAdjReset() {
 }
 function sprAdjApply() {
   const st = _sprAdj; if (!st) return;
+  const { canvasSize, img, zoom, offX, offY } = st;
+  // Exporta a partir de um canvas novo/limpo (sem quadriculado nem linhas-
+  // guia) contendo só a imagem reposicionada — garante PNG com transparência
+  // real, em vez de reaproveitar o canvas de visualização.
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = canvasSize;
+  outCanvas.height = canvasSize;
+  const outCtx = outCanvas.getContext('2d');
+  const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom;
+  const x = (canvasSize - w) / 2 + offX, y = (canvasSize - h) / 2 + offY;
+  outCtx.imageSmoothingEnabled = zoom < 1;
+  outCtx.drawImage(img, x, y, w, h);
   let out;
-  try { out = st.canvas.toDataURL('image/png'); }
+  try { out = outCanvas.toDataURL('image/png'); }
   catch (e) { toast('Erro ao aplicar ajuste (imagem de origem externa bloqueou o canvas): ' + e.message, 'err'); return; }
   const cb = st.onApply;
   closeSpriteAdjuster();
