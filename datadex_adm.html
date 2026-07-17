@@ -400,6 +400,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
       <button class="btn btn-outline" onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
+      <button class="btn btn-outline" onclick="migrarFormasRegionaisParaAlt()" title="Converte os registros separados de Alola/Galar/Hisui/Paldea/Nendo em formas alternativas clicáveis (formas_alt) do Pokémon base">🔀 Unificar formas regionais</button>
       <button class="btn btn-outline" onclick="importMovesetsFromPokeapi()" title="Busca o moveset (nível/TM/ovo/tutor) de todos os Pokémon oficiais na PokeAPI e salva no Supabase">⚔️ Importar movesets</button>
       <button class="btn btn-outline" onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
       <button class="btn btn-outline" onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
@@ -2497,7 +2498,14 @@ function faltAddRow(listId, data = {}) {
     <div class="falt-grid">
       <div><span class="falt-field-lbl">Tipo Primário</span><select class="falt-tipo1">${faltTypeOptions(data.tipo1 || '')}</select></div>
       <div><span class="falt-field-lbl">Tipo Secundário</span><select class="falt-tipo2">${faltTypeOptions(data.tipo2 || '')}</select></div>
-      <div><span class="falt-field-lbl">Habilidade</span><div class="cb-wrap"><input type="text" class="cb-input falt-hab" list="dl-ability" autocomplete="off" placeholder="— Habilidade —" value="${abilityToLabel(data.habilidade || '')}"></div></div>
+      <div><span class="falt-field-lbl">Classificação</span><input type="text" class="falt-classification" placeholder="Ex: Fox Pokémon" value="${data.classification || ''}"></div>
+      <div><span class="falt-field-lbl">Habilidade 1</span><div class="cb-wrap"><input type="text" class="cb-input falt-hab1" list="dl-ability" autocomplete="off" placeholder="— Habilidade 1 —" value="${abilityToLabel(data.habilidade1 || data.habilidade || '')}"></div></div>
+      <div><span class="falt-field-lbl">Habilidade 2</span><div class="cb-wrap"><input type="text" class="cb-input falt-hab2" list="dl-ability" autocomplete="off" placeholder="— Habilidade 2 —" value="${abilityToLabel(data.habilidade2 || '')}"></div></div>
+      <div><span class="falt-field-lbl">Habilidade Oculta</span><div class="cb-wrap"><input type="text" class="cb-input falt-haboculta" list="dl-ability" autocomplete="off" placeholder="— Hab. Oculta —" value="${abilityToLabel(data.habilidade_oculta || '')}"></div></div>
+      <div><span class="falt-field-lbl">Altura (m)</span><input type="number" step="0.1" class="falt-height" placeholder="Ex: 0.6" value="${data.height ?? ''}"></div>
+      <div><span class="falt-field-lbl">Peso (kg)</span><input type="number" step="0.1" class="falt-weight" placeholder="Ex: 9.9" value="${data.weight ?? ''}"></div>
+      <div><span class="falt-field-lbl">Gênero (M,F)</span><input type="text" class="falt-genero" placeholder="Ex: 87.5,12.5" value="${data.genero || ''}"></div>
+      <div><span class="falt-field-lbl">Grupo de Ovo</span><input type="text" class="falt-egg-group" placeholder="Ex: Field, Fairy" value="${data.egg_group || ''}"></div>
     </div>
     <div class="falt-stats-row">
       <div><span class="falt-field-lbl">HP</span><input type="number" class="falt-hp" min="1" max="255" value="${data.hp ?? ''}"></div>
@@ -2576,7 +2584,9 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       </div>
     </div>
   `;
-  cbInit(row.querySelector('.falt-hab'));
+  cbInit(row.querySelector('.falt-hab1'));
+  cbInit(row.querySelector('.falt-hab2'));
+  cbInit(row.querySelector('.falt-haboculta'));
   row.querySelectorAll('.falt-stats-row input[type=number]').forEach(inp => inp.addEventListener('input', () => faltRecalcBst(row)));
   faltRecalcBst(row);
   faltRenderBiomaSelect(row);
@@ -2666,7 +2676,45 @@ async function faltFetchFromPokeapi(btn) {
       prevShiny.innerHTML = `<img src="${shiny}" style="width:100%;height:100%;object-fit:contain">`;
       delete prevShiny.dataset.b64;
     }
-    toast('Sprite puxado do PokeAPI com sucesso.', 'ok');
+
+    // Tipos, habilidades, stats, altura e peso — direto do endpoint /pokemon.
+    const types = data.types.sort((a, b) => a.slot - b.slot).map(t => t.type.name);
+    row.querySelector('.falt-tipo1').value = types[0] || '';
+    row.querySelector('.falt-tipo2').value = types[1] || '';
+    const abilities = data.abilities || [];
+    const normalAbilities = abilities.filter(a => !a.is_hidden).sort((a, b) => a.slot - b.slot);
+    const hiddenAbility = abilities.find(a => a.is_hidden);
+    row.querySelector('.falt-hab1').value = abilityToLabel(normalAbilities[0]?.ability?.name || '');
+    row.querySelector('.falt-hab2').value = abilityToLabel(normalAbilities[1]?.ability?.name || '');
+    row.querySelector('.falt-haboculta').value = abilityToLabel(hiddenAbility?.ability?.name || '');
+    const statMap = {};
+    data.stats.forEach(s => { statMap[s.stat.name] = s.base_stat; });
+    row.querySelector('.falt-hp').value = statMap.hp ?? '';
+    row.querySelector('.falt-atk').value = statMap.attack ?? '';
+    row.querySelector('.falt-def').value = statMap.defense ?? '';
+    row.querySelector('.falt-spa').value = statMap['special-attack'] ?? '';
+    row.querySelector('.falt-spd').value = statMap['special-defense'] ?? '';
+    row.querySelector('.falt-spe').value = statMap.speed ?? '';
+    faltRecalcBst(row);
+    if (data.weight) row.querySelector('.falt-weight').value = data.weight / 10;
+    if (data.height) row.querySelector('.falt-height').value = data.height / 10;
+
+    // Classificação, grupos de ovo e gênero — vêm do endpoint /pokemon-species.
+    try {
+      const sRes = await fetch(data.species.url);
+      if (sRes.ok) {
+        const species = await sRes.json();
+        const genus = (species.genera || []).find(g => g.language.name === 'en')?.genus || '';
+        if (genus) row.querySelector('.falt-classification').value = genus;
+        const eggGroups = (species.egg_groups || []).map(e => e.name).join(', ');
+        if (eggGroups) row.querySelector('.falt-egg-group').value = eggGroups;
+        if (typeof genderRateToText === 'function') {
+          row.querySelector('.falt-genero').value = genderRateToText(species.gender_rate);
+        }
+      }
+    } catch (_) { /* segue sem esses campos se a species falhar */ }
+
+    toast('Dados puxados do PokeAPI com sucesso.', 'ok');
   } catch (e) {
     toast('Erro ao buscar no PokeAPI: ' + e.message, 'err');
   } finally {
@@ -2683,7 +2731,14 @@ function faltReadListSync(listId) {
     if (!nome) return null;
     const tipo1 = row.querySelector('.falt-tipo1')?.value || '';
     const tipo2 = row.querySelector('.falt-tipo2')?.value || '';
-    const habilidade = abilityToSlug(row.querySelector('.falt-hab')?.value || '') || null;
+    const habilidade1 = abilityToSlug(row.querySelector('.falt-hab1')?.value || '') || null;
+    const habilidade2 = abilityToSlug(row.querySelector('.falt-hab2')?.value || '') || null;
+    const habilidade_oculta = abilityToSlug(row.querySelector('.falt-haboculta')?.value || '') || null;
+    const classification = row.querySelector('.falt-classification')?.value.trim() || null;
+    const height = parseFloat(row.querySelector('.falt-height')?.value) || null;
+    const weight = parseFloat(row.querySelector('.falt-weight')?.value) || null;
+    const genero = row.querySelector('.falt-genero')?.value.trim() || null;
+    const egg_group = row.querySelector('.falt-egg-group')?.value.trim() || null;
     const hp  = parseInt(row.querySelector('.falt-hp').value)  || null;
     const atk = parseInt(row.querySelector('.falt-atk').value) || null;
     const def = parseInt(row.querySelector('.falt-def').value) || null;
@@ -2701,7 +2756,10 @@ function faltReadListSync(listId) {
     const moves_egg = uid ? movesetReadList(`falt-mv-egg-${uid}`, 'egg') : [];
     const moves_tutor = uid ? movesetReadList(`falt-mv-tutor-${uid}`, 'tutor') : [];
     return {
-      nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny,
+      nome, tipo1: tipo1 || null, tipo2: tipo2 || null,
+      habilidade1, habilidade2, habilidade_oculta,
+      classification, height, weight, genero, egg_group,
+      hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny,
       bio,
       biomas: biomas.length ? biomas : null,
       moves_level: moves_level.length ? moves_level : null,
@@ -4309,6 +4367,100 @@ async function importRegionalFormsFromPokeapi() {
   } finally {
     hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '🌍 Importar formas regionais (PokeAPI)'; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   MIGRAÇÃO — converte formas regionais que hoje são registros separados
+   (id prefixado A/G/H/P/N, ex: "A0037") em formas alternativas clicáveis
+   (formas_alt) dentro do registro do Pokémon base correspondente, no
+   mesmo modelo já usado pelo Oricorio (clica no botão da forma e a
+   página inteira troca, sem navegar pra outra URL).
+
+   Não é destrutiva por padrão: primeiro grava os formas_alt nos
+   Pokémon base, e só depois pergunta — numa confirmação separada — se
+   pode apagar os registros antigos, pra dar chance de revisar o
+   resultado no site antes.
+
+   Pokémon Nendo que são fakemon originais (sem um Pokémon numérico
+   correspondente) são automaticamente pulados, já que não existe uma
+   "base" pra anexá-los — aparecem no console como "sem base
+   correspondente" pra revisão manual.
+══════════════════════════════════════════ */
+const REGIONAL_ALT_NOME_POR_PREFIXO = { A: 'Forma de Alola', G: 'Forma de Galar', H: 'Forma de Hisui', P: 'Forma de Paldea', N: 'Forma de Nendo' };
+
+async function migrarFormasRegionaisParaAlt() {
+  if (!confirm('Isso vai converter todo Pokémon com id prefixado (A/G/H/P/N — Alola/Galar/Hisui/Paldea/Nendo) em forma alternativa (formas_alt) dentro do Pokémon base correspondente. Os registros antigos NÃO são apagados automaticamente — isso é perguntado separadamente ao final, depois de dar tempo de revisar. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Migrando…'; }
+  showProgress('Lendo Pokémon…');
+
+  try {
+    const allRows = await sbSelect('pokemons');
+    const byId = {};
+    allRows.forEach(r => { byId[String(r.id)] = r; });
+
+    const regionalRows = allRows.filter(r => /^[AGHPN]\d+$/i.test(String(r.id)));
+    if (!regionalRows.length) { toast('Nenhuma forma regional separada encontrada — já deve estar tudo migrado.', 'ok'); return; }
+
+    // Agrupa por Pokémon base (dex number sem o prefixo). Formas sem base
+    // numérico correspondente (ex: fakemon originais de Nendo) ficam de fora.
+    const groups = {};
+    const semBase = [];
+    regionalRows.forEach(r => {
+      const m = String(r.id).match(/^([AGHPN])(\d+)$/i);
+      if (!m) return;
+      const prefix = m[1].toUpperCase();
+      const dexNum = String(parseInt(m[2], 10));
+      if (!byId[dexNum]) { semBase.push(r.id); return; }
+      (groups[dexNum] = groups[dexNum] || []).push({ row: r, prefix });
+    });
+
+    let migrated = 0, i = 0;
+    const total = regionalRows.length - semBase.length;
+    const migratedIds = [];
+
+    for (const [dexNum, entries] of Object.entries(groups)) {
+      const baseRow = byId[dexNum];
+      const existingAlt = baseRow.formas_alt || [];
+      const newEntries = entries.map(({ row, prefix }) => {
+        i++;
+        updateProgress(i, total, row.name || dexNum);
+        migratedIds.push(row.id);
+        return {
+          nome: REGIONAL_ALT_NOME_POR_PREFIXO[prefix] || `Forma ${prefix}`,
+          tipo1: row.tipo1 || null, tipo2: row.tipo2 || null,
+          habilidade1: row.habilidade1 || null, habilidade2: row.habilidade2 || null, habilidade_oculta: row.habilidade_oculta || null,
+          classification: row.classification || null, height: row.height || null, weight: row.weight || null,
+          genero: row.genero || null, egg_group: row.egg_group || null,
+          hp: row.hp ?? null, atk: row.atk ?? null, def: row.def ?? null, spa: row.spa ?? null, spd: row.spd ?? null, spe: row.spe ?? null,
+          sprite: row.sprite || null, sprite_shiny: row.sprite_shiny || null,
+          bio: row.bio || null, biomas: row.biomas || null,
+          moves_level: row.moves_level || null, moves_tm: row.moves_tm || null, moves_egg: row.moves_egg || null, moves_tutor: row.moves_tutor || null
+        };
+      });
+      await sbPatch('pokemons', dexNum, { formas_alt: existingAlt.concat(newEntries), updated_at: new Date().toISOString() });
+      migrated += newEntries.length;
+    }
+
+    if (semBase.length) console.warn('Formas regionais sem Pokémon base encontrado (não migradas, revise manualmente):', semBase);
+    toast(`${migrated} forma(s) migrada(s) para formas_alt em ${Object.keys(groups).length} Pokémon base.${semBase.length ? ` ${semBase.length} sem base correspondente (veja console).` : ''} Os registros antigos ainda não foram apagados.`, 'ok');
+
+    if (migrated && confirm(`Migração concluída. Depois de revisar o resultado no site, quer apagar agora os ${migratedIds.length} registro(s) antigo(s) já migrado(s)? Essa ação é irreversível.`)) {
+      let del = 0;
+      for (const id of migratedIds) {
+        try { await sbDelete('pokemons', id); del++; } catch (e) { console.error('Erro ao apagar', id, e); }
+      }
+      toast(`${del} registro(s) antigo(s) apagado(s).`, 'ok');
+    }
+
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro na migração de formas regionais: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🔀 Unificar formas regionais'; }
   }
 }
 
