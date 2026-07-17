@@ -4132,10 +4132,17 @@ function regionalIdFromDexNum(prefix, dexNum) {
 }
 
 // gender_rate da PokeAPI: -1 = sem gênero; 0-8 = oitavos que são fêmea.
-// Mantém cru/descritivo, sem tentar encaixar num valor fixo tipo "Macho"/"Fêmea"/"Ambos".
+// Converte pro formato "M,F" (percentuais) que o campo "genero" espera em
+// todo o resto do projeto (admin e nationaldex fazem parseFloat de cada
+// parte separada por vírgula). Antes retornava um texto tipo "4/8 macho,
+// 4/8 fêmea" — o parseFloat lia só o "4" de cada lado e mostrava "4%
+// Male, 4% Female" pra qualquer Pokémon com gender_rate=4 (ou seja,
+// qualquer um com proporção 50/50, como o Meowth), independente da forma.
 function genderRateToText(rate) {
-  if (rate === -1 || rate === undefined || rate === null) return 'Sem gênero';
-  return `${8 - rate}/8 macho, ${rate}/8 fêmea`;
+  if (rate === -1 || rate === undefined || rate === null) return 'genderless';
+  const fPct = (rate / 8 * 100).toFixed(1).replace(/\.0$/, '');
+  const mPct = (100 - rate / 8 * 100).toFixed(1).replace(/\.0$/, '');
+  return `${mPct},${fPct}`;
 }
 
 // Monta a condição de evolução como texto curto a partir do primeiro
