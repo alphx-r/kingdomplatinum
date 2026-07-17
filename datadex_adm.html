@@ -381,6 +381,19 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .falt-sprite-row input[type=file]{font-size:11px;flex:1;min-width:0}
 .falt-add-btn{width:100%;padding:8px;border:1.5px dashed #4ac0c0;border-radius:8px;background:var(--teal-light);color:var(--teal);font-family:var(--font-body);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px;text-transform:uppercase;transition:all .18s}
 .falt-add-btn:hover{background:var(--teal);color:#fff}
+
+/* Pills de navegação de formas no cabeçalho do modal de edição — mostra a
+   forma base + cada forma_alt com botão de ir direto pra edição, e um "+"
+   pra adicionar uma nova sem precisar rolar até a seção lá embaixo. */
+.epk-forms-nav{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.epk-form-pill{font-family:var(--font-body);font-size:11px;font-weight:600;padding:5px 12px;border-radius:99px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.epk-form-pill:hover{border-color:var(--teal);color:var(--teal);background:var(--teal-light)}
+.epk-form-pill-base{border-color:var(--brand-mid);color:var(--brand-mid);font-weight:700;background:var(--brand-light)}
+.epk-form-pill-base:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--brand-light);filter:brightness(.97)}
+.epk-form-pill-add{border-style:dashed;color:var(--teal);border-color:#4ac0c0;background:var(--teal-light);font-weight:700;padding:5px 13px}
+.epk-form-pill-add:hover{background:var(--teal);color:#fff}
+@keyframes epkFlashHi{0%{box-shadow:0 0 0 0 rgba(74,192,192,.6)}70%{box-shadow:0 0 0 12px rgba(74,192,192,0)}100%{box-shadow:0 0 0 0 rgba(74,192,192,0)}}
+.epk-flash-highlight{animation:epkFlashHi 1.1s ease-out;border-radius:10px}
 </style>
 </head>
 <body>
@@ -471,6 +484,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div style="flex:1">
         <div class="modal-title" id="epk-modal-title" style="margin-bottom:4px">Editar Pokémon</div>
         <div style="font-size:11px;color:var(--muted)" id="epk-modal-sub"></div>
+        <div class="epk-forms-nav" id="epk-forms-nav"></div>
       </div>
     </div>
 
@@ -482,7 +496,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:10px;margin-bottom:10px">
             <div>
               <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
-              <input class="mv-meta-input" id="epk-nome" type="text" placeholder="Ex: Pikachu" style="width:100%" oninput="epkSyncSlug()">
+              <input class="mv-meta-input" id="epk-nome" type="text" placeholder="Ex: Pikachu" style="width:100%" oninput="epkSyncSlug();epkRefreshFormsNav()">
             </div>
             <div>
               <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted);font-size:10px">(gerado automático)</span></div>
@@ -1690,6 +1704,7 @@ async function openEditPokemon(id) {
   if (document.getElementById('epk-forca-alfa')) document.getElementById('epk-forca-alfa').value = db.forca_alfa || '';
   alfaPopulateList('epk-formas-alfa', db.formas_alfa || []);
   faltPopulateList('epk-formas-alt', db.formas_alt || []);
+  epkRefreshFormsNav();
 
   // Gênero
   { const g=(db.genero||'').split(','); document.getElementById('epk-genero-m').value=g[0]||''; document.getElementById('epk-genero-f').value=g[1]||''; const h=document.getElementById('epk-genero-hint'); if(h){const m=parseFloat(g[0])||0,f=parseFloat(g[1])||0; h.style.display=(m===0&&f===0&&db.genero)?'block':'none';} }
@@ -2513,8 +2528,8 @@ function faltAddRow(listId, data = {}) {
   row.dataset.uid = uid;
   row.innerHTML = `
     <div class="falt-row-head">
-      <input type="text" class="falt-nome" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}">
-      <button type="button" class="falt-del" title="Remover forma" onclick="this.closest('.falt-row').remove()">✕</button>
+      <input type="text" class="falt-nome" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}" oninput="epkRefreshFormsNav()">
+      <button type="button" class="falt-del" title="Remover forma" onclick="this.closest('.falt-row').remove();epkRefreshFormsNav()">✕</button>
     </div>
     <div class="falt-grid">
       <div><span class="falt-field-lbl">Tipo Primário</span><select class="falt-tipo1">${faltTypeOptions(data.tipo1 || '')}</select></div>
@@ -2924,6 +2939,60 @@ function faltAddRowFromMain(listId, prefix) {
     hp: num(`${prefix}-hp`), atk: num(`${prefix}-atk`), def: num(`${prefix}-def`),
     spa: num(`${prefix}-spa`), spd: num(`${prefix}-spd`), spe: num(`${prefix}-spe`)
   });
+  epkRefreshFormsNav();
+}
+
+/* ── Pills de navegação de formas (cabeçalho do modal de edição) ──
+   Mostra a forma base (nome do próprio Pokémon) + o nome de cada forma_alt
+   já cadastrada, com um "+" no final. Clicar num nome rola a página até a
+   seção de edição correspondente (base = card "Identidade" lá em cima,
+   forma_alt = a linha dela na seção "Formas alternativas") e dá um destaque
+   temporário, já que os dados de cada forma são editados inline na mesma
+   página — não existe troca de "registro ativo". */
+function epkRefreshFormsNav() {
+  const nav = document.getElementById('epk-forms-nav');
+  if (!nav) return;
+  const baseName = (document.getElementById('epk-nome')?.value || '').trim() || 'Forma base';
+  const rows = [...document.querySelectorAll('#epk-formas-alt .falt-row')];
+  nav.innerHTML = `
+    <button type="button" class="epk-form-pill epk-form-pill-base" onclick="epkScrollToBase()" title="Editar dados da forma base">${cap(baseName)}</button>
+    ${rows.map(row => {
+      const nome = (row.querySelector('.falt-nome')?.value || '').trim() || 'Forma sem nome';
+      const uid = row.dataset.uid || '';
+      return `<button type="button" class="epk-form-pill" onclick="epkScrollToForm('${uid}')" title="Editar esta forma">${cap(nome)}</button>`;
+    }).join('')}
+    <button type="button" class="epk-form-pill epk-form-pill-add" onclick="epkAddFormFromNav()" title="Adicionar nova forma alternativa">＋</button>
+  `;
+}
+function epkFlashHighlight(el) {
+  if (!el) return;
+  el.classList.remove('epk-flash-highlight'); void el.offsetWidth; // reinicia a animação se já rodou antes
+  el.classList.add('epk-flash-highlight');
+  setTimeout(() => el.classList.remove('epk-flash-highlight'), 1200);
+}
+function epkScrollToBase() {
+  const input = document.getElementById('epk-nome');
+  const card = input?.closest('.epk-card');
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  epkFlashHighlight(card);
+  input.focus();
+}
+function epkScrollToForm(uid) {
+  const row = document.querySelector(`#epk-formas-alt .falt-row[data-uid="${uid}"]`);
+  if (!row) return;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  epkFlashHighlight(row);
+  row.querySelector('.falt-nome')?.focus();
+}
+function epkAddFormFromNav() {
+  faltAddRowFromMain('epk-formas-alt', 'epk'); // já chama epkRefreshFormsNav() no final
+  const rows = document.querySelectorAll('#epk-formas-alt .falt-row');
+  const last = rows[rows.length - 1];
+  if (!last) return;
+  last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  epkFlashHighlight(last);
+  last.querySelector('.falt-nome')?.focus();
 }
 
 /* ══════════════════════════════════════════
