@@ -714,8 +714,8 @@ function formSwitchButtonsHtml(forms,activeIdx,pkKey,baseName,TT){
   return `<div class="form-switch-row">
     ${forms.map((f,i)=>{
       const isActive=i===activeIdx;
-      return `<div class="form-switch-btn${isActive?' active':''}" id="fswbtn-${pkKey}-${i}" onclick="applyPokemonForm('${pkKey}',${i})" title="${(f.nome||'').replace(/"/g,'&quot;')}" style="${formSwitchBtnStyle(TT,isActive)}">
-      ${f.sprite?`<img src="${f.sprite}" alt="${f.nome||''}" onerror="this.style.visibility='hidden'">`:''}
+      return `<div class="form-switch-btn${isActive?' active':''}" id="fswbtn-${pkKey}-${i}" onclick="applyPokemonForm('${pkKey}',${i})" title="${formDisplayName(f.nome).replace(/"/g,'&quot;')}" style="${formSwitchBtnStyle(TT,isActive)}">
+      ${f.sprite?`<img src="${f.sprite}" alt="${formDisplayName(f.nome)}" onerror="this.style.visibility='hidden'">`:''}
     </div>`;
     }).join('')}
   </div>`;
@@ -944,6 +944,26 @@ function evoDisplayName(entry){
 // exibir só o nome base.
 function stripFormSuffix(name){
   return String(name||'').replace(/\s*\([^)]*\)\s*$/,'').trim();
+}
+
+// Formata o nome de uma forma alternativa/regional (campo formas_alt.nome,
+// cadastrado no admin como "Meowth (Alola Form)", "Meowth Alola" etc) pro
+// padrão compacto "(A) Meowth" usado no resto do site (mesma convenção do
+// evoDisplayName, usada na cadeia evolutiva). Se o nome já vier salvo pronto
+// nesse formato, ou não bater com nenhuma região conhecida (ex: "Oricorio
+// Estilo Pom-Pom"), devolve o nome como está — evita prefixo duplicado.
+const FORM_REGION_CODE={alola:'A',galar:'G',hisui:'H',paldea:'P',nendo:'N'};
+function formDisplayName(nome){
+  const raw=String(nome||'').trim();
+  if(!raw) return '';
+  if(/^\([AGPHN]\)\s/i.test(raw)) return raw;
+  const m=raw.match(/^(.*?)[\s(–-]+(alola|galar|hisui|paldea|nendo)\)?\s*(forma?|form)?\)?\.?$/i);
+  if(m){
+    const base=m[1].trim().replace(/[()\s]+$/,'').trim();
+    const code=FORM_REGION_CODE[m[2].toLowerCase()];
+    if(base&&code) return `(${code}) ${cap(base)}`;
+  }
+  return raw;
 }
 
 
@@ -1877,10 +1897,10 @@ async function renderRpgDetail(p, container, navToken){
     const heroLeftEl=artEl?.closest('.hero-left');
     if(heroLeftEl){ heroLeftEl.style.background=fTT.light; heroLeftEl.style.borderColor=fTT.mid+'40'; }
     const nameEl=document.getElementById('rpg-hero-name');
-    if(nameEl) nameEl.textContent=f.nome;
+    if(nameEl) nameEl.textContent=formDisplayName(f.nome);
     const headerEl=document.getElementById('rpg-hero-header');
     if(headerEl) headerEl.style.background=fTT.dark;
-    document.title=`${f.nome} — NationalDex`;
+    document.title=`${formDisplayName(f.nome)} — NationalDex`;
 
     const abEl=document.getElementById('rpg-abilities-list');
     if(abEl){
@@ -1917,7 +1937,7 @@ async function renderRpgDetail(p, container, navToken){
     const bioHeaderEl=document.getElementById('rpg-bio-header');
     const hasBio=!!(f.bio||(f.biomas&&f.biomas.length));
     if(bioSectionEl){ bioSectionEl.style.display=hasBio?'':'none'; bioSectionEl.style.borderColor=fTT.mid+'40'; }
-    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,f.nome,fTypes,genus,fTT):'';
+    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,formDisplayName(f.nome),fTypes,genus,fTT):'';
     if(bioHeaderEl) bioHeaderEl.style.background=fTT.dark;
 
     ['rpg-mv-level','rpg-mv-tm','rpg-mv-egg','rpg-mv-tutor'].forEach(elId=>{
@@ -2346,10 +2366,10 @@ async function renderDetail(p,s,container,navToken){
     const heroLeftEl=artEl?.closest('.hero-left');
     if(heroLeftEl){ heroLeftEl.style.background=fTT.light; heroLeftEl.style.borderColor=fTT.mid+'40'; }
     const nameEl=document.getElementById('hero-name-main');
-    if(nameEl) nameEl.textContent=f.nome;
+    if(nameEl) nameEl.textContent=formDisplayName(f.nome);
     const headerEl=document.getElementById('hero-header-main');
     if(headerEl) headerEl.style.background=fTT.dark;
-    document.title=`${f.nome} — NationalDex`;
+    document.title=`${formDisplayName(f.nome)} — NationalDex`;
 
     const abEl=document.getElementById('abilities-list-main');
     if(abEl){
@@ -2376,7 +2396,7 @@ async function renderDetail(p,s,container,navToken){
     const bioHeaderEl=document.getElementById('official-bio-header');
     const hasBio=!!(f.bio||(f.biomas&&f.biomas.length));
     if(bioSectionEl){ bioSectionEl.style.display=hasBio?'':'none'; bioSectionEl.style.borderColor=fTT.mid+'40'; }
-    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,f.nome,fTypes,genus,fTT):'';
+    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,formDisplayName(f.nome),fTypes,genus,fTT):'';
     if(bioHeaderEl) bioHeaderEl.style.background=fTT.dark;
 
     ['mv-level','mv-tm','mv-egg','mv-tutor'].forEach(elId=>{
@@ -2631,6 +2651,50 @@ function toggleFormShiny(key){
   if(thumb) thumb.classList.toggle('active',d.on);
 }
 
+// Cadeia evolutiva compacta pro card expandido de uma forma (Formas/Formas
+// Alfa) — mesma lógica de casamento por id/nome usada na cadeia principal
+// (clique navega até o estágio, quando encontrado em _rpgPokemon), só que
+// num layout mais enxuto pra caber dentro do card da forma. Sem suporte a
+// ramificação aqui (cadeia sempre linear) — cobre o caso comum das formas
+// regionais/alternativas.
+function formEvoChainHtml(evolucoes){
+  if(!evolucoes||!Array.isArray(evolucoes)||!evolucoes.length) return '';
+  function node(ev,isFirst){
+    const rawId=String(ev.id||'').trim();
+    let evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===rawId.toLowerCase());
+    if(!evPk){
+      const wantSlug=slugify(ev.name||'');
+      evPk=_rpgPokemon.find(x=>slugify(x.name)===wantSlug);
+    }
+    const sprite=evPk?.sprite||'';
+    const evName=evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?');
+    const evId=evPk?.id||rawId||'?';
+    const method=ev.method||ev.trigger||'';
+    const arrow=!isFirst?`<span style="display:flex;flex-direction:column;align-items:center;font-size:8px;color:var(--muted);margin:0 1px">
+      <span style="font-size:13px;line-height:1">›</span>${method?`<span style="white-space:nowrap">${method}</span>`:''}
+    </span>`:'';
+    return `${arrow}<div style="display:flex;flex-direction:column;align-items:center;gap:2px;${evPk?'cursor:pointer':''}" ${evPk?`onclick="goDetail('__rpg__${encodeURIComponent(evId)}','${rpgUrlSlug(evPk)}')"`:''}>
+      ${sprite?`<img src="${sprite}" style="width:40px;height:40px;object-fit:contain" onerror="this.style.opacity='.2'" alt="${evName}">`:`<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:16px;opacity:.3">❓</div>`}
+      <span style="font-family:var(--font-title);font-size:8px;font-weight:600;color:var(--text);text-align:center;max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${evName}</span>
+    </div>`;
+  }
+  const chainHtml=evolucoes.map((ev,i)=>node(ev,i===0)).join('');
+  return `<div>
+    <div style="font-family:var(--font-title);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Evolutionary Chain</div>
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">${chainHtml}</div>
+  </div>`;
+}
+
+// Badge de "Força Alfa" (gimmick exclusivo desta forma — Mega Evolução,
+// Gigantamax, Terastalização etc — campo de texto livre, opcional).
+function formForcaAlfaHtml(forcaAlfa){
+  if(!forcaAlfa) return '';
+  return `<div style="margin-top:10px">
+    <div style="font-family:var(--font-title);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Força Alfa</div>
+    <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--text);background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 10px;display:inline-block">${forcaAlfa}</span>
+  </div>`;
+}
+
 // Monta a seção completa de formas (compartilhada entre "Formas" e "Formas Alfa").
 // opts.forms = [{nome,tipo1,tipo2,habilidadeLabel,hp,atk,def,spa,spd,spe,sprite,sprite_shiny}]
 // Cada forma usa as cores da sua própria tipagem principal (f.tipo1) — o
@@ -2654,10 +2718,11 @@ function renderFormsSection(opts){
 
     const key=`${idPrefix}-${pkId}-${i}`;
     window._formSpriteReg[key]={normal:f.sprite||'',shiny:f.sprite_shiny||'',on:false};
+    const fLabel=formDisplayName(f.nome);
 
     const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
-      ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${f.nome}">`:''}
-      <span style="font-family:var(--font-title);font-size:10px;font-weight:600;color:${mid};text-transform:uppercase;letter-spacing:.3px;text-align:center">${f.nome}</span>
+      ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${fLabel}">`:''}
+      <span style="font-family:var(--font-title);font-size:10px;font-weight:600;color:${mid};text-transform:uppercase;letter-spacing:.3px;text-align:center">${fLabel}</span>
     </div>`;
 
     const shinyToggleHtml=f.sprite_shiny?`<img class="shiny-thumb" id="fthumb-${key}" src="${f.sprite_shiny}" onclick="event.stopPropagation();toggleFormShiny('${key}')" title="✦ Ver Shiny" alt="shiny" style="position:absolute;bottom:-6px;right:-6px;width:26px;height:26px;z-index:2">`:'';
@@ -2667,13 +2732,13 @@ function renderFormsSection(opts){
       <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
         <div style="display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px">
           <div style="position:relative;display:inline-flex">
-            ${f.sprite?`<img id="fspr-${key}" style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px ${mid}33)" src="${f.sprite}" alt="${f.nome}">`:''}
+            ${f.sprite?`<img id="fspr-${key}" style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px ${mid}33)" src="${f.sprite}" alt="${fLabel}">`:''}
             ${shinyToggleHtml}
           </div>
           <div style="display:flex;gap:6px">${typeIconsHtml}</div>
         </div>
         <div style="flex:1;min-width:180px">
-          <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${dark};margin-bottom:10px;letter-spacing:.5px">${f.nome}</div>
+          <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${dark};margin-bottom:10px;letter-spacing:.5px">${fLabel}</div>
           ${f.habilidadeLabel?`<div style="margin-bottom:10px">
             <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidade</div>
             <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:${dark}">${f.habilidadeLabel}</span>
@@ -2688,6 +2753,8 @@ function renderFormsSection(opts){
               </span>
             </div>
           </div>`:''}
+          ${formForcaAlfaHtml(f.forca_alfa)}
+          ${f.evolucoes&&f.evolucoes.length?`<div style="margin-top:10px">${formEvoChainHtml(f.evolucoes)}</div>`:''}
         </div>
         <div style="min-width:160px;flex-shrink:0">
           ${formDmgTakenHtml(fTypes)}
@@ -2735,13 +2802,15 @@ function renderAltFormsHtml(p){
     nome:p.name||p.nome, tipo1:p.tipo1, tipo2:p.tipo2,
     habilidadeLabel:mainAbilities.map(a=>a.toUpperCase().replace(/-/g,' ')).join(', '),
     hp:p.hp,atk:p.atk,def:p.def,spa:p.spa,spd:p.spd,spe:p.spe,
-    sprite:p.sprite, sprite_shiny:p.sprite_shiny
+    sprite:p.sprite, sprite_shiny:p.sprite_shiny,
+    forca_alfa:p.forca_alfa||null, evolucoes:p.evolucoes||null
   };
   const altForms=p.formas_alt.map(f=>({
     nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
     habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
     hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
-    sprite:f.sprite, sprite_shiny:f.sprite_shiny
+    sprite:f.sprite, sprite_shiny:f.sprite_shiny,
+    forca_alfa:f.forca_alfa||null, evolucoes:f.evolucoes||null
   }));
   // Cabeçalho da seção acompanha a cor do tipo principal do Pokémon (mesma
   // cor usada em Damage Taken/Biology/Evolutionary Chain), em vez de um
