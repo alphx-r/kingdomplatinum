@@ -216,6 +216,16 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 /* Modais de novo move e nova ability: fullscreen igual ao edit-pokemon-modal */
 #new-move-modal .modal{max-width:760px}
 #new-ability-modal .modal{max-width:680px}
+#type-icon-modal .modal{max-width:640px}
+.ticon-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
+.ticon-row:last-of-type{border-bottom:none}
+.ticon-preview{width:52px;height:52px;border-radius:50%;object-fit:contain;background:var(--surface2,#f4f4f4);border:1.5px solid var(--border);flex-shrink:0}
+.ticon-info{flex:1;min-width:0}
+.ticon-name{font-family:var(--font-title);font-size:12px;letter-spacing:.4px;margin-bottom:2px}
+.ticon-status{font-size:11px;color:var(--muted)}
+.ticon-status.ok{color:#2a7a2a}
+.ticon-status.err{color:#c03030}
+.ticon-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 
 .empty-state{text-align:center;padding:48px;background:var(--surface);border:1.5px dashed var(--border2);border-radius:var(--r);color:var(--muted)}
 .empty-icon{font-size:36px;margin-bottom:12px}
@@ -445,6 +455,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="runImportOfficialClassificacao()" title="Preenche a classificação (genus, ex: Pokémon Rato) dos Pokémon oficiais que ainda estão vazios">🏷️ Importar classificação</button>
           <button onclick="runImportOfficialGenero()" title="Busca o gender_rate na PokeAPI e SOBRESCREVE o campo 'genero' de todos os Pokémon oficiais (inclusive ajustes manuais)">⚥ Atualizar gênero</button>
           <button onclick="runImportOfficialEggGroup()" title="Busca o egg_group na PokeAPI e SOBRESCREVE o campo 'egg_group' de todos os Pokémon oficiais (corrige valores errados, ex: Meowth como Ground)">🥚 Atualizar egg groups</button>
+          <hr>
+          <div class="adm-more-group-lbl">Ícones de tipo</div>
+          <button onclick="openTypeIconModal()" title="Upload dos SVGs dos tipos homebrew (Scent, Light) pro Supabase Storage — o set de ícones do GitHub só tem os 18 tipos oficiais">🎨 Ícones de tipo customizados</button>
           <hr>
           <div class="adm-more-group-lbl">Manutenção / migração</div>
           <button onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
@@ -1345,7 +1358,23 @@ Caterpie"></textarea>
   </div>
 </div>
 
-<!-- NOVO MOVE MODAL -->
+<!-- ÍCONES DE TIPO CUSTOMIZADOS (Scent, Light, ...) -->
+<div class="modal-ov" id="type-icon-modal">
+  <div class="modal" style="position:relative">
+    <div class="modal-title" style="margin-bottom:4px">🎨 Ícones de Tipo Customizados</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">
+      Os tipos homebrew deste jogo (Scent, Light) não existem no set de ícones oficial usado pela NationalDex
+      (github.com/partywhale/pokemon-type-icons — só tem os 18 tipos canônicos). Suba aqui o SVG de cada um;
+      o arquivo vai pro Supabase Storage (bucket <code>pokemons</code>, pasta <code>types/</code>) e a NationalDex
+      já busca de lá automaticamente pra esses tipos.
+    </p>
+    <div id="ticon-list"></div>
+    <div class="modal-foot" style="padding:0;margin-top:14px">
+      <button class="btn btn-outline" onclick="closeModal('type-icon-modal')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-ov" id="new-move-modal">
   <div class="modal" style="position:relative">
     <div class="modal-title" style="margin-bottom:4px">＋ Novo Move Customizado</div>
@@ -2841,7 +2870,7 @@ async function faltFetchFromPokeapi(btn) {
         const species = await sRes.json();
         const genus = (species.genera || []).find(g => g.language.name === 'en')?.genus || '';
         if (genus) row.querySelector('.falt-classification').value = genus;
-        const eggGroups = (species.egg_groups || []).map(e => e.name).join(', ');
+        const eggGroups = (species.egg_groups || []).map(e => eggGroupModernName(e.name)).join(', ');
         if (eggGroups) row.querySelector('.falt-egg-group').value = eggGroups;
         if (typeof genderRateToText === 'function') {
           row.querySelector('.falt-genero').value = genderRateToText(species.gender_rate);
@@ -4338,6 +4367,20 @@ function flattenPokeapiEvoChain(rootNode) {
   return result;
 }
 
+// Detecta se a cadeia tem algum ponto de ramificação (um estágio que evolui
+// pra mais de um Pokémon diferente — ex: Meowth → Persian OU Perrserker).
+// A PokéAPI não marca qual ramo pertence a qual forma regional (ambos vêm
+// com is_default:true), então quando isso acontece o flatten automático
+// não tem como saber sozinho qual é o ramo certo pra ESTA forma regional
+// específica sendo importada — precisa de revisão humana.
+function pokeapiEvoChainHasBranch(rootNode) {
+  function walk(node) {
+    if ((node.evolves_to || []).length > 1) return true;
+    return (node.evolves_to || []).some(walk);
+  }
+  return walk(rootNode);
+}
+
 // Dispara manualmente o backup do pokemon.json (GET /api/admin/backup-pokemon-now).
 // Necessário porque o plano gratuito da Vercel só permite 1 execução de cron por dia
 // — isso dá um jeito de rodar o backup extra na hora. Usa uma rota separada da do
@@ -4473,7 +4516,7 @@ async function runImportOfficialPhysicalData() {
         if (!p.height && pd.height) patch.height = pd.height / 10;   // decímetros -> m
         if (!p.weight && pd.weight) patch.weight = pd.weight / 10;   // hectogramas -> kg
         if (!p.egg_group) {
-          const eggGroups = (sd.egg_groups || []).map(e => e.name).join(', ') || null;
+          const eggGroups = (sd.egg_groups || []).map(e => eggGroupModernName(e.name)).join(', ') || null;
           if (eggGroups) patch.egg_group = eggGroups;
         }
         if (Object.keys(patch).length) {
@@ -4755,6 +4798,10 @@ async function importRegionalFormsFromPokeapi() {
     let ok = 0, fail = 0, i = 0;
     const total = matches.length;
     const erros = [];
+    // Formas cuja cadeia de evolução bifurca na PokéAPI (ex: Meowth → Persian
+    // OU Perrserker) e por isso ficaram sem "evolucoes" preenchido automático —
+    // precisam ser curadas manualmente na tela de edição de cada Pokémon.
+    const evoReviewList = [];
 
     for (const item of matches) {
       i++;
@@ -4806,18 +4853,33 @@ async function importRegionalFormsFromPokeapi() {
         const flavor = flavorEntries.find(f => f.language.name === 'en') || flavorEntries[0];
         const bio = flavor ? flavor.flavor_text.replace(/[\n\f\r]+/g, ' ').replace(/\s+/g, ' ').trim() : null;
 
-        // Evolução: busca a evolution-chain e achata como está na API
-        let evolucoes = null;
-        if (species.evolution_chain?.url) {
+        // Evolução: busca a evolution-chain e achata como está na API.
+        // Preserva a evolução já curada manualmente (se existir) em vez de
+        // sobrescrever — mesmo padrão já usado pra "approved" acima.
+        // Se a cadeia bifurca (ex: Meowth → Persian OU Perrserker) e ainda
+        // não há nada curado, NÃO tenta adivinhar automaticamente: a
+        // PokéAPI não diz qual ramo é o certo pra esta forma regional
+        // específica (os dois vêm marcados como is_default), então
+        // preencher os dois às cegas pode acabar mostrando o ramo errado
+        // (ou os dois) na página do Pokémon. Fica null e entra na lista de
+        // "precisa revisão manual de evolução" reportada no final.
+        let evolucoes = existingById[id]?.evolucoes || null;
+        let evoNeedsReview = false;
+        if (!evolucoes && species.evolution_chain?.url) {
           try {
             const evoRes = await fetchWithRetry(species.evolution_chain.url);
             if (evoRes.ok) {
               const evoData = await evoRes.json();
-              const flat = flattenPokeapiEvoChain(evoData.chain);
-              evolucoes = flat.length ? flat : null;
+              if (pokeapiEvoChainHasBranch(evoData.chain)) {
+                evoNeedsReview = true;
+              } else {
+                const flat = flattenPokeapiEvoChain(evoData.chain);
+                evolucoes = flat.length ? flat : null;
+              }
             }
           } catch (_) { /* segue sem evolução se essa parte falhar */ }
         }
+        if (evoNeedsReview) evoReviewList.push(`${displayName} [${id}]`);
 
         const row = {
           id,
@@ -4862,7 +4924,11 @@ async function importRegionalFormsFromPokeapi() {
       // dar pra saber na hora quem precisa ser reimportado/revisado.
       alert(`⚠️ ${fail} forma(s) regional(is) falharam ao importar e continuam com o dado antigo:\n\n${erros.join('\n')}\n\nRode "Importar formas regionais" de novo pra tentar essas de novo (as que já deram certo não serão duplicadas).`);
     }
-    toast(`Formas regionais: ${ok} importadas${fail ? `, ${fail} falharam (veja lista)` : ''}. Revise bio/evolução antes de aprovar.`, fail ? 'err' : 'ok');
+    if (evoReviewList.length) {
+      console.warn('Formas com cadeia de evolução ramificada (precisam de "Evolução" curada manualmente):', evoReviewList);
+      alert(`🔀 ${evoReviewList.length} forma(s) regional(is) têm evolução AMBÍGUA na PokéAPI (o Pokémon evolui pra espécies diferentes dependendo da forma, ex: Meowth-Galar → Perrserker) e por isso ficaram SEM evolução preenchida automaticamente — a página vai tentar adivinhar em tempo real, mas o ideal é curar manualmente em cada uma:\n\n${evoReviewList.join('\n')}`);
+    }
+    toast(`Formas regionais: ${ok} importadas${fail ? `, ${fail} falharam (veja lista)` : ''}${evoReviewList.length ? `, ${evoReviewList.length} com evolução pra revisar` : ''}. Revise bio/evolução antes de aprovar.`, (fail || evoReviewList.length) ? 'err' : 'ok');
     await loadPokemon();
   } catch (e) {
     toast('Erro ao importar formas regionais: ' + e.message, 'err');
@@ -5360,6 +5426,98 @@ async function uploadImgStorage(b64, bucket, path) {
 }
 function openNewAbility() { document.getElementById('new-ability-modal').classList.add('open'); }
 function openNewMove() { document.getElementById('new-move-modal').classList.add('open'); }
+
+/* ══════════════════════════════════════════
+   ÍCONES DE TIPO CUSTOMIZADOS (Scent, Light, ...)
+   Upload de SVG pro Supabase Storage (bucket "pokemons", pasta "types/")
+══════════════════════════════════════════ */
+const TICON_TYPES = ['scent', 'light'];
+
+function ticonPublicUrl(type) {
+  return `${SUPA_URL}/storage/v1/object/public/pokemons/types/${type}.svg`;
+}
+
+function openTypeIconModal() {
+  renderTiconList();
+  document.getElementById('type-icon-modal').classList.add('open');
+}
+
+function renderTiconList() {
+  const wrap = document.getElementById('ticon-list');
+  if (!wrap) return;
+  wrap.innerHTML = TICON_TYPES.map(t => `
+    <div class="ticon-row" id="ticon-row-${t}">
+      <img class="ticon-preview" src="${ticonPublicUrl(t)}?t=${Date.now()}" alt="${t}" onerror="this.style.visibility='hidden'">
+      <div class="ticon-info">
+        <div class="ticon-name">${cap(t)}</div>
+        <div class="ticon-status" id="ticon-status-${t}">Verificando…</div>
+      </div>
+      <div class="ticon-actions">
+        <label class="btn btn-outline" style="cursor:pointer;margin:0">
+          📤 Escolher SVG
+          <input type="file" accept=".svg,image/svg+xml" style="display:none" onchange="handleTiconFile('${t}', this)">
+        </label>
+      </div>
+    </div>
+  `).join('');
+  TICON_TYPES.forEach(checkTiconExists);
+}
+
+async function checkTiconExists(type) {
+  const statusEl = document.getElementById('ticon-status-' + type);
+  if (!statusEl) return;
+  try {
+    const r = await fetch(ticonPublicUrl(type), { method: 'HEAD' });
+    if (r.ok) { statusEl.textContent = '✓ Já enviado ao Supabase'; statusEl.className = 'ticon-status ok'; }
+    else { statusEl.textContent = 'Ainda não enviado'; statusEl.className = 'ticon-status'; }
+  } catch {
+    statusEl.textContent = 'Ainda não enviado';
+    statusEl.className = 'ticon-status';
+  }
+}
+
+function handleTiconFile(type, inputEl) {
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+  if (!/\.svg$/i.test(file.name)) {
+    toast('Selecione um arquivo .svg', 'err');
+    inputEl.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    let dataUrl = reader.result;
+    // garante o mime correto de SVG mesmo se o navegador não detectar sozinho
+    if (!/^data:image\/svg\+xml/.test(dataUrl)) {
+      const b64 = dataUrl.split(',')[1] || '';
+      dataUrl = 'data:image/svg+xml;base64,' + b64;
+    }
+    uploadTicon(type, dataUrl, inputEl);
+  };
+  reader.onerror = () => toast('Erro ao ler o arquivo.', 'err');
+  reader.readAsDataURL(file);
+}
+
+async function uploadTicon(type, dataUrl, inputEl) {
+  const row = document.getElementById('ticon-row-' + type);
+  const statusEl = document.getElementById('ticon-status-' + type);
+  const btn = row ? row.querySelector('.ticon-actions label') : null;
+  if (btn) btn.style.pointerEvents = 'none';
+  if (statusEl) { statusEl.textContent = 'Enviando…'; statusEl.className = 'ticon-status'; }
+  try {
+    const publicUrl = await uploadImgStorage(dataUrl, 'pokemons', `types/${type}.svg`);
+    const img = row ? row.querySelector('.ticon-preview') : null;
+    if (img) { img.style.visibility = ''; img.src = publicUrl + '?t=' + Date.now(); }
+    if (statusEl) { statusEl.textContent = '✓ Enviado ao Supabase'; statusEl.className = 'ticon-status ok'; }
+    toast(`Ícone de ${cap(type)} enviado!`, 'ok');
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Erro: ' + e.message; statusEl.className = 'ticon-status err'; }
+    toast('Erro ao enviar ícone de ' + type + ': ' + e.message, 'err');
+  } finally {
+    if (btn) btn.style.pointerEvents = '';
+    inputEl.value = '';
+  }
+}
 
 // Close modals on overlay click
 document.querySelectorAll('.modal-ov').forEach(ov => {
