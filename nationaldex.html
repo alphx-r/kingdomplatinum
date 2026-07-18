@@ -507,6 +507,11 @@ const TYPE_CHART={normal:{rock:.5,ghost:0,steel:.5,scent:.5},fire:{fire:.5,water
 ═══════════════════════════════════════ */
 function pill(t,lg=false){const c=TC[t]||{bg:'#999',c:'#fff'};return `<span class="${lg?'tpill-lg':'tpill'}" style="background:${c.bg};color:${c.c}">${(TL[t]||t).toUpperCase()}</span>`;}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1).replace(/-/g,' ');}
+// Nomes de exibição pros egg groups: a PokéAPI usa slugs internos que não
+// batem com os nomes usados em jogo (ex: o grupo "Field" é salvo como
+// "ground" na API). Sem esse mapeamento, cap() sozinho mostra "Ground".
+const EGG_GROUP_DISPLAY_NAMES={ground:'Field',plant:'Grass',humanshape:'Human-Like','indeterminate':'Amorphous','no-eggs':'Undiscovered'};
+function eggGroupDisplayName(slug){return EGG_GROUP_DISPLAY_NAMES[slug]||cap(slug);}
 function titleCase(s){return s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
 function moveSlug(s){return String(s||'').trim().toLowerCase().replace(/\s+/g,'-');}
 
@@ -1362,10 +1367,14 @@ async function renderRpgDetail(p, container, navToken){
   }
 
   // ── Egg groups ──
-  const eggs=classificationSrc?.egg_groups?.length
-    ? classificationSrc.egg_groups.map(e=>cap(e.name)).join(', ')
-    : (p.egg_group
-        ? String(p.egg_group).split(',').map(s=>s.trim()).filter(Boolean).map(cap).join(', ')
+  // Prioriza o campo "egg_group" cadastrado no admin (mesma regra do
+  // gênero acima: não sobrescrever ajuste manual/curado). Só cai pro
+  // egg_groups cru da PokéAPI quando o banco não tiver nada preenchido —
+  // e mesmo assim passando pelo mapeamento de nomes (ground→Field etc).
+  const eggs=p.egg_group
+    ? String(p.egg_group).split(',').map(s=>s.trim()).filter(Boolean).map(cap).join(', ')
+    : (classificationSrc?.egg_groups?.length
+        ? classificationSrc.egg_groups.map(e=>eggGroupDisplayName(e.name)).join(', ')
         : ([p.egg_group1,p.egg_group2].filter(Boolean).map(cap).join(', ')||'—'));
 
   // ── Genus / Classification ──
@@ -2013,7 +2022,7 @@ async function renderDetail(p,s,container,navToken){
     const mPct=(100-(gr/8*100)).toFixed(0);const fPct=(gr/8*100).toFixed(0);
     genderHtml=gr===-1?'Sem gênero (⚲)':`<span style="color:#5588cc;font-weight:700">${mPct}% Male</span>, <span style="color:#cc5588;font-weight:700">${fPct}% Female</span>`;
   }
-  const eggs=s.egg_groups.map(e=>cap(e.name)).join(', ')||'—';
+  const eggs=s.egg_groups.map(e=>eggGroupDisplayName(e.name)).join(', ')||'—';
   const bst=p.stats.reduce((a,b)=>a+b.base_stat,0);
 
   // Abilities
