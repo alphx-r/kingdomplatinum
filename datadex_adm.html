@@ -1535,6 +1535,16 @@ async function sbDelete(table, id) {
   if (!r.ok) throw new Error(await r.text());
 }
 
+// Exclui uma linha pelo campo "name" — usado por abilities/moves, cuja
+// chave é o nome (slug) e não um "id" numérico.
+async function sbDeleteByName(table, name) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?name=eq.${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: SH
+  });
+  if (!r.ok) throw new Error(await r.text());
+}
+
 /* ══════════════════════════════════════════
    HELPERS
 ══════════════════════════════════════════ */
@@ -2434,6 +2444,10 @@ function alfaAddRow(listId, data = {}) {
       <input type="file" class="alfa-sprite-shiny-file" accept="image/*">
       <input type="hidden" class="alfa-sprite-shiny-url" value="${data.sprite_shiny || ''}">
       <button type="button" class="spr-adj-trigger alfa-sprite-shiny-adjust" title="Ajustar posição/zoom do sprite shiny">🎯</button>
+    </div>
+    <div class="alfa-pokedex-section" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+      <span class="alfa-field-lbl" style="margin-bottom:6px">Pokédex desta Força Alfa <span style="font-weight:400;text-transform:none;color:var(--muted)">(texto exibido na ficha explicando essa transformação — como é obtida, o que muda etc)</span></span>
+      <textarea class="alfa-pokedex" placeholder="Ex: Ao absorver a energia de uma tempestade, Prewood entra em um estado de fúria vegetal..." style="width:100%;min-height:60px;font-family:var(--font-body);font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:7px 8px;background:#fff;color:var(--text);resize:vertical;box-sizing:border-box">${data.pokedex || ''}</textarea>
     </div>`;
   // habilidade combobox behaviour
   cbInit(row.querySelector('.alfa-hab'));
@@ -2507,7 +2521,8 @@ function alfaReadListSync(listId) {
     const bst = alfaRecalcBst(row);
     const sprite = row.querySelector('.alfa-sprite-url')?.value || null;
     const sprite_shiny = row.querySelector('.alfa-sprite-shiny-url')?.value || null;
-    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny };
+    const pokedex = row.querySelector('.alfa-pokedex')?.value.trim() || null;
+    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny, pokedex };
   }).filter(Boolean);
 }
 // Faz upload de qualquer sprite pendente (arquivo escolhido) para cada forma, e retorna a lista final pronta pra salvar.
@@ -3625,6 +3640,7 @@ function renderAbList() {
           <span class="save-ind" id="ab-ind-${item.name}">✓ Salvo!</span>
           <button class="btn btn-outline btn-sm" onclick="saveAb('${item.name}',false)">💾 Salvar rascunho</button>
           <button class="btn btn-success btn-sm" onclick="saveAb('${item.name}',true)">✓ Aprovar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAbility('${item.name}')" title="Remove esta habilidade do banco de dados" style="margin-left:auto">🗑️ Excluir</button>
         </div>
       </div>
     </div>`;
@@ -3649,6 +3665,21 @@ async function saveAb(name, approve) {
     updateAbStats();
     toast(approve ? '✓ Aprovada e publicada!' : '💾 Rascunho salvo!', 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+// Remove a habilidade do banco de dados por completo (tabela "abilities").
+// Não afeta Pokémon que já usam essa habilidade — o nome fica salvo neles
+// como texto simples, só perdem a descrição/tradução (que vinha desta tabela).
+async function deleteAbility(name) {
+  if (!confirm(`Excluir a habilidade "${cap(name)}" do banco de dados?\n\nPokémon que já usam essa habilidade continuam com o nome salvo, mas ela deixa de aparecer na lista de Abilities e perde a descrição/tradução.`)) return;
+  try {
+    await sbDeleteByName('abilities', name);
+    delete S.ab.dbMap[name];
+    S.ab.all = S.ab.all.filter(a => a.name !== name);
+    applyAbFilter();
+    cbBuildAbilityList();
+    toast('🗑️ Habilidade excluída.', 'ok');
+  } catch (e) { toast('Erro ao excluir: ' + e.message, 'err'); }
 }
 
 function updateAbStats() {
@@ -3741,6 +3772,7 @@ function renderMvList() {
     return `<div class="entry${appr?' approved':''}${hasDesc?' has-pt':''}" id="mv-entry-${item.name}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="toggleEntry('mv-entry-${item.name}')">
         <span class="entry-name">${cap(item.name)}${typeLabel?`<small>${typeLabel}${cat?' · '+catLabel:''}</small>`:''}</span>
+        ${db.is_tm&&db.tm_number?`<span class="badge tm-pill" style="background:#e0eaff;color:#2050a0">TM${String(db.tm_number).padStart(2,'0')}</span>`:''}
         ${catClass?`<span class="badge cat-pill ${catClass}">${catLabel}</span>`:''}
         ${db.contest_style?`<span class="badge" style="background:#eee;color:#555">${cap(db.contest_style)}</span>`:''}
         <span class="badge ${appr?'badge-appr':hasDesc?'badge-pt':'badge-pend'}">${appr?'✓ Aprovado':hasDesc?'Rascunho':'Pendente'}</span>
@@ -3788,6 +3820,21 @@ function renderMvList() {
           </div>
         </div>
 
+        <div class="mv-section-lbl">🔢 Máquina (TM)</div>
+        <div class="mv-meta-grid">
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">É TM?</div>
+            <label style="display:flex;align-items:center;gap:6px;height:34px">
+              <input type="checkbox" id="mv-istm-${item.name}" ${db.is_tm?'checked':''} onchange="mvToggleTmNumber('${item.name}')">
+              <span style="font-size:11px;color:var(--muted)">Marcar como TM</span>
+            </label>
+          </div>
+          <div class="mv-meta-item">
+            <div class="mv-meta-lbl">Número da TM</div>
+            <input class="mv-meta-input" type="number" min="1" max="999" id="mv-tmnum-${item.name}" value="${db.tm_number ?? ''}" placeholder="Ex: 101" ${db.is_tm?'':'disabled'} style="${db.is_tm?'':'opacity:.5'}">
+          </div>
+        </div>
+
         <div class="mv-section-lbl">📄 Descrição</div>
         <div class="field-row">
           <textarea class="field-pt${db.descricao?' filled':''}" id="mv-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" style="width:100%" oninput="markFilled(this)">${db.descricao || ''}</textarea>
@@ -3797,10 +3844,20 @@ function renderMvList() {
           <span class="save-ind" id="mv-ind-${item.name}">✓ Salvo!</span>
           <button class="btn btn-outline btn-sm" onclick="saveMv('${item.name}',false)">💾 Salvar rascunho</button>
           <button class="btn btn-success btn-sm" onclick="saveMv('${item.name}',true)">✓ Aprovar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMove('${item.name}')" title="Remove este movimento do banco de dados" style="margin-left:auto">🗑️ Excluir</button>
         </div>
       </div>
     </div>`;
   }).join('');
+}
+
+// Habilita/desabilita o campo de número quando o admin marca/desmarca "É TM".
+function mvToggleTmNumber(name) {
+  const chk = document.getElementById(`mv-istm-${name}`);
+  const num = document.getElementById(`mv-tmnum-${name}`);
+  if (!chk || !num) return;
+  num.disabled = !chk.checked;
+  num.style.opacity = chk.checked ? '1' : '.5';
 }
 
 async function saveMv(name, approve) {
@@ -3816,8 +3873,12 @@ async function saveMv(name, approve) {
   const power = powerRaw !== '' && powerRaw !== undefined ? parseInt(powerRaw) : null;
   const accuracy = accRaw !== '' && accRaw !== undefined ? parseInt(accRaw) : null;
   const contest_style = styleRaw || null;
+  const is_tm = document.getElementById(`mv-istm-${name}`)?.checked || false;
+  const tmNumRaw = document.getElementById(`mv-tmnum-${name}`)?.value;
+  const tm_number = is_tm && tmNumRaw !== '' && tmNumRaw !== undefined ? parseInt(tmNumRaw) : null;
+  if (is_tm && !tm_number) { toast('Informe o número da TM.', 'err'); return; }
   try {
-    const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, approved: approve, updated_at: new Date().toISOString() };
+    const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, is_tm, tm_number, approved: approve, updated_at: new Date().toISOString() };
     await sbUpsert('moves', row);
     S.mv.dbMap[name] = row;
     item.type = type; item.type2 = type2; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
@@ -3829,6 +3890,19 @@ async function saveMv(name, approve) {
       entry.classList.toggle('has-pt', !!desc);
       const badge = entry.querySelector('.badge:last-of-type');
       if (badge) { badge.textContent = approve ? '✓ Aprovado' : 'Rascunho'; badge.className = 'badge ' + (approve ? 'badge-appr' : 'badge-pt'); }
+      let tmBadge = entry.querySelector('.tm-pill');
+      if (is_tm && tm_number) {
+        const label = 'TM' + String(tm_number).padStart(2, '0');
+        if (tmBadge) { tmBadge.textContent = label; }
+        else {
+          tmBadge = document.createElement('span');
+          tmBadge.className = 'badge tm-pill';
+          tmBadge.style.cssText = 'background:#e0eaff;color:#2050a0';
+          tmBadge.textContent = label;
+          const head = entry.querySelector('.entry-head');
+          head.insertBefore(tmBadge, head.querySelector('.badge'));
+        }
+      } else if (tmBadge) { tmBadge.remove(); }
     }
     updateMvStats();
     toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
@@ -3864,6 +3938,22 @@ function updateMvStats() {
   document.getElementById('mv-pct').textContent = pct + '%';
   document.getElementById('mv-bar').style.width = pct + '%';
   document.getElementById('badge-moves').textContent = `${appr}/${total}`;
+}
+
+// Remove o movimento do banco de dados por completo (tabela "moves"). Não
+// afeta Pokémon que já têm esse move no moveset — o nome fica salvo neles
+// como texto simples, só perde a descrição/atributos/status de TM (que
+// vinham desta tabela).
+async function deleteMove(name) {
+  if (!confirm(`Excluir o movimento "${cap(name)}" do banco de dados?\n\nPokémon que já têm esse move no moveset continuam com o nome salvo, mas ele deixa de aparecer na lista de Moves e perde descrição/atributos/status de TM.`)) return;
+  try {
+    await sbDeleteByName('moves', name);
+    delete S.mv.dbMap[name];
+    S.mv.all = S.mv.all.filter(m => m.name !== name);
+    applyMvFilter();
+    cbBuildMoveList();
+    toast('🗑️ Movimento excluído.', 'ok');
+  } catch (e) { toast('Erro ao excluir: ' + e.message, 'err'); }
 }
 
 async function loadMoves() {
