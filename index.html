@@ -3342,7 +3342,9 @@ function calcSyncSelects(){
                 <input type="text" id="adm-senha-nova" placeholder="Min. 4 caracteres" autocomplete="off"/>
               </div>
               <button class="btn btn-primary btn-sm" onclick="admAlterarSenhaPlayer()" style="margin-bottom:1px">Salvar</button>
+              <button class="btn btn-warn btn-sm" onclick="admResetarSenhaPlayer()" style="margin-bottom:1px">Resetar</button>
             </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">"Resetar" apaga a senha do player — no próximo login ele poderá entrar com o mesmo nome de usuário e criar uma nova senha (igual ao primeiro acesso).</div>
             <div class="fb fb-ok" id="adm-senha-fb" style="margin-top:8px">✓ Senha salva!</div>
             <div class="fb fb-err" id="adm-senha-fb-err" style="margin-top:8px">—</div>
           </div>
@@ -6061,6 +6063,26 @@ async function admAlterarSenhaPlayer(){
   _loginPlayerCache = null;
   fb('adm-senha-fb');
   senhaEl.value='';
+}
+
+async function admResetarSenhaPlayer(){
+  if(!isSuperAdmin()){ alert('Apenas o super admin pode resetar senhas de players.'); return; }
+  const selEl = document.getElementById('adm-senha-player');
+  const playerId = selEl.value;
+  const errEl = document.getElementById('adm-senha-fb-err');
+  document.getElementById('adm-senha-fb').style.display='none';
+  errEl.style.display='none';
+  if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
+  const p = players.find(x=>String(x.id)===String(playerId));
+  if(!confirm(`Resetar a senha de "${p?p.nome:'este player'}"? Ele poderá entrar com o mesmo login e criar uma nova senha.`)) return;
+  await dbPatch('players',`id=eq.${playerId}`,{senha:null});
+  if(p) p.senha=null;
+  _loginPlayerCache = null;
+  document.getElementById('adm-senha-nova').value='';
+  const okEl = document.getElementById('adm-senha-fb');
+  okEl.textContent = '✓ Senha resetada! O player poderá criar uma nova no próximo login.';
+  fb('adm-senha-fb');
+  setTimeout(()=>{ okEl.textContent = '✓ Senha salva!'; }, 2600);
 }
 
 function populateAdmSenhaSelect(){
