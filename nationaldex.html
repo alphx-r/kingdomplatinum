@@ -164,8 +164,10 @@ html{
 .hero-left{background:var(--surface2);border-right:1.5px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px 48px;gap:10px;position:relative}
 .hero-dex-num{position:absolute;top:12px;left:14px;font-family:var(--font-title);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;z-index:2}
 .form-switch-wrap{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:center}
-.hero-art{width:190px;height:190px;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.14));transition:transform .3s;margin-top:15px}
-.hero-art:hover{transform:scale(1.05)}
+.hero-art-stack{position:relative;width:190px;height:190px;margin-top:15px}
+.hero-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.14));transition:opacity .3s ease,transform .3s ease;transform:scale(var(--fill-scale,1));opacity:0;pointer-events:none}
+.hero-art.hero-art-active{opacity:1;pointer-events:auto}
+.hero-art-stack:hover .hero-art.hero-art-active{transform:scale(calc(var(--fill-scale,1) * 1.05))}
 .shiny-row{position:absolute;top:10px;right:10px}
 .shiny-thumb{width:32px;height:32px;object-fit:contain;border-radius:50%;border:1.5px solid var(--border);padding:3px;background:var(--surface);cursor:pointer;opacity:.55;transition:all .2s;display:block}
 .shiny-thumb:hover{opacity:1;border-color:var(--accent);transform:scale(1.12)}
@@ -345,7 +347,7 @@ html{
 @media(max-width:768px){
   .hero{grid-template-columns:1fr}
   .hero-left{border-right:none;border-bottom:1.5px solid var(--border);padding-bottom:48px;min-height:220px}
-  .hero-art{width:150px;height:150px}
+  .hero-art-stack{width:150px;height:150px}
   .bio-layout{flex-direction:column}
   .detail-wrap,.list-wrap{padding:14px 10px}
   .nav{padding:0 14px}
@@ -533,13 +535,31 @@ const TM_MOVE_NAMES=[
 ];
 const TM_SLUG_TO_NUM={};
 TM_MOVE_NAMES.forEach((n,i)=>{ TM_SLUG_TO_NUM[moveSlug(n)]=i+1; });
-function tmLabel(name){ const n=TM_SLUG_TO_NUM[moveSlug(name)]; return n?('TM'+String(n).padStart(2,'0')):null; }
+// Mapa dinâmico de TMs: começa com a lista fixa acima e é sobrescrito/
+// estendido por qualquer move marcado como TM no admin (colunas is_tm +
+// tm_number na tabela "moves") — permite criar TMs novas (fakemon/
+// homebrew) ou renumerar as oficiais sem editar este arquivo.
+let _tmMapCache=null;
+async function getTmMap(){
+  if(_tmMapCache) return _tmMapCache;
+  const map={...TM_SLUG_TO_NUM};
+  try{
+    const mv=await loadMoves();
+    Object.values(mv).forEach(row=>{
+      if(row.is_tm&&row.tm_number) map[moveSlug(row.name)]=row.tm_number;
+    });
+  }catch{}
+  _tmMapCache=map;
+  return map;
+}
+function tmLabel(name){ const map=_tmMapCache||TM_SLUG_TO_NUM; const n=map[moveSlug(name)]; return n?('TM'+String(n).padStart(2,'0')):null; }
 // Filtra uma lista de {name,...} pra só as que estão na lista de TMs do
 // sistema, e ordena por número de TM.
-function restrictToTmList(list){
+async function restrictToTmList(list){
+  const map=await getTmMap();
   return (list||[])
-    .filter(m=>TM_SLUG_TO_NUM[moveSlug(m.name)])
-    .sort((a,b)=>TM_SLUG_TO_NUM[moveSlug(a.name)]-TM_SLUG_TO_NUM[moveSlug(b.name)]);
+    .filter(m=>map[moveSlug(m.name)])
+    .sort((a,b)=>map[moveSlug(a.name)]-map[moveSlug(b.name)]);
 }
 function calcDmg(types){
   const m={};for(const t of Object.keys(TYPE_CHART))m[t]=1;
@@ -1723,7 +1743,7 @@ async function renderRpgDetail(p, container, navToken){
     }
   }
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
-  tmMoves=restrictToTmList(tmMoves);
+  tmMoves=await restrictToTmList(tmMoves);
   // Se o usuário já navegou pra outro Pokémon enquanto os fetches acima
   // (apiPoke/apiSpecies/evolução) rodavam, aborta antes de escrever no DOM.
   if(navToken!==undefined&&navToken!==_detailNavToken)return;
@@ -1784,6 +1804,11 @@ async function renderRpgDetail(p, container, navToken){
   const baseHeightHtml=heightWeightSrc?.height?(heightWeightSrc.height/10)+' m':(p.height?p.height+' m':'—');
   const baseWeightHtml=heightWeightSrc?.weight?(heightWeightSrc.weight/10)+' kg':(p.weight?p.weight+' kg':'—');
 
+  // Formas Alfa (Mega/Gigantamax custom) — precisa ser calculado antes do
+  // template abaixo porque a função agora é assíncrona (busca descrição
+  // de habilidades no Supabase).
+  const alfaFormsHtml=await renderAlfaFormsHtml(p);
+
   // ── Render HTML ──
   container.innerHTML=`
   <div class="breadcrumb">
@@ -1797,10 +1822,15 @@ async function renderRpgDetail(p, container, navToken){
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">${numDisplay}</div>
         <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,0,rpgFormsPkKey,label,TT)}</div>
-        <img class="hero-art" id="rpg-main-art"
-          src="${heroSprite}"
-          onerror="this.style.opacity='.2'" alt="${label}"
-          style="${!heroSprite?'opacity:.15':''}">
+        <div class="hero-art-stack">
+          <img class="hero-art hero-art-active" id="rpg-main-art"
+            src="${heroSprite}"
+            onerror="this.style.opacity='.2'" alt="${label}"
+            style="${!heroSprite?'opacity:.15':''}">
+          <img class="hero-art" id="rpg-main-art-shiny"
+            src="${shinySprite||''}"
+            onerror="this.dataset.broken='1'" alt="${label} shiny">
+        </div>
         <div class="hero-type-icons" id="rpg-type-icons">
           ${tipos.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${TL[t]||t}">`).join('')}
         </div>
@@ -1845,7 +1875,7 @@ async function renderRpgDetail(p, container, navToken){
     <div class="sec-body"><div class="evo-chain">${evoChainHtml}</div></div>
   </div>`:''}
 
-  ${renderAlfaFormsHtml(p)}
+  ${alfaFormsHtml}
 
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
@@ -1870,6 +1900,13 @@ async function renderRpgDetail(p, container, navToken){
   window._rpgNormalSprite=heroSprite;
   window._rpgShinySprite=shinySprite||'';
   window._rpgShinyOn=false;
+  {
+    const artElInit=document.getElementById('rpg-main-art');
+    const artShinyElInit=document.getElementById('rpg-main-art-shiny');
+    if(artElInit) artElInit.dataset.spriteUrl=heroSprite||'';
+    if(artShinyElInit) artShinyElInit.dataset.spriteUrl=shinySprite||'';
+  }
+  normalizeHeroSpritePair('rpg-main-art','rpg-main-art-shiny',heroSprite,shinySprite||'');
 
   // ── Troca de forma (botões abaixo da tipagem) ──
   async function applyRpgForm(idx){
@@ -1889,7 +1926,8 @@ async function renderRpgDetail(p, container, navToken){
     if(evoHeaderEl) evoHeaderEl.style.background=fTT.dark;
 
     const artEl=document.getElementById('rpg-main-art');
-    if(artEl){ artEl.src=f.sprite||''; artEl.style.opacity=f.sprite?'':'.15'; }
+    setHeroSpritePair('rpg-main-art','rpg-main-art-shiny',f.sprite||'',f.sprite_shiny||'');
+    setHeroShinyActive('rpg-main-art','rpg-main-art-shiny',false);
     window._rpgNormalSprite=f.sprite||'';
     window._rpgShinySprite=f.sprite_shiny||'';
     window._rpgShinyOn=false;
@@ -1969,11 +2007,95 @@ async function renderRpgDetail(p, container, navToken){
   window._pkFormsRegistry[rpgFormsPkKey]={forms:rpgForms, apply:applyRpgForm};
 }
 
+// ── Visualização normal/shiny do hero art ──────────────────────────────
+// Em vez de trocar o `src` de uma única <img> (o que causava um "pulo" feio
+// sempre que o sprite normal e o shiny tinham proporções de recorte
+// diferentes), normal e shiny agora vivem como duas <img> empilhadas no
+// mesmo espaço fixo (.hero-art-stack). O toggle só troca a opacidade
+// (crossfade suave) e, antes disso, medimos o quanto cada sprite realmente
+// "preenche" seu quadro (bounding box dos pixels não-transparentes) pra
+// aplicar uma escala compensatória via CSS var --fill-scale — assim os dois
+// aparentam o mesmo tamanho mesmo vindo de fontes com paddings diferentes.
+const _spriteFillCache = new Map();
+function getSpriteFillRatio(url){
+  if(!url) return Promise.resolve(1);
+  if(_spriteFillCache.has(url)) return Promise.resolve(_spriteFillCache.get(url));
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.crossOrigin='anonymous';
+    img.onload=()=>{
+      try{
+        const S=96;
+        const cv=document.createElement('canvas');
+        cv.width=S; cv.height=S;
+        const ctx=cv.getContext('2d');
+        ctx.clearRect(0,0,S,S);
+        ctx.drawImage(img,0,0,S,S);
+        const data=ctx.getImageData(0,0,S,S).data;
+        let minX=S,minY=S,maxX=-1,maxY=-1;
+        for(let y=0;y<S;y++){
+          for(let x=0;x<S;x++){
+            if(data[(y*S+x)*4+3]>16){
+              if(x<minX)minX=x; if(x>maxX)maxX=x;
+              if(y<minY)minY=y; if(y>maxY)maxY=y;
+            }
+          }
+        }
+        let fill=1;
+        if(maxX>=minX && maxY>=minY){
+          fill=Math.min(1,Math.max(0.05,Math.max((maxX-minX+1)/S,(maxY-minY+1)/S)));
+        }
+        _spriteFillCache.set(url,fill);
+        resolve(fill);
+      }catch(e){
+        // canvas "contaminado" por CORS ou outra falha — sem como medir, assume neutro
+        resolve(1);
+      }
+    };
+    img.onerror=()=>resolve(1);
+    img.src=url;
+  });
+}
+
+// Recalcula e aplica a escala compensatória pro par normal/shiny de um hero-art-stack.
+// Cancelamento por dataset.spriteUrl evita aplicar escala num sprite que já foi trocado
+// (troca de forma/navegação) enquanto a medição ainda estava em andamento.
+async function normalizeHeroSpritePair(normalId, shinyId, normalUrl, shinyUrl){
+  const elN=document.getElementById(normalId), elS=document.getElementById(shinyId);
+  if(!elN||!elS) return;
+  elN.style.removeProperty('--fill-scale');
+  elS.style.removeProperty('--fill-scale');
+  if(!normalUrl||!shinyUrl) return;
+  const [fillN,fillS]=await Promise.all([getSpriteFillRatio(normalUrl),getSpriteFillRatio(shinyUrl)]);
+  if(elN.dataset.spriteUrl!==normalUrl||elS.dataset.spriteUrl!==shinyUrl) return; // sprite trocou nesse meio-tempo
+  const target=Math.max(fillN,fillS);
+  const MAX_SCALE=1.6; // trava pra não estourar o card em casos extremos
+  const scaleN=Math.min(MAX_SCALE,target/fillN);
+  const scaleS=Math.min(MAX_SCALE,target/fillS);
+  if(scaleN>1.02) elN.style.setProperty('--fill-scale',scaleN.toFixed(3));
+  if(scaleS>1.02) elS.style.setProperty('--fill-scale',scaleS.toFixed(3));
+}
+
+// Define os sprites de um hero-art-stack e dispara a normalização de escala.
+function setHeroSpritePair(normalId, shinyId, normalUrl, shinyUrl){
+  const elN=document.getElementById(normalId), elS=document.getElementById(shinyId);
+  if(elN){ elN.dataset.spriteUrl=normalUrl||''; elN.src=normalUrl||''; elN.style.opacity=normalUrl?'':'.15'; }
+  if(elS){ elS.dataset.spriteUrl=shinyUrl||''; delete elS.dataset.broken; elS.src=shinyUrl||''; }
+  normalizeHeroSpritePair(normalId,shinyId,normalUrl,shinyUrl);
+}
+
+// Crossfade entre normal/shiny dentro do mesmo hero-art-stack.
+function setHeroShinyActive(normalId, shinyId, showShiny){
+  const elN=document.getElementById(normalId), elS=document.getElementById(shinyId);
+  if(elS && elS.dataset.broken) showShiny=false; // sprite shiny não carregou — não troca pra imagem quebrada
+  if(elN) elN.classList.toggle('hero-art-active',!showShiny);
+  if(elS) elS.classList.toggle('hero-art-active',showShiny);
+}
+
 function toggleRpgShiny(){
   window._rpgShinyOn=!window._rpgShinyOn;
-  const art=document.getElementById('rpg-main-art');
+  setHeroShinyActive('rpg-main-art','rpg-main-art-shiny',window._rpgShinyOn);
   const thumb=document.getElementById('rpg-shiny-thumb');
-  if(art) art.src=window._rpgShinyOn?window._rpgShinySprite:window._rpgNormalSprite;
   if(thumb) thumb.classList.toggle('active',window._rpgShinyOn);
 }
 
@@ -2091,7 +2213,7 @@ async function renderDetail(p,s,container,navToken){
     });
   });
   levelMoves.sort((a,b)=>a.lvl-b.lvl);
-  tmMoves=restrictToTmList(tmMoves);
+  tmMoves=await restrictToTmList(tmMoves);
   const moveDataCache={};
   async function fetchMoveData(name){
     if(moveDataCache[name])return moveDataCache[name];
@@ -2233,6 +2355,11 @@ async function renderDetail(p,s,container,navToken){
     });
   }
 
+  // Formas Alfa (Mega/Gigantamax custom) — precisa ser calculado antes do
+  // template abaixo porque a função agora é assíncrona (busca descrição
+  // de habilidades no Supabase).
+  const alfaFormsHtml=await renderAlfaFormsHtml({id:p.id, formas_alfa: dbRec?.formas_alfa});
+
   container.innerHTML=`
   <div class="breadcrumb">
     <button onclick="goList()">NationalDex</button>
@@ -2245,9 +2372,14 @@ async function renderDetail(p,s,container,navToken){
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">#${String(id).padStart(3,'0')}</div>
         <div class="form-switch-wrap" id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(p.name),TT)}</div>
-        <img class="hero-art" id="main-art"
-          src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
-          onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${p.name}">
+        <div class="hero-art-stack">
+          <img class="hero-art hero-art-active" id="main-art"
+            src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
+            onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${p.name}">
+          <img class="hero-art" id="main-art-shiny"
+            src="${officialShinyMain}"
+            onerror="this.dataset.broken='1'" alt="${p.name} shiny">
+        </div>
         <div class="hero-type-icons" id="type-icons-main">
           ${types.map(t=>`<img class="type-icon" src="https://raw.githubusercontent.com/partywhale/pokemon-type-icons/main/icons/${t}.svg" alt="${t}" title="${(TL[t]||t)}">`).join('')}
         </div>
@@ -2316,7 +2448,7 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body"><div class="evo-chain" id="evo-chain-wrap">${evoHtml}</div></div>
   </div>`:''}
 
-  ${renderAlfaFormsHtml({id:p.id, formas_alfa: dbRec?.formas_alfa})}
+  ${alfaFormsHtml}
 
   <div class="ficha-moves-wrap">
     <div class="moves-tabs">
@@ -2340,6 +2472,13 @@ async function renderDetail(p,s,container,navToken){
 
   // Sprites ativos pro toggle de shiny (acompanha a forma selecionada)
   window._officialActiveFormSprites={normal:officialSpriteMain,shiny:officialShinyMain};
+  {
+    const artElInit=document.getElementById('main-art');
+    const artShinyElInit=document.getElementById('main-art-shiny');
+    if(artElInit) artElInit.dataset.spriteUrl=officialSpriteMain||'';
+    if(artShinyElInit) artShinyElInit.dataset.spriteUrl=officialShinyMain||'';
+  }
+  normalizeHeroSpritePair('main-art','main-art-shiny',officialSpriteMain,officialShinyMain);
 
   // ── Troca de forma (botões abaixo da tipagem) ──
   async function applyOfficialForm(idx){
@@ -2359,7 +2498,8 @@ async function renderDetail(p,s,container,navToken){
     if(evoHeaderEl) evoHeaderEl.style.background=fTT.dark;
 
     const artEl=document.getElementById('main-art');
-    if(artEl) artEl.src=f.sprite||'';
+    setHeroSpritePair('main-art','main-art-shiny',f.sprite||'',f.sprite_shiny||'');
+    setHeroShinyActive('main-art','main-art-shiny',false);
     window._officialActiveFormSprites={normal:f.sprite||'',shiny:f.sprite_shiny||''};
     shinyOn=false;
     const thumb=document.getElementById('shiny-thumb');
@@ -2430,12 +2570,8 @@ async function renderDetail(p,s,container,navToken){
 
 function toggleShiny(id){
   shinyOn=!shinyOn;
-  const a=document.getElementById('main-art');
+  setHeroShinyActive('main-art','main-art-shiny',shinyOn);
   const thumb=document.getElementById('shiny-thumb');
-  const ov=window._officialActiveFormSprites;
-  if(a)a.src=shinyOn
-    ?(ov?.shiny||`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${id}.png`)
-    :(ov?.normal||`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`);
   if(thumb) thumb.classList.toggle('active',shinyOn);
 }
 
@@ -2709,11 +2845,11 @@ function formForcaAlfaHtml(forcaAlfa){
 // Cada forma usa as cores da sua própria tipagem principal (f.tipo1) — o
 // tema passado em opts (headerBg) serve só pro cabeçalho da seção, que
 // acompanha a cor do resto da ficha (TT.dark do Pokémon "raiz").
-function renderFormsSection(opts){
+async function renderFormsSection(opts){
   const {sectionTitle,headerBg,idPrefix,pkId,forms}=opts;
   if(!forms||!forms.length) return '';
 
-  const nodes=forms.map((f,i)=>{
+  const nodes=await Promise.all(forms.map(async(f,i)=>{
     const fTheme=TYPE_THEME[f.tipo1]||TYPE_THEME.normal;
     const mid=fTheme.mid, dark=fTheme.dark, light=fTheme.light, statBg=fTheme.light, borderA=fTheme.mid;
     const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
@@ -2728,6 +2864,10 @@ function renderFormsSection(opts){
     const key=`${idPrefix}-${pkId}-${i}`;
     window._formSpriteReg[key]={normal:f.sprite||'',shiny:f.sprite_shiny||'',on:false};
     const fLabel=formDisplayName(f.nome);
+
+    // Descrição(ões) da(s) habilidade(s) desta forma, vinda da tabela
+    // "abilities" (mesma fonte usada na ficha principal).
+    const abilidadesHtml=(f.abilidadeEntries&&f.abilidadeEntries.length)?await buildAbilitiesHtmlSimple(f.abilidadeEntries):'';
 
     const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
       ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${fLabel}">`:''}
@@ -2748,9 +2888,9 @@ function renderFormsSection(opts){
         </div>
         <div style="flex:1;min-width:180px">
           <div style="font-family:var(--font-title);font-size:14px;font-weight:700;color:${dark};margin-bottom:10px;letter-spacing:.5px">${fLabel}</div>
-          ${f.habilidadeLabel?`<div style="margin-bottom:10px">
+          ${abilidadesHtml?`<div style="margin-bottom:10px">
             <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Habilidade</div>
-            <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:${dark}">${f.habilidadeLabel}</span>
+            <div style="font-family:var(--font-body);font-size:11px;color:${dark}">${abilidadesHtml}</div>
           </div>`:''}
           ${statsHtml?`<div>
             <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Base Stats</div>
@@ -2763,6 +2903,10 @@ function renderFormsSection(opts){
             </div>
           </div>`:''}
           ${formForcaAlfaHtml(f.forca_alfa)}
+          ${f.pokedex?`<div style="margin-top:10px">
+            <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Pokédex</div>
+            <div style="font-family:var(--font-body);font-size:12px;color:${dark};line-height:1.6;font-style:italic">${f.pokedex}</div>
+          </div>`:''}
           ${f.evolucoes&&f.evolucoes.length?`<div style="margin-top:10px">${formEvoChainHtml(f.evolucoes)}</div>`:''}
         </div>
         <div style="min-width:160px;flex-shrink:0">
@@ -2772,7 +2916,7 @@ function renderFormsSection(opts){
     </div>`;
 
     return {nodeHtml,infoHtml,mid};
-  });
+  }));
 
   const nodesHtml=nodes.map((n,i)=>`
     <div onclick="toggleFormInfo('${idPrefix}','${pkId}',${i})" style="cursor:pointer;border-radius:10px;transition:background .2s" onmouseenter="this.style.background='${n.mid}10'" onmouseleave="this.style.background='transparent'">
@@ -2802,7 +2946,7 @@ function toggleFormInfo(idPrefix,pkId,i){
 // Compat com chamadas antigas de toggleAltFormInfo (onclick já renderizado em cache/bfcache)
 function toggleAltFormInfo(pkId,i){ toggleFormInfo('alt',pkId,i); }
 
-function renderAltFormsHtml(p){
+async function renderAltFormsHtml(p){
   if(!p.formas_alt||!p.formas_alt.length) return '';
   // Normaliza a forma principal pro mesmo formato das formas alternativas,
   // pra poder renderizar tudo com exatamente o mesmo código/estilo.
@@ -2810,22 +2954,28 @@ function renderAltFormsHtml(p){
   const mainForm={
     nome:p.name||p.nome, tipo1:p.tipo1, tipo2:p.tipo2,
     habilidadeLabel:mainAbilities.map(a=>a.toUpperCase().replace(/-/g,' ')).join(', '),
+    abilidadeEntries:[
+      p.habilidade1?{name:p.habilidade1,ha:false}:null,
+      p.habilidade2?{name:p.habilidade2,ha:false}:null,
+      p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
+    ].filter(Boolean),
     hp:p.hp,atk:p.atk,def:p.def,spa:p.spa,spd:p.spd,spe:p.spe,
     sprite:p.sprite, sprite_shiny:p.sprite_shiny,
-    forca_alfa:p.forca_alfa||null, evolucoes:p.evolucoes||null
+    forca_alfa:p.forca_alfa||null, pokedex:p.forca_alfa?(p.bio||null):null, evolucoes:p.evolucoes||null
   };
   const altForms=p.formas_alt.map(f=>({
     nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
     habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
+    abilidadeEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
     hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
     sprite:f.sprite, sprite_shiny:f.sprite_shiny,
-    forca_alfa:f.forca_alfa||null, evolucoes:f.evolucoes||null
+    forca_alfa:f.forca_alfa||null, pokedex:f.forca_alfa?(f.bio||null):null, evolucoes:f.evolucoes||null
   }));
   // Cabeçalho da seção acompanha a cor do tipo principal do Pokémon (mesma
   // cor usada em Damage Taken/Biology/Evolutionary Chain), em vez de um
   // teal fixo — cada forma individual mantém sua própria cor de tipagem.
   const rootTheme=TYPE_THEME[p.tipo1]||TYPE_THEME.normal;
-  return renderFormsSection({
+  return await renderFormsSection({
     sectionTitle:'Formas', headerBg:rootTheme.dark,
     idPrefix:'alt', pkId:p.id, forms:[mainForm,...altForms]
   });
@@ -2835,15 +2985,17 @@ function renderAltFormsHtml(p){
 // Mesma estrutura de renderAltFormsHtml, mas com tema roxo (igual ao das
 // Forças Alfas oficiais buscadas via PokeAPI em appendMegas) e sem incluir
 // a forma "principal" — Formas Alfa são sempre transformações adicionais.
-function renderAlfaFormsHtml(p){
+async function renderAlfaFormsHtml(p){
   if(!p.formas_alfa||!p.formas_alfa.length) return '';
   const alfaForms=p.formas_alfa.map(f=>({
     nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
     habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
+    abilidadeEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
     hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
-    sprite:f.sprite, sprite_shiny:f.sprite_shiny
+    sprite:f.sprite, sprite_shiny:f.sprite_shiny,
+    pokedex:f.pokedex||null
   }));
-  return renderFormsSection({
+  return await renderFormsSection({
     sectionTitle:'Formas Alfa', headerBg:'#5020a0',
     idPrefix:'alfa', pkId:p.id, forms:alfaForms
   });
