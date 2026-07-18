@@ -556,7 +556,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             </div>
             <div>
               <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted);font-size:10px">(gerado automático)</span></div>
-              <input class="mv-meta-input" id="epk-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)">
+              <input class="mv-meta-input" id="epk-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)" oninput="this.dataset.autoLocked='1'">
             </div>
             <div>
               <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
@@ -957,7 +957,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
         </div>
         <div>
           <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted)">(gerado automático)</span></div>
-          <input class="mv-meta-input" id="nrpg-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)">
+          <input class="mv-meta-input" id="nrpg-slug" type="text" placeholder="ex: shadow-pikachu" style="width:100%;color:var(--muted)" oninput="this.dataset.autoLocked='1'">
         </div>
         <div>
           <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
@@ -1740,7 +1740,14 @@ async function openEditPokemon(id) {
   // Nome é independente — sempre mostra o nome real do Pokémon, nunca reconstruído do slug.
   document.getElementById('epk-nome').value = db.name || pk.name || '';
   document.getElementById('epk-pokedex').value = idStr;
-  document.getElementById('epk-slug').value = buildAutoSlug(db.name || pk.name || '', idStr);
+  // Slug: usa o slug já salvo (se existir) em vez de reconstruir a partir do nome —
+  // preserva customizações manuais. Só gera automaticamente se o Pokémon nunca teve
+  // um slug salvo. A partir daqui o slug fica travado: editar/salvar o nome de um
+  // Pokémon já existente não deve regenerar o slug (isso só acontece na 1ª vez que
+  // o nome é definido, num Pokémon novo — ver epkSyncSlug/nrpgSyncSlug).
+  const epkSlugEl = document.getElementById('epk-slug');
+  epkSlugEl.value = db.url_slug || buildAutoSlug(db.name || pk.name || '', idStr);
+  epkSlugEl.dataset.autoLocked = '1';
   document.getElementById('epk-classificacao').value = db.classification || '';
 
   // Sprites (URL)
@@ -3281,18 +3288,26 @@ function epkNormalizeHeight(el) {
   }
 }
 
+// Slug automático: só deve gerar sozinho na 1ª vez que o nome é colocado
+// (Pokémon novo, campo de slug ainda "destravado"). Depois que o slug foi
+// travado — porque já existia (edição), foi editado manualmente pelo
+// usuário, ou já foi salvo uma vez — alterar/salvar o nome não deve mais
+// regenerá-lo. Ver epkSlugLock()/nrpgSlugLock() e o listener no próprio
+// campo de slug mais abaixo.
 function epkSyncSlug() {
+  const slugEl = document.getElementById('epk-slug');
+  if (!slugEl || slugEl.dataset.autoLocked === '1') return;
   const nome = document.getElementById('epk-nome')?.value.trim() || '';
   const id   = document.getElementById('epk-pokedex')?.value.trim() || '';
-  const slugEl = document.getElementById('epk-slug');
-  if (slugEl) slugEl.value = buildAutoSlug(nome, id);
+  slugEl.value = buildAutoSlug(nome, id);
 }
 
 function nrpgSyncSlug() {
+  const slugEl = document.getElementById('nrpg-slug');
+  if (!slugEl || slugEl.dataset.autoLocked === '1') return;
   const nome = document.getElementById('nrpg-nome')?.value.trim() || '';
   const id   = document.getElementById('nrpg-pokedex')?.value.trim() || 'N0000'; // sem ID ainda = assume Nendo (padrão deste form)
-  const slugEl = document.getElementById('nrpg-slug');
-  if (slugEl) slugEl.value = buildAutoSlug(nome, id);
+  slugEl.value = buildAutoSlug(nome, id);
 }
 
 async function savePkModal(approve) {
@@ -5777,6 +5792,10 @@ function nrpgSetBiomaField(nome, field, value) {
 }
 
 function nrpgResetForm() {
+  // Destrava o slug automático — é um cadastro novo, então o slug deve voltar
+  // a acompanhar o nome até a 1ª vez que for definido (ver nrpgSyncSlug).
+  const nrpgSlugEl = document.getElementById('nrpg-slug');
+  if (nrpgSlugEl) { nrpgSlugEl.value = ''; delete nrpgSlugEl.dataset.autoLocked; }
   document.querySelectorAll('#nrpg-tipo1-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('#nrpg-tipo2-wrap .rpg-tipo-tag').forEach(t => t.classList.remove('sel'));
   ['nrpg-nome','nrpg-pokedex','nrpg-classificacao','nrpg-bio_pt','nrpg-hab1','nrpg-hab2','nrpg-hab-oculta','nrpg-hab-mega','nrpg-forca-alfa','nrpg-hp','nrpg-atk','nrpg-def','nrpg-spa','nrpg-spd','nrpg-spe','nrpg-weight','nrpg-height','nrpg-egg-group'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
