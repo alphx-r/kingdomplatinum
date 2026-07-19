@@ -200,15 +200,12 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 #edit-pokemon-modal{position:static;inset:auto;background:none;z-index:auto;padding:0;display:none;align-items:stretch;justify-content:stretch}
 #edit-pokemon-modal.open{display:block}
 #edit-pokemon-modal .modal{position:relative;max-width:none;width:100%;margin:0;border-radius:var(--r);box-shadow:none;padding:20px 24px;font-size:100%;background:var(--surface);border:1.5px solid var(--border)}
-#edit-pokemon-modal .modal input,
-#edit-pokemon-modal .modal select,
-#edit-pokemon-modal .modal textarea,
-#edit-pokemon-modal .modal .field-lbl,
-#edit-pokemon-modal .modal .mv-meta-lbl,
-#edit-pokemon-modal .modal .moveset-section-title,
-#edit-pokemon-modal .modal .btn,
-#edit-pokemon-modal .modal .tipo-tag,
-#edit-pokemon-modal .modal .pk-bioma-tag{font-size:1rem}
+/* A prevenção de zoom automático do iOS em inputs já é feita globalmente
+   na media query mobile (@media max-width:640px, mais abaixo) — cobre epk e
+   nrpg igualmente. Um override extra aqui, só pro epk, fazia os campos
+   (input/select/textarea) ficarem 16px mesmo no desktop, divergindo dos
+   mesmos componentes usados sem alteração no nrpg (ex: .evo-edit-row input,
+   compartilhado pelos dois, ficava 12px lá e 16px aqui). Removido. */
 
 /* Cards e accordions do modal de edição de Pokémon — layout compacto em seções */
 .epk-card{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
@@ -584,6 +581,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="runImportOfficialClassificacao()" title="Preenche a classificação (genus, ex: Pokémon Rato) dos Pokémon oficiais que ainda estão vazios">🏷️ Importar classificação</button>
           <button onclick="runImportOfficialGenero()" title="Busca o gender_rate na PokeAPI e SOBRESCREVE o campo 'genero' de todos os Pokémon oficiais (inclusive ajustes manuais)">⚥ Atualizar gênero</button>
           <button onclick="runImportOfficialEggGroup()" title="Busca o egg_group na PokeAPI e SOBRESCREVE o campo 'egg_group' de todos os Pokémon oficiais (corrige valores errados, ex: Meowth como Ground)">🥚 Atualizar egg groups</button>
+          <button onclick="runImportOfficialEvolutionChain()" title="Busca a cadeia evolutiva na PokeAPI pros Pokémon oficiais que estão com 'evolucoes' vazio e preenche — NÃO sobrescreve cadeias já curadas manualmente">🔗 Restaurar cadeia evolutiva</button>
           <hr>
           <div class="adm-more-group-lbl">Ícones de tipo</div>
           <button onclick="openTypeIconModal()" title="Upload dos SVGs dos tipos homebrew (Scent, Light) pro Supabase Storage — o set de ícones do GitHub só tem os 18 tipos oficiais">🎨 Ícones de tipo customizados</button>
@@ -1961,16 +1959,14 @@ async function openEditPokemon(id) {
   movesetPopulateList('epk-moves-egg',   'egg',   db.moves_egg   || []);
   movesetPopulateList('epk-moves-tutor', 'tutor', db.moves_tutor || []);
 
-  // Abre automaticamente os accordions (Evolutionary Chain / Moveset) que já
-  // têm conteúdo — por padrão eles nascem fechados (.epk-acc-body{display:none}
-  // até ganhar .open), e como nada aqui abria isso antes, dados existentes
-  // (ex: cadeia evolutiva dos Pokémon originais) ficavam escondidos e pareciam
-  // ter sumido, mesmo estando salvos no banco.
-  document.querySelectorAll('#edit-pokemon-modal .epk-acc-head').forEach(h => {
-    const body = h.nextElementSibling;
-    const hasContent = !!body?.querySelector('.evo-edit-row, .moveset-row');
-    h.classList.toggle('open', hasContent);
-  });
+  // Os headers dos accordions (Evolutionary Chain / Moveset) são elementos
+  // estáticos do modal — não são recriados a cada Pokémon, só o conteúdo
+  // interno é (evoPopulateList/movesetPopulateList). Por isso, se alguém abriu
+  // o accordion num Pokémon e depois editou outro, ele continuava "aberto"
+  // (classe .open herdada), mesmo que o novo Pokémon não tivesse nada ali —
+  // dando a impressão de que os dados sumiram. Força fechado sempre que o
+  // modal abre, pra ter um estado inicial previsível.
+  document.querySelectorAll('#edit-pokemon-modal .epk-acc-head.open').forEach(h => h.classList.remove('open'));
 
   document.getElementById('epk-ind').classList.remove('show');
   const pkListView = document.getElementById('pk-list-view');
@@ -5173,6 +5169,77 @@ async function runImportOfficialEggGroup() {
   }
 }
 
+// Restaura o campo "evolucoes" dos Pokémon oficiais (id numérico) que
+// estiverem vazios — busca a evolution-chain na PokeAPI e achata com
+// flattenPokeapiEvoChain() (mesma função já usada em importRegionalFormsFromPokeapi).
+// Só preenche o que está vazio: NÃO sobrescreve cadeia já curada manualmente
+// (ex: ajustes de "from" pra ramificações, textos de condição em PT).
+// Cadeias ramificadas (pokeapiEvoChainHasBranch) ficam de fora da lista
+// automática e são reportadas no final pra revisão manual, mesmo padrão do
+// aviso já usado em "Formas regionais".
+async function runImportOfficialEvolutionChain() {
+  if (!confirm('Isso vai buscar a cadeia evolutiva de cada Pokémon oficial (id numérico) na PokeAPI e preencher o campo "evolucoes" SÓ nos que estiverem vazios no Supabase. Não sobrescreve nenhuma cadeia já curada manualmente. Pode levar alguns minutos (2 requisições por Pokémon: species + evolution-chain, com cache pra não repetir a mesma cadeia). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Restaurando…'; }
+
+  try {
+    const rows = await sbSelect('pokemons');
+    const isEmpty = v => v === null || v === undefined || (Array.isArray(v) && v.length === 0);
+    const oficiais = rows.filter(p => /^\d+$/.test(String(p.id)) && isEmpty(p.evolucoes));
+
+    showProgress('Restaurando cadeia evolutiva (PokeAPI)…');
+    let ok = 0, fail = 0, skipBranch = 0;
+    const erros = [];
+    const revisarManual = [];
+    const chainCache = {}; // evolution-chain URL → nós já buscados, evita refetch pra Pokémon da mesma família
+
+    for (let i = 0; i < oficiais.length; i++) {
+      const p = oficiais[i];
+      updateProgress(i + 1, oficiais.length, p.name || p.id);
+      try {
+        const sr = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${p.id}`);
+        if (!sr.ok) throw new Error(`species HTTP ${sr.status}`);
+        const sd = await sr.json();
+        if (!sd.evolution_chain?.url) { fail++; erros.push(`${p.id} (${p.name || '?'}): sem evolution_chain na PokeAPI`); continue; }
+
+        const chainUrl = sd.evolution_chain.url;
+        let chain = chainCache[chainUrl];
+        if (!chain) {
+          const cr = await fetch(chainUrl);
+          if (!cr.ok) throw new Error(`evolution-chain HTTP ${cr.status}`);
+          chain = (await cr.json()).chain;
+          chainCache[chainUrl] = chain;
+        }
+
+        if (pokeapiEvoChainHasBranch(chain)) {
+          skipBranch++;
+          revisarManual.push(`${p.id}: ${p.name || '?'}`);
+          continue;
+        }
+
+        const evolucoes = flattenPokeapiEvoChain(chain);
+        if (!evolucoes.length) { fail++; erros.push(`${p.id} (${p.name || '?'}): cadeia veio vazia`); continue; }
+
+        await sbPatch('pokemons', p.id, { evolucoes });
+        ok++;
+      } catch (e) {
+        fail++;
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    hideProgress();
+    if (revisarManual.length) console.warn('Cadeias ramificadas (precisam de curadoria manual — ambíguo qual ramo é o correto):', revisarManual);
+    if (erros.length) console.warn('Falhas ao restaurar cadeia evolutiva:', erros);
+    toast(`✓ ${ok} restaurado(s)${skipBranch ? `, ${skipBranch} ramificado(s) pra revisar manualmente (veja console)` : ''}${fail ? `, ${fail} falha(s) (veja console)` : ''}.`, (fail || skipBranch) ? 'err' : 'ok');
+    await loadPokemon();
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🔗 Restaurar cadeia evolutiva'; }
+  }
+}
 
 // (id numérico) que ainda não têm esse campo no Supabase. Busca na PokeAPI
 // (prioriza o texto em inglês) e só preenche o que estiver vazio — não
