@@ -978,7 +978,7 @@ async function loadRpgData(){
 function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1].toUpperCase():null; }
 
 // Slug de região (minúsculo, como usado nos nomes vindos da PokeAPI) por prefixo de id.
-const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea'};
+const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea','N':'nendo'};
 
 // Labels de exibição pra raridade dos biomas (mesmos valores salvos pelo admin em RARIDADE_OPTS,
 // só sem as faixas numéricas — aqui é exibição pública, não a tela de edição).
@@ -1010,12 +1010,19 @@ function evoDisplayNum(id){
 
 // Formata o nome exibido nos nós da cadeia evolutiva: pra formas regionais, remove
 // o sufixo da região do nome (ex: "Rattata Alola" → "Rattata") e antepõe "(A) "
-// (ex: "(A) Rattata"). Formas não-regionais (Nendo, oficiais) mantêm o nome puro.
-// Se o nome já vier salvo pronto no formato "(A) Rattata" (importações mais
-// recentes já salvam assim), devolve como está — evita prefixo duplicado.
+// (ex: "(A) Rattata"). Formas não-regionais (oficiais, sem região nenhuma) mantêm
+// o nome puro. Se o nome já vier salvo pronto no formato "(A) Rattata" (importações
+// mais recentes já salvam assim), devolve como está — evita prefixo duplicado.
+// Reaproveita formDisplayName (mesma convenção usada no resto do site) pra também
+// reconhecer formatos legados tipo "Squirtle (Nendo Form)" e "Squirtle Nendo", e
+// pra cobrir Nendo (N) do mesmo jeito que Alola/Galar/Hisui/Paldea. Só cai pro
+// fallback baseado no prefixo do id quando o nome sozinho não dá nenhuma pista
+// de região (ex: nome puro "Rattata" com o prefixo só no id "A0019").
 function evoDisplayName(entry){
   const nm0=String(entry.name||'').trim();
-  if(/^\([AGPH]\)\s/i.test(nm0)) return nm0;
+  const viaName=formDisplayName(nm0);
+  if(viaName!==nm0) return viaName;
+  if(/^\([AGPHN]\)\s/i.test(nm0)) return nm0;
   const pfx=idPrefix(entry.id);
   const regSlug=REGION_SLUG_BY_PREFIX[pfx];
   let nm=titleCase(entry.name);
