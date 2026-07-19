@@ -2386,10 +2386,17 @@ function evoResolveSprite(id) {
 }
 
 // Dado um Nº Pokédex digitado no estágio da evo chain, acha o Pokémon base
-// (bate exato ou por valor numérico, ignorando zeros à esquerda — "007" == "7")
+// (bate exato — considerando TODOS os caracteres, incluindo prefixo de letra —
+// ou por valor numérico puro, ignorando zeros à esquerda — "007" == "7")
 // e monta a lista de nomes candidatos pro campo Nome: o nome base + qualquer
 // forma alternativa vinculada a esse número (já migrada em formas_alt, ou
-// ainda como registro separado tipo N0007/A0007 não migrado).
+// ainda como registro separado tipo A0007 não migrado).
+//
+// IMPORTANTE: "N" não é um prefixo de forma regional — é o prefixo usado pra
+// numeração própria (sequencial) de Pokémon fakemon/RPG, sem nenhuma relação
+// com o número da Pokédex nacional. Por isso "0007" (dex nacional #7) NUNCA
+// deve casar com "N0007" (7º fakemon cadastrado) — cada string precisa ser
+// comparada por inteiro, e não apenas pelos dígitos.
 function evoFindNameCandidates(rawId) {
   const idStr = String(rawId || '').trim();
   if (!idStr) return { base: null, options: [] };
@@ -2398,7 +2405,10 @@ function evoFindNameCandidates(rawId) {
 
   const matchesBase = p => {
     const pid = String(p.id || '');
+    // Match exato, caractere a caractere (cobre IDs com prefixo, tipo N0007).
     if (pid.toLowerCase() === idStr.toLowerCase()) return true;
+    // Match numérico só quando o ID cadastrado também é puramente numérico
+    // (dex nacional) — nunca contra IDs com prefixo de letra (N/A/G/H/P...).
     if (isNumeric && /^\d+$/.test(pid) && parseInt(pid, 10) === numVal) return true;
     return false;
   };
@@ -2414,13 +2424,14 @@ function evoFindNameCandidates(rawId) {
     (base.formas_alt || []).forEach(f => pushOpt(f?.nome));
   }
 
-  // Formas regionais/Nendo ainda não migradas pra formas_alt (registros
-  // separados com prefixo A/G/H/P/N + número da dex) — só faz sentido
-  // procurar quando o id digitado é puramente numérico.
+  // Formas regionais ainda não migradas pra formas_alt (registros separados
+  // com prefixo A/G/H/P + número da dex nacional) — só faz sentido procurar
+  // quando o id digitado é puramente numérico. "N" fica de fora de propósito:
+  // é numeração própria de fakemon, não de forma regional (ver nota acima).
   if (isNumeric) {
     [...(S.pk?.all || []), ...(S.rpg?.all || [])].forEach(p => {
       const pid = String(p.id || '');
-      const m = pid.match(/^([AGHPN])0*(\d+)$/i);
+      const m = pid.match(/^([AGHP])0*(\d+)$/i);
       if (m && parseInt(m[2], 10) === numVal) pushOpt(p.name || pid);
     });
   }
@@ -2428,14 +2439,38 @@ function evoFindNameCandidates(rawId) {
   return { base, options };
 }
 
-// Atualiza a <datalist> do campo Nome de um estágio com os candidatos
-// achados a partir do Nº Pokédex atual do mesmo estágio.
+// Monta a lista completa de nomes conhecidos (Pokémon oficiais + fakemon/RPG
+// + formas alternativas de cada um), pra autocomplete geral do campo Nome —
+// não só os candidatos ligados ao Nº Pokédex já digitado. Cada item guarda o
+// ID de origem, pra permitir preencher o campo Nº Pokédex automaticamente
+// quando o nome for escolhido.
+function evoAllNameOptions() {
+  const options = [];
+  const push = (nome, id) => {
+    if (!nome) return;
+    if (options.some(o => o.name.toLowerCase() === nome.toLowerCase())) return;
+    options.push({ name: nome, id: id != null ? String(id) : null });
+  };
+  [...(S.pk?.all || []), ...(S.rpg?.all || [])].forEach(p => {
+    push(p.name || String(p.id), p.id);
+    (p.formas_alt || []).forEach(f => push(f?.nome, p.id));
+  });
+  return options;
+}
+
+// Atualiza a <datalist> do campo Nome de um estágio: primeiro os candidatos
+// específicos achados a partir do Nº Pokédex atual (mais relevantes), depois
+// o restante da lista completa de nomes conhecidos, pra ter autocomplete de
+// qualquer Pokémon mesmo sem (ou antes de) preencher o Nº Pokédex.
 function evoUpdateNameSuggestions(row) {
   const idInput = row.querySelector('.evo-id');
   const datalist = row.querySelector('.evo-name-options');
   if (!idInput || !datalist) return;
-  const { options } = evoFindNameCandidates(idInput.value.trim());
-  datalist.innerHTML = options.map(o => `<option value="${o.replace(/"/g, '&quot;')}">`).join('');
+  const { options: specific } = evoFindNameCandidates(idInput.value.trim());
+  const seen = new Set(specific.map(o => o.toLowerCase()));
+  const rest = evoAllNameOptions().map(o => o.name).filter(n => !seen.has(n.toLowerCase()));
+  const all = [...specific, ...rest];
+  datalist.innerHTML = all.map(o => `<option value="${o.replace(/"/g, '&quot;')}">`).join('');
 }
 
 function evoAddRow(listId, data = {}) {
@@ -2508,10 +2543,22 @@ function evoAddRow(listId, data = {}) {
     evoUpdateNameSuggestions(row);
     evoRefreshFromSelects(listId);
   });
-  // Já popula as sugestões de nome se o estágio já veio com um ID (ex: editando uma evo chain existente)
+  // Já popula as sugestões de nome (mesmo sem ID ainda — autocomplete geral)
   evoUpdateNameSuggestions(row);
   // Atualiza o label do select quando o nome muda
-  row.querySelector('.evo-name').addEventListener('input', () => evoRefreshFromSelects(listId));
+  const nameInput = row.querySelector('.evo-name');
+  nameInput.addEventListener('input', () => evoRefreshFromSelects(listId));
+  // Se o nome escolhido bater com um Pokémon conhecido e o Nº Pokédex ainda
+  // estiver vazio, preenche automaticamente o ID a partir do nome.
+  nameInput.addEventListener('change', () => {
+    const nameVal = nameInput.value.trim();
+    if (!nameVal || idInput.value.trim()) return;
+    const found = evoAllNameOptions().find(o => o.name.toLowerCase() === nameVal.toLowerCase());
+    if (found && found.id) {
+      idInput.value = found.id;
+      idInput.dispatchEvent(new Event('change'));
+    }
+  });
   // Lembra a seleção atual do select "Evolui de" (por rowId — sobrevive a reordenação)
   row.querySelector('.evo-from').addEventListener('change', e => { row.dataset.evoFromRowId = e.target.value; });
 
@@ -2968,6 +3015,32 @@ function faltAddRow(listId, data = {}) {
       </div>
       <input type="hidden" class="falt-biomas-json" value='${JSON.stringify(data.biomas || []).replace(/'/g, "&#39;")}'>
     </div>
+    <div class="falt-estacao-section" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+      <span class="falt-field-lbl" style="margin-bottom:6px">🌦️ Estação desta forma <span style="font-weight:400;text-transform:none;color:var(--muted)">(independente da forma principal)</span></span>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <div class="falt-field-lbl" style="margin-bottom:4px">Estação exclusiva</div>
+          <select class="mv-meta-input falt-estacao" style="width:100%">
+            <option value="">— Aparece em qualquer estação —</option>
+            <option value="primavera">🌱 Primavera</option>
+            <option value="verao">☀️ Verão</option>
+            <option value="outono">🍂 Outono</option>
+            <option value="inverno">❄️ Inverno</option>
+          </select>
+        </div>
+        <div>
+          <div class="falt-field-lbl" style="margin-bottom:4px">Boost sazonal</div>
+          <select class="mv-meta-input falt-estacao-boost" style="width:100%">
+            <option value="">— Sem boost —</option>
+            <option value="primavera">🌱 Primavera</option>
+            <option value="verao">☀️ Verão</option>
+            <option value="outono">🍂 Outono</option>
+            <option value="inverno">❄️ Inverno</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Exclusiva: só aparece nessa estação. Boost: aparece sempre, mas com raridade promovida durante a estação.</div>
+    </div>
     </div><!-- /falt-tab-normal (parte 1) -->
     <div class="falt-tab-alfa" style="display:none">
     <div class="falt-forca-alfa-section" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
@@ -3034,6 +3107,11 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
   }
   faltRenderBiomaSelect(row);
   faltRenderBiomaTags(row);
+  // Estação exclusiva / boost sazonal desta forma
+  const faltEstacaoSel = row.querySelector('.falt-estacao');
+  const faltEstacaoBoostSel = row.querySelector('.falt-estacao-boost');
+  if (faltEstacaoSel) faltEstacaoSel.value = data.estacao || '';
+  if (faltEstacaoBoostSel) faltEstacaoBoostSel.value = data.estacao_boost || '';
   movesetPopulateList(`falt-mv-level-${uid}`, 'level', data.moves_level || []);
   movesetPopulateList(`falt-mv-tm-${uid}`, 'tm', data.moves_tm || []);
   movesetPopulateList(`falt-mv-egg-${uid}`, 'egg', data.moves_egg || []);
@@ -3203,6 +3281,8 @@ function faltReadListSync(listId) {
     const biomas = faltGetBiomas(row);
     const bio = row.querySelector('.falt-bio')?.value.trim() || null;
     const forca_alfa = row.querySelector('.falt-forca-alfa')?.value.trim() || null;
+    const estacao = row.querySelector('.falt-estacao')?.value.trim() || null;
+    const estacao_boost = row.querySelector('.falt-estacao-boost')?.value.trim() || null;
     const uid = row.dataset.uid;
     const evolucoes = uid ? evoReadList(`falt-evo-${uid}`) : [];
     const moves_level = uid ? movesetReadList(`falt-mv-level-${uid}`, 'level') : [];
@@ -3214,7 +3294,7 @@ function faltReadListSync(listId) {
       habilidade1, habilidade2, habilidade_oculta,
       classification, height, weight, genero, egg_group,
       hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny,
-      bio, forca_alfa,
+      bio, forca_alfa, estacao, estacao_boost,
       evolucoes: evolucoes.length ? evolucoes : null,
       biomas: biomas.length ? biomas : null,
       moves_level: moves_level.length ? moves_level : null,
