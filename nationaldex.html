@@ -529,32 +529,16 @@ function eggGroupDisplayName(slug){return EGG_GROUP_DISPLAY_NAMES[slug]||cap(slu
 function titleCase(s){return s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
 function moveSlug(s){return String(s||'').trim().toLowerCase().replace(/\s+/g,'-');}
 
-// ── Lista fixa de TMs do sistema ──
-// A partir de agora só existem estas 100 TMs no jogo (TM01–TM100). Qualquer
-// outro move aprendido via "machine" na PokéAPI, ou qualquer entrada de
-// moves_tm de um fakemon que não esteja nesta lista, é ignorado nas fichas.
-const TM_MOVE_NAMES=[
-"WORK UP","DRAGON CLAW","PSYSHOCK","CALM MIND","TWILIGHT SKIES","TOXIC","HAIL","BULK UP","VENOSHOCK","HIDDEN POWER",
-"SUNNY DAY","TAUNT","ICE BEAM","BLIZZARD","HYPER BEAM","LIGHT SCREEN","PROTECT","RAIN DANCE","ROOST","SAFEGUARD",
-"FRUSTRATION","SOLAR BEAM","SMACK DOWN","THUNDERBOLT","THUNDER","EARTHQUAKE","RETURN","DRAGON CHEER","PSYCHIC","SHADOW BALL",
-"BRICK BREAK","DOUBLE TEAM","REFLECT","SLUDGE WAVE","FLAMETHROWER","SLUDGE BOMB","SANDSTORM","FIRE BLAST","ROCK TOMB","AERIAL ACE",
-"TORMENT","FACADE","FLAME CHARGE","REST","ATTRACT","STROBE","LOW SWEEP","ROUND","ECHOED VOICE","OVERHEAT",
-"STEEL WING","FOCUS BLAST","ENERGY BALL","FALSE SWIPE","SCALD","FLING","CHARGE BEAM","SKY DROP","BRUTAL SWING","BULLET SEED",
-"WILL-O-WISP","ACROBATICS","EMBARGO","EXPLOSION","SHADOW CLAW","PAYBACK","SMART STRIKE","GIGA IMPACT","ROCK POLISH","AURORA VEIL",
-"STONE EDGE","VOLT SWITCH","THUNDER WAVE","GYRO BALL","SWORDS DANCE","FLY","PSYCH UP","BULLDOZE","FROST BREATH","ROCK SLIDE",
-"X-SCISSOR","DRAGON TAIL","INFESTATION","POISON JAB","DREAM EATER","GRASS KNOT","SWAGGER","SLEEP TALK","U-TURN","SUBSTITUTE",
-"FLASH CANNON","TRICK ROOM","WILD CHARGE","SURF","SNARL","NATURE POWER","DARK PULSE","WATERFALL","DAZZLING GLEAM","CONFIDE"
-];
-const TM_SLUG_TO_NUM={};
-TM_MOVE_NAMES.forEach((n,i)=>{ TM_SLUG_TO_NUM[moveSlug(n)]=i+1; });
-// Mapa dinâmico de TMs: começa com a lista fixa acima e é sobrescrito/
-// estendido por qualquer move marcado como TM no admin (colunas is_tm +
-// tm_number na tabela "moves") — permite criar TMs novas (fakemon/
-// homebrew) ou renumerar as oficiais sem editar este arquivo.
+// ── TMs do sistema ──
+// Fonte única de verdade: colunas "is_tm" + "tm_number" na tabela "moves"
+// do Supabase (mesmas usadas no admin, aba Moves). Qualquer move marcado
+// como TM lá aparece aqui automaticamente, numerado pelo tm_number — não
+// depende mais de nenhuma lista fixa neste arquivo. Pra popular as TM01–
+// TM100 oficiais do sistema de uma vez, rode o script SQL "seed_tms.sql".
 let _tmMapCache=null;
 async function getTmMap(){
   if(_tmMapCache) return _tmMapCache;
-  const map={...TM_SLUG_TO_NUM};
+  const map={};
   try{
     const mv=await loadMoves();
     Object.values(mv).forEach(row=>{
@@ -564,9 +548,9 @@ async function getTmMap(){
   _tmMapCache=map;
   return map;
 }
-function tmLabel(name){ const map=_tmMapCache||TM_SLUG_TO_NUM; const n=map[moveSlug(name)]; return n?('TM'+String(n).padStart(2,'0')):null; }
-// Filtra uma lista de {name,...} pra só as que estão na lista de TMs do
-// sistema, e ordena por número de TM.
+function tmLabel(name){ const map=_tmMapCache||{}; const n=map[moveSlug(name)]; return n?('TM'+String(n).padStart(2,'0')):null; }
+// Filtra uma lista de {name,...} pra só as que estão marcadas como TM no
+// banco (is_tm+tm_number), e ordena por número de TM.
 async function restrictToTmList(list){
   const map=await getTmMap();
   return (list||[])
@@ -611,6 +595,72 @@ function formAltMoves(f){
     egg:norm(f.moves_egg,false),
     tutor:norm(f.moves_tutor,false)
   };
+}
+
+// Monta a cadeia evolutiva (com suporte a ramificação) a partir de uma lista
+// curada de estágios (mesmo formato de p.evolucoes / formas_alt[i].evolucoes:
+// [{id,name,method,from}]). Compartilhada entre o primeiro render e a troca
+// de forma (formas_alt/estilos) — cada forma usa SÓ a sua própria cadeia
+// curada; não há fallback pra cadeia de outra forma aqui. activeId é o id
+// do registro sendo exibido (usado só pra saber qual nó não é clicável).
+// pref/regionSlugMap (opcionais) habilitam a composição de id regional
+// (ex: "19" + pref "A" → "A0019") igual ao comportamento já usado no
+// render principal de formas regionais.
+const _EVO_REGION_SLUG={'A':'alola','G':'galar','P':'paldea','H':'hisui','N':'nendo'};
+function buildFormEvoChainHtml(evos,activeId,pref){
+  if(!evos||!Array.isArray(evos)||!evos.length) return '';
+  const nEv=evos.length;
+  function node(ev,isFirst){
+    const rawId=String(ev.id||'').trim();
+    let evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===rawId.toLowerCase());
+    if(!evPk&&pref&&/^\d+$/.test(rawId)){
+      const composedId=`${pref}${rawId.padStart(4,'0')}`;
+      evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===composedId.toLowerCase());
+    }
+    if(!evPk){
+      const wantSlug=slugify(ev.name||'');
+      const regSlug=_EVO_REGION_SLUG[pref];
+      evPk=_rpgPokemon.find(x=>{
+        const xs=slugify(x.name);
+        return xs===wantSlug||(regSlug&&xs===`${wantSlug}-${regSlug}`);
+      });
+    }
+    const sprite=evPk?.sprite||'';
+    const evName=evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?');
+    const evId=evPk?.id||rawId||'?';
+    const evNumLabel=evoDisplayNum(evId);
+    const isMe=String(evId)===String(activeId);
+    const method=ev.method||ev.trigger||'';
+    const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
+    return `${arrow}<button class="evo-node" onclick="${isMe?'void(0)':`goDetail('__rpg__${encodeURIComponent(evId)}','${evPk?rpgUrlSlug(evPk):slugify(evName)}')`}" style="${isMe?'cursor:default':''}">
+      ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${evName}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
+      <span class="evo-node-name">${evName}</span>
+      <span class="evo-node-num">${evNumLabel}</span>
+    </button>`;
+  }
+  const parentOf=evos.map((ev,i)=>{
+    if(i===0) return null;
+    const f=parseInt(ev.from,10);
+    return (f&&f>=1&&f<=nEv)?f-1:i-1;
+  });
+  const childrenOf={};
+  parentOf.forEach((par,i)=>{ if(par!==null) (childrenOf[par]=childrenOf[par]||[]).push(i); });
+  const hasBranch=Object.values(childrenOf).some(arr=>arr.length>1);
+  if(!hasBranch) return evos.map((ev,i)=>node(ev,i===0)).join('');
+  const baseIdx=parentOf.findIndex(par=>par===null);
+  let html=`<div class="evo-branch-wrap"><div class="evo-branch-col">${node(evos[baseIdx],true)}</div><div class="evo-branch-col">`;
+  const branchStarts=childrenOf[baseIdx]||[];
+  for(const startIdx of branchStarts){
+    html+=`<div class="evo-branch-row">${node(evos[startIdx],false)}`;
+    let cur=startIdx;
+    while((childrenOf[cur]||[]).length===1){
+      cur=childrenOf[cur][0];
+      html+=node(evos[cur],false);
+    }
+    html+=`</div>`;
+  }
+  html+=`</div></div>`;
+  return html;
 }
 
 // Monta o bloco "Damage Taken" (usado tanto no primeiro render quanto ao
@@ -1534,76 +1584,7 @@ async function renderRpgDetail(p, container, navToken){
     // "from" (1-based) indica de qual estágio anterior este evolui — permite ramificações
     // (ex: um Pokémon com 2 evoluções diferentes a partir do mesmo estágio base).
     // Sem "from", assume cadeia linear (evolui do estágio imediatamente anterior) — comportamento legado.
-    const evos=p.evolucoes;
-    const nEv=evos.length;
-
-    function rpgEvoNode(ev,isFirst){
-      const rawId=String(ev.id||'').trim();
-      // 1. Match direto pelo id como foi salvo (ex: já veio "A0019")
-      let evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===rawId.toLowerCase());
-      // 2. Se o id salvo é só o número da Pokédex nacional (sem prefixo de região,
-      //    ex: "19" pro Rattata) e este Pokémon é uma forma regional, monta o id
-      //    regional equivalente (ex: pref "A" + "19" → "A0019") e busca por ele.
-      if(!evPk && pref && /^\d+$/.test(rawId)){
-        const composedId=`${pref}${rawId.padStart(4,'0')}`;
-        evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===composedId.toLowerCase());
-      }
-      // 3. Por nome — tenta com e sem o sufixo regional (ex: "rattata" vs "rattata alola")
-      if(!evPk){
-        const wantSlug=slugify(ev.name||'');
-        const regSlug=REGION_SLUG_F[pref];
-        evPk=_rpgPokemon.find(x=>{
-          const xs=slugify(x.name);
-          return xs===wantSlug||(regSlug&&xs===`${wantSlug}-${regSlug}`);
-        });
-      }
-      const sprite=evPk?.sprite||'';
-      const evName=evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?');
-      // Número exibido: sempre a partir do id canônico do registro encontrado
-      // (já vem prefixado corretamente); só usa o id cru salvo em evolucoes
-      // como último recurso, sem cortar dígito de números sem prefixo.
-      const evId=evPk?.id||rawId||'?';
-      const evNumLabel=evoDisplayNum(evId);
-      const isMe=String(evId)===String(p.id);
-      const method=ev.method||ev.trigger||'';
-      const arrow=!isFirst?`<div class="evo-arrow"><span class="evo-arrow-icon">›</span>${method?`<span class="evo-method">${method}</span>`:''}</div>`:'';
-      return `${arrow}<button class="evo-node" onclick="${isMe?'void(0)':`goDetail('__rpg__${encodeURIComponent(evId)}','${evPk?rpgUrlSlug(evPk):slugify(evName)}')`}" style="${isMe?'cursor:default':''}">
-        ${sprite?`<img src="${sprite}" onerror="this.style.opacity='.2'" alt="${evName}">`:`<div style="width:68px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px">❓</div>`}
-        <span class="evo-node-name">${evName}</span>
-        <span class="evo-node-num">${evNumLabel}</span>
-      </button>`;
-    }
-
-    // Resolve o pai de cada estágio: usa "from" (1-based) quando definido,
-    // senão assume o estágio anterior (cadeia linear, comportamento legado).
-    const parentOf=evos.map((ev,i)=>{
-      if(i===0) return null;
-      const f=parseInt(ev.from,10);
-      return (f&&f>=1&&f<=nEv)?f-1:i-1;
-    });
-    const childrenOf={};
-    parentOf.forEach((par,i)=>{ if(par!==null) (childrenOf[par]=childrenOf[par]||[]).push(i); });
-    const hasBranch=Object.values(childrenOf).some(arr=>arr.length>1);
-
-    if(!hasBranch){
-      evoChainHtml=evos.map((ev,i)=>rpgEvoNode(ev,i===0)).join('');
-    } else {
-      const baseIdx=parentOf.findIndex(par=>par===null);
-      let html=`<div class="evo-branch-wrap"><div class="evo-branch-col">${rpgEvoNode(evos[baseIdx],true)}</div><div class="evo-branch-col">`;
-      const branchStarts=childrenOf[baseIdx]||[];
-      for(const startIdx of branchStarts){
-        html+=`<div class="evo-branch-row">${rpgEvoNode(evos[startIdx],false)}`;
-        let cur=startIdx;
-        // Continua a sub-cadeia enquanto houver exatamente 1 filho (ramo linear após a ramificação)
-        while((childrenOf[cur]||[]).length===1){
-          cur=childrenOf[cur][0];
-          html+=rpgEvoNode(evos[cur],false);
-        }
-        html+=`</div>`;
-      }
-      html+=`</div></div>`;
-      evoChainHtml=html;
-    }
+    evoChainHtml=buildFormEvoChainHtml(p.evolucoes,p.id,pref);
   } else if(apiEvoChain?.chain && REGION_SLUG_F[pref]){
     // Forma regional ainda sem evolução curada no admin: tenta casar cada
     // estágio da cadeia oficial com a variante regional equivalente (ex:
@@ -1775,20 +1756,19 @@ async function renderRpgDetail(p, container, navToken){
     hp:statFields.hp, attack:statFields.attack, defense:statFields.defense,
     'special-attack':statFields['special-attack'], 'special-defense':statFields['special-defense'], speed:statFields.speed,
     moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves},
-    bio:bioText, biomas:p.biomas||null
+    bio:bioText, biomas:p.biomas||null, evolucoes:p.evolucoes||null
   }];
   if(p.formas_alt&&p.formas_alt.length){
     p.formas_alt.forEach(f=>{
       const fMovesRaw=formAltMoves(f);
-      // Movimentos: assim como classificação/altura/peso/gênero/grupo de ovo,
-      // cada categoria (nível/TM/ovo/tutor) cai pro moveset da forma principal
-      // quando a forma alternativa não tiver a sua própria lista preenchida.
-      const fMoves={
-        level:(fMovesRaw.level&&fMovesRaw.level.length)?fMovesRaw.level:levelMoves,
-        tm:(fMovesRaw.tm&&fMovesRaw.tm.length)?fMovesRaw.tm:tmMoves,
-        egg:(fMovesRaw.egg&&fMovesRaw.egg.length)?fMovesRaw.egg:eggMoves,
-        tutor:(fMovesRaw.tutor&&fMovesRaw.tutor.length)?fMovesRaw.tutor:tutorMoves
-      };
+      // Movimentos: só cai pro moveset da forma principal quando a forma
+      // alternativa foi EXPLICITAMENTE marcada como "mesmo moveset da forma
+      // principal" (f.same_moveset) no admin. Sem essa marcação, cada
+      // categoria (nível/TM/ovo/tutor) usa só o que foi cadastrado pra essa
+      // forma — vazio quando não preenchido, sem fallback silencioso.
+      const fMoves=f.same_moveset
+        ? {level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves}
+        : {level:fMovesRaw.level||[], tm:fMovesRaw.tm||[], egg:fMovesRaw.egg||[], tutor:fMovesRaw.tutor||[]};
       // Habilidades: suporta tanto o formato antigo (campo único "habilidade",
       // usado pelos estilos do Oricorio) quanto o formato completo com
       // habilidade1/2/oculta (usado nas formas regionais migradas).
@@ -1806,7 +1786,8 @@ async function renderRpgDetail(p, container, navToken){
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
         moves:fMoves, bio:f.bio||'', biomas:f.biomas||null,
         height:f.height||null, weight:f.weight||null,
-        genero:f.genero||null, classification:f.classification||null, egg_group:f.egg_group||null
+        genero:f.genero||null, classification:f.classification||null, egg_group:f.egg_group||null,
+        evolucoes:f.evolucoes||null
       });
     });
   }
@@ -1882,10 +1863,10 @@ async function renderRpgDetail(p, container, navToken){
 
   ${bioHtml}
 
-  ${evoChainHtml?`<div class="section" style="border-color:${TT.mid}40" id="rpg-evo-section">
+  <div class="section" style="border-color:${TT.mid}40;${evoChainHtml?'':'display:none'}" id="rpg-evo-section">
     <div class="sec-header" style="background:${TT.dark}" id="rpg-evo-header"><div class="sec-title">Evolutionary Chain</div></div>
-    <div class="sec-body"><div class="evo-chain">${evoChainHtml}</div></div>
-  </div>`:''}
+    <div class="sec-body"><div class="evo-chain" id="rpg-evo-chain-wrap">${evoChainHtml}</div></div>
+  </div>
 
   ${alfaFormsHtml}
 
@@ -1936,6 +1917,12 @@ async function renderRpgDetail(p, container, navToken){
     if(evoSectionEl) evoSectionEl.style.borderColor=fTT.mid+'40';
     const evoHeaderEl=document.getElementById('rpg-evo-header');
     if(evoHeaderEl) evoHeaderEl.style.background=fTT.dark;
+    // Cadeia evolutiva: usa só a cadeia curada desta forma (f.evolucoes).
+    // Sem dado próprio, esconde a seção — não reaproveita a cadeia de outra forma.
+    const evoChainWrapEl=document.getElementById('rpg-evo-chain-wrap');
+    const fEvoHtml=(f.evolucoes&&f.evolucoes.length)?buildFormEvoChainHtml(f.evolucoes,p.id,pref):'';
+    if(evoChainWrapEl) evoChainWrapEl.innerHTML=fEvoHtml;
+    if(evoSectionEl) evoSectionEl.style.display=fEvoHtml?'':'none';
 
     const artEl=document.getElementById('rpg-main-art');
     setHeroSpritePair('rpg-main-art','rpg-main-art-shiny',f.sprite||'',f.sprite_shiny||'');
@@ -2345,24 +2332,25 @@ async function renderDetail(p,s,container,navToken){
     'special-defense':p.stats.find(st=>st.stat.name==='special-defense')?.base_stat,
     speed:p.stats.find(st=>st.stat.name==='speed')?.base_stat,
     moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves},
-    bio:flavorText, biomas:dbBiomasOfficial||null
+    bio:flavorText, biomas:dbBiomasOfficial||null, evolucoes:dbRec?.evolucoes||null
   }];
   if(dbRec?.formas_alt&&dbRec.formas_alt.length){
     dbRec.formas_alt.forEach(f=>{
       const fMovesRaw=formAltMoves(f);
-      const fMoves={
-        level:(fMovesRaw.level&&fMovesRaw.level.length)?fMovesRaw.level:levelMoves,
-        tm:(fMovesRaw.tm&&fMovesRaw.tm.length)?fMovesRaw.tm:tmMoves,
-        egg:(fMovesRaw.egg&&fMovesRaw.egg.length)?fMovesRaw.egg:eggMoves,
-        tutor:(fMovesRaw.tutor&&fMovesRaw.tutor.length)?fMovesRaw.tutor:tutorMoves
-      };
+      // Só cai pro moveset da forma principal quando explicitamente marcado
+      // (f.same_moveset) — sem isso, cada categoria usa só o que foi
+      // cadastrado pra essa forma (vazio se não preenchido).
+      const fMoves=f.same_moveset
+        ? {level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves}
+        : {level:fMovesRaw.level||[], tm:fMovesRaw.tm||[], egg:fMovesRaw.egg||[], tutor:fMovesRaw.tutor||[]};
       officialForms.push({
         nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
         abilityEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
         sprite:f.sprite, sprite_shiny:f.sprite_shiny,
         hp:f.hp, attack:f.atk, defense:f.def,
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
-        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null
+        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null,
+        evolucoes:f.evolucoes||null
       });
     });
   }
@@ -2455,10 +2443,10 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body" id="official-bio-body"></div>
   </div>`}
 
-  ${evoHtml?`<div class="section" style="border-color:${TT.mid}40" id="official-evo-section">
+  <div class="section" style="border-color:${TT.mid}40;${evoHtml?'':'display:none'}" id="official-evo-section">
     <div class="sec-header" style="background:${TT.dark}" id="official-evo-header"><div class="sec-title">Evolutionary Chain</div></div>
     <div class="sec-body"><div class="evo-chain" id="evo-chain-wrap">${evoHtml}</div></div>
-  </div>`:''}
+  </div>
 
   ${alfaFormsHtml}
 
@@ -2508,6 +2496,16 @@ async function renderDetail(p,s,container,navToken){
     if(evoSectionEl) evoSectionEl.style.borderColor=fTT.mid+'40';
     const evoHeaderEl=document.getElementById('official-evo-header');
     if(evoHeaderEl) evoHeaderEl.style.background=fTT.dark;
+    // Cadeia evolutiva: forma raiz (idx 0) usa a cadeia curada (f.evolucoes)
+    // se houver, senão a cadeia oficial da PokéAPI já calculada (evoHtml).
+    // Formas alternativas (idx>0) usam só a própria cadeia curada — sem
+    // fallback pra cadeia da espécie base.
+    const evoChainWrapEl=document.getElementById('evo-chain-wrap');
+    const fEvoHtml=(f.evolucoes&&f.evolucoes.length)
+      ? buildFormEvoChainHtml(f.evolucoes,id)
+      : (idx===0?evoHtml:'');
+    if(evoChainWrapEl) evoChainWrapEl.innerHTML=fEvoHtml;
+    if(evoSectionEl) evoSectionEl.style.display=fEvoHtml?'':'none';
 
     const artEl=document.getElementById('main-art');
     setHeroSpritePair('main-art','main-art-shiny',f.sprite||'',f.sprite_shiny||'');
