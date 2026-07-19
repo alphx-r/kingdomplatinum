@@ -369,6 +369,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .alfa-row-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .alfa-row-head input.alfa-nome{flex:1;font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--purple);border:1.5px solid var(--border);border-radius:6px;padding:6px 9px;background:#fff;outline:none}
 .alfa-row-head input.alfa-nome:focus{border-color:var(--purple)}
+.alfa-identity-block{padding-bottom:10px;margin-bottom:10px;border-bottom:1px dashed var(--purple-light)}
+.alfa-tipo-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.alfa-tipo-row .alfa-tipo1-wrap,.alfa-tipo-row .alfa-tipo2-wrap{display:flex;flex-wrap:wrap;gap:4px}
 .alfa-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 5px;line-height:1;border-radius:4px;flex-shrink:0}
 .alfa-del:hover{color:var(--red)}
 .alfa-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px}
@@ -678,8 +681,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button type="button" class="epk-main-tab-btn" id="epk-tab-btn-alfa" onclick="epkSetTab('alfa')">Força Alfa</button>
     </div>
 
-    <!-- Identidade: Nome + Slug + Pokédex + Classificação | Sprites -->
-    <div class="epk-card epk-base-only">
+    <!-- Identidade: Nome + Slug + Pokédex + Classificação | Sprites
+         Só aparece na aba "Dados do Pokémon" — na aba "Força Alfa" ela é substituída
+         pelo card de Forma Alfa, que já tem seu próprio bloco de identidade (nome + tipo) por forma. -->
+    <div class="epk-card epk-base-only epk-tab-normal">
       <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start">
         <div>
           <div class="epk-card-title">🏷️ Identidade</div>
@@ -2380,6 +2385,59 @@ function evoResolveSprite(id) {
   return null;
 }
 
+// Dado um Nº Pokédex digitado no estágio da evo chain, acha o Pokémon base
+// (bate exato ou por valor numérico, ignorando zeros à esquerda — "007" == "7")
+// e monta a lista de nomes candidatos pro campo Nome: o nome base + qualquer
+// forma alternativa vinculada a esse número (já migrada em formas_alt, ou
+// ainda como registro separado tipo N0007/A0007 não migrado).
+function evoFindNameCandidates(rawId) {
+  const idStr = String(rawId || '').trim();
+  if (!idStr) return { base: null, options: [] };
+  const isNumeric = /^\d+$/.test(idStr);
+  const numVal = isNumeric ? parseInt(idStr, 10) : null;
+
+  const matchesBase = p => {
+    const pid = String(p.id || '');
+    if (pid.toLowerCase() === idStr.toLowerCase()) return true;
+    if (isNumeric && /^\d+$/.test(pid) && parseInt(pid, 10) === numVal) return true;
+    return false;
+  };
+
+  const base = (S.pk?.all || []).find(matchesBase) || (S.rpg?.all || []).find(matchesBase) || null;
+
+  const options = [];
+  const pushOpt = nome => {
+    if (nome && !options.some(o => o.toLowerCase() === nome.toLowerCase())) options.push(nome);
+  };
+  if (base) {
+    pushOpt(base.name || String(base.id));
+    (base.formas_alt || []).forEach(f => pushOpt(f?.nome));
+  }
+
+  // Formas regionais/Nendo ainda não migradas pra formas_alt (registros
+  // separados com prefixo A/G/H/P/N + número da dex) — só faz sentido
+  // procurar quando o id digitado é puramente numérico.
+  if (isNumeric) {
+    [...(S.pk?.all || []), ...(S.rpg?.all || [])].forEach(p => {
+      const pid = String(p.id || '');
+      const m = pid.match(/^([AGHPN])0*(\d+)$/i);
+      if (m && parseInt(m[2], 10) === numVal) pushOpt(p.name || pid);
+    });
+  }
+
+  return { base, options };
+}
+
+// Atualiza a <datalist> do campo Nome de um estágio com os candidatos
+// achados a partir do Nº Pokédex atual do mesmo estágio.
+function evoUpdateNameSuggestions(row) {
+  const idInput = row.querySelector('.evo-id');
+  const datalist = row.querySelector('.evo-name-options');
+  if (!idInput || !datalist) return;
+  const { options } = evoFindNameCandidates(idInput.value.trim());
+  datalist.innerHTML = options.map(o => `<option value="${o.replace(/"/g, '&quot;')}">`).join('');
+}
+
 function evoAddRow(listId, data = {}) {
   const list = document.getElementById(listId);
   if (!list) return;
@@ -2402,7 +2460,8 @@ function evoAddRow(listId, data = {}) {
     </div>
     <div>
       <div class="evo-label">Nome</div>
-      <input type="text" class="evo-name" placeholder="Ex: Darkodon" value="${data.name || ''}">
+      <input type="text" class="evo-name" list="dl-${row.dataset.evoRowId}" placeholder="Ex: Darkodon" value="${data.name || ''}">
+      <datalist class="evo-name-options" id="dl-${row.dataset.evoRowId}"></datalist>
     </div>
     <div>
       <div class="evo-label">Condição <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
@@ -2446,8 +2505,11 @@ function evoAddRow(listId, data = {}) {
       el.textContent = '?';
       previewWrap.insertBefore(el, rm);
     }
+    evoUpdateNameSuggestions(row);
     evoRefreshFromSelects(listId);
   });
+  // Já popula as sugestões de nome se o estágio já veio com um ID (ex: editando uma evo chain existente)
+  evoUpdateNameSuggestions(row);
   // Atualiza o label do select quando o nome muda
   row.querySelector('.evo-name').addEventListener('input', () => evoRefreshFromSelects(listId));
   // Lembra a seleção atual do select "Evolui de" (por rowId — sobrevive a reordenação)
@@ -2601,29 +2663,26 @@ function alfaAddRow(listId, data = {}) {
   const row = document.createElement('div');
   row.className = 'alfa-row';
   row.innerHTML = `
-    <div class="alfa-row-head">
-      <input type="text" class="alfa-nome" placeholder="Ex: Mega Charizard X" value="${data.nome || ''}">
-      <button type="button" class="alfa-del" title="Remover forma" onclick="this.closest('.alfa-row').remove()">✕</button>
-    </div>
-    <div class="two-col" style="margin-bottom:8px">
-      <div>
-        <span class="alfa-field-lbl">Tipo Primário</span>
-        <div class="alfa-tipo1-wrap" style="display:flex;flex-wrap:wrap;gap:4px">${tipoSquaresHtml(data.tipo1 || '')}</div>
+    <div class="alfa-identity-block">
+      <div class="alfa-row-head">
+        <input type="text" class="alfa-nome" placeholder="Ex: Mega Charizard X" value="${data.nome || ''}">
+        <button type="button" class="alfa-del" title="Remover forma" onclick="this.closest('.alfa-row').remove()">✕</button>
       </div>
-      <div>
-        <span class="alfa-field-lbl">Tipo Secundário <span style="font-weight:400;text-transform:none;color:var(--muted)">(opcional — clique de novo pra remover)</span></span>
-        <div class="alfa-tipo2-wrap" style="display:flex;flex-wrap:wrap;gap:4px">${tipoSquaresHtml(data.tipo2 || '')}</div>
+      <div class="alfa-tipo-row">
+        <div>
+          <span class="alfa-field-lbl">Tipo Primário</span>
+          <div class="alfa-tipo1-wrap">${tipoSquaresHtml(data.tipo1 || '')}</div>
+        </div>
+        <div>
+          <span class="alfa-field-lbl">Tipo Secundário <span style="font-weight:400;text-transform:none;color:var(--muted)">(opcional — clique de novo pra remover)</span></span>
+          <div class="alfa-tipo2-wrap">${tipoSquaresHtml(data.tipo2 || '')}</div>
+        </div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px">
       <div>
-        <span class="alfa-field-lbl" style="display:block;margin-bottom:6px">Habilidades</span>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-          <div><span class="alfa-field-lbl">Habilidade 1</span><div class="cb-wrap"><input type="text" class="cb-input mv-meta-input alfa-hab1" list="dl-ability" autocomplete="off" placeholder="— Selecione —" value="${abilityToLabel(data.habilidade1 || data.habilidade || '')}"></div></div>
-          <div><span class="alfa-field-lbl">Habilidade 2</span><div class="cb-wrap"><input type="text" class="cb-input mv-meta-input alfa-hab2" list="dl-ability" autocomplete="off" placeholder="— (opcional) —" value="${abilityToLabel(data.habilidade2 || '')}"></div></div>
-        </div>
-        <span class="alfa-field-lbl">Hidden Ability</span>
-        <div class="cb-wrap"><input type="text" class="cb-input mv-meta-input alfa-haboculta" list="dl-ability" autocomplete="off" placeholder="— (opcional) —" value="${abilityToLabel(data.habilidade_oculta || '')}"></div>
+        <span class="alfa-field-lbl" style="display:block;margin-bottom:6px">Habilidade</span>
+        <div class="cb-wrap"><input type="text" class="cb-input mv-meta-input alfa-hab1" list="dl-ability" autocomplete="off" placeholder="— Selecione —" value="${abilityToLabel(data.habilidade1 || data.habilidade || '')}"></div>
       </div>
       <div>
         <span class="alfa-field-lbl" style="display:block;margin-bottom:6px">Físico</span>
@@ -2669,10 +2728,8 @@ function alfaAddRow(listId, data = {}) {
       <span class="alfa-field-lbl" style="margin-bottom:6px">Biografia desta Força Alfa <span style="font-weight:400;text-transform:none;color:var(--muted)">(texto exibido na ficha explicando essa transformação — como é obtida, o que muda etc)</span></span>
       <textarea class="alfa-pokedex" placeholder="Ex: Ao absorver a energia de uma tempestade, Prewood entra em um estado de fúria vegetal..." style="width:100%;min-height:60px;font-family:var(--font-body);font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:7px 8px;background:#fff;color:var(--text);resize:vertical;box-sizing:border-box">${data.pokedex || ''}</textarea>
     </div>`;
-  // habilidade combobox behaviour (Habilidade 1/2 + Hidden Ability)
+  // habilidade combobox behaviour (força alfa só tem 1 habilidade)
   cbInit(row.querySelector('.alfa-hab1'));
-  cbInit(row.querySelector('.alfa-hab2'));
-  cbInit(row.querySelector('.alfa-haboculta'));
   // gênero: auto-completa o % complementar
   const gM = row.querySelector('.alfa-genero-m'), gF = row.querySelector('.alfa-genero-f');
   gM.addEventListener('input', () => genderAutoCompleteEl(gM, gF));
@@ -2738,8 +2795,6 @@ function alfaReadListSync(listId) {
     const tipo1 = row.querySelector('.alfa-tipo1-wrap .tipo-tag.sel')?.dataset.tipo || '';
     const tipo2 = row.querySelector('.alfa-tipo2-wrap .tipo-tag.sel')?.dataset.tipo || '';
     const habilidade1 = abilityToSlug(row.querySelector('.alfa-hab1')?.value || '') || null;
-    const habilidade2 = abilityToSlug(row.querySelector('.alfa-hab2')?.value || '') || null;
-    const habilidade_oculta = abilityToSlug(row.querySelector('.alfa-haboculta')?.value || '') || null;
     const genero_m = row.querySelector('.alfa-genero-m')?.value.trim() || null;
     const genero_f = row.querySelector('.alfa-genero-f')?.value.trim() || null;
     const egg_group = row.querySelector('.alfa-egg-group')?.value.trim() || null;
@@ -2755,7 +2810,7 @@ function alfaReadListSync(listId) {
     const sprite = row.querySelector('.alfa-sprite-url')?.value || null;
     const sprite_shiny = row.querySelector('.alfa-sprite-shiny-url')?.value || null;
     const pokedex = row.querySelector('.alfa-pokedex')?.value.trim() || null;
-    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade1, habilidade2, habilidade_oculta, genero_m, genero_f, egg_group, weight, height, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny, pokedex };
+    return { nome, tipo1: tipo1 || null, tipo2: tipo2 || null, habilidade1, genero_m, genero_f, egg_group, weight, height, hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny, pokedex };
   }).filter(Boolean);
 }
 // Faz upload de qualquer sprite pendente (arquivo escolhido) para cada forma, e retorna a lista final pronta pra salvar.
