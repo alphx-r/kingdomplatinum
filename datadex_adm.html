@@ -100,8 +100,14 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .pk-grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding:4px 0}
 .pk-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:12px 8px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:all .18s;position:relative;animation:fadeUp .2s both}
 .pk-card:hover{border-color:var(--brand-mid);transform:translateY(-2px);box-shadow:0 4px 14px rgba(37,99,168,.13)}
-.pk-card.approved{border-color:#80dfc0}
-.pk-card.has-pt{border-left:3px solid var(--green)}
+.pk-card::before,.pk-card::after{content:'';position:absolute;width:9px;height:9px;pointer-events:none;transition:border-color .18s;border-radius:3px 0 0 0}
+.pk-card::before{top:-1.5px;left:-1.5px;border-top:2px solid transparent;border-left:2px solid transparent}
+.pk-card::after{bottom:-1.5px;right:-1.5px;border-bottom:2px solid transparent;border-right:2px solid transparent;border-radius:0 0 3px 0}
+.pk-card.pending{border:1.5px solid #97a3b8;box-shadow:0 0 0 1px rgba(151,163,184,.15) inset}
+.pk-card.pending::before,.pk-card.pending::after{border-color:#97a3b8}
+.pk-card.approved{border:1.5px solid var(--green);box-shadow:0 0 10px -2px rgba(0,200,150,.55),0 0 0 1px rgba(0,200,150,.12) inset}
+.pk-card.approved::before,.pk-card.approved::after{border-color:var(--green)}
+.pk-card.approved:hover{box-shadow:0 4px 14px rgba(37,99,168,.13),0 0 14px -1px rgba(0,200,150,.6)}
 .pk-card-sprite{width:64px;height:64px;object-fit:contain;image-rendering:pixelated}
 .pk-card-num{font-family:var(--font-title);font-size:9px;color:var(--muted);letter-spacing:.3px}
 .pk-card-name{font-family:var(--font-title);font-size:11px;color:var(--brand);text-align:center;letter-spacing:.2px;line-height:1.3}
@@ -402,7 +408,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 /* Formas Alternativas (ex: Oricorio Estilo Pom-Pom) — mesmo padrão visual das Formas Alfa, cor teal pra diferenciar */
 .falt-list{display:flex;flex-direction:column;gap:10px;margin-bottom:8px}
-.falt-row{background:var(--surface);border:1.5px solid var(--teal-light);border-radius:9px;padding:12px;animation:fadeUp .2s both}
+.falt-row{background:var(--surface);border-radius:9px;padding:12px;animation:fadeUp .2s both}
 .falt-row-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .falt-row-head input.falt-nome{flex:1;font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--teal);border:1.5px solid var(--border);border-radius:6px;padding:6px 9px;background:#fff;outline:none}
 .falt-row-head input.falt-nome:focus{border-color:var(--teal)}
@@ -606,6 +612,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="openTypeIconModal()" title="Upload dos SVGs dos tipos homebrew (Scent, Light) pro Supabase Storage — o set de ícones do GitHub só tem os 18 tipos oficiais">🎨 Ícones de tipo customizados</button>
           <hr>
           <div class="adm-more-group-lbl">Manutenção / migração</div>
+          <button onclick="markAllPokemonPending()" title="Desmarca o checkbox 'Aprovado' de todos os Pokémon — não afeta se está publicado">⚠️ Marcar todos como pendente</button>
           <button onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
           <button onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
           <button onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
@@ -1012,6 +1019,13 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
         </div>
       </div>
 
+      <div class="epk-card" style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;color:var(--text)">
+          <input type="checkbox" id="epk-revisado" style="width:18px;height:18px;cursor:pointer">
+          Aprovado
+        </label>
+        <span style="font-size:11px;color:var(--muted)">Marca a ficha como revisada/aprovada — separado do botão de publicar abaixo.</span>
+      </div>
 
 
     <div class="modal-foot">
@@ -1019,7 +1033,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <button class="btn btn-outline" style="color:#c0392b;border-color:#c0392b;margin-right:auto" onclick="deletePkModal()">🗑 Deletar</button>
       <button class="btn btn-outline" onclick="closeModal('edit-pokemon-modal')">Cancelar</button>
       <button class="btn btn-outline btn-sm" onclick="savePkModal(false)">💾 Rascunho</button>
-      <button class="btn btn-success" onclick="savePkModal(true)">✓ Aprovar e publicar</button>
+      <button class="btn btn-success" onclick="savePkModal(true)">✓ Publicar</button>
     </div>
   </div>
 </div>
@@ -1681,6 +1695,17 @@ async function sbPatch(table, id, patch) {
   return text ? JSON.parse(text) : {};
 }
 
+// PATCH em todas as linhas de uma tabela de uma vez (filtro "id=not.is.null"
+// pra bater com toda a tabela — o PostgREST exige algum filtro em UPDATE).
+async function sbPatchAll(table, patch) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=not.is.null`, {
+    method: 'PATCH',
+    headers: SH,
+    body: JSON.stringify(patch)
+  });
+  if (!r.ok) throw new Error(await r.text());
+}
+
 async function sbDelete(table, id) {
   const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -1778,7 +1803,7 @@ function applyPkFilter() {
   const q = document.getElementById('pk-search').value.toLowerCase();
   S.pk.filtered = S.pk.all.filter(pk => {
     const nm = !q || (pk.name||'').toLowerCase().includes(q) || String(pk.id).toLowerCase().includes(q);
-    const appr = pk._isRpg ? (!!pk.approved || !!pk.sprite) : !!(S.pk.dbMap[pk.id] || {}).approved;
+    const appr = pk._isRpg ? !!pk.revisado : !!(S.pk.dbMap[pk.id] || {}).revisado;
     const fOk = pkFilter === 'all' || (pkFilter === 'appr' && appr) || (pkFilter === 'pend' && !appr);
     return nm && fOk;
   });
@@ -1795,8 +1820,8 @@ function renderPkList() {
     return;
   }
   const total = S.pk.all.length;
-  const apprOficiais = Object.values(S.pk.dbMap).filter(d => d.approved).length;
-  const apprRpg = S.pk.all.filter(pk => pk._isRpg && (!!pk.approved || !!pk.sprite)).length;
+  const apprOficiais = Object.values(S.pk.dbMap).filter(d => d.revisado).length;
+  const apprRpg = S.pk.all.filter(pk => pk._isRpg && !!pk.revisado).length;
   const appr = apprOficiais + apprRpg;
   document.getElementById('pk-total').textContent = total;
   document.getElementById('pk-appr').textContent = appr;
@@ -1845,7 +1870,7 @@ function renderPkList() {
 
   const cardsHtml = grupo.map((pk, i) => {
     const db = pk._isRpg ? pk : (S.pk.dbMap[pk.id] || {});
-    const appr = pk._isRpg ? (!!pk.approved || !!pk.sprite) : !!db.approved;
+    const appr = !!db.revisado;
     const hasPt = !!(db.bio || db.bio_pt);
     const spriteUrl = db.sprite || (/^\d+$/.test(String(pk.id)) ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pk.id}.png` : '');
     const idStr = String(pk.id);
@@ -1858,7 +1883,7 @@ function renderPkList() {
     }).join('');
     const badgeCls = appr ? 'badge-appr' : hasPt ? 'badge-pt' : 'badge-pend';
     const badgeTxt = appr ? '✓' : hasPt ? '…' : '○';
-    return `<div class="pk-card${appr?' approved':''}${hasPt?' has-pt':''}" onclick="openEditPokemon('${pk.id}')" style="animation-delay:${Math.min(i*0.008,0.3)}s">
+    return `<div class="pk-card${appr?' approved':' pending'}" onclick="openEditPokemon('${pk.id}')" style="animation-delay:${Math.min(i*0.008,0.3)}s">
       <span style="position:absolute;top:6px;right:6px" class="pk-card-badge ${badgeCls}">${badgeTxt}</span>
       ${spriteUrl ? `<img class="pk-card-sprite" src="${spriteUrl}" alt="${pk.name}" onerror="this.style.opacity='.15'">` : `<div class="pk-card-sprite" style="display:flex;align-items:center;justify-content:center;font-size:28px;opacity:.3">?</div>`}
       <span class="pk-card-num">${numLabel}</span>
@@ -1892,7 +1917,11 @@ async function openEditPokemon(id) {
   document.getElementById('epk-id').value = idStr;
   document.getElementById('epk-modal-title').textContent = `✎ ${cap(pk.name)}`;
   document.getElementById('epk-modal-sub').textContent = `${numLabel} · ${pkRegiaoAtiva}`;
-  document.getElementById('epk-art-preview').src = artUrl;
+  const epkArtPreviewEl = document.getElementById('epk-art-preview');
+  epkArtPreviewEl.src = artUrl;
+  epkArtPreviewEl.dataset.baseSrc = artUrl;
+  const epkRevisadoEl = document.getElementById('epk-revisado');
+  if (epkRevisadoEl) epkRevisadoEl.checked = !!db.revisado;
 
   // Nome, slug, pokédex
   // Nome é independente — sempre mostra o nome real do Pokémon, nunca reconstruído do slug.
@@ -3144,12 +3173,9 @@ function faltAddRow(listId, data = {}) {
   const uid = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   row.dataset.uid = uid;
   row.innerHTML = `
-    <div class="falt-row-head" style="justify-content:flex-end;margin-bottom:4px">
-      <button type="button" class="falt-del" title="Remover forma" onclick="faltRemoveRow(this)">✕</button>
-    </div>
     <div class="epk-main-tab-group" style="margin-bottom:14px">
-      <button type="button" class="epk-main-tab-btn on falt-tab-btn" data-tab="normal" onclick="faltSetTab(this,'normal')">📋 Dados da Forma</button>
-      <button type="button" class="epk-main-tab-btn falt-tab-btn" data-tab="alfa" onclick="faltSetTab(this,'alfa')">🌀 Força Alfa</button>
+      <button type="button" class="epk-main-tab-btn on falt-tab-btn" data-tab="normal" onclick="faltSetTab(this,'normal')">Dados da Forma</button>
+      <button type="button" class="epk-main-tab-btn falt-tab-btn" data-tab="alfa" onclick="faltSetTab(this,'alfa')">Força Alfa</button>
     </div>
     <div class="falt-tab-normal">
 
@@ -3447,6 +3473,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       const prev = row.querySelector('.falt-sprite-prev');
       prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
       prev.dataset.b64 = out;
+      faltSyncActiveArtPreview(row, out);
     };
     reader.readAsDataURL(file);
   });
@@ -3455,6 +3482,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
     sprAdjFromPreview(prev, out => {
       prev.innerHTML = `<img src="${out}" style="width:100%;height:100%;object-fit:contain">`;
       prev.dataset.b64 = out;
+      faltSyncActiveArtPreview(row, out);
       toast('Sprite ajustado.', 'ok');
     });
   });
@@ -3770,6 +3798,16 @@ function faltRefreshParentNav(nomeInput) {
   if (list.id === 'nrpg-formas-alt') nrpgRefreshFormsNav();
   else epkRefreshFormsNav();
 }
+// Se a linha editada for a forma alt. ativa no momento (modal de edição), atualiza
+// também a foto do cabeçalho (epk-art-preview) — ver epkShowForm/epkShowBase.
+function faltSyncActiveArtPreview(row, src) {
+  const list = row.closest('.falt-list');
+  if (list?.id === 'epk-formas-alt' && window._epkActiveForm === row.dataset.uid) {
+    const artEl = document.getElementById('epk-art-preview');
+    if (artEl) artEl.src = src;
+  }
+}
+
 function faltAddRowFromMain(listId, prefix) {
   const tipo1 = document.querySelector(`#${prefix}-tipo1-wrap .rpg-tipo-tag.sel`)?.dataset.tipo || '';
   const tipo2El = document.querySelector(`#${prefix}-tipo2-wrap .rpg-tipo-tag.sel`);
@@ -3850,10 +3888,21 @@ function epkRefreshFormsNav() {
       const nome = (row.querySelector('.falt-nome')?.value || '').trim();
       const uid = row.dataset.uid || '';
       const sel = active === uid ? ' epk-form-pill-selected' : '';
-      return `<button type="button" class="epk-form-pill${sel}" onclick="epkShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button>`;
+      return `<span class="epk-form-pill-wrap"><button type="button" class="epk-form-pill${sel}" onclick="epkShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button><button type="button" class="epk-form-pill-x" onclick="event.stopPropagation();epkDeleteFormByUid('${uid}')" title="Remover esta forma">✕</button></span>`;
     }).join('')}
     <button type="button" class="epk-form-pill epk-form-pill-add" onclick="epkAddFormFromNav()" title="Adicionar nova forma alternativa">＋</button>
   `;
+}
+// Remove uma forma alternativa direto pela pill de navegação (mesmo padrão
+// usado pelas formas alfa — ver alfaDeleteRowByUid). Se a forma removida
+// era a que estava sendo editada, volta pra forma base.
+function epkDeleteFormByUid(uid) {
+  const row = document.querySelector(`#epk-formas-alt .falt-row[data-uid="${uid}"]`);
+  if (!row) return;
+  if (!confirm('Remover esta forma?')) return;
+  const wasActive = window._epkActiveForm === uid;
+  row.remove();
+  if (wasActive) epkShowBase(false); else epkRefreshFormsNav();
 }
 function epkFlashHighlight(el) {
   if (!el) return;
@@ -3875,6 +3924,8 @@ function epkShowBase(scrollAndFocus = true) {
   document.querySelectorAll('#epk-formas-alt .falt-row').forEach(r => r.style.display = '');
   const banner = document.getElementById('epk-form-active-banner');
   if (banner) banner.classList.remove('show');
+  const artEl = document.getElementById('epk-art-preview');
+  if (artEl) artEl.src = artEl.dataset.baseSrc || '';
   epkSetTab('normal');
   epkRefreshFormsNav();
   if (scrollAndFocus) {
@@ -3904,6 +3955,11 @@ function epkShowForm(uid) {
   document.querySelectorAll('#epk-formas-alt .falt-row').forEach(r => r.style.display = (r === row ? '' : 'none'));
   const banner = document.getElementById('epk-form-active-banner');
   if (banner) banner.classList.add('show');
+  const artEl = document.getElementById('epk-art-preview');
+  if (artEl) {
+    const formSprite = row.querySelector('.falt-sprite-prev img')?.src || row.querySelector('.falt-sprite-url')?.value || '';
+    artEl.src = formSprite || artEl.dataset.baseSrc || '';
+  }
   epkRefreshFormsNav();
   row.scrollIntoView({ behavior: 'smooth', block: 'start' });
   epkFlashHighlight(row);
@@ -4150,6 +4206,7 @@ async function savePkModal(approve) {
   const habilidade_oculta = abilityToSlug(document.getElementById('epk-haboculta').value) || null;
   const habilidade_mega  = null; // campo removido do editor comum — cada Forma Alfa agora tem sua própria habilidade
   const forcaAlfa = document.getElementById('epk-forca-alfa')?.value.trim() || null;
+  const revisado = document.getElementById('epk-revisado')?.checked || false;
 
   // RPG
   const generoM = document.getElementById('epk-genero-m').value.trim();
@@ -4225,6 +4282,7 @@ async function savePkModal(approve) {
       is_fakemon: !!pk._isRpg,
       source: pk._isRpg ? (pk.source||'rpg') : 'pokeapi',
       approved: approve,
+      revisado,
       updated_at: new Date().toISOString()
     };
     // Fonte de verdade agora é o Supabase direto — sem passo intermediário pelo GitHub.
@@ -4234,7 +4292,7 @@ async function savePkModal(approve) {
     Object.assign(pk, row);
     updatePkStats();
     applyPkFilter();
-    toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
+    toast(approve ? '✓ Publicado!' : '💾 Rascunho salvo!', 'ok');
     closeModal('edit-pokemon-modal');
   } catch(e) { toast('Erro ao salvar no Supabase: ' + e.message, 'err'); }
 }
@@ -4258,7 +4316,7 @@ async function deletePkModal() {
 
 function updatePkStats() {
   const total = S.pk.all.length;
-  const appr = Object.values(S.pk.dbMap).filter(d => d.approved).length;
+  const appr = Object.values(S.pk.dbMap).filter(d => d.revisado).length;
   const pct = total ? Math.round(appr / total * 100) : 0;
   document.getElementById('pk-total').textContent = total;
   document.getElementById('pk-appr').textContent = appr;
@@ -4266,6 +4324,21 @@ function updatePkStats() {
   document.getElementById('pk-pct').textContent = pct + '%';
   document.getElementById('pk-bar').style.width = pct + '%';
   document.getElementById('badge-pokemon').textContent = `${appr}/${total}`;
+}
+
+// Zera o checkbox "Aprovado" (campo `revisado`) de TODOS os Pokémon de uma vez —
+// não mexe em `approved`/publicação, que é um fluxo separado (ver savePkModal).
+async function markAllPokemonPending() {
+  if (!confirm('Marcar TODOS os Pokémon como pendente? Isso desmarca o checkbox "Aprovado" de cada um (não afeta o que já está publicado).')) return;
+  try {
+    await sbPatchAll('pokemons', { revisado: false });
+    S.pk.all.forEach(p => { p.revisado = false; });
+    Object.values(S.pk.dbMap).forEach(db => { db.revisado = false; });
+    const epkRevisadoEl = document.getElementById('epk-revisado');
+    if (epkRevisadoEl) epkRevisadoEl.checked = false;
+    applyPkFilter();
+    toast('Todos os Pokémon marcados como pendente.', 'ok');
+  } catch (e) { toast('Erro ao marcar como pendente: ' + e.message, 'err'); }
 }
 
 async function loadPokemon() {
@@ -6826,10 +6899,19 @@ function nrpgRefreshFormsNav() {
       const nome = (row.querySelector('.falt-nome')?.value || '').trim();
       const uid = row.dataset.uid || '';
       const sel = active === uid ? ' epk-form-pill-selected' : '';
-      return `<button type="button" class="epk-form-pill${sel}" onclick="nrpgShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button>`;
+      return `<span class="epk-form-pill-wrap"><button type="button" class="epk-form-pill${sel}" onclick="nrpgShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button><button type="button" class="epk-form-pill-x" onclick="event.stopPropagation();nrpgDeleteFormByUid('${uid}')" title="Remover esta forma">✕</button></span>`;
     }).join('')}
     <button type="button" class="epk-form-pill epk-form-pill-add" onclick="nrpgAddFormFromNav()" title="Adicionar nova forma alternativa">＋</button>
   `;
+}
+// Ver epkDeleteFormByUid — mesmo padrão pro formulário "Novo Pokémon Nendo".
+function nrpgDeleteFormByUid(uid) {
+  const row = document.querySelector(`#nrpg-formas-alt .falt-row[data-uid="${uid}"]`);
+  if (!row) return;
+  if (!confirm('Remover esta forma?')) return;
+  const wasActive = window._nrpgActiveForm === uid;
+  row.remove();
+  if (wasActive) nrpgShowBase(false); else nrpgRefreshFormsNav();
 }
 function nrpgShowBase(scrollAndFocus = true) {
   window._nrpgActiveForm = null;
