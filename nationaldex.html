@@ -2873,12 +2873,50 @@ function formEvoChainHtml(evolucoes){
 
 // Badge de "Força Alfa" (gimmick exclusivo desta forma — Mega Evolução,
 // Gigantamax, Terastalização etc — campo de texto livre, opcional).
+// Usado só como fallback pra registros antigos de forma alternativa que
+// ainda não foram migrados pro array formas_alfa (ver renderNestedAlfaHtml).
 function formForcaAlfaHtml(forcaAlfa){
   if(!forcaAlfa) return '';
   return `<div style="margin-top:10px">
     <div style="font-family:var(--font-title);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Força Alfa</div>
     <span style="font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--text);background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 10px;display:inline-block">${forcaAlfa}</span>
   </div>`;
+}
+
+// Normaliza um array de itens "Formas Alfa" (nome, classificacao, tipo1/2,
+// habilidade1, genero_m/f, egg_group, weight, height, hp/atk/def/spa/spd/spe,
+// bst, sprite, sprite_shiny, pokedex — mesmo shape salvo pelo admin tanto no
+// nível da espécie base quanto dentro de cada forma alternativa) pro formato
+// de "forms" esperado por renderFormsSection.
+function alfaItemsToFormNodes(items){
+  return (items||[]).map(f=>{
+    // Força Alfa só tem 1 habilidade no admin (campo habilidade1), mas
+    // aceita também o formato legado de campo único "habilidade".
+    const abilidadeEntries=[
+      f.habilidade1?{name:f.habilidade1,ha:false}:null,
+      (!f.habilidade1&&f.habilidade)?{name:f.habilidade,ha:false}:null
+    ].filter(Boolean);
+    return {
+      nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
+      habilidadeLabel:abilidadeEntries.map(a=>a.name.toUpperCase().replace(/-/g,' ')).join(', '),
+      abilidadeEntries,
+      hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
+      sprite:f.sprite, sprite_shiny:f.sprite_shiny,
+      pokedex:f.pokedex||null
+    };
+  });
+}
+
+// Renderiza a mini-seção "Formas Alfa" aninhada dentro do painel de detalhes
+// de uma forma alternativa específica (formas_alt[i].formas_alfa). idPrefix
+// precisa ser único por forma-pai pra não colidir com os IDs de toggle das
+// Formas Alfa "de topo" (renderAlfaFormsHtml) nem entre formas diferentes.
+async function renderNestedAlfaHtml(items, idPrefix, pkId){
+  if(!items||!items.length) return '';
+  return await renderFormsSection({
+    sectionTitle:'Formas Alfa', headerBg:'#5020a0',
+    idPrefix, pkId, forms:alfaItemsToFormNodes(items)
+  });
 }
 
 // Monta a seção completa de formas (compartilhada entre "Formas" e "Formas Alfa").
@@ -2909,6 +2947,12 @@ async function renderFormsSection(opts){
     // Descrição(ões) da(s) habilidade(s) desta forma, vinda da tabela
     // "abilities" (mesma fonte usada na ficha principal).
     const abilidadesHtml=(f.abilidadeEntries&&f.abilidadeEntries.length)?await buildAbilitiesHtmlSimple(f.abilidadeEntries):'';
+
+    // Formas Alfa próprias desta forma alternativa (ex: Mega/Gigantamax
+    // exclusivo de uma forma regional/estilo, e não da espécie base).
+    const nestedAlfaHtml=(f.formas_alfa&&f.formas_alfa.length)
+      ? await renderNestedAlfaHtml(f.formas_alfa, `${idPrefix}${i}alfa`, pkId)
+      : '';
 
     const nodeHtml=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;border-radius:8px;cursor:default">
       ${f.sprite?`<img style="width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.1))" src="${f.sprite}" alt="${fLabel}">`:''}
@@ -2943,7 +2987,7 @@ async function renderFormsSection(opts){
               </span>
             </div>
           </div>`:''}
-          ${formForcaAlfaHtml(f.forca_alfa)}
+          ${nestedAlfaHtml?'':formForcaAlfaHtml(f.forca_alfa)}
           ${f.pokedex?`<div style="margin-top:10px">
             <div style="font-family:var(--font-title);font-size:9px;color:${mid};text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Pokédex</div>
             <div style="font-family:var(--font-body);font-size:12px;color:${dark};line-height:1.6;font-style:italic">${f.pokedex}</div>
@@ -2954,6 +2998,7 @@ async function renderFormsSection(opts){
           ${formDmgTakenHtml(fTypes)}
         </div>
       </div>
+      ${nestedAlfaHtml?`<div style="width:100%;margin-top:14px">${nestedAlfaHtml}</div>`:''}
     </div>`;
 
     return {nodeHtml,infoHtml,mid};
@@ -3010,7 +3055,9 @@ async function renderAltFormsHtml(p){
     abilidadeEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
     hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
     sprite:f.sprite, sprite_shiny:f.sprite_shiny,
-    forca_alfa:f.forca_alfa||null, pokedex:f.forca_alfa?(f.bio||null):null, evolucoes:f.evolucoes||null
+    formas_alfa:(f.formas_alfa&&f.formas_alfa.length)?f.formas_alfa:null,
+    forca_alfa:f.forca_alfa||null,
+    pokedex:(f.formas_alfa?.length||f.forca_alfa)?(f.bio||null):null, evolucoes:f.evolucoes||null
   }));
   // Cabeçalho da seção acompanha a cor do tipo principal do Pokémon (mesma
   // cor usada em Damage Taken/Biology/Evolutionary Chain), em vez de um
@@ -3028,14 +3075,7 @@ async function renderAltFormsHtml(p){
 // a forma "principal" — Formas Alfa são sempre transformações adicionais.
 async function renderAlfaFormsHtml(p){
   if(!p.formas_alfa||!p.formas_alfa.length) return '';
-  const alfaForms=p.formas_alfa.map(f=>({
-    nome:f.nome, tipo1:f.tipo1, tipo2:f.tipo2,
-    habilidadeLabel:f.habilidade?f.habilidade.toUpperCase().replace(/-/g,' '):'',
-    abilidadeEntries:f.habilidade?[{name:f.habilidade,ha:false}]:[],
-    hp:f.hp,atk:f.atk,def:f.def,spa:f.spa,spd:f.spd,spe:f.spe,
-    sprite:f.sprite, sprite_shiny:f.sprite_shiny,
-    pokedex:f.pokedex||null
-  }));
+  const alfaForms=alfaItemsToFormNodes(p.formas_alfa);
   return await renderFormsSection({
     sectionTitle:'Formas Alfa', headerBg:'#5020a0',
     idPrefix:'alfa', pkId:p.id, forms:alfaForms
