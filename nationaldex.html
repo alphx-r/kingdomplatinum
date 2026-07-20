@@ -1001,6 +1001,20 @@ async function loadRpgData(){
 // Retorna o prefixo de região de um id customizado (A, G, H, P, N) ou null
 function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1].toUpperCase():null; }
 
+// Um registro Nendo (id prefixado "N") pode ser: (a) uma espécie ORIGINAL de
+// Nendo, sem nenhum Pokémon numérico correspondente — nesse caso o "(N)" salvo
+// no nome é só um marcador interno usado pelo admin pra gerar o slug, e NÃO
+// deve aparecer na exibição; ou (b) uma forma/variação Nendo de um Pokémon que
+// já existe (tem uma entrada numérica correspondente) — aí o "(N)" É a
+// convenção de exibição correta, igual "(A)"/"(G)"/etc. Esta função distingue
+// os dois casos olhando se existe uma linha com id numérico puro pro mesmo
+// número (mesma lógica usada no admin pra decidir o que migrar).
+function isNendoOriginal(id){
+  if(idPrefix(id)!=='N') return false;
+  const baseNum=String(id).replace(/^N/i,'');
+  return !_pkDbMap[baseNum];
+}
+
 // Slug de região (minúsculo, como usado nos nomes vindos da PokeAPI) por prefixo de id.
 const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea','N':'nendo'};
 
@@ -1046,7 +1060,13 @@ function evoDisplayName(entry){
   const nm0=String(entry.name||'').trim();
   const viaName=formDisplayName(nm0);
   if(viaName!==nm0) return viaName;
-  if(/^\([AGPHN]\)\s/i.test(nm0)) return nm0;
+  if(/^\([AGPHN]\)\s/i.test(nm0)){
+    // Espécie original de Nendo: remove o "(N) " indevido — ver isNendoOriginal.
+    if(/^\(\s*N\s*\)\s/i.test(nm0) && isNendoOriginal(entry.id)){
+      return nm0.replace(/^\(\s*N\s*\)\s*/i,'').trim();
+    }
+    return nm0;
+  }
   const pfx=idPrefix(entry.id);
   const regSlug=REGION_SLUG_BY_PREFIX[pfx];
   let nm=titleCase(entry.name);
@@ -1116,7 +1136,8 @@ function renderList(){
 function gridCard(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
-    const label=(p.formas_alt&&p.formas_alt.length)?stripFormSuffix(p.name):p.name;
+    const nomeBase=isNendoOriginal(p.id)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
+    const label=(p.formas_alt&&p.formas_alt.length)?stripFormSuffix(nomeBase):nomeBase;
     const pref=idPrefix(p.id);
     const spriteUrl=p.sprite||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:'');
     const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
@@ -1143,7 +1164,8 @@ function gridCard(p,i){
 function listRow(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
-    const label=(p.formas_alt&&p.formas_alt.length)?stripFormSuffix(p.name):p.name;
+    const nomeBase=isNendoOriginal(p.id)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
+    const label=(p.formas_alt&&p.formas_alt.length)?stripFormSuffix(nomeBase):nomeBase;
     const pref=idPrefix(p.id);
     const spriteUrl=p.sprite||(!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:'');
     const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
