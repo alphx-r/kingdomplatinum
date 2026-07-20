@@ -580,7 +580,12 @@ function applyPokemonForm(pkKey,idx){
 // Lê o moveset de uma forma alternativa — mesma convenção de 4 campos já
 // usada no registro principal (moves_level/moves_tm/moves_egg/moves_tutor),
 // cada um com itens {move,level?} ou {name,lvl?} (aceita ambos os formatos).
-function formAltMoves(f){
+// IMPORTANTE: restrictToTmList é async — precisa de await aqui dentro,
+// senão "tm" vira uma Promise não resolvida em vez de array (Promise é
+// truthy e não tem .length, então a tabela de moves trata como lista vazia
+// e o TM de formas alternativas nunca aparece, mesmo com dados salvos certos
+// no banco — foi o caso do "(N) Squirtle").
+async function formAltMoves(f){
   const norm=(arr,withLvl)=>(arr||[]).map(m=>{
     if(!m) return null;
     if(typeof m==='string') return withLvl?{name:m,lvl:0}:{name:m};
@@ -591,7 +596,7 @@ function formAltMoves(f){
   const level=norm(f.moves_level,true).sort((a,b)=>a.lvl-b.lvl);
   return {
     level,
-    tm:restrictToTmList(norm(f.moves_tm,false)),
+    tm:await restrictToTmList(norm(f.moves_tm,false)),
     egg:norm(f.moves_egg,false),
     tutor:norm(f.moves_tutor,false)
   };
@@ -1816,8 +1821,8 @@ async function renderRpgDetail(p, container, navToken){
     bio:bioText, biomas:p.biomas||null, evolucoes:p.evolucoes||null
   }];
   if(p.formas_alt&&p.formas_alt.length){
-    p.formas_alt.forEach(f=>{
-      const fMovesRaw=formAltMoves(f);
+    for(const f of p.formas_alt){
+      const fMovesRaw=await formAltMoves(f);
       // Movimentos: só cai pro moveset da forma principal quando a forma
       // alternativa foi EXPLICITAMENTE marcada como "mesmo moveset da forma
       // principal" (f.same_moveset) no admin. Sem essa marcação, cada
@@ -1846,7 +1851,7 @@ async function renderRpgDetail(p, container, navToken){
         genero:f.genero||null, classification:f.classification||null, egg_group:f.egg_group||null,
         evolucoes:f.evolucoes||null
       });
-    });
+    }
   }
 
   // Altura/peso da forma principal, pré-computados aqui pra servir de
@@ -2392,8 +2397,8 @@ async function renderDetail(p,s,container,navToken){
     bio:flavorText, biomas:dbBiomasOfficial||null, evolucoes:dbRec?.evolucoes||null
   }];
   if(dbRec?.formas_alt&&dbRec.formas_alt.length){
-    dbRec.formas_alt.forEach(f=>{
-      const fMovesRaw=formAltMoves(f);
+    for(const f of dbRec.formas_alt){
+      const fMovesRaw=await formAltMoves(f);
       // Só cai pro moveset da forma principal quando explicitamente marcado
       // (f.same_moveset) — sem isso, cada categoria usa só o que foi
       // cadastrado pra essa forma (vazio se não preenchido).
@@ -2409,7 +2414,7 @@ async function renderDetail(p,s,container,navToken){
         moves:fMoves, bio:f.bio||'', biomas:f.biomas||null,
         evolucoes:f.evolucoes||null
       });
-    });
+    }
   }
 
   // Formas Alfa (Mega/Gigantamax custom) — precisa ser calculado antes do
