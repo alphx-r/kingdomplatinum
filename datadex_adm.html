@@ -406,8 +406,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .falt-row-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .falt-row-head input.falt-nome{flex:1;font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--teal);border:1.5px solid var(--border);border-radius:6px;padding:6px 9px;background:#fff;outline:none}
 .falt-row-head input.falt-nome:focus{border-color:var(--teal)}
-.falt-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 5px;line-height:1;border-radius:4px;flex-shrink:0}
-.falt-del:hover{color:var(--red)}
+.falt-del{width:18px;height:18px;border-radius:50%;background:#fff;border:1.5px solid var(--teal);color:var(--teal);font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0;transition:all .15s}
+.falt-del:hover{background:var(--teal);color:#fff}
 .falt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:8px}
 @media(max-width:560px){.falt-grid{grid-template-columns:1fr 1fr}}
 .falt-field-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:3px;display:block}
@@ -698,10 +698,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <div class="epk-forms-nav" id="epk-forms-nav" style="margin-top:2px"></div>
       </div>
-    </div>
-
-    <div class="epk-form-active-banner" id="epk-form-active-banner" style="justify-content:flex-end">
-      <button type="button" class="btn btn-outline btn-sm" onclick="epkShowBase()">← Voltar para forma base</button>
     </div>
 
     <div class="epk-base-only epk-main-tab-group">
@@ -1092,10 +1088,6 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
     <div id="nrpg-inline-form" style="background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:4px;letter-spacing:.04em">＋ NOVO POKÉMON RPG</div>
       <div class="epk-forms-nav" id="nrpg-forms-nav" style="margin-bottom:4px"></div>
-
-      <div class="epk-form-active-banner" id="nrpg-form-active-banner" style="justify-content:flex-end">
-        <button type="button" class="btn btn-outline btn-sm" onclick="nrpgShowBase()">← Voltar para forma base</button>
-      </div>
 
       <div class="nrpg-base-only epk-main-tab-group">
         <button type="button" class="epk-main-tab-btn on" id="nrpg-tab-btn-normal" onclick="nrpgSetTab('normal')">Dados do Pokémon</button>
@@ -2490,19 +2482,16 @@ function evoAllNameOptions() {
   return options;
 }
 
-// Atualiza a <datalist> do campo Nome de um estágio: primeiro os candidatos
-// específicos achados a partir do Nº Pokédex atual (mais relevantes), depois
-// o restante da lista completa de nomes conhecidos, pra ter autocomplete de
-// qualquer Pokémon mesmo sem (ou antes de) preencher o Nº Pokédex.
+// Atualiza a <datalist> do campo Nome de um estágio: só os candidatos
+// específicos achados a partir do Nº Pokédex já digitado nesse estágio (nome
+// base + formas alternativas/regionais vinculadas a esse número). Sem Nº
+// Pokédex ainda, fica sem sugestões — não lista todos os Pokémon do dex.
 function evoUpdateNameSuggestions(row) {
   const idInput = row.querySelector('.evo-id');
   const datalist = row.querySelector('.evo-name-options');
   if (!idInput || !datalist) return;
-  const { options: specific } = evoFindNameCandidates(idInput.value.trim());
-  const seen = new Set(specific.map(o => o.toLowerCase()));
-  const rest = evoAllNameOptions().map(o => o.name).filter(n => !seen.has(n.toLowerCase()));
-  const all = [...specific, ...rest];
-  datalist.innerHTML = all.map(o => `<option value="${o.replace(/"/g, '&quot;')}">`).join('');
+  const { options } = evoFindNameCandidates(idInput.value.trim());
+  datalist.innerHTML = options.map(o => `<option value="${o.replace(/"/g, '&quot;')}">`).join('');
 }
 
 // Renderiza (ao vivo) a mesma visualização de cadeia evolutiva usada na Pokédex
@@ -3317,9 +3306,11 @@ function faltAddRow(listId, data = {}) {
 
     </div><!-- /falt-tab-normal (parte 1) -->
     <div class="falt-tab-alfa epk-hide">
-    <div style="margin-bottom:8px;padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
-      <div class="field-lbl en" style="margin-bottom:6px">Força Alfa desta forma <span class="epk-acc-hint">(opcional — Mega, Gigantamax, Terastalização, etc, exclusivo desta forma)</span></div>
-      <input type="text" class="mv-meta-input falt-forca-alfa" placeholder="Ex: Mega Evolução, Gigantamax" value="${(data.forca_alfa || '').replace(/"/g, '&quot;')}">
+    <div style="margin-bottom:4px">
+      <div class="epk-forms-nav" id="falt-formas-alfa-${uid}-nav"></div>
+    </div>
+    <div style="margin-bottom:4px">
+      <div class="alfa-list" id="falt-formas-alfa-${uid}"></div>
     </div>
     </div><!-- /falt-tab-alfa -->
     <div class="falt-tab-normal">
@@ -3465,6 +3456,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
   });
   list.appendChild(row);
   evoPopulateList(`falt-evo-${uid}`, data.evolucoes || []);
+  alfaPopulateList(`falt-formas-alfa-${uid}`, data.formas_alfa || []);
   return row;
 }
 // Puxa o artwork oficial (normal + shiny) direto do PokeAPI pra uma forma
@@ -3580,10 +3572,10 @@ function faltReadListSync(listId) {
     const sprite_shiny = row.querySelector('.falt-sprite-shiny-url')?.value || null;
     const biomas = faltGetBiomas(row);
     const bio = row.querySelector('.falt-bio')?.value.trim() || null;
-    const forca_alfa = row.querySelector('.falt-forca-alfa')?.value.trim() || null;
+    const uid = row.dataset.uid;
+    const formas_alfa = uid ? alfaReadListSync(`falt-formas-alfa-${uid}`) : [];
     const estacao = row.querySelector('.falt-estacao')?.value.trim() || null;
     const estacao_boost = row.querySelector('.falt-estacao-boost')?.value.trim() || null;
-    const uid = row.dataset.uid;
     const same_moveset = row.querySelector('.falt-same-moveset')?.checked || false;
     const evolucoes = uid ? evoReadList(`falt-evo-${uid}`) : [];
     const moves_level = uid ? movesetReadList(`falt-mv-level-${uid}`, 'level') : [];
@@ -3595,7 +3587,7 @@ function faltReadListSync(listId) {
       habilidade1, habilidade2, habilidade_oculta,
       classification, height, weight, genero, egg_group,
       hp, atk, def, spa, spd, spe, bst, sprite, sprite_shiny,
-      bio, forca_alfa, estacao, estacao_boost,
+      bio, formas_alfa: formas_alfa.length ? formas_alfa : null, estacao, estacao_boost,
       evolucoes: evolucoes.length ? evolucoes : null,
       biomas: biomas.length ? biomas : null,
       same_moveset,
@@ -3638,6 +3630,13 @@ async function faltProcessAndRead(listId, baseId) {
       } catch (e) {
         toast('Erro ao enviar sprite shiny de "' + nome + '": ' + e.message, 'err');
       }
+    }
+    // Força Alfa desta forma (Mega/Gigantamax/Tera exclusivos dela) — faz
+    // upload de qualquer sprite pendente nos cards antes da leitura final.
+    const uid = row.dataset.uid;
+    if (uid) {
+      try { await alfaProcessAndRead(`falt-formas-alfa-${uid}`, `${baseId}-alt-${slug}`); }
+      catch (e) { toast('Erro ao processar força alfa de "' + nome + '": ' + e.message, 'err'); }
     }
   }
   return faltReadListSync(listId);
@@ -3802,6 +3801,7 @@ function faltSetTab(btn, tab) {
   row.querySelectorAll(':scope > .falt-tab-normal').forEach(el => el.classList.toggle('epk-hide', tab !== 'normal'));
   row.querySelectorAll(':scope > .falt-tab-alfa').forEach(el => el.classList.toggle('epk-hide', tab !== 'alfa'));
   row.querySelectorAll(':scope > .epk-main-tab-group > .falt-tab-btn').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  if (tab === 'alfa') alfaEnsureRow(`falt-formas-alfa-${row.dataset.uid}`);
 }
 function epkRefreshFormsNav() {
   const nav = document.getElementById('epk-forms-nav');
