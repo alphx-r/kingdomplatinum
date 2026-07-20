@@ -3997,6 +3997,15 @@ function movesetBuildSelect(value = '') {
 function movesetAddRow(listId, type, data = {}) {
   const list = document.getElementById(listId);
   if (!list) return;
+  // Normaliza entradas "sujas" que podem vir do banco: null/undefined (ex:
+  // buraco deixado por uma migração ou importação com falha), string solta
+  // (formato legado, antes de virar {move}) ou objeto {move,...} de verdade.
+  // Sem isso, "data.move" abaixo quebra com TypeError quando data é null —
+  // o valor padrão "= {}" só entra em ação se o argumento for undefined,
+  // não quando é null — e derruba a montagem da lista inteira (foi o caso
+  // do moveset de TM de formas alternativas como "(N) Squirtle").
+  if (!data) data = {};
+  else if (typeof data === 'string') data = { move: data };
   const row = document.createElement('div');
   row.className = 'moveset-row';
 
@@ -4037,7 +4046,18 @@ function movesetPopulateList(listId, type, items = []) {
   const list = document.getElementById(listId);
   if (!list) return;
   list.innerHTML = '';
-  items.forEach(item => movesetAddRow(listId, type, item));
+  // Array.isArray protege contra um valor salvo fora do formato esperado
+  // (ex: objeto solto em vez de array). Cada item roda no seu próprio
+  // try/catch — assim, se UM move estiver corrompido, só ele é ignorado
+  // (com aviso no console) em vez de travar a lista inteira (e o resto do
+  // modal, já que essa função roda em sequência com outras ao abrir o
+  // editor). Item null/undefined é pulado sem nem tentar criar linha vazia.
+  const arr = Array.isArray(items) ? items : [];
+  arr.forEach(item => {
+    if (item == null) return;
+    try { movesetAddRow(listId, type, item); }
+    catch (e) { console.warn(`Moveset: item inválido ignorado em "${listId}":`, item, e); }
+  });
 }
 
 
