@@ -341,6 +341,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .moveset-row .mv-lvl{width:70px;text-align:center}
 .moveset-row .mv-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1;border-radius:4px;transition:color .15s;flex-shrink:0}
 .moveset-row .mv-del:hover{color:var(--red)}
+/* Handle de arrastar pra reordenar moves dentro da lista (nível/TM/ovo/tutor) */
+.moveset-row .mv-drag-handle{flex-shrink:0;cursor:grab;color:var(--muted);font-size:14px;line-height:1;padding:2px 3px;border-radius:4px;user-select:none;touch-action:none;transition:color .15s,background .15s}
+.moveset-row .mv-drag-handle:hover{color:var(--brand-mid);background:var(--brand-light)}
+.moveset-row.dragging{opacity:.4;cursor:grabbing}
 .moveset-add-btn{font-family:var(--font-body);font-size:11px;font-weight:700;padding:5px 12px;border-radius:6px;border:1.5px dashed var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;width:100%}
 .moveset-add-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--brand-light)}
 /* Moveset collapsible */
@@ -4011,11 +4015,12 @@ function movesetAddRow(listId, type, data = {}) {
 
   const rawVal = data.move || '';
   const dispVal = rawVal ? rawVal.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+  const dragHandle = `<span class="mv-drag-handle" title="Arrastar para reordenar">⠿</span>`;
   const comboHtml = `<div class="cb-wrap mv-name"><input class="cb-input mv-name-input" list="dl-move" autocomplete="off" placeholder="— Move —" value="${dispVal}" data-raw="${rawVal}"><span class="cb-arrow">▾</span></div>`;
   const levelHtml = '';
   const delBtn = `<button type="button" class="mv-del" onclick="this.closest('.moveset-row').remove()" title="Remover">✕</button>`;
 
-  row.innerHTML = comboHtml + levelHtml + delBtn;
+  row.innerHTML = dragHandle + comboHtml + levelHtml + delBtn;
   const inp = row.querySelector('.mv-name-input');
   if (inp) {
     const syncHasVal = () => inp.classList.toggle('has-val', inp.value.trim() !== '');
@@ -4023,7 +4028,69 @@ function movesetAddRow(listId, type, data = {}) {
     inp.addEventListener('change', syncHasVal);
     if (rawVal) inp.classList.add('has-val');
   }
+  movesetWireRowDrag(row);
   list.appendChild(row);
+  movesetWireDragList(list);
+}
+
+// Habilita arrastar a linha SÓ a partir da alcinha (⠿) — o resto da linha
+// (combobox, botão remover) continua funcionando normal. O truque é manter
+// draggable=false por padrão e só ligar no mousedown/touchstart da alcinha;
+// sem isso, o navegador tentaria iniciar um "drag" ao clicar/selecionar
+// texto dentro do input do move.
+function movesetWireRowDrag(row) {
+  const handle = row.querySelector('.mv-drag-handle');
+  if (!handle) return;
+  const enableDrag = () => { row.draggable = true; };
+  const disableDragIfIdle = () => { if (!row.classList.contains('dragging')) row.draggable = false; };
+  handle.addEventListener('mousedown', enableDrag);
+  handle.addEventListener('touchstart', enableDrag, { passive: true });
+  // Se foi só um clique na alcinha (sem arrastar de verdade), o dragstart
+  // nunca dispara e "draggable" ficaria true pra sempre — o que deixaria a
+  // linha inteira arrastável ao clicar em qualquer lugar (atrapalhando o
+  // input de texto). mouseup/touchend cobre esse caso.
+  row.addEventListener('mouseup', disableDragIfIdle);
+  row.addEventListener('touchend', disableDragIfIdle);
+  row.addEventListener('dragstart', e => {
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', ''); } catch {}
+  });
+  row.addEventListener('dragend', () => {
+    row.classList.remove('dragging');
+    row.draggable = false;
+  });
+}
+
+// Acha, dentro da lista, a linha logo ABAIXO de onde o mouse está agora
+// (comparando o centro vertical de cada linha) — usado pra saber onde
+// encaixar a linha sendo arrastada. Retorna null quando o mouse está
+// depois da última linha (a linha arrastada vai pro final).
+function movesetDragAfterElement(list, y) {
+  const rows = [...list.querySelectorAll('.moveset-row:not(.dragging)')];
+  return rows.reduce((closest, row) => {
+    const box = row.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) return { offset, element: row };
+    return closest;
+  }, { offset: -Infinity, element: null }).element;
+}
+
+// Liga o reordenamento ao vivo numa lista de moveset — só uma vez por
+// lista (dataset.dragWired evita duplicar o listener quando novas linhas
+// são adicionadas depois).
+function movesetWireDragList(list) {
+  if (!list || list.dataset.dragWired) return;
+  list.dataset.dragWired = '1';
+  list.addEventListener('dragover', e => {
+    const dragging = list.querySelector('.moveset-row.dragging');
+    if (!dragging) return;
+    e.preventDefault();
+    const after = movesetDragAfterElement(list, e.clientY);
+    if (after == null) { if (list.lastElementChild !== dragging) list.appendChild(dragging); }
+    else if (after !== dragging) { list.insertBefore(dragging, after); }
+  });
+  list.addEventListener('drop', e => e.preventDefault());
 }
 
 // Lê todos os moves de uma lista e retorna array no formato correto
