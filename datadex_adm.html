@@ -2468,11 +2468,22 @@ function evoFindNameCandidates(rawId) {
   // com prefixo A/G/H/P + número da dex nacional) — só faz sentido procurar
   // quando o id digitado é puramente numérico. "N" fica de fora de propósito:
   // é numeração própria de fakemon, não de forma regional (ver nota acima).
+  // Pula o registro legado quando essa região já existe dentro de
+  // formas_alt do base (ex: base já tem "(A) Meowth" migrado) — senão a
+  // mesma forma aparece duplicada: uma vez como "(A) Meowth" (migrado) e
+  // outra como "Meowth (Alola Form)" (registro antigo ainda não apagado).
   if (isNumeric) {
+    const migratedPrefixes = new Set(
+      (base?.formas_alt || [])
+        .map(f => (f?.nome || '').trim().match(/^\(([AGHP])\)/i)?.[1]?.toUpperCase())
+        .filter(Boolean)
+    );
     [...(S.pk?.all || []), ...(S.rpg?.all || [])].forEach(p => {
       const pid = String(p.id || '');
       const m = pid.match(/^([AGHP])0*(\d+)$/i);
-      if (m && parseInt(m[2], 10) === numVal) pushOpt(p.name || pid);
+      if (m && parseInt(m[2], 10) === numVal && !migratedPrefixes.has(m[1].toUpperCase())) {
+        pushOpt(p.name || pid);
+      }
     });
   }
 
@@ -3419,10 +3430,6 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
   const faltEstacaoBoostSel = row.querySelector('.falt-estacao-boost');
   if (faltEstacaoSel) faltEstacaoSel.value = data.estacao || '';
   if (faltEstacaoBoostSel) faltEstacaoBoostSel.value = data.estacao_boost || '';
-  movesetPopulateList(`falt-mv-level-${uid}`, 'level', data.moves_level || []);
-  movesetPopulateList(`falt-mv-tm-${uid}`, 'tm', data.moves_tm || []);
-  movesetPopulateList(`falt-mv-egg-${uid}`, 'egg', data.moves_egg || []);
-  movesetPopulateList(`falt-mv-tutor-${uid}`, 'tutor', data.moves_tutor || []);
 
   const fileInp = row.querySelector('.falt-sprite-file');
   fileInp.addEventListener('change', () => {
@@ -3473,6 +3480,14 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
   list.appendChild(row);
   evoPopulateList(`falt-evo-${uid}`, data.evolucoes || []);
   alfaPopulateList(`falt-formas-alfa-${uid}`, data.formas_alfa || []);
+  // Moveset: só populado DEPOIS do appendChild acima — document.getElementById
+  // não encontra elementos de um nó ainda "solto" (fora da árvore do documento),
+  // então rodar isso antes do append fazia o moveset salvo da forma alternativa
+  // nunca aparecer ao reabrir o editor (mesmo estando salvo certinho no banco).
+  movesetPopulateList(`falt-mv-level-${uid}`, 'level', data.moves_level || []);
+  movesetPopulateList(`falt-mv-tm-${uid}`, 'tm', data.moves_tm || []);
+  movesetPopulateList(`falt-mv-egg-${uid}`, 'egg', data.moves_egg || []);
+  movesetPopulateList(`falt-mv-tutor-${uid}`, 'tutor', data.moves_tutor || []);
   return row;
 }
 // Puxa o artwork oficial (normal + shiny) direto do PokeAPI pra uma forma
@@ -6725,10 +6740,23 @@ async function openNewRpgPokemon() {
 function nrpgRenderBiomaSelect() {
   const sel = document.getElementById('nrpg-bioma-select');
   if (!sel) return;
-  const disponiveis = (_rpgBiomas || []).filter(b => !nrpgBiomasSel.some(item => item.nome === b.nome));
+  // Mesmo fallback do formulário de edição (epkRenderBiomaSelect/faltRenderBiomaSelect):
+  // se S.biomas/_rpgBiomas ainda não carregaram do Supabase, usa a lista fixa
+  // EPK_BIOMAS em vez de deixar o dropdown vazio.
+  const todos = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome)
+    : ((_rpgBiomas && _rpgBiomas.length) ? _rpgBiomas.map(b => b.nome) : EPK_BIOMAS);
+  const disponiveis = todos.filter(b => !nrpgBiomasSel.some(item => item.nome === b));
   sel.innerHTML = disponiveis.length
-    ? disponiveis.map(b => `<option value="${b.nome}">${b.nome}</option>`).join('')
+    ? disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
     : '<option value="">— Nenhum bioma disponível —</option>';
+  // Autocorreção: se a lista ainda não veio do Supabase, busca agora e
+  // re-renderiza preservando a seleção já feita — sem isso, uma falha
+  // temporária na 1ª busca deixava o dropdown vazio pra sempre.
+  if (!S.biomas || !S.biomas.length) {
+    rpgFetchBiomas().then(lista2 => {
+      if (lista2 && lista2.length) { S.biomas = lista2; _rpgBiomas = lista2; nrpgRenderBiomaSelect(); }
+    });
+  }
 }
 
 function nrpgRenderBiomaTags() {
