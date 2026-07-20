@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ADM — NationalDex</title>
+<title>ADM — NationalDex Kingdom Platinum</title>
     <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -2390,18 +2390,30 @@ function epkOpenSpriteAdjust(shiny) {
 // Resolve sprite de um estágio da evo chain a partir do ID
 // - Pokémon oficial: PokeAPI sprite
 // - RPG (N####): sprite do Supabase/PK se cadastrado, senão null
-function evoResolveSprite(id) {
+function evoResolveSprite(id, name) {
   if (!id) return null;
   const idStr = String(id).trim();
-  // Oficial (numérico)
+  const nameStr = (name || '').trim().toLowerCase();
+
+  // Busca o registro base (RPG ou oficial) primeiro — precisa dele pra checar
+  // se o NOME do estágio bate com uma forma alternativa (formas_alt), já que
+  // formas_alt não têm id próprio (usam o mesmo id do Pokémon base) e só são
+  // diferenciadas pelo nome. Ex: "(N) Squirtle" é forma_alt de Squirtle
+  // (#0007) com sprite próprio, diferente do sprite do Squirtle base.
+  const rpgEntry = S.rpg?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
+  const baseEntry = rpgEntry || S.pk?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
+  if (baseEntry) {
+    if (nameStr && nameStr !== (baseEntry.name || '').trim().toLowerCase()) {
+      const altMatch = (baseEntry.formas_alt || []).find(f => (f?.nome || '').trim().toLowerCase() === nameStr);
+      if (altMatch?.sprite) return altMatch.sprite;
+    }
+    if (baseEntry.sprite) return baseEntry.sprite;
+  }
+
+  // Oficial (numérico) sem registro cadastrado (ou sem sprite ainda) — usa o sprite padrão da PokeAPI
   if (/^\d+$/.test(idStr)) {
     return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${idStr}.png`;
   }
-  // RPG — só usa sprite se já estiver cadastrado
-  const rpgEntry = S.rpg?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
-  if (rpgEntry?.sprite) return rpgEntry.sprite;
-  const pkEntry = S.pk?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
-  if (pkEntry?.sprite) return pkEntry.sprite;
   return null;
 }
 
@@ -2513,7 +2525,7 @@ function evoAddRow(listId, data = {}) {
   row.dataset.evoFromRowId = ''; // id do row do qual este evolui (estável mesmo reordenando)
 
   // Preview de sprite — só mostra se tiver cadastrado
-  const spriteUrl = evoResolveSprite(data.id);
+  const spriteUrl = evoResolveSprite(data.id, data.name);
   const previewHtml = spriteUrl
     ? `<img class="evo-sprite-preview" src="${spriteUrl}" onerror="this.style.display='none'">`
     : `<div class="evo-sprite-preview" style="display:flex;align-items:center;justify-content:center;font-size:16px;opacity:.3">?</div>`;
@@ -2552,11 +2564,15 @@ function evoAddRow(listId, data = {}) {
   previewWrap.appendChild(rm);
   row.appendChild(previewWrap);
 
-  // Atualiza preview quando ID muda — em tempo real (a cada tecla), não só ao
-  // sair do campo, pra não dar a impressão de que o preview "sumiu".
+  // Atualiza preview quando ID ou Nome mudam — em tempo real (a cada tecla),
+  // não só ao sair do campo, pra não dar a impressão de que o preview "sumiu".
+  // O Nome entra na resolução do sprite pra reconhecer formas alternativas
+  // (formas_alt não têm id próprio — só nome — então mudar o nome pode trocar
+  // qual sprite é o certo mesmo com o mesmo Nº Pokédex).
   const idInput = row.querySelector('.evo-id');
+  const nameInput = row.querySelector('.evo-name');
   function evoRefreshRowSprite() {
-    const spr = evoResolveSprite(idInput.value.trim());
+    const spr = evoResolveSprite(idInput.value.trim(), nameInput.value.trim());
     const img = previewWrap.querySelector('img, div.evo-sprite-preview');
     if (img) img.remove();
     if (spr) {
@@ -2580,9 +2596,9 @@ function evoAddRow(listId, data = {}) {
   idInput.addEventListener('change', evoRefreshRowSprite);
   // Já popula as sugestões de nome (mesmo sem ID ainda — autocomplete geral)
   evoUpdateNameSuggestions(row);
-  // Atualiza o label do select quando o nome muda
-  const nameInput = row.querySelector('.evo-name');
-  nameInput.addEventListener('input', () => { evoRefreshFromSelects(listId); evoUpdatePreview(listId); });
+  // Nome também dispara o refresh do sprite (cobre o caso de forma_alt, que
+  // só é identificada pelo nome — ver comentário acima)
+  nameInput.addEventListener('input', evoRefreshRowSprite);
   // Se o nome escolhido bater com um Pokémon conhecido e o Nº Pokédex ainda
   // estiver vazio, preenche automaticamente o ID a partir do nome.
   nameInput.addEventListener('change', () => {
@@ -2690,10 +2706,11 @@ function evoRefreshAllRowSprites(listId) {
   if (!list) return;
   list.querySelectorAll('.evo-edit-row').forEach(row => {
     const idInput = row.querySelector('.evo-id');
+    const nameInput = row.querySelector('.evo-name');
     const previewWrap = row.lastElementChild;
     const rm = previewWrap?.querySelector('button.mv-del');
     if (!idInput || !previewWrap || !rm) return;
-    const spr = evoResolveSprite(idInput.value.trim());
+    const spr = evoResolveSprite(idInput.value.trim(), nameInput?.value.trim());
     const img = previewWrap.querySelector('img.evo-sprite-preview');
     if (spr && img && img.getAttribute('src') === spr) return; // já correto, evita piscar
     if (!spr && !img) return; // já é "?" e continua sem sprite — nada a fazer
@@ -6453,17 +6470,7 @@ function renderEvoChain(evolucoes, currentId) {
   function stageHtml(i, withArrow) {
     const stage = evolucoes[i];
     const isCurrent = stage.id && String(stage.id) === String(currentId);
-    let spr = null;
-    if (stage.id) {
-      const idStr = String(stage.id);
-      const rpgEntry = S.rpg?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
-      if (rpgEntry?.sprite) spr = rpgEntry.sprite;
-      else {
-        const pkEntry = S.pk?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
-        if (pkEntry?.sprite) spr = pkEntry.sprite;
-        else if (/^\d+$/.test(idStr)) spr = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${idStr}.png`;
-      }
-    }
+    const spr = stage.id ? evoResolveSprite(stage.id, stage.name) : null;
     const sprHtml = spr
       ? `<img class="evo-stage-sprite" src="${spr}" alt="${stage.name||''}" onerror="this.style.opacity='.15'">`
       : `<div class="evo-stage-sprite" style="display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.25">?</div>`;
