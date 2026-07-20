@@ -612,6 +612,7 @@ function buildFormEvoChainHtml(evos,activeId,pref){
   const nEv=evos.length;
   function node(ev,isFirst){
     const rawId=String(ev.id||'').trim();
+    const wantName=String(ev.name||'').trim().toLowerCase();
     let evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===rawId.toLowerCase());
     if(!evPk&&pref&&/^\d+$/.test(rawId)){
       const composedId=`${pref}${rawId.padStart(4,'0')}`;
@@ -625,8 +626,16 @@ function buildFormEvoChainHtml(evos,activeId,pref){
         return xs===wantSlug||(regSlug&&xs===`${wantSlug}-${regSlug}`);
       });
     }
-    const sprite=evPk?.sprite||'';
-    const evName=evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?');
+    // Se o nome do estágio bate com uma forma alternativa do registro encontrado
+    // (e não com o nome dele mesmo), usa o sprite dessa forma — formas_alt não
+    // têm id próprio (usam o mesmo id do Pokémon base), só nome. Ex: "(N) Squirtle"
+    // é forma_alt de Squirtle #0007, com sprite diferente do Squirtle base.
+    let altForm=null;
+    if(evPk&&wantName&&wantName!==String(evPk.name||'').trim().toLowerCase()){
+      altForm=(evPk.formas_alt||[]).find(f=>String(f?.nome||'').trim().toLowerCase()===wantName)||null;
+    }
+    const sprite=altForm?.sprite||evPk?.sprite||'';
+    const evName=altForm?formDisplayName(altForm.nome):(evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?'));
     const evId=evPk?.id||rawId||'?';
     const evNumLabel=evoDisplayNum(evId);
     const isMe=String(evId)===String(activeId);
@@ -2832,13 +2841,19 @@ function formEvoChainHtml(evolucoes){
   if(!evolucoes||!Array.isArray(evolucoes)||!evolucoes.length) return '';
   function node(ev,isFirst){
     const rawId=String(ev.id||'').trim();
+    const wantName=String(ev.name||'').trim().toLowerCase();
     let evPk=_rpgPokemon.find(x=>String(x.id).toLowerCase()===rawId.toLowerCase());
     if(!evPk){
       const wantSlug=slugify(ev.name||'');
       evPk=_rpgPokemon.find(x=>slugify(x.name)===wantSlug);
     }
-    const sprite=evPk?.sprite||'';
-    const evName=evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?');
+    // Mesma lógica de formas_alt do buildFormEvoChainHtml — ver comentário lá.
+    let altForm=null;
+    if(evPk&&wantName&&wantName!==String(evPk.name||'').trim().toLowerCase()){
+      altForm=(evPk.formas_alt||[]).find(f=>String(f?.nome||'').trim().toLowerCase()===wantName)||null;
+    }
+    const sprite=altForm?.sprite||evPk?.sprite||'';
+    const evName=altForm?formDisplayName(altForm.nome):(evPk?evoDisplayName(evPk):(ev.name?cap(ev.name):'?'));
     const evId=evPk?.id||rawId||'?';
     const method=ev.method||ev.trigger||'';
     const arrow=!isFirst?`<span style="display:flex;flex-direction:column;align-items:center;font-size:8px;color:var(--muted);margin:0 1px">
