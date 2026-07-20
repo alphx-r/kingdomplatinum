@@ -2386,14 +2386,28 @@ function evoResolveSprite(id, name) {
   if (!id) return null;
   const idStr = String(id).trim();
   const nameStr = (name || '').trim().toLowerCase();
+  const idIsNumeric = /^\d+$/.test(idStr);
+  const idNumVal = idIsNumeric ? parseInt(idStr, 10) : null;
+
+  // Bate exato (string completa, cobre IDs com prefixo tipo N0007) OU, se
+  // ambos forem puramente numéricos, por valor numérico ignorando zeros à
+  // esquerda ("0007" == "7") — mesmo critério já usado em evoFindNameCandidates,
+  // já que o Nº Pokédex costuma ser digitado/exibido com padding (#0007) mas
+  // o id salvo no registro pode estar sem padding ("7").
+  const matchesId = p => {
+    const pid = String(p.id || '');
+    if (pid.toLowerCase() === idStr.toLowerCase()) return true;
+    if (idIsNumeric && /^\d+$/.test(pid) && parseInt(pid, 10) === idNumVal) return true;
+    return false;
+  };
 
   // Busca o registro base (RPG ou oficial) primeiro — precisa dele pra checar
   // se o NOME do estágio bate com uma forma alternativa (formas_alt), já que
   // formas_alt não têm id próprio (usam o mesmo id do Pokémon base) e só são
   // diferenciadas pelo nome. Ex: "(N) Squirtle" é forma_alt de Squirtle
   // (#0007) com sprite próprio, diferente do sprite do Squirtle base.
-  const rpgEntry = S.rpg?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
-  const baseEntry = rpgEntry || S.pk?.all?.find(p => String(p.id).toLowerCase() === idStr.toLowerCase());
+  const rpgEntry = S.rpg?.all?.find(matchesId);
+  const baseEntry = rpgEntry || S.pk?.all?.find(matchesId);
   if (baseEntry) {
     if (nameStr && nameStr !== (baseEntry.name || '').trim().toLowerCase()) {
       const altMatch = (baseEntry.formas_alt || []).find(f => (f?.nome || '').trim().toLowerCase() === nameStr);
@@ -2402,9 +2416,11 @@ function evoResolveSprite(id, name) {
     if (baseEntry.sprite) return baseEntry.sprite;
   }
 
-  // Oficial (numérico) sem registro cadastrado (ou sem sprite ainda) — usa o sprite padrão da PokeAPI
-  if (/^\d+$/.test(idStr)) {
-    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${idStr}.png`;
+  // Oficial (numérico) sem registro cadastrado (ou sem sprite ainda) — usa o
+  // sprite padrão da PokeAPI. Precisa tirar zeros à esquerda aqui: a URL raw
+  // do PokeAPI/sprites usa o número puro ("7.png"), "0007.png" dá 404.
+  if (idIsNumeric) {
+    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${idNumVal}.png`;
   }
   return null;
 }
