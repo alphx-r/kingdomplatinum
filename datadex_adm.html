@@ -88,9 +88,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .data-tab-btn.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .falt-row .data-tab-group{margin-bottom:10px}
 .epk-main-tab-group{display:flex;justify-content:center;gap:10px;margin:0 0 16px}
-.epk-main-tab-btn{padding:8px 24px;border-radius:99px;border:1.5px solid var(--border);background:transparent;font-family:var(--font-body);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .2s}
-.epk-main-tab-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
-.epk-main-tab-btn.on{background:rgba(26,58,92,.6);border-color:var(--brand);color:#fff}
+.epk-main-tab-btn{padding:8px 24px;border-radius:99px;border:none;background:transparent;font-family:var(--font-body);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .2s}
+.epk-main-tab-btn:hover{color:var(--brand-mid)}
+.epk-main-tab-btn.on{background:rgba(26,58,92,.6);color:#fff}
 #epk-tab-btn-alfa,#nrpg-tab-btn-alfa{border-color:#7060f0}
 #epk-tab-btn-alfa:hover,#nrpg-tab-btn-alfa:hover{border-color:#7060f0;color:#7060f0}
 #epk-tab-btn-alfa.on,#nrpg-tab-btn-alfa.on{background:#7060f0;border-color:#7060f0;color:#fff}
@@ -701,8 +701,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </div>
     </div>
 
-    <div class="epk-form-active-banner" id="epk-form-active-banner">
-      <span class="epk-fab-txt">✎ Editando forma: <span id="epk-form-active-name"></span></span>
+    <div class="epk-form-active-banner" id="epk-form-active-banner" style="justify-content:flex-end">
       <button type="button" class="btn btn-outline btn-sm" onclick="epkShowBase()">← Voltar para forma base</button>
     </div>
 
@@ -970,6 +969,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <div class="epk-acc-body">
           <div id="epk-evo-list"></div>
           <button type="button" class="moveset-add-btn" style="margin-top:6px" onclick="evoAddRow('epk-evo-list')">＋ Adicionar estágio</button>
+          <div id="epk-evo-list-chainprev" style="margin-top:10px"></div>
         </div>
       </div>
 
@@ -1094,8 +1094,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <div style="font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:4px;letter-spacing:.04em">＋ NOVO POKÉMON RPG</div>
       <div class="epk-forms-nav" id="nrpg-forms-nav" style="margin-bottom:4px"></div>
 
-      <div class="epk-form-active-banner" id="nrpg-form-active-banner">
-        <span class="epk-fab-txt">✎ Editando forma: <span id="nrpg-form-active-name"></span></span>
+      <div class="epk-form-active-banner" id="nrpg-form-active-banner" style="justify-content:flex-end">
         <button type="button" class="btn btn-outline btn-sm" onclick="nrpgShowBase()">← Voltar para forma base</button>
       </div>
 
@@ -1358,6 +1357,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
         <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:10px">
           <div id="nrpg-evo-list"></div>
           <button type="button" class="moveset-add-btn" style="margin-top:6px" onclick="evoAddRow('nrpg-evo-list')">＋ Adicionar estágio</button>
+          <div id="nrpg-evo-list-chainprev" style="margin-top:10px"></div>
         </div>
       </div>
 
@@ -2494,6 +2494,17 @@ function evoUpdateNameSuggestions(row) {
   datalist.innerHTML = all.map(o => `<option value="${o.replace(/"/g, '&quot;')}">`).join('');
 }
 
+// Renderiza (ao vivo) a mesma visualização de cadeia evolutiva usada na Pokédex
+// pública, logo abaixo do editor de estágios — atualiza a cada mudança nos rows.
+function evoUpdatePreview(listId) {
+  const box = document.getElementById(listId + '-chainprev');
+  if (!box) return;
+  const items = evoReadList(listId);
+  if (!items.length) { box.innerHTML = ''; return; }
+  const currentId = document.getElementById('epk-id')?.value.trim() || '';
+  box.innerHTML = renderEvoChain(items, currentId);
+}
+
 function evoAddRow(listId, data = {}) {
   const list = document.getElementById(listId);
   if (!list) return;
@@ -2538,13 +2549,14 @@ function evoAddRow(listId, data = {}) {
   rm.type = 'button';
   rm.className = 'mv-del';
   rm.textContent = '✕';
-  rm.onclick = () => { row.remove(); evoRefreshFromSelects(listId); };
+  rm.onclick = () => { row.remove(); evoRefreshFromSelects(listId); evoUpdatePreview(listId); };
   previewWrap.appendChild(rm);
   row.appendChild(previewWrap);
 
-  // Atualiza preview quando ID muda
+  // Atualiza preview quando ID muda — em tempo real (a cada tecla), não só ao
+  // sair do campo, pra não dar a impressão de que o preview "sumiu".
   const idInput = row.querySelector('.evo-id');
-  idInput.addEventListener('change', () => {
+  function evoRefreshRowSprite() {
     const spr = evoResolveSprite(idInput.value.trim());
     const img = previewWrap.querySelector('img, div.evo-sprite-preview');
     if (img) img.remove();
@@ -2563,12 +2575,15 @@ function evoAddRow(listId, data = {}) {
     }
     evoUpdateNameSuggestions(row);
     evoRefreshFromSelects(listId);
-  });
+    evoUpdatePreview(listId);
+  }
+  idInput.addEventListener('input', evoRefreshRowSprite);
+  idInput.addEventListener('change', evoRefreshRowSprite);
   // Já popula as sugestões de nome (mesmo sem ID ainda — autocomplete geral)
   evoUpdateNameSuggestions(row);
   // Atualiza o label do select quando o nome muda
   const nameInput = row.querySelector('.evo-name');
-  nameInput.addEventListener('input', () => evoRefreshFromSelects(listId));
+  nameInput.addEventListener('input', () => { evoRefreshFromSelects(listId); evoUpdatePreview(listId); });
   // Se o nome escolhido bater com um Pokémon conhecido e o Nº Pokédex ainda
   // estiver vazio, preenche automaticamente o ID a partir do nome.
   nameInput.addEventListener('change', () => {
@@ -2580,13 +2595,16 @@ function evoAddRow(listId, data = {}) {
       idInput.dispatchEvent(new Event('change'));
     }
   });
+  // Condição (método de evolução) — reflete na label da seta do preview
+  row.querySelector('.evo-trigger').addEventListener('input', () => evoUpdatePreview(listId));
   // Lembra a seleção atual do select "Evolui de" (por rowId — sobrevive a reordenação)
-  row.querySelector('.evo-from').addEventListener('change', e => { row.dataset.evoFromRowId = e.target.value; });
+  row.querySelector('.evo-from').addEventListener('change', e => { row.dataset.evoFromRowId = e.target.value; evoUpdatePreview(listId); });
 
   evoEnableDrag(row, listId);
 
   list.appendChild(row);
   evoRefreshFromSelects(listId);
+  evoUpdatePreview(listId);
 }
 
 // Habilita arrastar-e-soltar pelo handle (⠿) para reordenar os estágios.
@@ -2605,6 +2623,7 @@ function evoEnableDrag(row, listId) {
     row.classList.remove('evo-drag-over');
     evoDragSrc = null;
     evoRefreshFromSelects(listId);
+    evoUpdatePreview(listId);
   });
   row.addEventListener('dragover', e => {
     if (!evoDragSrc || evoDragSrc === row) return;
@@ -2663,6 +2682,40 @@ function evoReadList(listId) {
   }).filter(Boolean);
 }
 
+// Reavalia o preview de sprite de TODOS os estágios de uma lista contra os
+// dados mais recentes (S.rpg.all / S.pk.all) — cobre o caso em que a linha foi
+// desenhada antes desses dados terminarem de carregar, o que deixava o "?"
+// preso mesmo depois que o sprite já existia.
+function evoRefreshAllRowSprites(listId) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  list.querySelectorAll('.evo-edit-row').forEach(row => {
+    const idInput = row.querySelector('.evo-id');
+    const previewWrap = row.lastElementChild;
+    const rm = previewWrap?.querySelector('button.mv-del');
+    if (!idInput || !previewWrap || !rm) return;
+    const spr = evoResolveSprite(idInput.value.trim());
+    const img = previewWrap.querySelector('img.evo-sprite-preview');
+    if (spr && img && img.getAttribute('src') === spr) return; // já correto, evita piscar
+    if (!spr && !img) return; // já é "?" e continua sem sprite — nada a fazer
+    const old = previewWrap.querySelector('img.evo-sprite-preview, div.evo-sprite-preview');
+    if (old) old.remove();
+    if (spr) {
+      const el = document.createElement('img');
+      el.className = 'evo-sprite-preview';
+      el.src = spr;
+      el.onerror = () => el.style.display = 'none';
+      previewWrap.insertBefore(el, rm);
+    } else {
+      const el = document.createElement('div');
+      el.className = 'evo-sprite-preview';
+      el.style.cssText = 'display:flex;align-items:center;justify-content:center;font-size:16px;opacity:.3';
+      el.textContent = '?';
+      previewWrap.insertBefore(el, rm);
+    }
+  });
+}
+
 function evoPopulateList(listId, items = []) {
   const list = document.getElementById(listId);
   if (!list) return;
@@ -2677,6 +2730,8 @@ function evoPopulateList(listId, items = []) {
     }
   });
   evoRefreshFromSelects(listId);
+  evoRefreshAllRowSprites(listId);
+  evoUpdatePreview(listId);
 }
 
 /* ══════════════════════════════════════════
@@ -3053,21 +3108,35 @@ function faltAddRow(listId, data = {}) {
   const uid = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   row.dataset.uid = uid;
   row.innerHTML = `
-    <div class="falt-row-head">
-      <input type="text" class="falt-nome" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}" oninput="faltRefreshParentNav(this)">
+    <div class="falt-row-head" style="justify-content:flex-end;margin-bottom:4px">
       <button type="button" class="falt-del" title="Remover forma" onclick="faltRemoveRow(this)">✕</button>
     </div>
-    <div class="data-tab-group">
+    <div class="epk-main-tab-group" style="margin-bottom:14px">
       <button type="button" class="epk-main-tab-btn on falt-tab-btn" data-tab="normal" onclick="faltSetTab(this,'normal')">📋 Dados da Forma</button>
       <button type="button" class="epk-main-tab-btn falt-tab-btn" data-tab="alfa" onclick="faltSetTab(this,'alfa')">🌀 Força Alfa</button>
     </div>
     <div class="falt-tab-normal">
 
-    <!-- Classificação -->
-    <div style="margin-bottom:8px">
-      <div class="field-lbl pt" style="margin-bottom:4px">Classificação</div>
-      <input class="mv-meta-input falt-classification" type="text" placeholder="Ex: Fox Pokémon" value="${data.classification || ''}">
+    <!-- Nome + Slug + Pokédex + Classificação (mesma linha, igual ao Pokémon normal — Slug e Pokédex ficam bloqueados) -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 110px 1.3fr;gap:12px;margin-bottom:8px">
+      <div>
+        <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
+        <input class="mv-meta-input falt-nome" type="text" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}" oninput="faltRefreshParentNav(this)">
+      </div>
+      <div>
+        <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted)">(igual à forma base)</span></div>
+        <input class="mv-meta-input" type="text" value="—" style="width:100%;color:var(--muted)" disabled>
+      </div>
+      <div>
+        <div class="field-lbl en" style="margin-bottom:4px">Pokédex</div>
+        <input class="mv-meta-input" type="text" value="—" style="width:100%;color:var(--muted)" disabled>
+      </div>
+      <div>
+        <div class="field-lbl pt" style="margin-bottom:4px">Classificação</div>
+        <input class="mv-meta-input falt-classification" type="text" placeholder="Ex: Fox Pokémon" value="${data.classification || ''}">
+      </div>
     </div>
+
 
     <!-- Habilidades (Hab1 + Hab2 + Hidden, mesma linha) -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:8px">
@@ -3250,6 +3319,7 @@ function faltAddRow(listId, data = {}) {
       <div class="epk-acc-body">
         <div id="falt-evo-${uid}"></div>
         <button type="button" class="moveset-add-btn" style="margin-top:6px" onclick="evoAddRow('falt-evo-${uid}')">＋ Adicionar estágio</button>
+        <div id="falt-evo-${uid}-chainprev" style="margin-top:10px"></div>
       </div>
     </div>
 
@@ -3715,7 +3785,7 @@ function faltSetTab(btn, tab) {
   if (!row) return;
   row.querySelectorAll(':scope > .falt-tab-normal').forEach(el => el.classList.toggle('epk-hide', tab !== 'normal'));
   row.querySelectorAll(':scope > .falt-tab-alfa').forEach(el => el.classList.toggle('epk-hide', tab !== 'alfa'));
-  row.querySelectorAll(':scope > .data-tab-group > .falt-tab-btn').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  row.querySelectorAll(':scope > .epk-main-tab-group > .falt-tab-btn').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
 }
 function epkRefreshFormsNav() {
   const nav = document.getElementById('epk-forms-nav');
@@ -6346,6 +6416,11 @@ async function loadRpgPokemon() {
     S.rpg.filtered = all;
     renderRpgList();
     updateRpgStats();
+    // Se algum editor de cadeia evolutiva já estava aberto antes dos dados RPG
+    // chegarem (conexão lenta), os previews que ficaram travados em "?" são
+    // reavaliados agora que S.rpg.all está populado.
+    ['epk-evo-list', 'nrpg-evo-list'].forEach(id => { evoRefreshAllRowSprites(id); evoUpdatePreview(id); });
+    document.querySelectorAll('[id^="falt-evo-"]:not([id$="-chainprev"])').forEach(el => { evoRefreshAllRowSprites(el.id); evoUpdatePreview(el.id); });
   } catch (e) {
     document.getElementById('rpg-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar Pokémon RPG</div><div class="empty-desc">${e.message}</div></div>`;
   }
@@ -7019,6 +7094,8 @@ function cbRead(id) {
 ══════════════════════════════════════════ *///
 cbBuildStaticLists();
 loadPokemon();
+S.rpg._loaded = true;
+loadRpgPokemon();
 // Marca Kanto como ativo por padrão
 document.querySelector('.pk-reg-btn[data-reg="Kanto"]')?.classList.add('active');
 loadAbilities();
