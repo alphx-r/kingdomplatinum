@@ -164,7 +164,7 @@ html{
 .hero-left{background:var(--surface2);border-right:1.5px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px 48px;gap:10px;position:relative}
 .hero-dex-num{position:absolute;top:12px;left:14px;font-family:var(--font-title);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;z-index:2}
 .form-switch-wrap{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:center}
-.hero-art-stack{position:relative;width:190px;height:190px;margin-top:15px}
+.hero-art-stack{position:relative;width:190px;height:190px;margin-top:15px;overflow:hidden}
 .hero-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 18px rgba(0,0,0,.14));transition:opacity .3s ease,transform .3s ease;transform:scale(var(--fill-scale,1));opacity:0;pointer-events:none}
 .hero-art.hero-art-active{opacity:1;pointer-events:auto}
 .hero-art-stack:hover .hero-art.hero-art-active{transform:scale(calc(var(--fill-scale,1) * 1.05))}
@@ -2130,11 +2130,22 @@ async function normalizeHeroSpritePair(normalId, shinyId, normalUrl, shinyUrl){
   const [fillN,fillS]=await Promise.all([getSpriteFillRatio(normalUrl),getSpriteFillRatio(shinyUrl)]);
   if(elN.dataset.spriteUrl!==normalUrl||elS.dataset.spriteUrl!==shinyUrl) return; // sprite trocou nesse meio-tempo
   const target=Math.max(fillN,fillS);
-  const MAX_SCALE=1.6; // trava pra não estourar o card em casos extremos
+  const MAX_SCALE=1.25; // trava pra não estourar o card em casos extremos — era 1.6,
+  // reduzido porque um sprite normal/shiny com padding bem diferente (comum nas
+  // formas do Oricorio, cada uma com upload próprio) podia pedir até 1.6x e
+  // vazar pra fora do card (agora também contido pelo overflow:hidden do
+  // .hero-art-stack, mas o teto menor evita o zoom exagerado desde a raiz).
   const scaleN=Math.min(MAX_SCALE,target/fillN);
-  const scaleS=Math.min(MAX_SCALE,target/fillS);
+  // Shiny recebe, além da normalização de tamanho de sempre, um zoom out
+  // extra de 5% — fica ligeiramente menor que o normal mesmo depois de
+  // equalizar o preenchimento do quadro entre os dois sprites.
+  const SHINY_EXTRA_ZOOM_OUT=0.95;
+  const scaleS=Math.min(MAX_SCALE,target/fillS)*SHINY_EXTRA_ZOOM_OUT;
   if(scaleN>1.02) elN.style.setProperty('--fill-scale',scaleN.toFixed(3));
-  if(scaleS>1.02) elS.style.setProperty('--fill-scale',scaleS.toFixed(3));
+  // Sem o limiar ">1.02" do normal: o zoom out extra precisa valer mesmo
+  // quando a normalização por si só não pediria nenhuma escala (scaleS
+  // cairia em ~1 sem o fator extra, e o style nunca seria setado).
+  elS.style.setProperty('--fill-scale',scaleS.toFixed(3));
 }
 
 // Define os sprites de um hero-art-stack e dispara a normalização de escala.
