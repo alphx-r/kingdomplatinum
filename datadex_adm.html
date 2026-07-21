@@ -602,6 +602,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="migrarFormasRegionaisParaAlt()" title="Converte os registros separados de Alola/Galar/Hisui/Paldea/Nendo em formas alternativas clicáveis (formas_alt) do Pokémon base">🔀 Unificar formas regionais</button>
           <button onclick="limparFormasAltDuplicadas()" title="Procura e remove formas_alt duplicadas (ex: rodou 'Unificar formas regionais' mais de uma vez)">🧹 Remover formas alt. duplicadas</button>
           <button onclick="renomearFormasRegionaisAntigas()" title="Renomeia formas_alt no padrão antigo ('Forma de Alola' ou '(A) Rattata') pro padrão atual: 'Rattata (Alola Form)'">🏷️ Renomear formas regionais antigas</button>
+          <button onclick="converterFormasRegionaisParaPrefixo()" title="Converte formas_alt no formato 'Nome (Alola)' / 'Nome (Alola Form)' / Galar/Hisui/Paldea/Nendo pro padrão compacto '(A) Nome' — necessário pra evolutionary chain casar certinho com o nome vindo da PokeAPI">🔤 Converter formas regionais p/ (Letra)</button>
           <hr>
           <div class="adm-more-group-lbl">Importar da PokeAPI</div>
           <button onclick="importMovesetsFromPokeapi()" title="Busca o moveset (nível/TM/ovo/tutor) de todos os Pokémon oficiais na PokeAPI e salva no Supabase">⚔️ Importar movesets</button>
@@ -2882,11 +2883,17 @@ function evoResolveStageTarget(id, name) {
   const base = S.pk.all.find(p => evoNormId(p.id) === tid);
   if (!base) return null;
   const nameStr = String(name ?? '').trim().toLowerCase();
-  if (nameStr && nameStr !== (base.name || '').trim().toLowerCase()) {
-    const altIndex = (base.formas_alt || []).findIndex(f => (f?.nome || '').trim().toLowerCase() === nameStr);
-    if (altIndex !== -1) return { base, altIndex };
+  if (!nameStr || nameStr === (base.name || '').trim().toLowerCase()) {
+    return { base, altIndex: -1 }; // -1 = o proprio registro principal
   }
-  return { base, altIndex: -1 }; // -1 = o proprio registro principal
+  const altIndex = (base.formas_alt || []).findIndex(f => (f?.nome || '').trim().toLowerCase() === nameStr);
+  if (altIndex !== -1) return { base, altIndex };
+  // Nome nao bate nem com o principal nem com nenhuma forma_alt cadastrada:
+  // NAO assumir que e o registro principal (isso sobrescreveria a cadeia dele
+  // por engano sempre que o nome vindo da PokeAPI/edicao manual nao usar
+  // exatamente a mesma formatacao salva na forma alternativa). Melhor nao
+  // propagar pra esse estagio do que propagar pro alvo errado.
+  return null;
 }
 
 // Procura, entre os Pokemon ja carregados (S.pk.all) e suas formas_alt, uma
@@ -3462,7 +3469,7 @@ function faltAddRow(listId, data = {}) {
       </div>
     </div>
     <div class="falt-sprite-row" style="margin-bottom:8px">
-      <input type="text" class="falt-pokeapi-slug" placeholder="slug PokeAPI (ex: oricorio-pom-pom)" style="flex:1;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)">
+      <input type="text" class="falt-pokeapi-slug" placeholder="slug PokeAPI (ex: oricorio-pom-pom)" style="flex:1;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" oninput="faltSyncPokeapiSlug(this)">
       <button type="button" class="btn btn-outline btn-sm falt-pokeapi-btn" onclick="faltFetchFromPokeapi(this)" style="flex-shrink:0">🌐 Puxar do PokeAPI</button>
     </div>
 
@@ -3576,6 +3583,9 @@ function faltAddRow(listId, data = {}) {
       </div>
       <div class="epk-acc-body">
         <div id="falt-evo-${uid}"></div>
+        <div style="margin-top:6px">
+          <input type="text" class="falt-pokeapi-slug-evo" placeholder="slug PokeAPI (ex: vulpix-alola)" style="width:100%;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" oninput="faltSyncPokeapiSlug(this)">
+        </div>
         <div style="display:flex;gap:5px;margin-top:6px">
           <button type="button" class="moveset-add-btn" style="flex:1" onclick="evoAddRow('falt-evo-${uid}')">＋ Adicionar estágio</button>
           <button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="evoFetchChainFromPokeapi('falt-evo-${uid}', this.closest('.falt-row').querySelector('.falt-pokeapi-slug')?.value, this)" title="Busca a evolutionary chain inteira na PokéAPI (use o campo 'slug PokeAPI' acima, ex: vulpix-alola) e autocompleta todos os estágios">🔄 Buscar</button>
@@ -3601,7 +3611,7 @@ function faltAddRow(listId, data = {}) {
           <div class="moveset-section" style="margin-bottom:0">
             <div class="moveset-section-title" onclick="movesetToggleSection(this)">Por Nível<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
             <div class="moveset-list" id="falt-mv-level-${uid}"></div>
-            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-level-${uid}','level')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_level_bulk_${uid}')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="falt_mv_level_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-level-${uid}','level')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_level_bulk_${uid}')">📋 Colar lista</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="faltFetchMovesetFromPokeapi(this,'level')" title="Busca o moveset Por Nível desta forma na PokéAPI (usa o campo 'slug PokeAPI' da Evolutionary Chain) — preenche a lista, mas só grava quando você salvar o Pokémon">🔄 Buscar</button></div><div class="moveset-bulk-area" id="falt_mv_level_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
 Flamethrower
 Fire Blast
 Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('falt-mv-level-${uid}','level','falt_mv_level_bulk_${uid}')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('falt_mv_level_bulk_${uid}')">Cancelar</button></div></div>
@@ -3609,7 +3619,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
           <div class="moveset-section" style="margin-bottom:0">
             <div class="moveset-section-title" onclick="movesetToggleSection(this)">TM<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
             <div class="moveset-list" id="falt-mv-tm-${uid}"></div>
-            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-tm-${uid}','tm')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_tm_bulk_${uid}')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="falt_mv_tm_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-tm-${uid}','tm')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_tm_bulk_${uid}')">📋 Colar lista</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="faltFetchMovesetFromPokeapi(this,'tm')" title="Busca o moveset de TM desta forma na PokéAPI (usa o campo 'slug PokeAPI' da Evolutionary Chain) — preenche a lista, mas só grava quando você salvar o Pokémon">🔄 Buscar</button></div><div class="moveset-bulk-area" id="falt_mv_tm_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
 Flamethrower
 Fire Blast
 Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('falt-mv-tm-${uid}','tm','falt_mv_tm_bulk_${uid}')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('falt_mv_tm_bulk_${uid}')">Cancelar</button></div></div>
@@ -3617,7 +3627,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
           <div class="moveset-section" style="margin-bottom:0">
             <div class="moveset-section-title" onclick="movesetToggleSection(this)">Egg Moves<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
             <div class="moveset-list" id="falt-mv-egg-${uid}"></div>
-            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-egg-${uid}','egg')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_egg_bulk_${uid}')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="falt_mv_egg_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-egg-${uid}','egg')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_egg_bulk_${uid}')">📋 Colar lista</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="faltFetchMovesetFromPokeapi(this,'egg')" title="Busca os Egg Moves desta forma na PokéAPI (usa o campo 'slug PokeAPI' da Evolutionary Chain) — preenche a lista, mas só grava quando você salvar o Pokémon">🔄 Buscar</button></div><div class="moveset-bulk-area" id="falt_mv_egg_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
 Flamethrower
 Fire Blast
 Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('falt-mv-egg-${uid}','egg','falt_mv_egg_bulk_${uid}')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('falt_mv_egg_bulk_${uid}')">Cancelar</button></div></div>
@@ -3625,7 +3635,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
           <div class="moveset-section" style="margin-bottom:0">
             <div class="moveset-section-title" onclick="movesetToggleSection(this)">Tutor Moves<span class="ms-count">0</span><span class="ms-chev">▼</span></div>
             <div class="moveset-list" id="falt-mv-tutor-${uid}"></div>
-            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-tutor-${uid}','tutor')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_tutor_bulk_${uid}')">📋 Colar lista</button></div><div class="moveset-bulk-area" id="falt_mv_tutor_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
+            <div style="display:flex;gap:5px;margin-top:6px"><button type="button" class="moveset-add-btn" style="flex:1" onclick="movesetAddRow('falt-mv-tutor-${uid}','tutor')">＋ Adicionar</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="movesetToggleBulk('falt_mv_tutor_bulk_${uid}')">📋 Colar lista</button><button type="button" class="moveset-add-btn" style="flex:1;border-color:var(--brand-mid);color:var(--brand-mid)" onclick="faltFetchMovesetFromPokeapi(this,'tutor')" title="Busca os Tutor Moves desta forma na PokéAPI (usa o campo 'slug PokeAPI' da Evolutionary Chain) — preenche a lista, mas só grava quando você salvar o Pokémon">🔄 Buscar</button></div><div class="moveset-bulk-area" id="falt_mv_tutor_bulk_${uid}"><textarea class="moveset-bulk-ta" placeholder="Um move por linha:
 Flamethrower
 Fire Blast
 Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class="btn btn-primary btn-sm" onclick="movesetImportBulk('falt-mv-tutor-${uid}','tutor','falt_mv_tutor_bulk_${uid}')">✓ Importar</button><button type="button" class="btn btn-outline btn-sm" onclick="movesetToggleBulk('falt_mv_tutor_bulk_${uid}')">Cancelar</button></div></div>
@@ -3994,6 +4004,19 @@ function faltRefreshParentNav(nomeInput) {
   if (!list) return;
   if (list.id === 'nrpg-formas-alt') nrpgRefreshFormsNav();
   else epkRefreshFormsNav();
+}
+// O campo "slug PokeAPI" aparece duas vezes na linha da forma alt. (perto do
+// sprite, pro botão "Puxar do PokeAPI" completo, e dentro do accordion da
+// Evolutionary Chain, pro botão "Buscar" da cadeia) — são o mesmo dado, só
+// duplicado visualmente pra ficar visível nos dois contextos sem precisar
+// rolar a linha inteira. Mantém os dois em sincronia nos dois sentidos.
+function faltSyncPokeapiSlug(el) {
+  const row = el.closest('.falt-row');
+  if (!row) return;
+  const main = row.querySelector('.falt-pokeapi-slug');
+  const evo = row.querySelector('.falt-pokeapi-slug-evo');
+  if (el === main && evo && evo.value !== main.value) evo.value = main.value;
+  if (el === evo && main && main.value !== evo.value) main.value = evo.value;
 }
 // Se a linha editada for a forma alt. ativa no momento (modal de edição), atualiza
 // também a foto do cabeçalho (epk-art-preview) — ver epkShowForm/epkShowBase.
@@ -4459,6 +4482,51 @@ async function epkFetchMovesetFromPokeapi(category) {
     toast('Erro ao buscar moveset: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; if (origLabel) btn.textContent = origLabel; }
+  }
+}
+
+// Equivalente a epkFetchMovesetFromPokeapi, mas pra uma forma alternativa
+// (falt). Diferença importante: formas_alt não têm registro próprio no
+// Supabase (vivem dentro do JSON "formas_alt" do Pokémon base), então aqui
+// NÃO salva direto — só preenche a lista na tela; o moveset só é gravado de
+// fato quando o Pokémon base inteiro é salvo (botão "Salvar"/"Publicar" do
+// modal), igual a qualquer outro campo de forma alternativa.
+async function faltFetchMovesetFromPokeapi(btn, category) {
+  const label = EPK_MOVESET_LABEL[category];
+  if (!label) { toast('Categoria de moveset inválida.', 'err'); return; }
+  const row = btn.closest('.falt-row');
+  const uid = row?.dataset.uid;
+  if (!uid) { toast('Não foi possível identificar a forma alternativa.', 'err'); return; }
+  const slug = row.querySelector('.falt-pokeapi-slug')?.value.trim();
+  if (!slug) { toast('Informe o slug PokeAPI desta forma (campo acima do botão Buscar da Evolutionary Chain) antes de buscar o moveset.', 'err'); return; }
+  const nome = row.querySelector('.falt-nome')?.value.trim() || 'forma';
+
+  const origLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Buscando…';
+  try {
+    const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(slug)}`);
+    if (!r.ok) throw new Error(`PokeAPI HTTP ${r.status} — não achou "${slug}"`);
+    const d = await r.json();
+
+    const moves = [];
+    (d.moves || []).forEach(mv => {
+      const vgd = mv.version_group_details || [];
+      if (category === 'level') {
+        const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
+        if (lvlUp.length) moves.push({ move: mv.move.name, level: Math.max(...lvlUp.map(v => v.level_learned_at)) });
+      } else {
+        const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
+        if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
+      }
+    });
+    if (category === 'level') moves.sort((a, b) => a.level - b.level);
+
+    movesetPopulateList(`falt-mv-${category}-${uid}`, category, moves);
+    toast(`✓ Moveset "${label}" de "${nome}" preenchido a partir de "${slug}" — salve o Pokémon pra gravar.`, 'ok');
+  } catch (e) {
+    toast('Erro ao buscar moveset: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = origLabel;
   }
 }
 
@@ -6561,6 +6629,72 @@ async function renomearFormasRegionaisAntigas() {
   } finally {
     hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '🏷️ Renomear formas regionais antigas'; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   CONVERTER — reescreve formas_alt no formato "Nome (Alola)" / "Nome (Alola
+   Form)" (ou Galar/Hisui/Paldea/Nendo, com ou sem "Form", maiúsculas ou
+   minúsculas) pro padrão compacto "(A) Nome" / "(G) Nome" etc.
+
+   Por quê: o autocompletar de Evolutionary Chain (evoFetchChainFromPokeapi)
+   monta os nomes dos estágios de uma cadeia regional LINEAR já no formato
+   compacto "(A) Nome" (ver mais abaixo). Se a forma alternativa estiver
+   salva como "Nome (Alola Form)" em vez de "(A) Nome", o nome não bate
+   character-by-character e evoResolveStageTarget não consegue achar a forma
+   certa pra propagar a cadeia — o estágio fica sem propagar (ou, antes da
+   correção do bug relatado, chegava a sobrescrever o registro principal por
+   engano). Rodar este conversor deixa todas as formas regionais no formato
+   que casa certinho com o que a PokeAPI/editor gera.
+══════════════════════════════════════════ */
+const REGIONAL_ALT_PAREN_RE = /^(.*?)\s*\((Alola|Galar|Hisui|Paldea|Nendo)(?:\s+Form)?\)\s*$/i;
+const REGIONAL_ALT_LETRA_POR_REGIAO = { alola: 'A', galar: 'G', hisui: 'H', paldea: 'P', nendo: 'N' };
+
+async function converterFormasRegionaisParaPrefixo() {
+  if (!confirm('Isso vai procurar, em todos os Pokémon, formas alternativas com nome no formato "Nome (Alola)" / "Nome (Alola Form)" (ou Galar/Hisui/Paldea/Nendo) e converter pro padrão compacto "(A) Nome". Formas que já estão no padrão "(A) Nome" ou que não seguem nenhum desses formatos ficam intocadas. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Convertendo…'; }
+  showProgress('Lendo Pokémon…');
+
+  try {
+    const allRows = await sbSelect('pokemons');
+    let pokemonsAfetados = 0, totalConvertidas = 0, i = 0;
+
+    for (const row of allRows) {
+      i++;
+      updateProgress(i, allRows.length, row.name || row.id);
+      const alt = row.formas_alt;
+      if (!Array.isArray(alt) || !alt.length) continue;
+
+      let mudou = false;
+      const novo = alt.map(entry => {
+        const nomeAtual = (entry.nome || '').trim();
+        // Já está no padrão compacto — não mexe.
+        if (REGIONAL_ALT_PREFIXO_RE.test(nomeAtual)) return entry;
+        const m = nomeAtual.match(REGIONAL_ALT_PAREN_RE);
+        if (!m) return entry;
+        const nomeBase = m[1].trim();
+        const letra = REGIONAL_ALT_LETRA_POR_REGIAO[m[2].toLowerCase()];
+        if (!nomeBase || !letra) return entry;
+        const novoNome = `(${letra}) ${cap(nomeBase)}`;
+        if (novoNome === nomeAtual) return entry;
+        mudou = true; totalConvertidas++;
+        return { ...entry, nome: novoNome };
+      });
+      if (mudou) {
+        await sbPatch('pokemons', row.id, { formas_alt: novo, updated_at: new Date().toISOString() });
+        pokemonsAfetados++;
+      }
+    }
+
+    toast(totalConvertidas ? `${totalConvertidas} forma(s) convertida(s) em ${pokemonsAfetados} Pokémon.` : 'Nenhuma forma no formato "(Região)"/"(Região Form)" encontrada.', 'ok');
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao converter formas regionais: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🔤 Converter formas regionais p/ (Letra)'; }
   }
 }
 
