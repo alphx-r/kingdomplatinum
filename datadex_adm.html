@@ -618,6 +618,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <div class="adm-more-group-lbl">Manutenção / migração</div>
           <button onclick="markAllPokemonPending()" title="Desmarca o checkbox 'Aprovado' de todos os Pokémon — não afeta se está publicado">⚠️ Marcar todos como pendente</button>
           <button onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
+          <button onclick="fixSpriteAlphaHalo()" title="Baixa cada sprite já hospedado no Storage, endurece o alpha da borda (remove a transparência intermediária que causa o halo cinza) e re-sobe no mesmo lugar — não recorta nem reposiciona nada">🩹 Corrigir halo de transparência</button>
           <button onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
           <button onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
         </div>
@@ -1023,12 +1024,13 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
         </div>
       </div>
 
-     <div class="epk-card" style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="epk-card" style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;color:var(--text)">
-          <input type="checkbox" id="epk-revisado" style="width:18px;height:18px;cursor:pointer" onchange="if(this.checked) savePkModal(true)">
+          <input type="checkbox" id="epk-revisado" style="width:18px;height:18px;cursor:pointer" onchange="handleEpkRevisadoChange()">
           Aprovado
         </label>
       </div>
+
 
     <div class="modal-foot">
       <span class="save-ind" id="epk-ind" style="margin-right:auto">✓ Salvo!</span>
@@ -2211,7 +2213,14 @@ function trimAndFitSprite(dataUrl, canvasSize = 475, fillRatio = 0.80, threshold
         outC.width = canvasSize;
         outC.height = canvasSize;
         const outCtx = outC.getContext('2d');
-        outCtx.imageSmoothingEnabled = scale < 1; // evita borrar pixel art ao ampliar
+        // Suavização desligada sempre (tanto ao ampliar quanto ao encolher):
+        // ao reduzir uma arte com contorno preto sólido colado no transparente,
+        // a suavização bilinear cria pixels de transparência intermediária bem
+        // na borda do traço, que aparecem como uma "mancha" cinza ao serem
+        // compostos contra qualquer cor de fundo do site. Sem suavização, o
+        // alpha vai direto de 0 pra 255 (igual a arte original), sem halo —
+        // troca-se um leve serrilhado na borda por zero halo de transparência.
+        outCtx.imageSmoothingEnabled = false;
         outCtx.drawImage(img, minX, minY, trimW, trimH, destX, destY, destW, destH);
 
         resolve(outC.toDataURL('image/png'));
@@ -2316,7 +2325,7 @@ function sprAdjDraw() {
   ctx.clearRect(0, 0, canvasSize, canvasSize);
   const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom;
   const x = (canvasSize - w) / 2 + offX, y = (canvasSize - h) / 2 + offY;
-  ctx.imageSmoothingEnabled = zoom < 1;
+  ctx.imageSmoothingEnabled = false; // evita halo de transparência ao dar zoom out (ver trimAndFitSprite)
   ctx.drawImage(img, x, y, w, h);
   // Linhas-guia de centralização: desenhadas só pra referência visual do
   // usuário. sprAdjApply() reexporta a imagem num canvas limpo à parte,
@@ -2346,7 +2355,7 @@ function sprAdjApply() {
   const outCtx = outCanvas.getContext('2d');
   const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom;
   const x = (canvasSize - w) / 2 + offX, y = (canvasSize - h) / 2 + offY;
-  outCtx.imageSmoothingEnabled = zoom < 1;
+  outCtx.imageSmoothingEnabled = false; // evita halo de transparência ao dar zoom out (ver trimAndFitSprite)
   outCtx.drawImage(img, x, y, w, h);
   let out;
   try { out = outCanvas.toDataURL('image/png'); }
@@ -2660,17 +2669,6 @@ function evoAddRow(listId, data = {}) {
     if (found && found.id) {
       idInput.value = found.id;
       idInput.dispatchEvent(new Event('change'));
-    }
-  });
-    // Se o Nº Pokédex digitado bater com um Pokémon conhecido e o Nome ainda
-  // estiver vazio, preenche automaticamente o Nome a partir do Nº Pokédex.
-  idInput.addEventListener('change', () => {
-    const idVal = idInput.value.trim();
-    if (!idVal || nameInput.value.trim()) return;
-    const { base } = evoFindNameCandidates(idVal);
-    if (base) {
-      nameInput.value = base.name || String(base.id);
-      nameInput.dispatchEvent(new Event('input'));
     }
   });
   // Condição (método de evolução) — reflete na label da seta do preview
@@ -4235,6 +4233,13 @@ function nrpgSyncSlug() {
   slugEl.value = buildAutoSlug(nome, id);
 }
 
+// Ao marcar/desmarcar "Aprovado" no modal, salva imediatamente (como rascunho,
+// já que publicar continua sendo uma ação separada pelo botão "✓ Publicar") e
+// fecha o modal automaticamente — savePkModal() já cuida do closeModal().
+function handleEpkRevisadoChange() {
+  savePkModal(false);
+}
+
 async function savePkModal(approve) {
   const id = document.getElementById('epk-id').value;
   const pk = S.pk.all.find(p => String(p.id) === String(id));
@@ -5700,6 +5705,102 @@ async function runImportOfficialClassificacao() {
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🏷️ Importar classificação'; }
+  }
+}
+
+// Baixa um sprite já hospedado no NOSSO Storage (não mexe em URLs externas
+// tipo PokeAPI), endurece o canal alpha — mata a faixa de transparência
+// intermediária (0<alpha<255) criada pela suavização do resize antigo, que
+// aparece como halo cinza contra o fundo colorido por tipo — e re-sobe no
+// MESMO bucket/caminho, sem recortar nem reposicionar nada. Ver
+// trimAndFitSprite() pra entender a causa original do halo.
+function parseOwnStorageUrl(url) {
+  const marker = '/storage/v1/object/public/';
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  const rest = url.slice(idx + marker.length).split('?')[0];
+  const slash = rest.indexOf('/');
+  if (slash === -1) return null;
+  return { bucket: rest.slice(0, slash), path: rest.slice(slash + 1) };
+}
+
+async function fixAlphaHaloUrl(url) {
+  const parsed = parseOwnStorageUrl(url);
+  if (!parsed) throw new Error('URL fora do Storage próprio — não foi possível extrair o caminho.');
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Falha ao baixar sprite: HTTP ${res.status}`);
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('Não foi possível carregar o sprite baixado.'));
+      im.src = objUrl;
+    });
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const imgData = ctx.getImageData(0, 0, c.width, c.height);
+    const d = imgData.data;
+    let touched = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (a > 0 && a < 255) { d[i + 3] = a < 128 ? 0 : 255; touched++; }
+    }
+    if (!touched) return null; // nada de halo pra corrigir nesse sprite
+    ctx.putImageData(imgData, 0, 0);
+    const fixedDataUrl = c.toDataURL('image/png');
+    const newUrl = await uploadImgStorage(fixedDataUrl, parsed.bucket, parsed.path);
+    return newUrl + '?t=' + Date.now();
+  } finally {
+    URL.revokeObjectURL(objUrl);
+  }
+}
+
+async function fixSpriteAlphaHalo() {
+  if (!confirm('Isso vai baixar cada sprite já hospedado no seu Storage, endurecer o alpha da borda (removendo a transparência intermediária que causa o halo cinza) e re-subir no MESMO lugar — sem mexer no recorte ou na centralização, só na transparência. Sprites que vieram direto da PokeAPI (URL externa) não são tocados. Pode levar alguns minutos. Continuar?')) return;
+
+  const rows = await sbSelect('pokemons');
+  const isOwn = u => typeof u === 'string' && u.startsWith(SUPA_URL);
+  const targets = rows.filter(p => isOwn(p.sprite) || isOwn(p.sprite_shiny));
+
+  showProgress('Corrigindo halo de transparência…');
+  let done = 0, fixedCount = 0, skippedCount = 0;
+  const erros = [];
+
+  for (const p of targets) {
+    try {
+      const patch = {};
+      if (isOwn(p.sprite)) {
+        const fixed = await fixAlphaHaloUrl(p.sprite);
+        if (fixed) patch.sprite = fixed; else skippedCount++;
+      }
+      if (isOwn(p.sprite_shiny)) {
+        const fixed = await fixAlphaHaloUrl(p.sprite_shiny);
+        if (fixed) patch.sprite_shiny = fixed; else skippedCount++;
+      }
+      if (Object.keys(patch).length) {
+        await sbPatch('pokemons', p.id, patch);
+        Object.assign(p, patch);
+        fixedCount++;
+      }
+    } catch (e) {
+      erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+    }
+    done++;
+    updateProgress(done, targets.length, p.name || p.id);
+  }
+
+  applyPkFilter();
+  hideProgress();
+  if (erros.length) {
+    console.warn('Falhas ao corrigir halo:', erros);
+    toast(`✓ ${fixedCount} corrigido(s), ${skippedCount} já ok, ${erros.length} falha(s) — veja o console.`, 'err');
+  } else {
+    toast(`✓ ${fixedCount} sprite(s) com halo corrigido! (${skippedCount} já estavam ok)`, 'ok');
   }
 }
 
