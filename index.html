@@ -10278,11 +10278,13 @@ function renderRolagens(){
   const entriesHtml=rollsFiltrados.map(e=>{
     if(e._tipo==='pokemon'){
       const pokes=Array.isArray(e.pokes)?e.pokes:[];
-      const pokesHtml=pokes.map(pk=>{
+      const pokesHtml=pokes.map((pk,pkIdx)=>{
         const rShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'background:var(--surface);border:1px solid var(--border)';
         let rShinySrc=pk.sprite||FALLBACK_SPRITE;
         if(pk.isShiny){ if(pk.sprite_shiny){rShinySrc=pk.sprite_shiny;} else if(rShinySrc.includes('raw.githubusercontent.com')){rShinySrc=rShinySrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/');} }
         const rGlow=pk.isShiny?'drop-shadow(0 0 5px #ffd700)':'';
+        const rFalhou=(pk.nome==='???');
+        const rerollBtn=rFalhou?`<button class="reroll-falha-btn" onclick="rerollarPokeFalho('${e.id}',${pkIdx},this)" style="margin-top:2px;font-size:9px;font-weight:700;padding:3px 8px;border-radius:8px;border:1.5px solid var(--red);background:#fdeaea;color:var(--red);cursor:pointer;white-space:nowrap">🔄 Re-rolar</button>`:'';
         return`
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;${rShiny};border-radius:8px;padding:8px 10px;min-width:88px;max-width:108px;position:relative">
           ${pk.isShiny?`<div title="${pk.bonusShiny&&pk.bonusShiny.length?`Shiny (${pk.bonusShiny.join(' + ')})`:'Shiny'}" style="position:absolute;top:-6px;right:-4px;font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 5px;white-space:nowrap">✨</div>`:''}
@@ -10296,6 +10298,7 @@ function renderRolagens(){
             ${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}
           </div>
           <span class="poke-rarity ${rcls[pk.rarity]||'rc'}" style="font-size:9px;padding:1px 6px">${rlbl[pk.rarity]||''}</span>
+          ${rerollBtn}
         </div>`;}).join('');
       return`<div class="rol-entry">
         <div class="rol-entry-header">
@@ -10363,6 +10366,52 @@ function renderRolagens(){
 function selecionarRolagemTab(key){
   rolagemAtivaKey=(rolagemAtivaKey===key)?null:key;
   renderRolagens();
+}
+
+// Re-rola apenas um Pokémon que falhou (saiu "???") dentro de uma rolagem já
+// salva no histórico. Disponível pra player e adm na tela "Rolls". Usa a
+// mesma lógica de pools/cascata de rolarEncontro, mas isolada num slot só.
+async function rerollarPokeFalho(entryId, pkIdx, btnEl){
+  const entry=historico.find(h=>String(h.id)===String(entryId));
+  if(!entry||!Array.isArray(entry.pokes)||!entry.pokes[pkIdx]) return;
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Rolando...'; }
+  try{
+    const bioma=entry.bioma;
+    const personagem=entry.personagem;
+    const rankingAtivo=getPersonagemRanking(personagem);
+    const raridades=['comum','incomum','raro','rarissimo'];
+    const encounterUnits=getEncounterUnits(pokemonDB);
+    const pools={};
+    const usedIds={};
+    for(const r of raridades){
+      pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
+      usedIds[r]=new Set();
+    }
+    const BOOST_MAP={rarissimo:'raro',raro:'incomum',incomum:'comum',comum:'comum'};
+    const boostedPools={...pools};
+    if(estacaoAtiva){
+      for(const r of raridades){
+        const alvo=BOOST_MAP[r];
+        const comBoost=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
+        if(comBoost.length) boostedPools[alvo]=[...(boostedPools[alvo]||[]),...comBoost];
+      }
+    }
+    function rollRarity(){const r=Math.ceil(Math.random()*100);if(r<=2)return 'rarissimo';if(r<=13)return 'raro';if(r<=51)return 'incomum';return 'comum';}
+    const rarity=rollRarity();
+    const poolsAtivos=estacaoAtiva?boostedPools:pools;
+    const novo=pickFromPoolCascade(poolsAtivos,usedIds,rarity,bioma);
+    if(!novo||novo.nome==='???'){
+      alert(`O bioma "${bioma}" continua sem nenhum Pokémon disponível para ${personagem}. Verifique o cadastro do bioma (raridade/estação/ranking) antes de tentar de novo.`);
+      return;
+    }
+    entry.pokes[pkIdx]=novo;
+    try{
+      await dbPatch('historico',`id=eq.${entry.id}`,{pokes:entry.pokes});
+    }catch(e){ console.error('[rerollarPokeFalho] falha ao salvar no banco',e); }
+    renderRolagens();
+  } finally {
+    if(btnEl){ btnEl.disabled=false; btnEl.textContent='🔄 Re-rolar'; }
+  }
 }
 
 
