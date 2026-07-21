@@ -3818,10 +3818,11 @@ async function faltFetchFromPokeapi(btn) {
   }
 }
 // Lê as formas alternativas de uma lista (sem sprite ainda pendente de upload — usa URL já existente)
-function faltReadListSync(listId) {
-  const list = document.getElementById(listId);
-  if (!list) return [];
-  return [...list.querySelectorAll('.falt-row')].map(row => {
+// Lê os dados de UMA linha .falt-row específica (tipos, habilidades, stats,
+// sprites, biomas, evolução, moveset, força alfa...). Extraído do antigo
+// corpo do .map() de faltReadListSync pra poder ser reaproveitado também
+// por faltDuplicateRowByUid (duplicar forma) sem duplicar a lógica toda.
+function faltReadRowData(row) {
     const nome = row.querySelector('.falt-nome')?.value.trim() || '';
     if (!nome) return null;
     const tipo1 = row.querySelector('.falt-tipo1-wrap .tipo-tag.sel')?.dataset.tipo || '';
@@ -3871,7 +3872,28 @@ function faltReadListSync(listId) {
       moves_egg: moves_egg.length ? moves_egg : null,
       moves_tutor: moves_tutor.length ? moves_tutor : null
     };
-  }).filter(Boolean);
+}
+function faltReadListSync(listId) {
+  const list = document.getElementById(listId);
+  if (!list) return [];
+  return [...list.querySelectorAll('.falt-row')].map(faltReadRowData).filter(Boolean);
+}
+// Duplica uma forma alternativa existente: lê todos os dados da linha (via
+// faltReadRowData — tipos, stats, sprites, biomas, evolução, moveset, força
+// alfa etc.) e cria uma nova linha idêntica logo em seguida, com "(Cópia)"
+// no nome pra não colidir/confundir com a original. Disparado por
+// duplo-clique na pill de navegação da forma (ver epk-forms-nav/nrpg-forms-nav).
+function faltDuplicateRowByUid(listId, uid) {
+  const list = document.getElementById(listId);
+  const row = list?.querySelector(`.falt-row[data-uid="${uid}"]`);
+  if (!row) return null;
+  const data = faltReadRowData(row);
+  if (!data) { toast('Preencha o nome da forma antes de duplicar.', 'err'); return null; }
+  const clone = JSON.parse(JSON.stringify(data));
+  clone.nome = clone.nome + ' (Cópia)';
+  const newRow = faltAddRow(listId, clone); // faltAddRow gera um uid novo e já dá appendChild no fim da lista
+  if (newRow) row.after(newRow); // reposiciona logo depois da forma original, em vez de ir pro fim da lista
+  return newRow;
 }
 // Faz upload de qualquer sprite pendente (arquivo escolhido) para cada forma, e retorna a lista final pronta pra salvar.
 // baseId é usado pra montar um path único no Storage: pokemons/<baseId>-alt-<slug-do-nome>.<ext>
@@ -4156,7 +4178,7 @@ function epkRefreshFormsNav() {
       const nome = (row.querySelector('.falt-nome')?.value || '').trim();
       const uid = row.dataset.uid || '';
       const sel = active === uid ? ' epk-form-pill-selected' : '';
-      return `<span class="epk-form-pill-wrap"><button type="button" class="epk-form-pill${sel}" onclick="epkShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button><button type="button" class="epk-form-pill-x" onclick="event.stopPropagation();epkDeleteFormByUid('${uid}')" title="Remover esta forma">✕</button></span>`;
+      return `<span class="epk-form-pill-wrap"><button type="button" class="epk-form-pill${sel}" onclick="epkShowForm('${uid}')" ondblclick="event.stopPropagation();epkDuplicateFormByUid('${uid}')" title="Editar esta forma (duplo-clique duplica)">${epkFormLabel(nome)}</button><button type="button" class="epk-form-pill-x" onclick="event.stopPropagation();epkDeleteFormByUid('${uid}')" title="Remover esta forma">✕</button></span>`;
     }).join('')}
     <button type="button" class="epk-form-pill epk-form-pill-add" onclick="epkAddFormFromNav()" title="Adicionar nova forma alternativa">＋</button>
   `;
@@ -4171,6 +4193,14 @@ function epkDeleteFormByUid(uid) {
   const wasActive = window._epkActiveForm === uid;
   row.remove();
   if (wasActive) epkShowBase(false); else epkRefreshFormsNav();
+}
+// Duplica uma forma alternativa a partir da pill de navegação (duplo-clique).
+// Cria a cópia, atualiza a nav e já abre a cópia pra edição.
+function epkDuplicateFormByUid(uid) {
+  const newRow = faltDuplicateRowByUid('epk-formas-alt', uid);
+  if (!newRow) return;
+  epkShowForm(newRow.dataset.uid);
+  toast('Forma duplicada.', 'ok');
 }
 function epkFlashHighlight(el) {
   if (!el) return;
@@ -7797,7 +7827,7 @@ function nrpgRefreshFormsNav() {
       const nome = (row.querySelector('.falt-nome')?.value || '').trim();
       const uid = row.dataset.uid || '';
       const sel = active === uid ? ' epk-form-pill-selected' : '';
-      return `<span class="epk-form-pill-wrap"><button type="button" class="epk-form-pill${sel}" onclick="nrpgShowForm('${uid}')" title="Editar esta forma">${epkFormLabel(nome)}</button><button type="button" class="epk-form-pill-x" onclick="event.stopPropagation();nrpgDeleteFormByUid('${uid}')" title="Remover esta forma">✕</button></span>`;
+      return `<span class="epk-form-pill-wrap"><button type="button" class="epk-form-pill${sel}" onclick="nrpgShowForm('${uid}')" ondblclick="event.stopPropagation();nrpgDuplicateFormByUid('${uid}')" title="Editar esta forma (duplo-clique duplica)">${epkFormLabel(nome)}</button><button type="button" class="epk-form-pill-x" onclick="event.stopPropagation();nrpgDeleteFormByUid('${uid}')" title="Remover esta forma">✕</button></span>`;
     }).join('')}
     <button type="button" class="epk-form-pill epk-form-pill-add" onclick="nrpgAddFormFromNav()" title="Adicionar nova forma alternativa">＋</button>
   `;
@@ -7810,6 +7840,13 @@ function nrpgDeleteFormByUid(uid) {
   const wasActive = window._nrpgActiveForm === uid;
   row.remove();
   if (wasActive) nrpgShowBase(false); else nrpgRefreshFormsNav();
+}
+// Ver epkDuplicateFormByUid — mesmo padrão pro formulário "Novo Pokémon Nendo".
+function nrpgDuplicateFormByUid(uid) {
+  const newRow = faltDuplicateRowByUid('nrpg-formas-alt', uid);
+  if (!newRow) return;
+  nrpgShowForm(newRow.dataset.uid);
+  toast('Forma duplicada.', 'ok');
 }
 function nrpgShowBase(scrollAndFocus = true) {
   window._nrpgActiveForm = null;
