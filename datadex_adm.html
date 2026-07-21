@@ -3384,7 +3384,7 @@ function faltAddRow(listId, data = {}) {
     <div style="display:grid;grid-template-columns:1fr 1fr 110px 1.3fr;gap:12px;margin-bottom:8px">
       <div>
         <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
-        <input class="mv-meta-input falt-nome" type="text" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}" oninput="faltRefreshParentNav(this)" onblur="faltAutoFillEvoOnNameChange(this)">
+        <input class="mv-meta-input falt-nome" type="text" placeholder="Ex: Oricorio Estilo Pom-Pom" value="${data.nome || ''}" oninput="faltRefreshParentNav(this);faltAutoFillSlugOnNameChange(this)" onblur="faltAutoFillEvoOnNameChange(this)">
       </div>
       <div>
         <div class="field-lbl en" style="margin-bottom:4px">Slug <span style="font-weight:400;color:var(--muted)">(igual à forma base)</span></div>
@@ -3469,7 +3469,7 @@ function faltAddRow(listId, data = {}) {
       </div>
     </div>
     <div class="falt-sprite-row" style="margin-bottom:8px">
-      <input type="text" class="falt-pokeapi-slug" placeholder="slug PokeAPI (ex: oricorio-pom-pom)" style="flex:1;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" oninput="faltSyncPokeapiSlug(this)">
+      <input type="text" class="falt-pokeapi-slug" placeholder="slug PokeAPI (ex: oricorio-pom-pom)" style="flex:1;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" value="${data.pokeapi_slug || faltGuessPokeapiSlug(data.nome) || ''}" oninput="faltMarkSlugLocked(this);faltSyncPokeapiSlug(this)">
       <button type="button" class="btn btn-outline btn-sm falt-pokeapi-btn" onclick="faltFetchFromPokeapi(this)" style="flex-shrink:0">🌐 Puxar do PokeAPI</button>
     </div>
 
@@ -3584,7 +3584,7 @@ function faltAddRow(listId, data = {}) {
       <div class="epk-acc-body">
         <div id="falt-evo-${uid}"></div>
         <div style="margin-top:6px">
-          <input type="text" class="falt-pokeapi-slug-evo" placeholder="slug PokeAPI (ex: vulpix-alola)" style="width:100%;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" oninput="faltSyncPokeapiSlug(this)">
+          <input type="text" class="falt-pokeapi-slug-evo" placeholder="slug PokeAPI (ex: vulpix-alola)" style="width:100%;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" value="${data.pokeapi_slug || faltGuessPokeapiSlug(data.nome) || ''}" oninput="faltMarkSlugLocked(this);faltSyncPokeapiSlug(this)">
         </div>
         <div style="display:flex;gap:5px;margin-top:6px">
           <button type="button" class="moveset-add-btn" style="flex:1" onclick="evoAddRow('falt-evo-${uid}')">＋ Adicionar estágio</button>
@@ -4017,6 +4017,49 @@ function faltSyncPokeapiSlug(el) {
   const evo = row.querySelector('.falt-pokeapi-slug-evo');
   if (el === main && evo && evo.value !== main.value) evo.value = main.value;
   if (el === evo && main && main.value !== evo.value) main.value = evo.value;
+}
+// Marca o slug PokeAPI desta forma alt. como "travado" assim que o usuário
+// digita nele manualmente — a partir daí, editar o nome da forma NÃO
+// sobrescreve mais o que foi digitado (mesmo padrão já usado no campo
+// "Nome (slug)" do Pokémon principal/fakemon, ver epk-slug/nrpg-slug).
+function faltMarkSlugLocked(el) {
+  const row = el.closest('.falt-row');
+  const main = row?.querySelector('.falt-pokeapi-slug');
+  if (main) main.dataset.autoLocked = '1';
+}
+// Tenta adivinhar o slug PokeAPI de uma forma alt. regional a partir do seu
+// nome, cobrindo tanto o padrão compacto atual "(A) Nome" quanto o padrão
+// antigo "Nome (Alola)"/"Nome (Alola Form)" (Galar/Hisui/Paldea/Nendo
+// idem) — assim o campo já nasce preenchido pra formas regionais "óbvias"
+// (ex: "(A) Raticate" → "raticate-alola"), sem precisar digitar na mão toda
+// vez que a linha é re-renderizada. Retorna '' quando não reconhece o
+// padrão (fakemon, forma sem nome regional, etc) — nesse caso o campo
+// continua em branco pra preenchimento manual, como sempre foi.
+function faltGuessPokeapiSlug(nomeRaw) {
+  const nome = String(nomeRaw || '').trim();
+  if (!nome) return '';
+  if (namePrefixLetter(nome)) return buildAutoSlug(nome, '');
+  const m = nome.match(REGIONAL_ALT_PAREN_RE);
+  if (m) {
+    const letra = REGIONAL_ALT_LETRA_POR_REGIAO[m[2].toLowerCase()];
+    const suf = letra && REGION_SLUG_SUFFIX[letra];
+    const base = toSlugBase(m[1]);
+    if (base && suf) return `${base}-${suf}`;
+  }
+  return '';
+}
+// Reaproveita faltGuessPokeapiSlug sempre que o nome da forma alt. muda —
+// só atualiza o slug se ele ainda não tiver sido travado (ver
+// faltMarkSlugLocked) por edição manual do usuário.
+function faltAutoFillSlugOnNameChange(nomeInput) {
+  const row = nomeInput.closest('.falt-row');
+  const main = row?.querySelector('.falt-pokeapi-slug');
+  if (!main || main.dataset.autoLocked === '1') return;
+  const guess = faltGuessPokeapiSlug(nomeInput.value);
+  if (guess && guess !== main.value) {
+    main.value = guess;
+    faltSyncPokeapiSlug(main);
+  }
 }
 // Se a linha editada for a forma alt. ativa no momento (modal de edição), atualiza
 // também a foto do cabeçalho (epk-art-preview) — ver epkShowForm/epkShowBase.
