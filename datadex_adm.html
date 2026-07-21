@@ -983,7 +983,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <!-- Moveset -->
       <div class="epk-base-only epk-tab-normal" style="margin-bottom:4px;padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
         <div class="epk-acc-head" onclick="epkToggleAcc(this)">
-          <span class="field-lbl en" style="margin-bottom:0">⚡ Moveset</span>
+          <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="field-lbl en" style="margin-bottom:0">⚡ Moveset</span>
+            <button type="button" class="moveset-add-btn" style="border-color:var(--brand-mid);color:var(--brand-mid)" onclick="event.stopPropagation(); epkFetchMovesetFromPokeapi()" title="Busca o moveset (nível/TM/ovo/tutor) deste Pokémon na PokéAPI e salva direto no Supabase">🔄 Buscar moveset na PokéAPI</button>
+          </span>
           <span class="epk-acc-chev">▾</span>
         </div>
         <div class="epk-acc-body">
@@ -2655,6 +2658,18 @@ function evoAddRow(listId, data = {}) {
   }
   idInput.addEventListener('input', evoRefreshRowSprite);
   idInput.addEventListener('change', evoRefreshRowSprite);
+  // Se o Nº Pokédex digitado bater com um Pokémon já cadastrado e o campo
+  // Nome ainda estiver vazio, preenche automaticamente o Nome a partir do ID
+  // (o inverso do autofill de ID a partir do Nome, logo abaixo).
+  idInput.addEventListener('change', () => {
+    const idVal = idInput.value.trim();
+    if (!idVal || nameInput.value.trim()) return;
+    const { base } = evoFindNameCandidates(idVal);
+    if (base && base.name) {
+      nameInput.value = base.name;
+      nameInput.dispatchEvent(new Event('change'));
+    }
+  });
   // Já popula as sugestões de nome (mesmo sem ID ainda — autocomplete geral)
   evoUpdateNameSuggestions(row);
   // Nome também dispara o refresh do sprite (cobre o caso de forma_alt, que
@@ -2809,6 +2824,78 @@ function evoPopulateList(listId, items = []) {
   evoRefreshFromSelects(listId);
   evoRefreshAllRowSprites(listId);
   evoUpdatePreview(listId);
+}
+
+/* ============================================
+   SINCRONIZACAO AUTOMATICA DA EVOLUTIONARY CHAIN
+   --------------------------------------------
+   O campo "evolucoes" de cada Pokemon guarda a cadeia INTEIRA da familia
+   (todos os estagios, com method/from), nao so "pra quem ele evolui". Isso
+   significa que, sem ajuda, editar a cadeia em um estagio deixaria os outros
+   estagios da mesma familia com uma copia desatualizada/diferente.
+   As funcoes abaixo resolvem isso:
+   1) evoPropagateChain: depois de salvar um Pokemon, replica a cadeia salva
+      pros outros estagios JA EXISTENTES no banco que ela cita, mantendo
+      toda a familia sincronizada automaticamente.
+   2) evoAutoFillOnCreate: ao criar um Pokemon novo, verifica se ele ja e
+      citado na cadeia de algum outro Pokemon existente (pelo id/numero de
+      Pokedex) e, se for, adota essa cadeia automaticamente como ponto de
+      partida, sem precisar digitar tudo de novo na mao.
+============================================ */
+
+// Normaliza um id de Pokedex pra comparacao (aceita "001", "N0001", "A0025"
+// etc, exatamente como digitado nos campos de evolucao e no id do banco).
+function evoNormId(id) {
+  return String(id ?? '').trim().toUpperCase();
+}
+
+// Procura, entre os Pokemon ja carregados (S.pk.all), uma cadeia evolutiva
+// existente que cite targetId, ignorando a cadeia do proprio excludeId
+// (evita um Pokemon "achar a si mesmo" quando ele mesmo ja tem cadeia).
+function evoFindExistingChainReferencing(targetId, excludeId = null) {
+  const tid = evoNormId(targetId);
+  const exId = excludeId != null ? evoNormId(excludeId) : null;
+  if (!tid) return null;
+  for (const p of S.pk.all) {
+    if (exId && evoNormId(p.id) === exId) continue;
+    const chain = p.evolucoes;
+    if (Array.isArray(chain) && chain.length && chain.some(e => evoNormId(e.id) === tid)) return chain;
+  }
+  return null;
+}
+
+// Ao criar um Pokemon novo, adota automaticamente a cadeia de algum outro
+// Pokemon ja cadastrado que ja o cite (por id/numero de Pokedex). Retorna
+// null se nenhuma cadeia existente citar esse id ainda.
+function evoAutoFillOnCreate(newId) {
+  return evoFindExistingChainReferencing(newId, newId);
+}
+
+// Propaga chain (a cadeia recem-salva, pertencente ao Pokemon sourceId) pros
+// outros estagios citados nela que JA EXISTEM no banco, sobrescrevendo o
+// campo "evolucoes" deles com a MESMA cadeia. Estagios ainda nao cadastrados
+// sao simplesmente ignorados (nada a propagar ainda); quando forem criados,
+// evoAutoFillOnCreate cuida de puxar a cadeia certa pra eles.
+async function evoPropagateChain(chain, sourceId) {
+  if (!Array.isArray(chain) || !chain.length) return;
+  const seen = new Set([evoNormId(sourceId)]);
+  for (const stage of chain) {
+    const tid = evoNormId(stage.id);
+    if (!tid || seen.has(tid)) continue;
+    seen.add(tid);
+    const target = S.pk.all.find(p => evoNormId(p.id) === tid);
+    if (!target) continue; // ainda nao existe -- nada a propagar agora
+    if (JSON.stringify(target.evolucoes || null) === JSON.stringify(chain)) continue; // ja esta igual
+    try {
+      await sbPatch('pokemons', target.id, { evolucoes: chain, updated_at: new Date().toISOString() });
+      target.evolucoes = chain;
+      if (S.pk.dbMap && S.pk.dbMap[target.id]) S.pk.dbMap[target.id].evolucoes = chain;
+      const rpgTarget = S.rpg && S.rpg.all ? S.rpg.all.find(p => evoNormId(p.id) === tid) : null;
+      if (rpgTarget) rpgTarget.evolucoes = chain;
+    } catch (e) {
+      console.error('Falha ao sincronizar evolutionary chain com', target.id, e);
+    }
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -4175,6 +4262,70 @@ function movesetResetAll(prefix) {
   });
 }
 
+// Botão "🔄 Buscar moveset na PokéAPI" dentro do modal de edição (epk):
+// busca o moveset (nível/TM/ovo/tutor) do Pokémon que está sendo editado
+// direto na PokeAPI e já SALVA no Supabase (PATCH só nas 4 colunas de
+// moveset — não mexe em mais nada do registro), além de atualizar a lista
+// na tela pra refletir o resultado na hora. Mesma lógica do botão em massa
+// "⚔️ Importar movesets", mas pra um Pokémon só, direto do modal de edição.
+// Pra ids não-numéricos (formas regionais/fakemon), tenta pelo url_slug ou
+// nome — a PokéAPI aceita nome-slug (ex: "raichu-alola") no lugar do número.
+async function epkFetchMovesetFromPokeapi() {
+  const id = document.getElementById('epk-id')?.value.trim();
+  if (!id) { toast('Não foi possível identificar o Pokémon.', 'err'); return; }
+  const pk = S.pk.all.find(p => String(p.id) === String(id));
+  const query = /^\d+$/.test(id) ? id : String(pk?.url_slug || pk?.name || id).trim().toLowerCase().replace(/\s+/g, '-');
+  if (!confirm(`Isso vai buscar o moveset de "${query}" na PokéAPI e SALVAR direto no Supabase — sobrescreve os campos "Por Nível", "TM", "Ovo" e "Tutor" deste Pokémon. Continuar?`)) return;
+
+  const btn = event?.target;
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando…'; }
+
+  try {
+    const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(query)}`);
+    if (!r.ok) throw new Error(`PokeAPI HTTP ${r.status} — não achou "${query}"`);
+    const d = await r.json();
+
+    const levelMoves = [], tmMoves = [], eggMoves = [], tutorMoves = [];
+    (d.moves || []).forEach(mv => {
+      const vgd = mv.version_group_details || [];
+      const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
+      const machine = vgd.some(v => v.move_learn_method.name === 'machine');
+      const egg = vgd.some(v => v.move_learn_method.name === 'egg');
+      const tutor = vgd.some(v => v.move_learn_method.name === 'tutor');
+      if (lvlUp.length) levelMoves.push({ move: mv.move.name, level: Math.max(...lvlUp.map(v => v.level_learned_at)) });
+      if (machine) tmMoves.push({ move: mv.move.name });
+      if (egg) eggMoves.push({ move: mv.move.name });
+      if (tutor) tutorMoves.push({ move: mv.move.name });
+    });
+    levelMoves.sort((a, b) => a.level - b.level);
+
+    const patch = {
+      moves_level: levelMoves.length ? levelMoves : null,
+      moves_tm: tmMoves.length ? tmMoves : null,
+      moves_egg: eggMoves.length ? eggMoves : null,
+      moves_tutor: tutorMoves.length ? tutorMoves : null,
+      updated_at: new Date().toISOString()
+    };
+    await sbPatch('pokemons', id, patch);
+
+    // Reflete na tela do modal aberto...
+    movesetPopulateList('epk-moves-level', 'level', patch.moves_level || []);
+    movesetPopulateList('epk-moves-tm', 'tm', patch.moves_tm || []);
+    movesetPopulateList('epk-moves-egg', 'egg', patch.moves_egg || []);
+    movesetPopulateList('epk-moves-tutor', 'tutor', patch.moves_tutor || []);
+    // ...e no estado em memória (S.pk.all / dbMap), sem precisar recarregar a página.
+    if (pk) Object.assign(pk, patch);
+    if (S.pk.dbMap && S.pk.dbMap[id]) Object.assign(S.pk.dbMap[id], patch);
+
+    toast(`✓ Moveset de "${query}" atualizado no Supabase!`, 'ok');
+  } catch (e) {
+    toast('Erro ao buscar moveset: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; if (origLabel) btn.textContent = origLabel; }
+  }
+}
+
 function epkPreviewArt() {
   const url = document.getElementById('epk-sprite').value.trim();
   const id = document.getElementById('epk-id').value;
@@ -4392,6 +4543,9 @@ async function savePkModal(approve) {
     await sbUpsert('pokemons', row);
     S.pk.dbMap[newId] = row;
     Object.assign(pk, row);
+    // Mantém a evolutionary chain sincronizada: se este Pokémon cita outros
+    // estágios já existentes no banco, replica a mesma cadeia neles também.
+    await evoPropagateChain(row.evolucoes, newId);
     updatePkStats();
     applyPkFilter();
     toast(approve ? '✓ Publicado!' : '💾 Rascunho salvo!', 'ok');
@@ -7238,8 +7392,16 @@ async function saveNewRpgPokemon() {
       const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
       spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${id}-shiny.${ext}`);
     }
+    // Evolução: se o campo foi deixado vazio, verifica se este novo Pokémon
+    // já é citado na cadeia evolutiva de algum outro Pokémon existente (pelo
+    // id/nº de Pokédex) — se for, adota essa cadeia automaticamente.
+    let evolucoes = evoReadList('nrpg-evo-list');
+    let evoAutoFilled = false;
+    if (!evolucoes.length) {
+      const herdada = evoAutoFillOnCreate(id);
+      if (herdada) { evolucoes = herdada; evoAutoFilled = true; }
+    }
     // Moveset
-    const evolucoes = evoReadList('nrpg-evo-list');
     const moves_level = movesetReadList('nrpg-moves-level', 'level');
     const moves_tm    = movesetReadList('nrpg-moves-tm',    'tm');
     const moves_egg   = movesetReadList('nrpg-moves-egg',   'egg');
@@ -7286,10 +7448,13 @@ async function saveNewRpgPokemon() {
       S.pk.all.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
     }
     applyPkFilter();
+    // Mantém a evolutionary chain sincronizada: se este Pokémon novo cita
+    // outros estágios já existentes no banco, replica a mesma cadeia neles.
+    await evoPropagateChain(row.evolucoes, id);
     evoPopulateList('nrpg-evo-list', []);
     movesetResetAll('nrpg');
     nrpgResetForm();
-    toast(`✓ "${id} — ${nomeRaw}" criado!`, 'ok');
+    toast(`✓ "${id} — ${nomeRaw}" criado!${evoAutoFilled ? ' Cadeia evolutiva herdada automaticamente.' : ''}`, 'ok');
   } catch (e) {
     toast('Erro ao criar: ' + e.message, 'err');
   } finally {
