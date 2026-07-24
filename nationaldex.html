@@ -165,9 +165,19 @@ html{
 .hero-dex-num{position:absolute;top:12px;left:14px;font-family:var(--font-title);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;z-index:2}
 .form-switch-wrap{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:center}
 .hero-art-stack{position:relative;width:190px;height:190px;margin-top:15px;overflow:hidden}
-.hero-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 4px rgba(0,0,0,.14));transition:opacity .18s ease,transform .38s cubic-bezier(.4,0,.2,1);transform:translateX(var(--slide-x,0%)) scale(var(--fill-scale,1));opacity:0;pointer-events:none;z-index:1}
-.hero-art.hero-art-active{opacity:1;pointer-events:auto;z-index:2;transition:opacity .22s ease .16s,transform .38s cubic-bezier(.4,0,.2,1)}
-.hero-art-stack:hover .hero-art.hero-art-active{transform:translateX(var(--slide-x,0%)) scale(calc(var(--fill-scale,1) * 1.05))}
+.hero-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 4px rgba(0,0,0,.14));transform:scale(var(--fill-scale,1));opacity:0;pointer-events:none;z-index:1;transition:transform .25s ease}
+.hero-art.hero-art-active{opacity:1;pointer-events:auto;z-index:2}
+.hero-art-stack:hover .hero-art.hero-art-active{transform:scale(calc(var(--fill-scale,1) * 1.05))}
+/* Swipe: o sprite só é revelado (opacity>0) enquanto está parado — centralizado no início/fim
+   ou já quase no lugar — nunca durante o trecho em que cruza a borda do card. */
+@keyframes heroSwipeOutL{0%{opacity:1;transform:translateX(0%) scale(var(--fill-scale,1))}22%{opacity:0;transform:translateX(-10%) scale(var(--fill-scale,1))}100%{opacity:0;transform:translateX(-100%) scale(var(--fill-scale,1))}}
+@keyframes heroSwipeOutR{0%{opacity:1;transform:translateX(0%) scale(var(--fill-scale,1))}22%{opacity:0;transform:translateX(10%) scale(var(--fill-scale,1))}100%{opacity:0;transform:translateX(100%) scale(var(--fill-scale,1))}}
+@keyframes heroSwipeInL{0%{opacity:0;transform:translateX(-100%) scale(var(--fill-scale,1))}78%{opacity:0;transform:translateX(-10%) scale(var(--fill-scale,1))}100%{opacity:1;transform:translateX(0%) scale(var(--fill-scale,1))}}
+@keyframes heroSwipeInR{0%{opacity:0;transform:translateX(100%) scale(var(--fill-scale,1))}78%{opacity:0;transform:translateX(10%) scale(var(--fill-scale,1))}100%{opacity:1;transform:translateX(0%) scale(var(--fill-scale,1))}}
+.hero-art.hero-swipe-out-l{animation:heroSwipeOutL .4s cubic-bezier(.4,0,.2,1) forwards}
+.hero-art.hero-swipe-out-r{animation:heroSwipeOutR .4s cubic-bezier(.4,0,.2,1) forwards}
+.hero-art.hero-swipe-in-l{animation:heroSwipeInL .4s cubic-bezier(.4,0,.2,1) forwards}
+.hero-art.hero-swipe-in-r{animation:heroSwipeInR .4s cubic-bezier(.4,0,.2,1) forwards}
 .shiny-row{position:absolute;top:10px;right:10px}
 .shiny-thumb{width:32px;height:32px;object-fit:contain;border-radius:50%;border:1.5px solid var(--border);padding:3px;background:var(--surface);cursor:pointer;opacity:.55;transition:all .2s;display:block}
 .shiny-thumb:hover{opacity:1;border-color:var(--accent);transform:scale(1.12)}
@@ -227,6 +237,8 @@ html{
      numa linha à esquerda (grid auto-placement), então força ele a ocupar
      a linha inteira e centraliza o rótulo/valor. */
   .base-stats-grid>*:last-child{grid-column:1/-1;text-align:center;margin-top:4px;padding-top:6px;border-top:1px solid var(--border)}
+  .cpill{flex:1 1 100%;width:100%;box-sizing:border-box;text-align:center;margin-left:0;order:3}
+  .vtoggle{order:4}
 }
 @media(max-width:380px){
   .base-stats-grid{grid-template-columns:repeat(3,1fr)}
@@ -805,7 +817,7 @@ function buildBioBodyHtml(bioText,biomas,label,types,genus,TT){
   let html='';
   if(bioText){
     html+=`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
-      <strong style="color:${TT.dark}">${label}${genus?`, o ${genus}`:''}.${types&&types.length?` Um ${types.map(cap).join('/')}-type.`:''}</strong> ${bioText}
+      <strong style="color:${TT.dark}">${label}${genus?`, ${genus}`:''}.${types&&types.length?` Um ${types.map(cap).join('/')}-type.`:''}</strong> ${bioText}
     </div>`;
   }
   html+=biomasEncontradoHtml(biomas);
@@ -2164,27 +2176,31 @@ function setHeroSpritePair(normalId, shinyId, normalUrl, shinyUrl){
 // Swipe entre normal/shiny dentro do mesmo hero-art-stack: ao mostrar o shiny,
 // ele entra deslizando da direita pra esquerda (e o normal sai pela esquerda);
 // ao voltar pro normal, o movimento se inverte (normal entra da esquerda, shiny sai pela direita).
+// O sprite só fica visível (opacity>0) enquanto está parado — nunca durante o trecho em
+// que atravessa a borda do card — pra não deixar nada "vazando" no recorte do container.
 function setHeroShinyActive(normalId, shinyId, showShiny){
   const elN=document.getElementById(normalId), elS=document.getElementById(shinyId);
   if(elS && elS.dataset.broken) showShiny=false; // sprite shiny não carregou — não troca pra imagem quebrada
   const entering=showShiny?elS:elN, exiting=showShiny?elN:elS;
-  const enterFrom=showShiny?'100%':'-100%'; // shiny entra da direita; normal entra da esquerda
-  const exitTo=showShiny?'-100%':'100%';    // ao ir pro shiny, normal sai pela esquerda; ao voltar, shiny sai pela direita
-
-  // Se a imagem que vai entrar ainda não está ativa, posiciona ela instantaneamente
-  // (sem transição) fora da tela do lado certo antes de animar — evita "pulo" visual.
-  if(entering && !entering.classList.contains('hero-art-active')){
-    entering.style.transition='none';
-    entering.style.setProperty('--slide-x',enterFrom);
-    void entering.offsetWidth; // força reflow antes de restaurar a transição
-    entering.style.transition='';
-  }
+  const outClass=showShiny?'hero-swipe-out-l':'hero-swipe-out-r'; // ao ir pro shiny, normal sai pela esquerda; ao voltar, shiny sai pela direita
+  const inClass=showShiny?'hero-swipe-in-r':'hero-swipe-in-l';    // shiny entra da direita; normal entra da esquerda
 
   if(elN) elN.classList.toggle('hero-art-active',!showShiny);
   if(elS) elS.classList.toggle('hero-art-active',showShiny);
 
-  if(exiting) exiting.style.setProperty('--slide-x',exitTo);
-  if(entering) requestAnimationFrame(()=>{ entering.style.setProperty('--slide-x','0%'); });
+  const SWIPE_CLASSES=['hero-swipe-out-l','hero-swipe-out-r','hero-swipe-in-l','hero-swipe-in-r'];
+  function playSwipe(el,cls){
+    if(!el) return;
+    el.classList.remove(...SWIPE_CLASSES);
+    void el.offsetWidth; // reinicia a animação caso uma troca anterior ainda estivesse rolando
+    el.classList.add(cls);
+    el.addEventListener('animationend',function handler(){
+      el.classList.remove(cls);
+      el.removeEventListener('animationend',handler);
+    });
+  }
+  playSwipe(exiting,outClass);
+  playSwipe(entering,inClass);
 }
 
 function toggleRpgShiny(){
