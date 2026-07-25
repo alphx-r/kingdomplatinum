@@ -12993,7 +12993,7 @@ function renderPoolBiomasTabs(){
             <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px;text-align:center;position:relative">
               <button onclick="_poolBiomasEvento[${_poolBiomaAtivoIdx}].pokemons.splice(${pi},1);renderPoolBiomasTabs()" style="position:absolute;top:2px;right:2px;font-size:9px;background:#fde8e8;color:var(--red);border:none;border-radius:4px;cursor:pointer;padding:1px 4px">✕</button>
               <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
-              <div style="font-size:9px;font-weight:700;color:var(--text);margin-top:2px;line-height:1.2">${pk.nome}</div>
+              <div style="font-size:9px;font-weight:700;color:var(--text);margin-top:2px;line-height:1.2">${pk.nome||pk.name||''}</div>
               <div style="font-size:9px;color:var(--muted)">${pk.raridade||''}</div>
             </div>`).join('')}
         </div>`}
@@ -13008,17 +13008,21 @@ function renderPoolImportList(){
   const raridade = document.getElementById('pool-import-raridade')?.value||'';
   let pks = getEncounterUnits(pokemonDB).filter(p=>
     (!biomaFiltro || pkTemBioma(p,biomaFiltro)) &&
-    (!busca || p.name?.toLowerCase().includes(busca)) &&
-    (!raridade || p.raridade===raridade)
+    (!busca || (p.name||p.nome)?.toLowerCase().includes(busca)) &&
+    (!raridade || pkInfoNoBioma(p,biomaFiltro)?.raridade===raridade)
   );
-  lista.innerHTML = pks.map(pk=>`
+  lista.innerHTML = pks.map(pk=>{
+    const nome = pk.nome || pk.name || '';
+    const infoRaridade = biomaFiltro ? pkInfoNoBioma(pk, biomaFiltro)?.raridade : null;
+    return `
     <div onclick="togglePoolImportSel('${pk.id}',this)" data-pk-id="${pk.id}"
       style="background:${_poolSelecionados.has(String(pk.id))?'var(--brand-light)':'var(--surface2)'};border:1.5px solid ${_poolSelecionados.has(String(pk.id))?'var(--brand-mid)':'var(--border)'};border-radius:8px;padding:6px;text-align:center;cursor:pointer;transition:all .15s">
       <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <div style="font-size:9px;font-weight:700;color:var(--text);line-height:1.2;margin-top:2px">${pk.nome}${pk._isAltForm?' <span style="opacity:.6;font-weight:500">(alt)</span>':''}</div>
-      <div style="font-size:8px;color:var(--muted)">${pk.raridade||''}</div>
+      <div style="font-size:9px;font-weight:700;color:var(--text);line-height:1.2;margin-top:2px">${nome}${pk._isAltForm?' <span style="opacity:.6;font-weight:500">(alt)</span>':''}</div>
+      <div style="font-size:8px;color:var(--muted)">${infoRaridade||''}</div>
       ${_poolSelecionados.has(String(pk.id))?'<div style="font-size:8px;color:var(--brand-mid);font-weight:700">✓ sel</div>':''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function togglePoolImportSel(id, el){
   const sid = String(id);
@@ -13107,7 +13111,7 @@ function renderModalPoolJogador(){
       ${b.pokemons.map(pk=>`
         <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px;text-align:center">
           <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
-          <div style="font-size:10px;font-weight:700;color:var(--text);margin-top:3px;line-height:1.2">${pk.nome}</div>
+          <div style="font-size:10px;font-weight:700;color:var(--text);margin-top:3px;line-height:1.2">${pk.nome||pk.name||''}</div>
           <div style="font-size:9px;color:var(--muted)">${pk.raridade||''}</div>
         </div>`).join('')}
     </div>
@@ -13253,13 +13257,15 @@ function renderFrcPool(){
     const selected = frcSelecionados.find(x => x.id === p.id);
     const border = selected ? 'border-color:var(--brand-mid);background:var(--brand-light)' : '';
     const sprite = p.sprite || FALLBACK_SPRITE;
-    return `<div onclick="toggleFrcPoke('${p.id}')" title="${p.name||p.nome}"
+    const nome = p.nome || p.name || '';
+    const infoRaridade = biomaFiltro ? pkInfoNoBioma(p, biomaFiltro)?.raridade : null;
+    return `<div onclick="toggleFrcPoke('${p.id}')" title="${nome}"
       style="background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;transition:all .15s;${border}"
       onmouseover="if(!this.dataset.sel)this.style.borderColor='var(--border2)'" onmouseout="if(!this.dataset.sel)this.style.borderColor='var(--border)'"
       data-pkid="${p.id}" ${selected?'data-sel="1"':''}>
       <img src="${sprite}" style="width:56px;height:56px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <div style="font-family:var(--font-title);font-size:10px;text-align:center;line-height:1.3;color:var(--text)">${p.nome}${p._isAltForm?' <span style="opacity:.6">(alt)</span>':''}</div>
-      <span class="poke-rarity ${rcls[p.raridade]||'rc'}" style="font-size:9px">${rlbl[p.raridade]||p.raridade}</span>
+      <div style="font-family:var(--font-title);font-size:10px;text-align:center;line-height:1.3;color:var(--text)">${nome}${p._isAltForm?' <span style="opacity:.6">(alt)</span>':''}</div>
+      ${infoRaridade?`<span class="poke-rarity ${rcls[infoRaridade]||'rc'}" style="font-size:9px">${rlbl[infoRaridade]||infoRaridade}</span>`:''}
     </div>`;
   }).join('');
 }
@@ -13297,7 +13303,7 @@ function renderFrcSelecionados(){
       : 'cursor:pointer;font-size:11px;color:var(--muted);margin-left:2px';
     return `<div style="display:flex;align-items:center;gap:6px;background:var(--brand-light);border:1.5px solid ${hasCustom?'var(--accent)':'var(--brand-mid)'};border-radius:20px;padding:4px 10px 4px 6px">
       <img src="${p._customSprite||p.sprite||FALLBACK_SPRITE}" style="width:24px;height:24px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <span style="font-size:12px;font-weight:700;color:var(--brand)">${p._customNome||p.nome}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--brand)">${p._customNome||p.nome||p.name}</span>
       ${hasCustom?'<span style="font-size:9px;background:var(--accent-light);color:#7a5010;border:1px solid var(--accent);border-radius:6px;padding:1px 5px;font-weight:700">✏️</span>':''}
       <span onclick="abrirModalFrcEdit(${idx})" style="${editStyle}" title="Editar">✏</span>
       <span onclick="toggleFrcPoke('${p.id}')" style="cursor:pointer;font-size:11px;color:var(--red);margin-left:2px" title="Remover">✕</span>
@@ -13374,7 +13380,7 @@ function renderFrcLista(){
       const id = entry.id || entry;
       const base = getEncounterUnits(pokemonDB).find(p=>p.id===id);
       if(!base) return null;
-      return { ...base, nome: entry.nome||base.nome, sprite: entry.sprite!==undefined?entry.sprite:base.sprite, _hasCustom: !!(entry.nome||entry.sprite!==undefined||entry.habilidade!==undefined||entry.raridade||entry.tipos) };
+      return { ...base, nome: entry.nome||base.nome||base.name, sprite: entry.sprite!==undefined?entry.sprite:base.sprite, _hasCustom: !!(entry.nome||entry.sprite!==undefined||entry.habilidade!==undefined||entry.raridade||entry.tipos) };
     }).filter(Boolean);
     const sprites = pokes.map(p=>`<span style="position:relative;display:inline-block"><img src="${p.sprite||FALLBACK_SPRITE}" title="${p.name||p.nome}" style="width:36px;height:36px;object-fit:contain;border-radius:50%;border:1.5px solid ${p._hasCustom?'var(--accent)':'var(--border)'};background:var(--surface)" onerror="this.src='${FALLBACK_SPRITE}'">${p._hasCustom?'<span style="position:absolute;top:-3px;right:-3px;font-size:8px;background:var(--accent);border-radius:50%;width:13px;height:13px;display:flex;align-items:center;justify-content:center">✏</span>':''}</span><span style="font-size:9px;color:var(--text);display:block;text-align:center;max-width:40px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${p.nome}</span>`).join('');
     const dt = f.criadoEm ? new Date(f.criadoEm).toLocaleDateString('pt-BR') : '';
