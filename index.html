@@ -5982,7 +5982,20 @@ async function restaurarSessaoPlayer(){
     if(!saved) return false;
     const sess = JSON.parse(saved);
     if(!sess?.nome) return false;
-    const lista = await dbGet('players','select=*');
+    // Reaproveita a lista de players já carregada por iniciarSessaoPlayer() em vez de
+    // buscar de novo — evita que uma segunda chamada falhando (rede instável/timeout)
+    // apague uma sessão válida.
+    let lista = players;
+    if(!lista || !lista.length){
+      lista = await dbGet('players','select=*');
+    }
+    if(!lista || !lista.length){
+      // Lista vazia provavelmente indica falha de rede/timeout, não ausência real
+      // de players cadastrados. Nesse caso, não apaga a sessão salva — apenas
+      // não restaura desta vez, e tenta de novo na próxima carga da página.
+      playerLogado = null;
+      return false;
+    }
     const match = lista.find(p=>p.nome===sess.nome);
     if(!match){ localStorage.removeItem('player_session'); playerLogado=null; return false; }
     playerLogado = {nome:match.nome, id:match.id};
