@@ -13006,7 +13006,7 @@ function renderPoolImportList(){
   const biomaFiltro = document.getElementById('pool-import-bioma-src')?.value;
   const busca = (document.getElementById('pool-import-busca')?.value||'').toLowerCase();
   const raridade = document.getElementById('pool-import-raridade')?.value||'';
-  let pks = pokemonDB.filter(p=>
+  let pks = getEncounterUnits(pokemonDB).filter(p=>
     (!biomaFiltro || pkTemBioma(p,biomaFiltro)) &&
     (!busca || p.name?.toLowerCase().includes(busca)) &&
     (!raridade || p.raridade===raridade)
@@ -13015,7 +13015,7 @@ function renderPoolImportList(){
     <div onclick="togglePoolImportSel('${pk.id}',this)" data-pk-id="${pk.id}"
       style="background:${_poolSelecionados.has(String(pk.id))?'var(--brand-light)':'var(--surface2)'};border:1.5px solid ${_poolSelecionados.has(String(pk.id))?'var(--brand-mid)':'var(--border)'};border-radius:8px;padding:6px;text-align:center;cursor:pointer;transition:all .15s">
       <img src="${pk.sprite||FALLBACK_SPRITE}" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <div style="font-size:9px;font-weight:700;color:var(--text);line-height:1.2;margin-top:2px">${pk.nome}</div>
+      <div style="font-size:9px;font-weight:700;color:var(--text);line-height:1.2;margin-top:2px">${pk.nome}${pk._isAltForm?' <span style="opacity:.6;font-weight:500">(alt)</span>':''}</div>
       <div style="font-size:8px;color:var(--muted)">${pk.raridade||''}</div>
       ${_poolSelecionados.has(String(pk.id))?'<div style="font-size:8px;color:var(--brand-mid);font-weight:700">✓ sel</div>':''}
     </div>`).join('');
@@ -13030,7 +13030,7 @@ function importarSelecionadosPool(){
   const dstIdx = parseInt(document.getElementById('pool-import-bioma-dst')?.value);
   if(isNaN(dstIdx)||!_poolBiomasEvento[dstIdx]){ alert('Selecione um bioma de destino.'); return; }
   const dst = _poolBiomasEvento[dstIdx];
-  pokemonDB.filter(p=>_poolSelecionados.has(String(p.id))).forEach(pk=>{
+  getEncounterUnits(pokemonDB).filter(p=>_poolSelecionados.has(String(p.id))).forEach(pk=>{
     if(!dst.pokemons.find(x=>x.id===pk.id)) dst.pokemons.push(pk);
   });
   _poolSelecionados = new Set();
@@ -13239,7 +13239,7 @@ function renderFrcPool(){
   const container = document.getElementById('frc-pool');
   if(!container) return;
 
-  let lista = pokemonDB.slice();
+  let lista = getEncounterUnits(pokemonDB);
   if(biomaFiltro) lista = lista.filter(p => pkTemBioma(p,biomaFiltro));
   if(busca) lista = lista.filter(p => p.name?.toLowerCase().includes(busca));
   lista = lista.slice().sort((a,b) => a.name?.localeCompare(b.name, 'pt-BR'));
@@ -13258,7 +13258,7 @@ function renderFrcPool(){
       onmouseover="if(!this.dataset.sel)this.style.borderColor='var(--border2)'" onmouseout="if(!this.dataset.sel)this.style.borderColor='var(--border)'"
       data-pkid="${p.id}" ${selected?'data-sel="1"':''}>
       <img src="${sprite}" style="width:56px;height:56px;object-fit:contain" onerror="this.src='${FALLBACK_SPRITE}'"/>
-      <div style="font-family:var(--font-title);font-size:10px;text-align:center;line-height:1.3;color:var(--text)">${p.nome}</div>
+      <div style="font-family:var(--font-title);font-size:10px;text-align:center;line-height:1.3;color:var(--text)">${p.nome}${p._isAltForm?' <span style="opacity:.6">(alt)</span>':''}</div>
       <span class="poke-rarity ${rcls[p.raridade]||'rc'}" style="font-size:9px">${rlbl[p.raridade]||p.raridade}</span>
     </div>`;
   }).join('');
@@ -13267,7 +13267,7 @@ function renderFrcPool(){
 let frcSelecionados = []; // [{id, nome, sprite, tipos, raridade, habilidade, genero}]
 
 function toggleFrcPoke(pkId){
-  const p = pokemonDB.find(x => x.id === pkId);
+  const p = getEncounterUnits(pokemonDB).find(x => x.id === pkId);
   if(!p) return;
   const idx = frcSelecionados.findIndex(x => x.id === pkId);
   if(idx >= 0){
@@ -13372,7 +13372,7 @@ function renderFrcLista(){
     const pokesRaw = (f.pokemons||[]);
     const pokes = pokesRaw.map(entry => {
       const id = entry.id || entry;
-      const base = pokemonDB.find(p=>p.id===id);
+      const base = getEncounterUnits(pokemonDB).find(p=>p.id===id);
       if(!base) return null;
       return { ...base, nome: entry.nome||base.nome, sprite: entry.sprite!==undefined?entry.sprite:base.sprite, _hasCustom: !!(entry.nome||entry.sprite!==undefined||entry.habilidade!==undefined||entry.raridade||entry.tipos) };
     }).filter(Boolean);
