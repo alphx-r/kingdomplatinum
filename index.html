@@ -362,6 +362,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .dice-hist-msg strong{color:var(--brand-mid)}
 .dice-hist-num{font-family:var(--font-title);font-size:18px;font-weight:700;color:var(--brand);min-width:32px;text-align:right}
 .dice-hist-time{font-size:11px;color:var(--muted);white-space:nowrap}
+.dice-hist-del{background:#fde8e8;color:var(--red);border:1px solid #f0c0c0;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0}
+.dice-hist-del:hover{background:#f8c8c8}
 .dice-sides-wrap{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
 .dice-side-btn{padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s}
 .dice-side-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
@@ -9997,7 +9999,22 @@ async function rolarEncontro(){
   const honeyMarcadoAgora=!!honeyCheckbox?.checked;
   const honeyJaAtivo=getHoneyAtivo(bioma);
   const honeyAtivoNestaRolagem=honeyMarcadoAgora||!!honeyJaAtivo;
-  const honeyBonusEncontros=honeyAtivoNestaRolagem?2:0;
+  // O bônus de +2 encontros do Honey só é aplicado na PRIMEIRA rolagem do
+  // personagem neste bioma dentro da janela de 24h ativa. Rolagens seguintes
+  // do mesmo personagem no mesmo bioma, enquanto o Honey continuar ativo,
+  // não recebem o bônus de novo (mas continuam contando normalmente).
+  const honeyJanelaInicio=honeyMarcadoAgora?Date.now():(honeyJaAtivo?honeyJaAtivo-HONEY_DURACAO_MS:null);
+  const honeyKeyPersonagem=normKey(personagem);
+  const honeyKeyBioma=(bioma||'').toLowerCase().trim();
+  const honeyJaUsadoNestaJanela=honeyAtivoNestaRolagem&&honeyJanelaInicio!=null&&historico.some(e=>{
+    if(!e.honey) return false;
+    if(normKey(e.personagem)!==honeyKeyPersonagem) return false;
+    if((e.bioma||'').toLowerCase().trim()!==honeyKeyBioma) return false;
+    const t=e.criado_em?new Date(e.criado_em).getTime():null;
+    return t!=null&&t>=honeyJanelaInicio;
+  });
+  const honeyBonusAplicavel=honeyAtivoNestaRolagem&&!honeyJaUsadoNestaJanela;
+  const honeyBonusEncontros=honeyBonusAplicavel?2:0;
   const nEncontrarRaw=parseInt(document.getElementById('n-encontrar').value);
   const nEncontrarBase=Number.isFinite(nEncontrarRaw)?Math.max(0,nEncontrarRaw):3;
   const nEncontrar=nEncontrarBase+honeyBonusEncontros;
@@ -10142,17 +10159,22 @@ async function rolarEncontro(){
     banner.innerHTML=`<span style="font-size:16px">✨</span><span><strong>Bônus de Shiny ativos:</strong> ${bonusAtivos.map(b=>`${b.label} (+${b.pct})`).join(' + ')}</span>`;
     section.appendChild(banner);
   }
-  if(honeyAtivoNestaRolagem){
+  if(honeyBonusAplicavel){
     const banner=document.createElement('div');
     banner.style.cssText='background:linear-gradient(135deg,#fff8e1,#ffecb3);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
-    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> ${nEncontrarBase} + 2 (Honey) = <strong>${total}</strong> Pokémon (válido por 24h a partir da primeira marcação)</span>`;
+    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> ${nEncontrarBase} + 2 (Honey) = <strong>${total}</strong> Pokémon (bônus válido apenas nesta primeira rolagem do personagem no bioma, por 24h a partir da primeira marcação)</span>`;
+    section.appendChild(banner);
+  } else if(honeyAtivoNestaRolagem){
+    const banner=document.createElement('div');
+    banner.style.cssText='background:linear-gradient(135deg,#fff8e1,#ffecb3);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
+    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> ${personagem} já recebeu o bônus de +2 nesta janela de 24h — esta rolagem segue com ${nEncontrarBase} Pokémon.</span>`;
     section.appendChild(banner);
   }
   const grid=document.createElement('div');
   grid.className='results-grid';
   pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
   section.appendChild(grid);
-  await salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar,honeyAtivoNestaRolagem);
+  await salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar,honeyBonusAplicavel);
 }
 
 // ══════════════════════════════════════
@@ -10763,15 +10785,29 @@ function renderHistDados(){
   document.getElementById('dice-hist-prev').style.display=dadosPagina>0?'':'none';
   document.getElementById('dice-hist-next').style.display=dadosPagina<totalPags-1?'':'none';
   document.getElementById('dice-hist-paginacao').style.display=totalPags>1?'flex':'none';
+  const podeExcluirRolagem=(playerLogado?.nome||'').trim().toLowerCase()==='ricky';
   lista.innerHTML=pagina.map((e,i)=>{
     const motivoStr=e.motivo?` para <strong>${e.motivo}</strong>`:'';
+    const btnDel=podeExcluirRolagem?`<button class="dice-hist-del" onclick="excluirRolagemDado('${e.id}')">Excluir</button>`:'';
     return`<div class="dice-hist-entry" style="animation-delay:${i*0.04}s">
       <div class="dice-hist-msg">
         [${e.data} ${e.hora}] <strong>${e.personagem}</strong> rolou <strong>1d${e.lados}</strong> para <strong>${e.motivo}</strong> e obteve: <strong>${e.resultado}</strong>
       </div>
       <div class="dice-hist-num" style="display:none">${e.resultado}</div>
+      ${btnDel}
     </div>`;
   }).join('');
+}
+
+async function excluirRolagemDado(id){
+  if((playerLogado?.nome||'').trim().toLowerCase()!=='ricky'){alert('Você não tem permissão para excluir esta rolagem.');return;}
+  if(!confirm('Excluir esta rolagem do histórico?'))return;
+  await dbDel('historico_dados',`id=eq.${id}`);
+  historicoDados=historicoDados.filter(e=>String(e.id)!==String(id));
+  const totalPags=Math.max(1,Math.ceil(historicoDados.length/DADOS_POR_PAG));
+  dadosPagina=Math.min(dadosPagina,totalPags-1);
+  renderHistDados();
+  if(loaded.rolagens) renderRolagens();
 }
 
 // converte "dd/mm/aaaa" → Date para comparação
