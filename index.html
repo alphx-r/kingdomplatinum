@@ -9850,13 +9850,31 @@ function verificarMotivoExtraEvento(){
 // checkbox de novo) por 24h. O estado fica salvo no banco (tabela config),
 // não no localStorage, para que o bônus valha para todo mundo.
 const HONEY_DURACAO_MS = 24*60*60*1000; // 24h
-let HONEY_STATE = {}; // cache em memória: { [biomaLowerCase]: expiraEmTimestamp }
+let HONEY_STATE = {}; // cache em memória: { [biomaLowerCase]: {inicio, expira} }
 let _honeyStateCarregado = false;
+
+// Aceita tanto o formato novo ({inicio,expira}) quanto o formato antigo
+// (apenas o timestamp de expiração), normalizando sempre para {inicio,expira}.
+function _honeyNormalizeEntry(raw){
+  if(raw==null) return null;
+  if(typeof raw==='number') return {inicio:raw-HONEY_DURACAO_MS, expira:raw};
+  if(typeof raw==='object' && raw.expira) return {inicio:(typeof raw.inicio==='number'?raw.inicio:raw.expira-HONEY_DURACAO_MS), expira:raw.expira};
+  return null;
+}
+function _honeyNormalizeState(state){
+  const out={};
+  for(const k of Object.keys(state||{})){
+    const st=_honeyNormalizeEntry(state[k]);
+    if(st) out[k]=st;
+  }
+  return out;
+}
 
 async function carregarHoneyState(){
   try{
     const rows = await dbGet('config','chave=eq.honey_ativo');
-    HONEY_STATE = (rows && rows[0] && JSON.parse(rows[0].valor)) || {};
+    const parsed = (rows && rows[0] && JSON.parse(rows[0].valor)) || {};
+    HONEY_STATE = _honeyNormalizeState(parsed);
   }catch(e){ HONEY_STATE = {}; }
   _honeyStateCarregado = true;
   await _honeyStateLimparExpirados();
@@ -9868,7 +9886,8 @@ async function _honeyStateLimparExpirados(){
   const agora = Date.now();
   let mudou = false;
   for(const k of Object.keys(HONEY_STATE)){
-    if(!HONEY_STATE[k] || agora >= HONEY_STATE[k]){
+    const st=HONEY_STATE[k];
+    if(!st || agora >= st.expira){
       delete HONEY_STATE[k];
       mudou = true;
     }
@@ -9888,14 +9907,14 @@ async function _salvarHoneyState(stateParaSalvar){
 function getHoneyAtivo(bioma){
   if(!bioma) return null;
   const k=bioma.toLowerCase();
-  const expiraEm = HONEY_STATE[k];
-  if(!expiraEm) return null;
-  if(Date.now() >= expiraEm){
+  const st = HONEY_STATE[k];
+  if(!st) return null;
+  if(Date.now() >= st.expira){
     delete HONEY_STATE[k];
     _salvarHoneyState(HONEY_STATE);
     return null;
   }
-  return {expiraEm};
+  return {expiraEm:st.expira, inicioEm:st.inicio};
 }
 
 // Ativa/renova o bônus no bioma de forma atômica: busca o estado mais
@@ -9903,21 +9922,26 @@ function getHoneyAtivo(bioma){
 // chave do bioma sendo ativado e salva de volta. Isso evita que a ativação
 // de um bioma apague, por sobrescrita, a ativação simultânea de outro bioma
 // feita por outro jogador. Dentro do MESMO bioma, a ativação mais recente
-// sempre prevalece (estende a expiração para +24h a partir de agora).
+// sempre prevalece — a EXPIRAÇÃO sempre estende para +24h a partir de agora,
+// mas o INÍCIO da janela contínua só é reiniciado quando o bônus não estava
+// mais ativo (expirado ou nunca ativado); se já estava ativo e alguém marca
+// de novo, o início permanece o mesmo (é só uma renovação, não uma nova janela).
 async function ativarHoneyBioma(bioma){
   if(!bioma) return;
   const k=bioma.toLowerCase();
   let estadoFresco = {};
   try{
     const rows = await dbGet('config','chave=eq.honey_ativo');
-    estadoFresco = (rows && rows[0] && JSON.parse(rows[0].valor)) || {};
-  }catch(e){ estadoFresco = {...HONEY_STATE}; } // fallback: usa o cache local se a leitura falhar
+    estadoFresco = _honeyNormalizeState((rows && rows[0] && JSON.parse(rows[0].valor)) || {});
+  }catch(e){ estadoFresco = _honeyNormalizeState(HONEY_STATE); } // fallback: usa o cache local se a leitura falhar
   // Limpa expirados do estado fresco antes de mesclar
   const agora = Date.now();
   for(const bk of Object.keys(estadoFresco)){
-    if(!estadoFresco[bk] || agora >= estadoFresco[bk]) delete estadoFresco[bk];
+    if(!estadoFresco[bk] || agora >= estadoFresco[bk].expira) delete estadoFresco[bk];
   }
-  estadoFresco[k] = agora + HONEY_DURACAO_MS; // este bioma: renova para +24h a partir de agora
+  const existente = estadoFresco[k]; // já limpo de expirados acima
+  const inicio = existente ? existente.inicio : agora;
+  estadoFresco[k] = {inicio, expira: agora + HONEY_DURACAO_MS};
   HONEY_STATE = estadoFresco; // atualiza o cache local com o estado completo e atual
   await _salvarHoneyState(HONEY_STATE);
 }
@@ -9952,13 +9976,13 @@ function renderBonusAtivosAdmLista(){
   const wrap = document.getElementById('bonus-ativos-adm-lista');
   if(!wrap) return;
   const agora = Date.now();
-  const ativos = Object.entries(HONEY_STATE).filter(([,exp])=>exp>agora);
+  const ativos = Object.entries(HONEY_STATE).filter(([,st])=>st&&st.expira>agora);
   if(!ativos.length){
     wrap.innerHTML = '<div style="font-size:12px;color:var(--muted)">Nenhum bônus ativo no momento.</div>';
     return;
   }
-  wrap.innerHTML = ativos.map(([biomaKey,exp])=>{
-    const restante = formatarTempoRestante(exp-agora);
+  wrap.innerHTML = ativos.map(([biomaKey,st])=>{
+    const restante = formatarTempoRestante(st.expira-agora);
     return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px">
       <span style="font-size:13px;color:var(--text)">🍯 <strong>Honey</strong> em <strong>${biomaKey}</strong> — expira em ${restante}</span>
       <button class="btn btn-sm" style="background:#ffe0e0;color:#b02020;border:1px solid #e8b0b0" onclick="desativarHoneyBioma('${biomaKey}')">Desativar</button>
@@ -9999,13 +10023,14 @@ async function rolarEncontro(){
   if(!_honeyStateCarregado) await carregarHoneyState();
   const honeyCheckbox=document.getElementById('bonus-honey');
   const honeyMarcadoAgora=!!honeyCheckbox?.checked;
-  const honeyJaAtivo=getHoneyAtivo(bioma);
-  const honeyAtivoNestaRolagem=honeyMarcadoAgora||!!honeyJaAtivo;
-  // O bônus de +2 encontros do Honey só é aplicado na PRIMEIRA rolagem do
-  // personagem neste bioma dentro da janela de 24h ativa. Rolagens seguintes
-  // do mesmo personagem no mesmo bioma, enquanto o Honey continuar ativo,
-  // não recebem o bônus de novo (mas continuam contando normalmente).
-  const honeyJanelaInicio=honeyMarcadoAgora?Date.now():(honeyJaAtivo?honeyJaAtivo-HONEY_DURACAO_MS:null);
+  const honeyEstadoAtual=getHoneyAtivo(bioma); // estado ANTES desta rolagem (antes de eventual renovação)
+  const honeyAtivoNestaRolagem=honeyMarcadoAgora||!!honeyEstadoAtual;
+  // O bônus passivo de +2 encontros do Honey (quando o personagem rola sem
+  // marcar a caixinha, só aproveitando o Honey já ativo no bioma) só vale
+  // uma vez por personagem dentro da janela de 24h ativa. Já marcar a
+  // caixinha de novo é usar outro Honey de verdade, então sempre garante o
+  // bônus (ver honeyBonusAplicavel abaixo).
+  const honeyJanelaInicio=honeyEstadoAtual?honeyEstadoAtual.inicioEm:(honeyMarcadoAgora?Date.now():null);
   const honeyKeyPersonagem=normKey(personagem);
   const honeyKeyBioma=(bioma||'').toLowerCase().trim();
   const honeyJaUsadoNestaJanela=honeyAtivoNestaRolagem&&honeyJanelaInicio!=null&&historico.some(e=>{
@@ -10015,7 +10040,13 @@ async function rolarEncontro(){
     const t=e.criado_em?new Date(e.criado_em).getTime():null;
     return t!=null&&t>=honeyJanelaInicio;
   });
-  const honeyBonusAplicavel=honeyAtivoNestaRolagem&&!honeyJaUsadoNestaJanela;
+  // Marcar a caixinha de Honey nesta rolagem = usar um Honey de verdade agora,
+  // então SEMPRE garante o bônus (mesmo que o personagem já tenha ganhado o
+  // bônus antes nesta mesma janela — usar de novo conta de novo). Já a
+  // aplicação passiva/automática (rolar sem marcar, aproveitando o Honey que
+  // já está ativo no bioma por causa de outro uso) só vale uma vez por
+  // personagem, na primeira rolagem dele dentro da janela.
+  const honeyBonusAplicavel=honeyMarcadoAgora||(!!honeyEstadoAtual&&!honeyJaUsadoNestaJanela);
   const honeyBonusEncontros=honeyBonusAplicavel?2:0;
   const nEncontrarRaw=parseInt(document.getElementById('n-encontrar').value);
   const nEncontrarBase=Number.isFinite(nEncontrarRaw)?Math.max(0,nEncontrarRaw):3;
