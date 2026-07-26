@@ -330,7 +330,9 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .modal-title{font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:18px}
 .modal-close{position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1}
 .hist-entry{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
-.hist-header{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.hist-header{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.hist-del-btn{background:#fde8e8;color:var(--red);border:1px solid #f0c0c0;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap}
+.hist-del-btn:hover{background:#f8c8c8}
 .hist-body{padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap}
 .hist-poke{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border-radius:8px;border:1px solid var(--border);min-width:160px}
 /* ROLADOR DE DADOS */
@@ -10506,6 +10508,7 @@ function renderHistorico(){
   document.getElementById('hist-prev').style.display=histPagina>0?'':'none';
   document.getElementById('hist-next').style.display=histPagina<totalPags-1?'':'none';
   document.getElementById('hist-paginacao').style.display=totalPags>1?'flex':'none';
+  const podeExcluirRolagemEncontro=(playerLogado?.nome||'').trim().toLowerCase()==='ricky';
   lista.innerHTML=pagina.map(e=>{
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
     const ph=pokes.map(pk=>{
@@ -10543,11 +10546,25 @@ function renderHistorico(){
           ${(()=>{const bs=[...new Set(pokes.flatMap(pk=>pk.bonusShiny||[]))];return bs.length?`<span style="font-size:10px;font-weight:700;background:linear-gradient(135deg,#fffde7,#fff8c4);color:#7a5010;padding:2px 7px;border-radius:8px;border:1px solid #f0c040">✨ ${bs.join(' + ')}</span>`:'';})()}
           ${e.n_encontrar&&e.n_encontrar!==3?`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 7px;border-radius:8px;border:1px solid var(--border2)">${e.honey?`${Math.max(0,(e.n_encontrar||pokes.length)-2)} + 2 (Honey) = ${e.n_encontrar||pokes.length}`:pokes.length} Pokémon</span>`:''}
         </div>
-        <span style="font-size:11px;color:var(--muted)">${e.hora} · ${e.data}</span>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap">${e.hora} · ${e.data}</span>
+          ${podeExcluirRolagemEncontro?`<button class="hist-del-btn" onclick="excluirRolagemEncontro('${e.id}')">Excluir</button>`:''}
+        </div>
       </div>
       <div class="hist-body">${ph}</div>
     </div>`;
   }).join('');
+}
+
+async function excluirRolagemEncontro(id){
+  if((playerLogado?.nome||'').trim().toLowerCase()!=='ricky'){alert('Você não tem permissão para excluir esta rolagem.');return;}
+  if(!confirm('Excluir esta rolagem do histórico?'))return;
+  await dbDel('historico',`id=eq.${id}`);
+  historico=historico.filter(e=>String(e.id)!==String(id));
+  const totalPags=Math.max(1,Math.ceil(historico.length/HIST_POR_PAG));
+  histPagina=Math.min(histPagina,totalPags-1);
+  renderHistorico();
+  if(loaded.rolagens) renderRolagens();
 }
 
 // ══════════════════════════════════════
