@@ -6415,7 +6415,6 @@ async function buscarArtworkFormasRegionais() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando artwork…'; }
   showProgress('Buscando artwork oficial das formas regionais…');
 
-  const REGIAO_SLUG = { alola: 'alola', galar: 'galar', hisui: 'hisui', paldea: 'paldea' };
   const VARIANTES = ['zen', 'combat-breed', 'blaze-breed', 'aqua-breed'];
 
   try {
@@ -6423,12 +6422,12 @@ async function buscarArtworkFormasRegionais() {
     const alvos = [];
     rows.forEach(row => {
       (row.formas_alt || []).forEach((alt, idx) => {
-        const m = (alt.nome || '').match(/^(.+?)\s*\((Alola|Galar|Hisui|Paldea)\s*Form\)$/i);
-        if (!m) return;
-        const baseSlug = m[1].trim().toLowerCase().replace(/[\s.'’]+/g, '-').replace(/[^a-z0-9-]/g, '');
-        const regionSlug = REGIAO_SLUG[m[2].toLowerCase()];
-        if (!regionSlug) return;
-        alvos.push({ baseRow: row, altIndex: idx, alt, slug: `${baseSlug}-${regionSlug}` });
+        // Usa o mesmo helper do campo "slug PokeAPI" — reconhece tanto o
+        // formato compacto atual "(A)/(G)/(H)/(P) Nome" quanto o antigo
+        // "Nome (Região Form)". Nendo é sempre pulado (não existe na PokeAPI).
+        const slug = faltGuessPokeapiSlug(alt?.nome);
+        if (!slug || slug.endsWith('-nendo')) return;
+        alvos.push({ baseRow: row, altIndex: idx, alt, slug });
       });
     });
 
