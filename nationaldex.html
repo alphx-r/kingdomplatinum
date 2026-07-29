@@ -940,6 +940,24 @@ async function sbSelect(table,eq=null){
   return await sbFetchAllPages(url,SH_ADM);
 }
 
+// Busca o registro COMPLETO (bio, biomas, evolucoes, formas_alt com
+// movesets, formas_alfa, etc.) de um único Pokémon pelo id — usado só na
+// abertura da ficha de detalhe. A lista/grade usa uma versão enxuta
+// (ver PK.load) pra não baixar esses campos pesados de todo mundo de
+// uma vez; isso é o que reduz o egress do PostgREST na NationalDex.
+const _fullPkCache={};
+async function fetchFullPokemon(id){
+  const key=String(id);
+  if(_fullPkCache[key]) return _fullPkCache[key];
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/pokemons?id=eq.${id}&select=*`,{headers:SH_ADM});
+    const rows=await r.json();
+    const full=rows&&rows[0];
+    if(full){ _fullPkCache[key]=full; _pkDbMap[key]=full; }
+    return full;
+  }catch(e){ return _pkDbMap[key]; }
+}
+
 // Descrições PT das habilidades — tabela "abilities" do banco novo
 // (mesma usada pelo admin), em vez do cache antigo em localStorage.
 let _abilitiesCache=null;
@@ -997,8 +1015,14 @@ const PK = (() => {
       // aprovado OU já tem sprite cadastrado — não só approved=true. Isso
       // evita a divergência de formas regionais que aparecem prontas no
       // admin mas ficavam de fora da NationalDex por approved ainda ser false.
+      // Enxuto de propósito: só os campos que a grade/lista realmente
+      // renderiza (gridCard/listRow). Bio, biomas, evolucoes, movesets
+      // dentro de formas_alt/formas_alfa etc. só são buscados sob demanda
+      // em fetchFullPokemon(), quando a ficha de um Pokémon é aberta —
+      // evita baixar esse payload pesado de ~1000+ registros em toda
+      // visita à NationalDex.
       _data = await sbFetchAllPages(
-        `${SUPA_URL}/rest/v1/pokemons?select=*&or=(approved.eq.true,sprite.not.is.null)`,
+        `${SUPA_URL}/rest/v1/pokemons?select=id,name,sprite,sprite_shiny,tipo1,tipo2,approved,url_slug,formas_alt&or=(approved.eq.true,sprite.not.is.null)`,
         SH_ADM
       );
       _loaded = true;
@@ -1340,8 +1364,14 @@ async function loadPokemon(slug){
     const pkId=decodeURIComponent(slug.replace('__rpg__',''));
     await loadRpgData();
     if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
-    const rpgPk=_rpgPokemon.find(p=>String(p.id)===pkId);
-    if(rpgPk){renderRpgDetail(rpgPk,dc,navToken);}
+    let rpgPk=_rpgPokemon.find(p=>String(p.id)===pkId);
+    if(rpgPk){
+      // Versão da grade é enxuta — busca o registro completo antes de renderizar a ficha.
+      const full=await fetchFullPokemon(rpgPk.id);
+      if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
+      if(full) rpgPk={...full,_isRpg:true};
+      renderRpgDetail(rpgPk,dc,navToken);
+    }
     else{showNotFound(dc);}
     return;
   }
@@ -1355,8 +1385,14 @@ async function loadPokemon(slug){
   // Supabase — oficiais (id numérico), formas regionais e fakemon Nendo.
   // A PokéAPI só é usada mais abaixo como fallback pra quem ainda não foi
   // importado pro Supabase.
-  const rpgMatch=_rpgPokemon.find(p=>rpgUrlSlug(p)===slugNorm);
-  if(rpgMatch){renderRpgDetail(rpgMatch,dc,navToken);return;}
+  let rpgMatch=_rpgPokemon.find(p=>rpgUrlSlug(p)===slugNorm);
+  if(rpgMatch){
+    const full=await fetchFullPokemon(rpgMatch.id);
+    if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
+    if(full) rpgMatch={...full,_isRpg:true};
+    renderRpgDetail(rpgMatch,dc,navToken);
+    return;
+  }
 
   try{
     if(!detailCache[slug]){
@@ -2218,6 +2254,11 @@ async function renderDetail(p,s,container,navToken){
   const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
   applyTypeTheme(primaryType);
 
+  // A entrada em _pkDbMap até aqui é a versão enxuta usada na grade (sem
+  // bio/biomas/evolucoes/movesets). Busca o registro completo agora que a
+  // ficha realmente vai ser exibida.
+  await fetchFullPokemon(id);
+  if(navToken!==undefined&&navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
   const dbRec=_pkDbMap[String(id)];
   const genusFromDb=dbRec?.classification;
   const genus=genusFromDb||s.genera?.find(g=>g.language.name==='en')?.genus||'Pokémon';
