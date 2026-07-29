@@ -6402,7 +6402,7 @@ async function fetchWithRetry(url, retries = 2, baseDelayMs = 400) {
 }
 
 async function importRegionalFormsFromPokeapi() {
-  if (!confirm('Isso vai buscar todas as formas regionais (Alola/Galar/Hisui/Paldea) na PokeAPI e subir pro Supabase: tipos, habilidades, stats, sprites, bio (flavor text da API), gênero (cru, como a API devolve) e cadeia evolutiva (como consta na API, sem tentar adivinhar forma regional nos outros estágios). Pode demorar alguns minutos (fetch com retry + pausa entre requests, pra não estourar rate limit da PokeAPI). Continuar?')) return;
+  if (!confirm('Isso vai buscar todas as formas regionais (Alola/Galar/Hisui/Paldea) na PokeAPI e gravar DIRETO dentro do campo "formas_alt" (jsonb) do Pokémon base correspondente — sem criar registro separado na tabela: tipos, habilidades, stats, sprites (official-artwork), bio (flavor text da API), gênero (cru, como a API devolve) e cadeia evolutiva (quando não ambígua). Pode demorar alguns minutos (fetch com retry + pausa entre requests, pra não estourar rate limit da PokeAPI). Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
@@ -6417,20 +6417,25 @@ async function importRegionalFormsFromPokeapi() {
     const re = /^([a-z0-9]+)-(alola|galar|hisui|paldea)(-(zen|combat-breed|blaze-breed|aqua-breed))?$/;
     const matches = list.filter(p => re.test(p.name));
 
-    // Carrega os registros já existentes pra preservar o campo "approved" —
-    // sem isso, todo reimport derrubava de volta pra rascunho até formas
-    // que um admin já tinha revisado e aprovado manualmente.
+    // Carrega os registros existentes uma única vez — precisamos do Pokémon
+    // BASE (id numérico puro, ex: "26" pra Raichu) pra saber em qual linha
+    // gravar dentro de formas_alt, e também pra checar se já existe uma
+    // entrada com o mesmo nome (evita duplicar e preserva o que já foi
+    // curado manualmente, tipo evolução/moveset).
     const existingRows = await sbSelect('pokemons');
-    const existingById = {};
-    existingRows.forEach(r => { existingById[String(r.id)] = r; });
+    const byId = {};
+    existingRows.forEach(r => { byId[String(r.id)] = r; });
+
+    // Acumula as formas_alt novas/atualizadas por Pokémon base e só grava
+    // (PATCH) uma vez por base ao final — evita que duas formas do mesmo
+    // base pisem uma na outra se gravássemos a cada iteração.
+    const altByBase = {}; // dexNum -> array já atualizado de formas_alt
+    const semBase = [];
+    const evoReviewList = [];
 
     let ok = 0, fail = 0, i = 0;
     const total = matches.length;
     const erros = [];
-    // Formas cuja cadeia de evolução bifurca na PokéAPI (ex: Meowth → Persian
-    // OU Perrserker) e por isso ficaram sem "evolucoes" preenchido automático —
-    // precisam ser curadas manualmente na tela de edição de cada Pokémon.
-    const evoReviewList = [];
 
     for (const item of matches) {
       i++;
@@ -6452,17 +6457,21 @@ async function importRegionalFormsFromPokeapi() {
         if (!sRes.ok) throw new Error('species HTTP ' + sRes.status + ' (após retry)');
         const species = await sRes.json();
 
-        const dexNum = species.id;
-        const id = regionalIdFromDexNum(prefix, dexNum);
-        // Preserva "approved" se o registro já existia e tinha sido revisado
-        // manualmente — reimportar não deveria derrubar isso de volta pra rascunho.
-        const existingApproved = existingById[id]?.approved || false;
-        // Nome final de exibição: "Rattata (Alola Form)" — nome base (sem o
-        // sufixo "-alola" etc) + região por extenso, já no formato usado no
-        // site, pra não depender de rodar migração toda vez que reimportar.
+        const dexNum = String(species.id);
+        const baseRow = byId[dexNum];
+        if (!baseRow) {
+          semBase.push(item.name);
+          fail++;
+          erros.push(`${item.name}: Pokémon base #${dexNum} não encontrado na tabela (cadastre o base antes de importar a forma)`);
+          continue;
+        }
+
+        // Nome final de exibição: "Raichu (Alola Form)" — nome base (sem o
+        // sufixo "-alola" etc) + região por extenso, mesmo padrão usado na
+        // migração manual pra formas_alt.
+        const regiao = REGIONAL_ALT_REGIAO_POR_PREFIXO[prefix] || (region.charAt(0).toUpperCase() + region.slice(1));
         const baseNameCap = species.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        const regionCap = region.charAt(0).toUpperCase() + region.slice(1);
-        const displayName = `${baseNameCap} (${regionCap} Form)`;
+        const nome = `${baseNameCap} (${regiao} Form)`;
 
         const types = p.types.sort((a, b) => a.slot - b.slot).map(t => t.type.name);
         const abilities = p.abilities || [];
@@ -6482,17 +6491,22 @@ async function importRegionalFormsFromPokeapi() {
         const flavor = flavorEntries.find(f => f.language.name === 'en') || flavorEntries[0];
         const bio = flavor ? flavor.flavor_text.replace(/[\n\f\r]+/g, ' ').replace(/\s+/g, ' ').trim() : null;
 
+        // Entrada já existente com esse nome dentro do formas_alt do base
+        // (considera o que já foi acumulado nesta mesma execução, senão o
+        // que já estava salvo) — usada pra não duplicar e preservar campos
+        // curados manualmente (evolução, moveset, biomas, força alfa).
+        const currentAltArr = (altByBase[dexNum] || baseRow.formas_alt || []).slice();
+        const existingAltIndex = currentAltArr.findIndex(e => (e.nome || '').trim().toLowerCase() === nome.trim().toLowerCase());
+        const existingAltEntry = existingAltIndex >= 0 ? currentAltArr[existingAltIndex] : null;
+
         // Evolução: busca a evolution-chain e achata como está na API.
         // Preserva a evolução já curada manualmente (se existir) em vez de
-        // sobrescrever — mesmo padrão já usado pra "approved" acima.
-        // Se a cadeia bifurca (ex: Meowth → Persian OU Perrserker) e ainda
-        // não há nada curado, NÃO tenta adivinhar automaticamente: a
-        // PokéAPI não diz qual ramo é o certo pra esta forma regional
-        // específica (os dois vêm marcados como is_default), então
-        // preencher os dois às cegas pode acabar mostrando o ramo errado
-        // (ou os dois) na página do Pokémon. Fica null e entra na lista de
+        // sobrescrever. Se a cadeia bifurca (ex: Meowth → Persian OU
+        // Perrserker) e ainda não há nada curado, NÃO tenta adivinhar
+        // automaticamente: a PokéAPI não diz qual ramo é o certo pra esta
+        // forma regional específica — fica null e entra na lista de
         // "precisa revisão manual de evolução" reportada no final.
-        let evolucoes = existingById[id]?.evolucoes || null;
+        let evolucoes = existingAltEntry?.evolucoes || null;
         let evoNeedsReview = false;
         if (!evolucoes && species.evolution_chain?.url) {
           try {
@@ -6508,41 +6522,56 @@ async function importRegionalFormsFromPokeapi() {
             }
           } catch (_) { /* segue sem evolução se essa parte falhar */ }
         }
-        if (evoNeedsReview) evoReviewList.push(`${displayName} [${id}]`);
+        if (evoNeedsReview) evoReviewList.push(`${nome} [base #${dexNum}]`);
 
-        const row = {
-          id,
-          name: displayName,
-          url_slug: item.name,
-          bio,
-          classification: genus,
-          // Usa a artwork oficial (mesma qualidade usada pros Pokémon numéricos),
-          // não o sprite pixelado antigo — front_default só como fallback.
-          sprite: p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || null,
-          sprite_shiny: p.sprites?.other?.['official-artwork']?.front_shiny || p.sprites?.front_shiny || null,
-          tipo1: types[0] || null,
-          tipo2: types[1] || null,
+        const altEntry = {
+          nome,
+          tipo1: types[0] || null, tipo2: types[1] || null,
           habilidade1: normalAbilities[0]?.ability?.name || null,
           habilidade2: normalAbilities[1]?.ability?.name || null,
           habilidade_oculta: hiddenAbility?.ability?.name || null,
+          classification: genus,
+          height: p.height ? p.height / 10 : null,   // decímetros -> m
+          weight: p.weight ? p.weight / 10 : null,   // hectogramas -> kg
           genero: genderRateToText(species.gender_rate),
           egg_group: eggGroups,
           hp: statMap.hp ?? null, atk: statMap.attack ?? null, def: statMap.defense ?? null,
           spa: statMap['special-attack'] ?? null, spd: statMap['special-defense'] ?? null, spe: statMap.speed ?? null,
-          weight: p.weight ? p.weight / 10 : null,   // hectogramas -> kg
-          height: p.height ? p.height / 10 : null,   // decímetros -> m
+          // Sprites gravados direto na entrada dentro do jsonb — sempre
+          // official-artwork, nunca o sprite pixelado antigo.
+          sprite: p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || null,
+          sprite_shiny: p.sprites?.other?.['official-artwork']?.front_shiny || p.sprites?.front_shiny || null,
+          bio,
+          biomas: existingAltEntry?.biomas || null,
+          forca_alfa: existingAltEntry?.forca_alfa || null,
           evolucoes,
-          is_fakemon: false,
-          source: 'regional',
-          approved: existingApproved, // preserva revisão manual já feita; só começa false se for registro novo
-          updated_at: new Date().toISOString()
+          moves_level: existingAltEntry?.moves_level || null,
+          moves_tm: existingAltEntry?.moves_tm || null,
+          moves_egg: existingAltEntry?.moves_egg || null,
+          moves_tutor: existingAltEntry?.moves_tutor || null
         };
 
-        await sbUpsert('pokemons', row);
+        if (existingAltIndex >= 0) currentAltArr[existingAltIndex] = altEntry;
+        else currentAltArr.push(altEntry);
+        altByBase[dexNum] = currentAltArr;
+
         ok++;
       } catch (e) {
         fail++;
         erros.push(`${item.name}: ${e.message}`);
+      }
+    }
+
+    // Um PATCH por Pokémon base, já com todas as formas dele atualizadas de
+    // uma vez só (não uma escrita por forma).
+    let basesPatched = 0;
+    for (const [dexNum, altArr] of Object.entries(altByBase)) {
+      try {
+        await sbPatch('pokemons', dexNum, { formas_alt: altArr, updated_at: new Date().toISOString() });
+        basesPatched++;
+      } catch (e) {
+        fail++;
+        erros.push(`Base #${dexNum}: falha ao salvar formas_alt (${e.message})`);
       }
     }
 
@@ -6551,13 +6580,13 @@ async function importRegionalFormsFromPokeapi() {
       // Antes esse detalhe só ia pro console (ninguém via) — agora aparece
       // num alert bloqueante, com a lista de quem falhou e o motivo, pra
       // dar pra saber na hora quem precisa ser reimportado/revisado.
-      alert(`⚠️ ${fail} forma(s) regional(is) falharam ao importar e continuam com o dado antigo:\n\n${erros.join('\n')}\n\nRode "Importar formas regionais" de novo pra tentar essas de novo (as que já deram certo não serão duplicadas).`);
+      alert(`⚠️ ${fail} forma(s) regional(is) falharam ao importar:\n\n${erros.join('\n')}\n\nRode "Importar formas regionais" de novo pra tentar essas de novo (as que já deram certo não serão duplicadas).`);
     }
     if (evoReviewList.length) {
       console.warn('Formas com cadeia de evolução ramificada (precisam de "Evolução" curada manualmente):', evoReviewList);
-      alert(`🔀 ${evoReviewList.length} forma(s) regional(is) têm evolução AMBÍGUA na PokéAPI (o Pokémon evolui pra espécies diferentes dependendo da forma, ex: Meowth-Galar → Perrserker) e por isso ficaram SEM evolução preenchida automaticamente — a página vai tentar adivinhar em tempo real, mas o ideal é curar manualmente em cada uma:\n\n${evoReviewList.join('\n')}`);
+      alert(`🔀 ${evoReviewList.length} forma(s) regional(is) têm evolução AMBÍGUA na PokéAPI (o Pokémon evolui pra espécies diferentes dependendo da forma, ex: Meowth-Galar → Perrserker) e por isso ficaram SEM evolução preenchida automaticamente — o ideal é curar manualmente em cada uma:\n\n${evoReviewList.join('\n')}`);
     }
-    toast(`Formas regionais: ${ok} importadas${fail ? `, ${fail} falharam (veja lista)` : ''}${evoReviewList.length ? `, ${evoReviewList.length} com evolução pra revisar` : ''}. Revise bio/evolução antes de aprovar.`, (fail || evoReviewList.length) ? 'err' : 'ok');
+    toast(`Formas regionais: ${ok} gravadas em formas_alt de ${basesPatched} Pokémon base${fail ? `, ${fail} falharam (veja lista)` : ''}${evoReviewList.length ? `, ${evoReviewList.length} com evolução pra revisar` : ''}. Revise bio/evolução antes de aprovar.`, (fail || evoReviewList.length) ? 'err' : 'ok');
     await loadPokemon();
   } catch (e) {
     toast('Erro ao importar formas regionais: ' + e.message, 'err');
