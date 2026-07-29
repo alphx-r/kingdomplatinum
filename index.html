@@ -10590,14 +10590,25 @@ function renderHistorico(){
     const ph=pokes.map(pk=>{
       const hShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'';
       const hHoney=(pk.isHoney&&!pk.isShiny)?'border:2px solid #d4a017':'';
-      let shinySprSrc=pk.sprite||FALLBACK_SPRITE;
-      if(pk.isShiny){ if(pk.sprite_shiny){shinySprSrc=pk.sprite_shiny;} else if(shinySprSrc.includes('raw.githubusercontent.com')){shinySprSrc=shinySprSrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/');} }
+      // Se não veio sprite baked no histórico (rolls de bônus/extra às vezes não
+      // salvam esse campo), tenta o sprite atual do DB na hora; se também não
+      // achar, marca pra buscar na PokeAPI assim que a imagem placeholder carregar
+      // (sem isso, o onerror nunca dispara pq o placeholder carrega com sucesso).
+      let shinySprSrc=pk.sprite;
+      let needsApiLookup=false;
+      if(!shinySprSrc){
+        shinySprSrc=pkFreshSprite(pk.nome, pk.isShiny);
+        if(!shinySprSrc){ needsApiLookup=true; shinySprSrc=FALLBACK_SPRITE; }
+      }
+      if(pk.isShiny){ if(pk.sprite_shiny){shinySprSrc=pk.sprite_shiny;} else if(!needsApiLookup && shinySprSrc.includes('raw.githubusercontent.com')){shinySprSrc=shinySprSrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/');} }
       const hGlow=pk.isShiny?'drop-shadow(0 0 5px #ffd700)':'';
+      const nomeEsc=(pk.nome||'').replace(/'/g,"\\'");
+      const onloadAttr=needsApiLookup?`onload="if(!this.dataset.apiTried){this.dataset.apiTried='1';pkResolvePokeApiSprite(this,'${nomeEsc}',${pk.isShiny?'true':'false'});}" `:'';
       return`
       <div class="hist-poke" style="${hShiny};${hHoney}">
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
           <div style="width:56px;height:56px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden">
-            <img src="${shinySprSrc}" style="width:56px;height:56px;object-fit:contain;filter:${hGlow}" onerror="handleHistSpriteError(this,'${(pk.nome||'').replace(/'/g,"\\'")}',${pk.isShiny?'true':'false'});this.style.filter='${hGlow}'"/>
+            <img src="${shinySprSrc}" data-sprite-stage="${needsApiLookup?'1':'0'}" style="width:56px;height:56px;object-fit:contain;filter:${hGlow}" ${onloadAttr}onerror="handleHistSpriteError(this,'${nomeEsc}',${pk.isShiny?'true':'false'});this.style.filter='${hGlow}'"/>
           </div>
           <div style="font-size:10px;font-weight:600;color:var(--text);text-align:center;font-family:var(--font-title);line-height:1.2">${pk.nome} <span style="color:${pk.genderC}">${pk.genderS}</span></div>
           ${pk.isShiny?`<div style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY${pk.bonusShiny&&pk.bonusShiny.length?` (${pk.bonusShiny.join(' + ')})`:''}</div>`:''}
