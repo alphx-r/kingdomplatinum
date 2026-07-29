@@ -993,6 +993,7 @@ async function loadMoves(){
    LISTA — carregamento
 ═══════════════════════════════════════ */
 let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
+let _officialList=[]; // cache do id+nome de todos os oficiais (PokeAPI), carregado 1x
 // Token da navegação de detalhe atual — incrementado a cada chamada de
 // loadPokemon(). Renders assíncronos (moves, evolução etc.) checam esse
 // valor antes de escrever no DOM, pra promises antigas (de um Pokémon que
@@ -1169,13 +1170,19 @@ function rpgUrlSlug(p){
 
 async function initList(){
   await loadRpgData();
-  // Lista base (Pokémon oficiais) agora vem inteiramente do Supabase — mesma
-  // tabela "pokemons" usada pro resto do site. Cada registro é marcado como
-  // _isRpg pra reaproveitar o mesmo card/rota (__rpg__) usado por formas
-  // regionais e fakemon, sem nenhuma chamada à PokéAPI.
-  all=Object.keys(_pkDbMap)
-    .map(idStr=>({..._pkDbMap[idStr], id:parseInt(idStr,10), _isRpg:true}))
-    .sort((a,b)=>a.id-b.id);
+  // Lista base (Pokémon oficiais) vem da PokeAPI — o Supabase agora só guarda
+  // Nendo, formas alternativas e overrides de biografia, não os 1025
+  // Pokémon oficiais. Um único fetch traz id+nome de todos; tipos são
+  // buscados sob demanda (batchTypes) e o sprite sempre vem do GitHub raw
+  // da PokeAPI (ver gridCard/listRow, ramo `!pref`).
+  if(!_officialList.length){
+    try{
+      const r=await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
+      const d=await r.json();
+      _officialList=d.results.map((x,i)=>({id:i+1,name:x.name}));
+    }catch(e){ _officialList=[]; }
+  }
+  all=_officialList;
   applyFilters();
 }
 
@@ -1307,16 +1314,25 @@ async function applyFilters(){
     return nm&&gm;
   });
 
+  const missingTypes=byRegion.filter(p=>!typeCache[p.id]).map(p=>p.id);
+
   if(!tp){
     // Sem filtro de tipo: exibe tudo da região + regionais do Supabase
     filtered=[...byRegion, ...regionais];
   } else {
-    // Com filtro de tipo: tipos já vêm do Supabase (tipo1/tipo2), sem PokeAPI
-    filtered=[...byRegion.filter(p=>p.tipo1===tp||p.tipo2===tp), ...regionais];
+    // Com filtro de tipo: usa o cache de tipos (buscado da PokeAPI sob
+    // demanda); enquanto não chegou, o Pokémon fica de fora até o batch
+    // completar e reaplicar o filtro (ver batchTypesAndRefilter).
+    filtered=[...byRegion.filter(p=>(typeCache[p.id]||[]).includes(tp)), ...regionais];
   }
 
   document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
   renderList();
+
+  if(missingTypes.length){
+    if(tp) batchTypesAndRefilter(missingTypes);
+    else batchTypes(missingTypes);
+  }
 }
 
 // Carrega tipos de uma lista de IDs e reaplica filtros ao concluir
