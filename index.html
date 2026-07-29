@@ -10526,6 +10526,51 @@ function mudarPaginaHist(dir){
   histPagina=Math.max(0,Math.min(histPagina+dir,totalPags-1));
   renderHistorico();
 }
+// Sprites salvos no histórico ficam "congelados" com a URL de quando a rolagem
+// aconteceu. Se aquele Supabase (storage) antigo cair/mudar, a imagem quebra
+// para sempre mesmo que o cadastro atual do Pokémon tenha um sprite válido.
+// Esta função busca o sprite ATUAL no pokemonDB (já carregado) pelo nome,
+// para servir de 1º fallback quando a URL antiga falhar.
+function pkFreshSprite(nomeHist, isShiny){
+  if(!nomeHist || !Array.isArray(pokemonDB) || !pokemonDB.length) return null;
+  const alvo = normalizarNome ? normalizarNome(nomeHist) : String(nomeHist).trim().toLowerCase();
+  const match = pokemonDB.find(p=>{
+    const n = p.name||p.nome||'';
+    return (normalizarNome ? normalizarNome(n) : n.trim().toLowerCase())===alvo;
+  });
+  if(!match) return null;
+  if(isShiny) return match.sprite_shiny || match.sprite || null;
+  return match.sprite || null;
+}
+
+// 2º fallback: se não achou (ou não tinha) sprite cadastrado no banco atual,
+// busca direto na PokeAPI pelo nome e usa a artwork oficial de lá.
+async function pkResolvePokeApiSprite(imgEl, nomeHist, isShiny){
+  try{
+    const slug = toSlug(nomeHist);
+    const data = await fetch(`https://pokeapi.co/api/v2/pokemon/${slug}`,{headers:{'Accept':'application/json'}}).then(r=>{if(!r.ok)throw new Error();return r.json();});
+    let url = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${data.id}.png`;
+    if(isShiny) url = url.replace('/official-artwork/','/official-artwork/shiny/');
+    imgEl.onerror = ()=>{ imgEl.onerror=null; imgEl.src=FALLBACK_SPRITE; };
+    imgEl.src = url;
+  }catch(e){
+    imgEl.onerror=null;
+    imgEl.src = FALLBACK_SPRITE;
+  }
+}
+
+// Encadeia os 2 fallbacks quando a imagem baked no histórico falha.
+function handleHistSpriteError(imgEl, nomeHist, isShiny){
+  const jaTentouDB = imgEl.dataset.spriteStage==='1';
+  if(!jaTentouDB){
+    imgEl.dataset.spriteStage='1';
+    const fresh = pkFreshSprite(nomeHist, isShiny);
+    if(fresh && fresh!==imgEl.getAttribute('src')){ imgEl.src=fresh; return; }
+  }
+  imgEl.onerror=null; // evita loop enquanto o fetch assíncrono resolve
+  pkResolvePokeApiSprite(imgEl, nomeHist, isShiny);
+}
+
 function renderHistorico(){
   const wrap=document.getElementById('historico-wrap');
   const lista=document.getElementById('historico-lista');
@@ -10552,7 +10597,7 @@ function renderHistorico(){
       <div class="hist-poke" style="${hShiny};${hHoney}">
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
           <div style="width:56px;height:56px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden">
-            <img src="${shinySprSrc}" style="width:56px;height:56px;object-fit:contain;filter:${hGlow}" onerror="this.src='${pk.sprite||FALLBACK_SPRITE}';this.style.filter='${hGlow}'"/>
+            <img src="${shinySprSrc}" style="width:56px;height:56px;object-fit:contain;filter:${hGlow}" onerror="handleHistSpriteError(this,'${(pk.nome||'').replace(/'/g,"\\'")}',${pk.isShiny?'true':'false'});this.style.filter='${hGlow}'"/>
           </div>
           <div style="font-size:10px;font-weight:600;color:var(--text);text-align:center;font-family:var(--font-title);line-height:1.2">${pk.nome} <span style="color:${pk.genderC}">${pk.genderS}</span></div>
           ${pk.isShiny?`<div style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY${pk.bonusShiny&&pk.bonusShiny.length?` (${pk.bonusShiny.join(' + ')})`:''}</div>`:''}
