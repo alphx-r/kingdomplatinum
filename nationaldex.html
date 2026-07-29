@@ -1066,10 +1066,23 @@ function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1
 // convenção de exibição correta, igual "(A)"/"(G)"/etc. Esta função distingue
 // os dois casos olhando se existe uma linha com id numérico puro pro mesmo
 // número (mesma lógica usada no admin pra decidir o que migrar).
-function isNendoOriginal(id){
+// IMPORTANTE: a numeração de Nendo (N0001, N0002...) é uma sequência própria,
+// independente da Pokédex nacional — então pode (e vai) coincidir por acaso
+// com o número de um Pokémon oficial real (ex: N446 coincidindo com Munchlax
+// #446), sobretudo se esse oficial tiver um registro de override (bio/sprite)
+// cadastrado via aba "epk". Por isso não basta checar se o número existe em
+// _pkDbMap — é preciso confirmar que o NOME bate com o do registro oficial
+// correspondente; só aí é de fato uma forma daquele Pokémon.
+function isNendoOriginal(id,name){
   if(idPrefix(id)!=='N') return false;
   const baseNum=String(id).replace(/^N/i,'');
-  return !_pkDbMap[baseNum];
+  const dbEntry=_pkDbMap[baseNum];
+  if(!dbEntry) return true;
+  if(name==null) return false;
+  const stripped=String(name).replace(/^\(\s*N\s*\)\s*/i,'').trim().toLowerCase();
+  const officialName=String(dbEntry.name||'').replace(/\s*(alola|galar|hisui|paldea|nendo)\s*$/i,'').trim().toLowerCase();
+  if(stripped&&officialName&&stripped!==officialName) return true;
+  return false;
 }
 
 // Slug de região (minúsculo, como usado nos nomes vindos da PokeAPI) por prefixo de id.
@@ -1119,7 +1132,7 @@ function evoDisplayName(entry){
   if(viaName!==nm0) return viaName;
   if(/^\([AGPHN]\)\s/i.test(nm0)){
     // Espécie original de Nendo: remove o "(N) " indevido — ver isNendoOriginal.
-    if(/^\(\s*N\s*\)\s/i.test(nm0) && isNendoOriginal(entry.id)){
+    if(/^\(\s*N\s*\)\s/i.test(nm0) && isNendoOriginal(entry.id,entry.name)){
       return nm0.replace(/^\(\s*N\s*\)\s*/i,'').trim();
     }
     return nm0;
@@ -1128,7 +1141,7 @@ function evoDisplayName(entry){
   // Espécie original de Nendo cadastrada sem o "(N) " no nome: não inventa
   // o prefixo — ele só faz sentido pra formas/variações de um Pokémon que
   // já existe (ver isNendoOriginal). Nome puro fica como está.
-  if(pfx==='N' && isNendoOriginal(entry.id)) return titleCase(entry.name);
+  if(pfx==='N' && isNendoOriginal(entry.id,entry.name)) return titleCase(entry.name);
   const regSlug=REGION_SLUG_BY_PREFIX[pfx];
   let nm=titleCase(entry.name);
   if(regSlug){
@@ -1203,7 +1216,7 @@ function renderList(){
 function gridCard(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
-    const nomeBase=isNendoOriginal(p.id)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
+    const nomeBase=isNendoOriginal(p.id,p.name)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
     const label=(p.formas_alt&&p.formas_alt.length)?stripFormSuffix(nomeBase):nomeBase;
     const pref=idPrefix(p.id);
     const spriteUrl=!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:(p.sprite||'');
@@ -1231,7 +1244,7 @@ function gridCard(p,i){
 function listRow(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
-    const nomeBase=isNendoOriginal(p.id)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
+    const nomeBase=isNendoOriginal(p.id,p.name)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
     const label=(p.formas_alt&&p.formas_alt.length)?stripFormSuffix(nomeBase):nomeBase;
     const pref=idPrefix(p.id);
     const spriteUrl=!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:(p.sprite||'');
