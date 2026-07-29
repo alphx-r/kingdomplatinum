@@ -1653,8 +1653,8 @@ function buildAutoSlug(nameRaw, id) {
 /* ══════════════════════════════════════════
    SUPABASE CONFIG
 ══════════════════════════════════════════ */
-const SUPA_URL = 'https://fatdzivyqipmcbzaiftc.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
+const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
 
 // Projeto ANTIGO (compartilhado com o index/RPG) — usado só na migração
 // única de dados pra cá. Depois de migrar tudo, essas duas linhas podem
@@ -4707,23 +4707,39 @@ async function savePkModal(approve) {
   }
 
   // Sprite: prioriza arquivo carregado, depois URL
+  // Pokémon oficiais (id puramente numérico, sem prefixo A/G/H/P/N) sempre
+  // usam a artwork oficial da PokeAPI na NationalDex (ver spriteUrl/heroSprite
+  // com `!pref`) — o sprite salvo aqui nunca chega a ser exibido pra eles.
+  // Pra não gastar egress do Storage à toa, o upload só roda pra Nendo/formas
+  // regionais/alternativas (id com prefixo). Pra oficiais, só a URL colada
+  // manualmente é aceita (fica registrada mas não sobe arquivo).
+  const isOficial = /^\d+$/.test(String(newId).trim());
   let sprite     = document.getElementById('epk-sprite').value.trim() || null;
   let spriteShiny = document.getElementById('epk-sprite_shiny').value.trim() || null;
   const b64      = document.getElementById('epk-sprite-preview').dataset.b64;
   const b64Shiny = document.getElementById('epk-sprite-shiny-preview').dataset.b64;
   try {
     if (b64 && b64.startsWith('data:')) {
-      toast('Enviando sprite…', 'ok');
-      const ext = b64.includes('image/png') ? 'png' : 'jpg';
-      sprite = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`) + '?t=' + Date.now();
-      delete document.getElementById('epk-sprite-preview').dataset.b64;
-      document.getElementById('epk-sprite').value = sprite;
+      if (isOficial) {
+        toast('Pokémon oficial: a sprite já vem da PokeAPI automaticamente, upload ignorado.', 'ok');
+        delete document.getElementById('epk-sprite-preview').dataset.b64;
+      } else {
+        toast('Enviando sprite…', 'ok');
+        const ext = b64.includes('image/png') ? 'png' : 'jpg';
+        sprite = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`) + '?t=' + Date.now();
+        delete document.getElementById('epk-sprite-preview').dataset.b64;
+        document.getElementById('epk-sprite').value = sprite;
+      }
     }
     if (b64Shiny && b64Shiny.startsWith('data:')) {
-      const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
-      spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`) + '?t=' + Date.now();
-      delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
-      document.getElementById('epk-sprite_shiny').value = spriteShiny;
+      if (isOficial) {
+        delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
+      } else {
+        const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
+        spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`) + '?t=' + Date.now();
+        delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
+        document.getElementById('epk-sprite_shiny').value = spriteShiny;
+      }
     }
   } catch(uploadErr) {
     toast('Erro no upload: ' + uploadErr.message, 'err');
@@ -7078,7 +7094,7 @@ async function migrateFromOldSupabase() {
    seguro rodar mais de uma vez — não duplica, só sobrescreve.
 ══════════════════════════════════════════ */
 async function migratePokemonJsonToSupabase() {
-  if (!confirm('Isso vai ler o pokemon.json (backup) e sobrescrever no Supabase (fatdzivyqipmcbzaiftc) todos os Pokémon que estiverem lá, campo a campo. Pode demorar um pouco. Continuar?')) return;
+  if (!confirm('Isso vai ler o pokemon.json (backup) e sobrescrever no Supabase (vnccljhhexlsthjaaorr) todos os Pokémon que estiverem lá, campo a campo. Pode demorar um pouco. Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Migrando…'; }
