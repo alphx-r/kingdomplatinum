@@ -7048,6 +7048,36 @@ async function mesclarFormasAltDuplicadas() {
 
   const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
 
+  // Duas formas_alt podem se referir à MESMA forma regional mas com o `nome`
+  // salvo em formatos diferentes — "Ponyta (Galar Form)" (formato longo,
+  // gerado por "Unificar formas regionais") vs "(G) Ponyta" (formato
+  // compacto, gerado por "Converter formas regionais p/ (Letra)"). Os dois
+  // são exibidos como a MESMA pill "(G) Ponyta" (ver epkFormLabel), mas um
+  // agrupamento por texto puro não os reconhece como duplicata. Por isso
+  // agrupamos por uma chave canônica "regiao|nome-base" que entende os dois
+  // formatos, em vez do texto bruto de `nome`.
+  function formaAltCanonicalKey(nome) {
+    const raw = (nome || '').trim();
+    if (!raw) return '';
+    // Formato longo: "Ponyta (Galar Form)", "Ponyta - Galar", "Ponyta (Galar)"...
+    const mLong = raw.match(/^(.*?)[\s(–-]+(alola|galar|hisui|paldea|nendo)\)?\s*(forma?|form)?\)?\.?$/i);
+    if (mLong) {
+      const base = mLong[1].trim().replace(/[()\s]+$/, '').trim().toLowerCase();
+      return `${mLong[2].toLowerCase()}|${base}`;
+    }
+    // Formato compacto: "(G) Ponyta"
+    const mShort = raw.match(/^\(([AGHPN])\)\s*(.+)$/i);
+    if (mShort) {
+      const code = mShort[1].toUpperCase();
+      const region = Object.keys(EPK_REGION_CODE).find(k => EPK_REGION_CODE[k] === code) || code.toLowerCase();
+      const base = mShort[2].trim().toLowerCase();
+      return `${region}|${base}`;
+    }
+    // Nome sem padrão regional reconhecido (fakemon, forma não-regional etc)
+    // — agrupa pelo texto cru mesmo, como antes.
+    return raw.toLowerCase();
+  }
+
   function mergeTwo(a, b, label, conflicts) {
     const out = { ...a };
     for (const f of SCALAR_FIELDS) {
@@ -7078,12 +7108,12 @@ async function mesclarFormasAltDuplicadas() {
       const alt = row.formas_alt;
       if (!Array.isArray(alt) || alt.length < 2) continue;
 
-      // Agrupa por nome normalizado, preservando a ordem de primeira aparição.
-      // Entradas sem nome ficam isoladas (não têm como agrupar por nome).
+      // Agrupa por chave canônica (região + nome-base), preservando a ordem
+      // de primeira aparição. Entradas sem nome reconhecível ficam isoladas.
       const groups = [];
       const indexByName = new Map();
       alt.forEach(entry => {
-        const key = (entry?.nome || '').trim().toLowerCase();
+        const key = formaAltCanonicalKey(entry?.nome);
         if (!key) { groups.push([entry]); return; }
         if (indexByName.has(key)) {
           groups[indexByName.get(key)].push(entry);
@@ -7101,6 +7131,12 @@ async function mesclarFormasAltDuplicadas() {
         const label = `${row.name || row.id}: "${g[0].nome}"`;
         let acc = g[0];
         for (let k = 1; k < g.length; k++) acc = mergeTwo(acc, g[k], label, conflicts);
+        // Se alguma cópia do grupo já está no formato compacto "(G) Nome",
+        // usa ela como nome final — mantém consistência com o padrão que o
+        // botão "Converter formas regionais p/ (Letra)" já usa no resto da
+        // base, em vez de ficar preso ao nome da primeira cópia encontrada.
+        const compactEntry = g.find(e => /^\([AGHPN]\)\s/i.test((e.nome || '').trim()));
+        if (compactEntry) acc = { ...acc, nome: compactEntry.nome };
         return acc;
       });
 
