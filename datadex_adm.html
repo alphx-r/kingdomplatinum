@@ -602,6 +602,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <div class="adm-more-menu" id="adm-more-menu">
           <div class="adm-more-group-lbl">Formas regionais</div>
           <button onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
+          <button onclick="buscarArtworkFormasRegionais()" title="Busca só a artwork oficial (official-artwork) na PokeAPI pra cada forma regional já cadastrada em formas_alt e grava sprite/sprite_shiny — não mexe em tipo/stats/bio/evolução">🖼️ Artwork formas regionais</button>
           <button onclick="migrarFormasRegionaisParaAlt()" title="Converte os registros separados de Alola/Galar/Hisui/Paldea/Nendo em formas alternativas clicáveis (formas_alt) do Pokémon base">🔀 Unificar formas regionais</button>
           <button onclick="limparFormasAltDuplicadas()" title="Procura e remove formas_alt duplicadas (ex: rodou 'Unificar formas regionais' mais de uma vez)">🧹 Remover formas alt. duplicadas</button>
           <button onclick="mesclarFormasAltDuplicadas()" title="Procura formas_alt com o MESMO NOME mas dados diferentes (ex: uma cópia veio incompleta) e mescla numa única entrada, preenchendo campos vazios com o que existir na outra cópia. Conflitos (campo preenchido diferente nos dois lados) ficam reportados no console pra revisão manual.">🧬 Mesclar formas alt. duplicadas</button>
@@ -6399,6 +6400,94 @@ async function fetchWithRetry(url, retries = 2, baseDelayMs = 400) {
     if (res.ok) return res;
     if (attempt >= retries) return res; // devolve a resposta com erro pro caller decidir
     await new Promise(r => setTimeout(r, baseDelayMs * (attempt + 1)));
+  }
+}
+
+// Busca só a artwork oficial (official-artwork) na PokeAPI pra cada forma
+// regional (Alola/Galar/Hisui/Paldea) já cadastrada dentro de formas_alt, e
+// grava sprite/sprite_shiny na própria entrada do jsonb. Mais leve que
+// importRegionalFormsFromPokeapi (1 request por forma, sem species/evolução)
+// — útil pra reforçar/corrigir artwork sem reimportar tudo de novo.
+async function buscarArtworkFormasRegionais() {
+  if (!confirm('Isso vai varrer todas as formas regionais (Alola/Galar/Hisui/Paldea) já cadastradas em formas_alt, buscar a artwork oficial na PokeAPI pelo nome de cada uma, e gravar sprite/sprite_shiny dentro do jsonb do Pokémon base correspondente. Não mexe em tipo/stats/bio/evolução. Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando artwork…'; }
+  showProgress('Buscando artwork oficial das formas regionais…');
+
+  const REGIAO_SLUG = { alola: 'alola', galar: 'galar', hisui: 'hisui', paldea: 'paldea' };
+  const VARIANTES = ['zen', 'combat-breed', 'blaze-breed', 'aqua-breed'];
+
+  try {
+    const rows = await sbSelect('pokemons');
+    const alvos = [];
+    rows.forEach(row => {
+      (row.formas_alt || []).forEach((alt, idx) => {
+        const m = (alt.nome || '').match(/^(.+?)\s*\((Alola|Galar|Hisui|Paldea)\s*Form\)$/i);
+        if (!m) return;
+        const baseSlug = m[1].trim().toLowerCase().replace(/[\s.'’]+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const regionSlug = REGIAO_SLUG[m[2].toLowerCase()];
+        if (!regionSlug) return;
+        alvos.push({ baseRow: row, altIndex: idx, alt, slug: `${baseSlug}-${regionSlug}` });
+      });
+    });
+
+    if (!alvos.length) { toast('Nenhuma forma regional encontrada em formas_alt.', 'ok'); return; }
+
+    const altByBase = {};
+    let ok = 0, fail = 0, i = 0;
+    const total = alvos.length;
+    const erros = [];
+
+    for (const alvo of alvos) {
+      i++;
+      updateProgress(i, total, alvo.alt.nome);
+      if (i > 1) await new Promise(r => setTimeout(r, 120));
+      try {
+        let res = await fetchWithRetry(`https://pokeapi.co/api/v2/pokemon/${alvo.slug}`);
+        if (!res.ok) {
+          let achou = false;
+          for (const v of VARIANTES) {
+            const r2 = await fetchWithRetry(`https://pokeapi.co/api/v2/pokemon/${alvo.slug}-${v}`);
+            if (r2.ok) { res = r2; achou = true; break; }
+          }
+          if (!achou) throw new Error(`HTTP ${res.status} (slug: ${alvo.slug})`);
+        }
+        const p = await res.json();
+        const sprite = p.sprites?.other?.['official-artwork']?.front_default || p.sprites?.front_default || null;
+        const spriteShiny = p.sprites?.other?.['official-artwork']?.front_shiny || p.sprites?.front_shiny || null;
+        if (!sprite) throw new Error('PokeAPI não retornou artwork oficial pra esse slug');
+
+        const dexNum = String(alvo.baseRow.id);
+        const arr = (altByBase[dexNum] || alvo.baseRow.formas_alt || []).slice();
+        arr[alvo.altIndex] = { ...arr[alvo.altIndex], sprite, sprite_shiny: spriteShiny };
+        altByBase[dexNum] = arr;
+        ok++;
+      } catch (e) {
+        fail++;
+        erros.push(`${alvo.alt.nome}: ${e.message}`);
+      }
+    }
+
+    let gravados = 0;
+    for (const dexNum of Object.keys(altByBase)) {
+      try {
+        await sbPatch('pokemons', dexNum, { formas_alt: altByBase[dexNum], updated_at: new Date().toISOString() });
+        gravados++;
+      } catch (e) {
+        fail++;
+        erros.push(`Salvar base #${dexNum}: ${e.message}`);
+      }
+    }
+
+    if (fail) console.warn('Falhas ao buscar artwork das formas regionais:', erros);
+    toast(`Artwork atualizada: ${ok} forma(s) em ${gravados} Pokémon base${fail ? `, ${fail} falha(s) — veja console` : ''}.`, fail ? 'err' : 'ok');
+    if (typeof loadPokemon === 'function') await loadPokemon();
+  } catch (e) {
+    toast('Erro ao buscar artwork das formas regionais: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🖼️ Artwork formas regionais'; }
   }
 }
 
