@@ -625,6 +625,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
           <button onclick="fixSpriteAlphaHalo()" title="Baixa cada sprite já hospedado no Storage, endurece o alpha da borda (remove a transparência intermediária que causa o halo cinza) e re-sobe no mesmo lugar — não recorta nem reposiciona nada">🩹 Corrigir halo de transparência</button>
           <button onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
+          <button onclick="migratePokemonFromPrevSupabase()" title="Importa a tabela pokemons inteira do projeto Supabase anterior (fatdzivyqipmcbzaiftc) — necessário porque o projeto novo nasceu vazio">⬇️ Pokémon (banco anterior)</button>
+          <button onclick="migrateMovesAbilitiesFromPrevSupabase()" title="Importa as tabelas moves e abilities do projeto Supabase anterior (fatdzivyqipmcbzaiftc) — necessário porque o projeto novo nasceu vazio nessas duas tabelas">⬇️ Moves/Abilities (banco anterior)</button>
           <button onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
         </div>
       </div>
@@ -7087,6 +7089,100 @@ async function migrateFromOldSupabase() {
   }
 }
 
+async function migratePokemonFromPrevSupabase() {
+  if (!confirm('Isso vai ler a tabela "pokemons" inteira do projeto Supabase ANTERIOR (fatdzivyqipmcbzaiftc) e trazer tudo pra cá (upsert — atualiza o que já existe, sem apagar nada). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+  showProgress('Importando Pokémon do banco anterior…');
+
+  try {
+    const PREV_SH = { apikey: PREV_SUPA_KEY, Authorization: `Bearer ${PREV_SUPA_KEY}` };
+    const oldRows = await sbFetchAllPages(`${PREV_SUPA_URL}/rest/v1/pokemons?select=*`, PREV_SH);
+
+    const VALID_POKEMON_COLUMNS = new Set([
+      'name', 'url_slug', 'bio', 'classification', 'sprite', 'sprite_shiny', 'tipo1', 'tipo2',
+      'habilidade1', 'habilidade2', 'habilidade_oculta', 'habilidade_mega', 'forca_alfa',
+      'genero', 'hp', 'atk', 'def', 'spa', 'spd', 'spe', 'weight', 'height', 'egg_group',
+      'evolucoes', 'moves_level', 'moves_tm', 'moves_egg', 'moves_tutor',
+      'is_fakemon', 'source', 'approved', 'formas_alfa', 'formas_alt', 'estacao', 'estacao_boost', 'biomas'
+    ]);
+
+    let ok = 0, fail = 0, i = 0;
+    const total = oldRows.length;
+    const erros = [];
+
+    for (const old of oldRows) {
+      i++;
+      updateProgress(i, total, old.name || old.id);
+      const payload = { id: old.id };
+      Object.entries(old).forEach(([k, v]) => {
+        if (VALID_POKEMON_COLUMNS.has(k) && v !== null && v !== undefined && v !== '') payload[k] = v;
+      });
+      payload.updated_at = new Date().toISOString();
+      try { await sbUpsert('pokemons', payload); ok++; }
+      catch (e) { fail++; erros.push(`${old.id}: ${e.message}`); }
+    }
+
+    if (fail) console.warn('Falhas na importação de Pokémon:', erros);
+    toast(`Importado: ${ok} de ${oldRows.length} Pokémon do banco anterior${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao importar Pokémon do banco anterior: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ Pokémon (banco anterior)'; }
+  }
+}
+/* ══════════════════════════════════════════
+   MIGRAÇÃO — moves e abilities do projeto Supabase ANTERIOR
+   (fatdzivyqipmcbzaiftc, trocado por vnccljhhexlsthjaaorr) → projeto novo.
+   Diferente da migração de "pokemons" (que agora vem da PokeAPI), essas
+   duas tabelas têm texto curado em pt-BR (descricao/ab_desc) que só existe
+   aqui — precisam ser copiadas, não recriadas. Usa upsert, então é seguro
+   rodar mais de uma vez.
+══════════════════════════════════════════ */
+const PREV_SUPA_URL = 'https://fatdzivyqipmcbzaiftc.supabase.co';
+const PREV_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
+
+async function migrateMovesAbilitiesFromPrevSupabase() {
+  if (!confirm('Isso vai ler as tabelas "moves" e "abilities" do projeto Supabase ANTERIOR (fatdzivyqipmcbzaiftc) e trazer tudo pra cá (upsert — atualiza o que já existe, sem apagar nada). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+  showProgress('Importando moves/abilities do banco anterior…');
+
+  try {
+    const PREV_SH = { apikey: PREV_SUPA_KEY, Authorization: `Bearer ${PREV_SUPA_KEY}` };
+
+    const moves = await sbFetchAllPages(`${PREV_SUPA_URL}/rest/v1/moves?select=*`, PREV_SH);
+    const abilities = await sbFetchAllPages(`${PREV_SUPA_URL}/rest/v1/abilities?select=*`, PREV_SH);
+    const total = moves.length + abilities.length;
+    let done = 0, fail = 0;
+    const erros = [];
+
+    for (const row of moves) {
+      done++;
+      updateProgress(done, total, `move: ${row.name || ''}`);
+      try { await sbUpsert('moves', row); }
+      catch (e) { fail++; erros.push(`move ${row.name}: ${e.message}`); }
+    }
+    for (const row of abilities) {
+      done++;
+      updateProgress(done, total, `ability: ${row.name || ''}`);
+      try { await sbUpsert('abilities', row); }
+      catch (e) { fail++; erros.push(`ability ${row.name}: ${e.message}`); }
+    }
+
+    if (fail) console.warn('Falhas na importação de moves/abilities:', erros);
+    toast(`Importado: ${moves.length} moves, ${abilities.length} abilities${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
+  } catch (e) {
+    toast('Erro ao importar moves/abilities: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ Moves/Abilities (banco anterior)'; }
+  }
+}
 /* ══════════════════════════════════════════
    MIGRAÇÃO — pokemon.json (backup/legado) → Supabase
    Botão de uso único (ou sob demanda) pra subir tudo que ainda só
