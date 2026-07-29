@@ -604,6 +604,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="importRegionalFormsFromPokeapi()" title="Importar formas regionais (PokeAPI)">🌍 Formas regionais</button>
           <button onclick="migrarFormasRegionaisParaAlt()" title="Converte os registros separados de Alola/Galar/Hisui/Paldea/Nendo em formas alternativas clicáveis (formas_alt) do Pokémon base">🔀 Unificar formas regionais</button>
           <button onclick="limparFormasAltDuplicadas()" title="Procura e remove formas_alt duplicadas (ex: rodou 'Unificar formas regionais' mais de uma vez)">🧹 Remover formas alt. duplicadas</button>
+          <button onclick="mesclarFormasAltDuplicadas()" title="Procura formas_alt com o MESMO NOME mas dados diferentes (ex: uma cópia veio incompleta) e mescla numa única entrada, preenchendo campos vazios com o que existir na outra cópia. Conflitos (campo preenchido diferente nos dois lados) ficam reportados no console pra revisão manual.">🧬 Mesclar formas alt. duplicadas</button>
           <button onclick="renomearFormasRegionaisAntigas()" title="Renomeia formas_alt no padrão antigo ('Forma de Alola' ou '(A) Rattata') pro padrão atual: 'Rattata (Alola Form)'">🏷️ Renomear formas regionais antigas</button>
           <button onclick="converterFormasRegionaisParaPrefixo()" title="Converte formas_alt no formato 'Nome (Alola)' / 'Nome (Alola Form)' / Galar/Hisui/Paldea/Nendo pro padrão compacto '(A) Nome' — necessário pra evolutionary chain casar certinho com o nome vindo da PokeAPI">🔤 Converter formas regionais p/ (Letra)</button>
           <button onclick="importRegionalAltMovesetEvoFromPokeapi()" title="Busca moveset (nível/TM/ovo/tutor) e evolutionary chain SÓ das formas alternativas regionais (Alola/Galar/Hisui/Paldea — Nendo é pulado, não existe na PokeAPI), adivinhando o slug PokeAPI pelo nome de cada forma">⚔️🔗 Moveset+Chain formas regionais</button>
@@ -7021,11 +7022,107 @@ async function limparFormasAltDuplicadas() {
 }
 
 /* ══════════════════════════════════════════
-   MIGRAÇÃO — banco Supabase ANTIGO (compartilhado com o index) → novo
-   projeto dedicado da DataDex. Só preenche campos vazios no destino —
-   não sobrescreve com null o que já foi migrado do pokemon.json (que
-   tem evolução/moves/url_slug completos e o antigo provavelmente não).
+   MESCLAR — diferente de limparFormasAltDuplicadas (que só apaga cópias
+   100% idênticas), esta função trata o caso de duas formas_alt com o MESMO
+   NOME mas dados DIFERENTES (ex: uma tem sprite mas não tem moveset, a
+   outra tem moveset mas não tem sprite — aconteceu ao rodar imports
+   diferentes em momentos diferentes sem dedup). Mescla os campos vazios
+   de uma com o preenchido da outra; quando os dois têm valor E são
+   diferentes, mantém o da PRIMEIRA ocorrência e reporta o conflito no
+   console pra revisão manual (não decide sozinha qual é o certo).
 ══════════════════════════════════════════ */
+async function mesclarFormasAltDuplicadas() {
+  if (!confirm('Isso vai procurar, em todos os Pokémon, formas alternativas (formas_alt) com o MESMO NOME mas dados diferentes, e mesclar numa única entrada: campos vazios de uma são preenchidos com o valor da outra. Quando os dois lados têm valor preenchido e diferente pro mesmo campo, mantém o da primeira ocorrência e reporta o conflito no console (não decide sozinha qual é o certo — revise depois). Não mexe em duplicatas 100% idênticas (use "Remover formas alt. duplicadas" pra essas). Continuar?')) return;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Mesclando…'; }
+  showProgress('Lendo Pokémon…');
+
+  // Campos escalares — no merge, o primeiro valor não-vazio "vence"; se os
+  // dois tiverem valor e forem diferentes, vira conflito reportado (mas o
+  // merge segue, mantendo o da primeira ocorrência, pra não travar).
+  const SCALAR_FIELDS = ['tipo1','tipo2','habilidade1','habilidade2','habilidade_oculta','classification','height','weight','genero','egg_group','hp','atk','def','spa','spd','spe','sprite','sprite_shiny','bio','biomas','forca_alfa'];
+  // Campos array — mescla ficando com o array mais completo (maior length);
+  // se o segundo for mais completo, ele "ganha" (não é conflito, é upgrade).
+  const ARRAY_FIELDS = ['evolucoes','moves_level','moves_tm','moves_egg','moves_tutor'];
+
+  const isEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+
+  function mergeTwo(a, b, label, conflicts) {
+    const out = { ...a };
+    for (const f of SCALAR_FIELDS) {
+      const av = a[f], bv = b[f];
+      if (isEmpty(av) && !isEmpty(bv)) { out[f] = bv; continue; }
+      if (!isEmpty(av) && !isEmpty(bv) && String(av) !== String(bv)) {
+        conflicts.push(`${label} — campo "${f}": mantido "${av}", ignorado "${bv}"`);
+      }
+    }
+    for (const f of ARRAY_FIELDS) {
+      const av = a[f], bv = b[f];
+      const aLen = Array.isArray(av) ? av.length : 0;
+      const bLen = Array.isArray(bv) ? bv.length : 0;
+      if (aLen === 0 && bLen > 0) { out[f] = bv; continue; }
+      if (aLen > 0 && bLen > aLen) { out[f] = bv; } // a segunda cópia é mais completa — usa ela
+    }
+    return out;
+  }
+
+  try {
+    const allRows = await sbSelect('pokemons');
+    let pokemonsAfetados = 0, gruposMesclados = 0, i = 0;
+    const conflicts = [];
+
+    for (const row of allRows) {
+      i++;
+      updateProgress(i, allRows.length, row.name || row.id);
+      const alt = row.formas_alt;
+      if (!Array.isArray(alt) || alt.length < 2) continue;
+
+      // Agrupa por nome normalizado, preservando a ordem de primeira aparição.
+      // Entradas sem nome ficam isoladas (não têm como agrupar por nome).
+      const groups = [];
+      const indexByName = new Map();
+      alt.forEach(entry => {
+        const key = (entry?.nome || '').trim().toLowerCase();
+        if (!key) { groups.push([entry]); return; }
+        if (indexByName.has(key)) {
+          groups[indexByName.get(key)].push(entry);
+        } else {
+          indexByName.set(key, groups.length);
+          groups.push([entry]);
+        }
+      });
+
+      const hasDup = groups.some(g => g.length > 1);
+      if (!hasDup) continue;
+
+      const merged = groups.map(g => {
+        if (g.length === 1) return g[0];
+        const label = `${row.name || row.id}: "${g[0].nome}"`;
+        let acc = g[0];
+        for (let k = 1; k < g.length; k++) acc = mergeTwo(acc, g[k], label, conflicts);
+        return acc;
+      });
+
+      await sbPatch('pokemons', row.id, { formas_alt: merged, updated_at: new Date().toISOString() });
+      pokemonsAfetados++;
+      gruposMesclados += groups.filter(g => g.length > 1).length;
+    }
+
+    if (conflicts.length) console.warn('Conflitos ao mesclar formas_alt (campo preenchido nos dois lados com valores diferentes — mantido o da primeira ocorrência):', conflicts);
+    const conflitosTxt = conflicts.length ? ` ${conflicts.length} conflito(s) de campo — veja o console (mantido o valor da primeira ocorrência).` : '';
+    toast(gruposMesclados ? `${gruposMesclados} forma(s) mesclada(s) em ${pokemonsAfetados} Pokémon.${conflitosTxt}` : 'Nenhuma forma alternativa com nome repetido encontrada.', 'ok');
+
+    await loadPokemon();
+  } catch (e) {
+    toast('Erro ao mesclar formas alternativas: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🧬 Mesclar formas alt. duplicadas'; }
+  }
+}
+
+
 async function migrateFromOldSupabase() {
   if (!confirm('Isso vai ler a tabela "pokemons" do banco ANTIGO (ucbkodkjlbatttiuqjtv) e trazer pra cá qualquer Pokémon que não exista ainda, ou preencher campos vazios nos que já existem. Não apaga nem sobrescreve dados já preenchidos aqui. Continuar?')) return;
 
