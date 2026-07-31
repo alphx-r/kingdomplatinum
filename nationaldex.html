@@ -184,6 +184,20 @@ html{
 .shiny-thumb.active{opacity:1;border-color:var(--accent);box-shadow:0 0 0 3px rgba(232,160,32,.35)}
 .shiny-lbl{display:none}
 .nav-arrows{position:absolute;bottom:10px;left:12px;right:12px;display:flex;justify-content:space-between}
+
+/* Sprite clicável (abre modal de visualização) */
+.sprite-zoomable{cursor:zoom-in}
+
+/* ── Modal de visualização de sprite ── */
+.sprite-modal-overlay{position:fixed;inset:0;background:rgba(5,10,20,.82);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:9999;opacity:0;pointer-events:none;transition:opacity .2s ease;padding:24px}
+.sprite-modal-overlay.open{opacity:1;pointer-events:auto}
+.sprite-modal-card{position:relative;background:var(--surface,#fff);border-radius:16px;padding:28px;max-width:min(92vw,480px);max-height:90vh;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.4);transform:scale(.92);transition:transform .2s ease}
+.sprite-modal-overlay.open .sprite-modal-card{transform:scale(1)}
+.sprite-modal-card img{max-width:100%;max-height:60vh;object-fit:contain;filter:drop-shadow(0 10px 20px rgba(0,0,0,.18))}
+.sprite-modal-name{font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--text,#1a1f2e);letter-spacing:.5px;text-align:center}
+.sprite-modal-close{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;border:none;background:var(--surface2,#f0f3f8);color:var(--muted,#6b7a99);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.sprite-modal-close:hover{background:var(--border,#dde3ee);color:var(--text,#1a1f2e)}
+@media(max-width:520px){.sprite-modal-card{padding:20px}.sprite-modal-card img{max-height:48vh}}
 .nav-arrow{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:var(--font-body);letter-spacing:.3px;transition:color .2s;display:flex;flex-direction:column;align-items:flex-start;gap:1px;max-width:120px;padding:4px 6px;border-radius:6px}
 .nav-arrow:hover{color:var(--brand-mid);background:var(--border)}
 .nav-arrow.right{align-items:flex-end}
@@ -471,7 +485,51 @@ html{
   </div>
 </div>
 
+<!-- ══════ MODAL: VISUALIZAÇÃO DE SPRITE ══════ -->
+<div class="sprite-modal-overlay" id="sprite-modal-overlay" onclick="if(event.target===this)closeSpriteModal()">
+  <div class="sprite-modal-card">
+    <button class="sprite-modal-close" onclick="closeSpriteModal()" aria-label="Fechar" title="Fechar">✕</button>
+    <img id="sprite-modal-img" src="" alt="">
+    <div class="sprite-modal-name" id="sprite-modal-name"></div>
+  </div>
+</div>
+
 <script>
+
+/* ═══════════════════════════════════════
+   MODAL DE VISUALIZAÇÃO DE SPRITE
+   Abre uma imagem ampliada de qualquer sprite exibido na ficha
+   (exceto os nós da Cadeia Evolutiva, que mantêm a navegação por clique).
+═══════════════════════════════════════ */
+function openSpriteModal(url,name,ev){
+  if(ev) ev.stopPropagation();
+  if(!url) return;
+  const overlay=document.getElementById('sprite-modal-overlay');
+  const img=document.getElementById('sprite-modal-img');
+  const nameEl=document.getElementById('sprite-modal-name');
+  if(!overlay||!img) return;
+  img.src=url;
+  img.alt=name||'';
+  if(nameEl) nameEl.textContent=name||'';
+  overlay.classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeSpriteModal(){
+  const overlay=document.getElementById('sprite-modal-overlay');
+  if(!overlay) return;
+  overlay.classList.remove('open');
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSpriteModal();});
+// Abre o modal com o sprite atualmente ativo (normal ou shiny) de um .hero-art-stack.
+function openHeroSpriteModal(stackEl,name,ev){
+  if(ev) ev.stopPropagation();
+  if(!stackEl) return;
+  const active=stackEl.querySelector('.hero-art.hero-art-active')||stackEl.querySelector('.hero-art');
+  if(!active||!active.src) return;
+  openSpriteModal(active.src,name);
+}
+
 /* ═══════════════════════════════════════
    CONSTANTES
 ═══════════════════════════════════════ */
@@ -1969,7 +2027,7 @@ async function renderRpgDetail(p, container, navToken){
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">${numDisplay}</div>
         <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,0,rpgFormsPkKey,label,TT)}</div>
-        <div class="hero-art-stack">
+        <div class="hero-art-stack sprite-zoomable" onclick="openHeroSpriteModal(this,document.getElementById('rpg-hero-name')?.textContent,event)" title="Ver imagem ampliada">
           <img class="hero-art hero-art-active" id="rpg-main-art"
             src="${heroSprite}"
             onerror="this.style.opacity='.2'" alt="${label}"
@@ -2567,7 +2625,7 @@ async function renderDetail(p,s,container,navToken){
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">#${String(id).padStart(3,'0')}</div>
         <div class="form-switch-wrap" id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(p.name),TT)}</div>
-        <div class="hero-art-stack">
+        <div class="hero-art-stack sprite-zoomable" onclick="openHeroSpriteModal(this,document.getElementById('hero-name-main')?.textContent,event)" title="Ver imagem ampliada">
           <img class="hero-art hero-art-active" id="main-art"
             src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png"
             onerror="this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png'" alt="${p.name}">
@@ -3138,7 +3196,7 @@ async function renderFormsSection(opts){
       <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
         <div style="display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px">
           <div style="position:relative;display:inline-flex">
-            ${f.sprite?`<img id="fspr-${key}" style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px ${mid}33)" src="${f.sprite}" alt="${fLabel}">`:''}
+            ${f.sprite?`<img id="fspr-${key}" class="sprite-zoomable" style="width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 18px ${mid}33)" src="${f.sprite}" alt="${fLabel}" onclick="openSpriteModal(this.src,'${fLabel.replace(/'/g,"\\'")}',event)" title="Ver imagem ampliada">`:''}
             ${shinyToggleHtml}
           </div>
           <div style="display:flex;gap:6px">${typeIconsHtml}</div>
