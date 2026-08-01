@@ -10557,16 +10557,29 @@ function mudarPaginaHist(dir){
 // para sempre mesmo que o cadastro atual do Pokémon tenha um sprite válido.
 // Esta função busca o sprite ATUAL no pokemonDB (já carregado) pelo nome,
 // para servir de 1º fallback quando a URL antiga falhar.
+// Procura tanto Pokémon de nível principal quanto formas alternativas
+// (p.formas_alt) — ex: "Oricorio (Baila Style)" não existe como registro
+// próprio em pokemonDB, só como uma entrada dentro de formas_alt do
+// Oricorio base, então precisa ser buscada ali também (senão o fallback
+// nunca acha e a imagem cai direto pro placeholder do Unown).
 function pkFreshSprite(nomeHist, isShiny){
   if(!nomeHist || !Array.isArray(pokemonDB) || !pokemonDB.length) return null;
   const alvo = normalizarNome ? normalizarNome(nomeHist) : String(nomeHist).trim().toLowerCase();
-  const match = pokemonDB.find(p=>{
+  const norm = n => normalizarNome ? normalizarNome(n) : String(n||'').trim().toLowerCase();
+  for(const p of pokemonDB){
     const n = p.name||p.nome||'';
-    return (normalizarNome ? normalizarNome(n) : n.trim().toLowerCase())===alvo;
-  });
-  if(!match) return null;
-  if(isShiny) return match.sprite_shiny || match.sprite || null;
-  return match.sprite || null;
+    if(norm(n)===alvo){
+      return (isShiny ? (p.sprite_shiny || p.sprite) : p.sprite) || null;
+    }
+    if(p.formas_alt&&p.formas_alt.length){
+      const f = p.formas_alt.find(f=>norm(f.nome)===alvo);
+      if(f){
+        if(isShiny) return f.sprite_shiny || f.sprite || p.sprite_shiny || p.sprite || null;
+        return f.sprite || p.sprite || null;
+      }
+    }
+  }
+  return null;
 }
 
 // 2º fallback: se não achou (ou não tinha) sprite cadastrado no banco atual,
