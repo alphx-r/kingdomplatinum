@@ -2172,11 +2172,13 @@ function trimAndFitSprite(dataUrl, canvasSize = 1000, fillRatio = 0.80, threshol
       try {
         // 1. Desenha a imagem original num canvas temporário pra ler os pixels
         const srcC = document.createElement('canvas');
-        srcC.width = img.naturalWidth;
-        srcC.height = img.naturalHeight;
+        const w = img.naturalWidth, h = img.naturalHeight;
+        srcC.width = w;
+        srcC.height = h;
         const srcCtx = srcC.getContext('2d');
         srcCtx.drawImage(img, 0, 0);
-        const { data } = srcCtx.getImageData(0, 0, srcC.width, srcC.height);
+        const imgData = srcCtx.getImageData(0, 0, w, h);
+        const data = imgData.data;
 
         // 2. Cor de referência do "fundo" = pixel do canto superior-esquerdo
         //    (mesmo critério padrão do sharp .trim() no servidor)
@@ -2187,12 +2189,36 @@ function trimAndFitSprite(dataUrl, canvasSize = 1000, fillRatio = 0.80, threshol
           Math.abs(data[i+2] - bg[2]) <= threshold &&
           Math.abs(data[i+3] - bg[3]) <= threshold;
 
-        // 3. Acha o bounding box dos pixels que NÃO são fundo
-        let minX = srcC.width, minY = srcC.height, maxX = -1, maxY = -1;
-        for (let y = 0; y < srcC.height; y++) {
-          for (let x = 0; x < srcC.width; x++) {
-            const i = (y * srcC.width + x) * 4;
-            if (!isBg(i)) {
+        // 2b. Apaga (alpha=0) o fundo CONECTADO à borda via flood fill —
+        //     assim, área branca sem nenhuma cor ao redor (fundo de verdade)
+        //     vira transparente, mas branco "preso" dentro do desenho (brilho
+        //     no olho, dente, etc.) não é tocado por não estar ligado à borda.
+        const visited = new Uint8Array(w * h);
+        const stack = [];
+        const tryPush = (x, y) => {
+          if (x < 0 || x >= w || y < 0 || y >= h) return;
+          const p = y * w + x;
+          if (visited[p]) return;
+          if (!isBg(p * 4)) return;
+          visited[p] = 1;
+          stack.push(p);
+        };
+        for (let x = 0; x < w; x++) { tryPush(x, 0); tryPush(x, h - 1); }
+        for (let y = 0; y < h; y++) { tryPush(0, y); tryPush(w - 1, y); }
+        while (stack.length) {
+          const p = stack.pop();
+          const x = p % w, y = (p / w) | 0;
+          data[p * 4 + 3] = 0;
+          tryPush(x + 1, y); tryPush(x - 1, y); tryPush(x, y + 1); tryPush(x, y - 1);
+        }
+        srcCtx.putImageData(imgData, 0, 0);
+
+        // 3. Acha o bounding box dos pixels que sobraram opacos (não-fundo)
+        let minX = w, minY = h, maxX = -1, maxY = -1;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            if (data[i + 3] !== 0) {
               if (x < minX) minX = x;
               if (x > maxX) maxX = x;
               if (y < minY) minY = y;
@@ -2201,7 +2227,7 @@ function trimAndFitSprite(dataUrl, canvasSize = 1000, fillRatio = 0.80, threshol
           }
         }
         // Imagem toda "fundo" (ou erro de leitura) — usa original inteira
-        if (maxX < 0) { minX = 0; minY = 0; maxX = srcC.width - 1; maxY = srcC.height - 1; }
+        if (maxX < 0) { minX = 0; minY = 0; maxX = w - 1; maxY = h - 1; }
 
         const trimW = maxX - minX + 1;
         const trimH = maxY - minY + 1;
@@ -2226,7 +2252,7 @@ function trimAndFitSprite(dataUrl, canvasSize = 1000, fillRatio = 0.80, threshol
         // CSS (ex: ajustando o drop-shadow), não aqui no canvas.
         outCtx.imageSmoothingEnabled = true;
         outCtx.imageSmoothingQuality = 'high';
-        outCtx.drawImage(img, minX, minY, trimW, trimH, destX, destY, destW, destH);
+        outCtx.drawImage(srcC, minX, minY, trimW, trimH, destX, destY, destW, destH);
 
         resolve(outC.toDataURL('image/png'));
       } catch (e) { reject(e); }
