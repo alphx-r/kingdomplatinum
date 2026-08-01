@@ -186,14 +186,25 @@ async function sbFetchAllPages(url,headers,pageSize=1000){
 let ALL=[];
 
 function cardHtml(it){
-  const icon = it.icon_url
-    ? `<img class="item-icon" src="${it.icon_url}" alt="${it.name}" loading="lazy">`
+  const icon = it.sprite
+    ? `<img class="item-icon" src="${it.sprite}" alt="${it.name}" loading="lazy">`
     : `<div class="item-icon-fallback">🎒</div>`;
   const isConsumivel = !!it.flags?.consumivel?.enabled;
-  const descBody = it.description ? it.description : (isConsumivel ? '' : '<span class="mv-dash">—</span>');
-  const desc = isConsumivel
-    ? `<b>CONSUMÍVEL</b>${descBody ? ' — ' + descBody : ''}`
-    : descBody;
+  const rawDesc = it.item_desc || '';
+  const startsWithTag = /^consumível\b/i.test(rawDesc.trim());
+  let desc;
+  if (startsWithTag) {
+    // O texto já vem com "CONSUMÍVEL" digitado no início (inserido pelo painel
+    // admin) — deixa só essa palavra em negrito preto e mantém o resto normal.
+    const trimmed = rawDesc.trim();
+    const rest = trimmed.slice('consumível'.length).replace(/^[\s—-]+/, '');
+    desc = `<b style="color:#000">CONSUMÍVEL</b>${rest ? ' ' + rest : ''}`;
+  } else if (isConsumivel) {
+    // Item legado com a flag marcada mas sem o texto literal na descrição.
+    desc = `<b style="color:#000">CONSUMÍVEL</b>${rawDesc ? ' ' + rawDesc : ''}`;
+  } else {
+    desc = rawDesc || '<span class="mv-dash">—</span>';
+  }
   return `<div class="item-card">
     <div class="item-icon-wrap">${icon}</div>
     <div class="item-name-bar"><span class="item-name">${it.name||''}</span></div>
@@ -211,7 +222,7 @@ function render(){
 
   let list=ALL.filter(it=>{
     if(q){
-      const hay=`${it.name||''} ${it.description||''}`.toLowerCase();
+      const hay=`${it.name||''} ${it.item_desc||''}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     if(fCat && it.category!==fCat) return false;
