@@ -225,7 +225,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 /* Modais de novo move e nova ability: fullscreen igual ao edit-pokemon-modal */
 #new-move-modal .modal{max-width:760px}
 #new-ability-modal .modal{max-width:680px}
-#new-item-modal .modal{max-width:680px}
 #type-icon-modal .modal{max-width:640px}
 .ticon-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
 .ticon-row:last-of-type{border-bottom:none}
@@ -1102,13 +1101,69 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <div class="sdiv"></div>
       <div class="stat-item"><span class="stat-val g" id="it-cats">0</span><span class="stat-lbl">Categorias</span></div>
     </div>
+
+    <!-- FORMULÁRIO INLINE NOVO ITEM (antes era modal — agora abre direto na página) -->
+    <div id="nit-inline-form" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:4px;letter-spacing:.04em">＋ NOVO ITEM</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Adiciona um item do RPG (poké bolas, consumíveis, chave, etc). Será salvo no Supabase e listado no ItemDex.</p>
+      <div style="max-width:640px">
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
+          <div style="flex-shrink:0;text-align:center">
+            <div class="field-lbl pt" style="margin-bottom:4px">Ícone</div>
+            <img id="nit-icon-preview" src="" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;display:none;margin-bottom:6px">
+            <div id="nit-icon-placeholder" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px">🎒</div>
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
+              Enviar
+              <input type="file" accept="image/*" style="display:none" onchange="handleNewItemIconFile(this)">
+            </label>
+          </div>
+          <div style="flex:1">
+            <div style="margin-bottom:12px">
+              <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
+              <input class="mv-meta-input" id="nit-name" type="text" placeholder="ex: Pokébola" style="width:100%">
+            </div>
+            <div>
+              <div class="field-lbl pt" style="margin-bottom:4px">Categoria</div>
+              <select class="mv-meta-input" id="nit-category" style="width:100%">
+                <option value="">Sem categoria</option>
+                <option value="PokéBall">PokéBall</option>
+                <option value="Trainer Items">Trainer Items</option>
+                <option value="Treasure Items">Treasure Items</option>
+                <option value="Alpha Items">Alpha Items</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;margin-bottom:12px;flex-wrap:wrap">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-pokemart" style="margin:0"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-pickup" style="margin:0"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-consumivel" style="margin:0"> Consumível <span style="font-weight:400;color:var(--muted)">(legenda inicia em negrito)</span>
+          </label>
+        </div>
+        <div style="margin-bottom:12px">
+          <div class="field-lbl pt" style="margin-bottom:4px">Descrição</div>
+          <textarea class="field-pt" id="nit-description" rows="4" placeholder="Efeito / descrição do item…" style="width:100%"></textarea>
+        </div>
+        <div class="modal-foot" style="padding:0;margin-top:8px">
+          <button class="btn btn-outline" onclick="closeNewItemForm()">Cancelar</button>
+          <button class="btn btn-success" onclick="saveNewItem()">✓ Salvar no Supabase</button>
+        </div>
+      </div>
+    </div>
+
     <div class="toolbar">
       <div class="sinput-wrap">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         <input class="sinput" id="it-search" placeholder="Buscar item…" oninput="filterIt()">
       </div>
       <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
-      <button class="btn btn-primary btn-sm" onclick="openNewItem()" style="margin-left:auto">＋ Novo Item</button>
+      <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado agora, sem esperar o cron diário">📤 Atualizar items.json</button>
+      <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
     </div>
     <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
   </div>
@@ -1585,52 +1640,7 @@ Caterpie"></textarea>
   </div>
 </div>
 
-<div class="modal-ov" id="new-item-modal">
-  <div class="modal" style="position:relative">
-    <div class="modal-title" style="margin-bottom:4px">＋ Novo Item</div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Adiciona um item do RPG (poké bolas, consumíveis, chave, etc). Será salvo no Supabase e listado no ItemDex.</p>
-    <div style="max-width:640px">
-      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
-        <div style="flex-shrink:0;text-align:center">
-          <div class="field-lbl pt" style="margin-bottom:4px">Ícone</div>
-          <img id="nit-icon-preview" src="" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;display:none;margin-bottom:6px">
-          <div id="nit-icon-placeholder" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px">🎒</div>
-          <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
-            Enviar
-            <input type="file" accept="image/*" style="display:none" onchange="handleNewItemIconFile(this)">
-          </label>
-        </div>
-        <div style="flex:1">
-          <div style="margin-bottom:12px">
-            <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
-            <input class="mv-meta-input" id="nit-name" type="text" placeholder="ex: Pokébola" style="width:100%">
-          </div>
-          <div>
-            <div class="field-lbl pt" style="margin-bottom:4px">Categoria</div>
-            <input class="mv-meta-input" id="nit-category" type="text" list="nit-category-list" placeholder="ex: Consumível" style="width:100%">
-            <datalist id="nit-category-list"></datalist>
-          </div>
-        </div>
-      </div>
-      <div style="display:flex;gap:20px;margin-bottom:12px">
-        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-          <input type="checkbox" id="nit-flag-pokemart" style="margin:0"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
-        </label>
-        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-          <input type="checkbox" id="nit-flag-pickup" style="margin:0"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
-        </label>
-      </div>
-      <div style="margin-bottom:12px">
-        <div class="field-lbl pt" style="margin-bottom:4px">Descrição</div>
-        <textarea class="field-pt" id="nit-description" rows="4" placeholder="Efeito / descrição do item…" style="width:100%"></textarea>
-      </div>
-      <div class="modal-foot" style="padding:0;margin-top:8px">
-        <button class="btn btn-outline" onclick="closeModal('new-item-modal')">Cancelar</button>
-        <button class="btn btn-success" onclick="saveNewItem()">✓ Salvar no Supabase</button>
-      </div>
-    </div>
-  </div>
-</div>
+
 
 <script>
 /* ══════════════════════════════════════════
@@ -5297,6 +5307,19 @@ async function loadMoves() {
 /* ══════════════════════════════════════════
    ██ ITEMS
 ══════════════════════════════════════════ */
+const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items'];
+
+// Monta as <option> do select de categoria. Se o item já tiver uma categoria
+// "legada" que não está na lista fixa, ela entra como opção extra pra não
+// perder o dado — mas some assim que o usuário trocar pra uma categoria oficial.
+function categoryOptionsHtml(current) {
+  const opts = ['<option value="">Sem categoria</option>'];
+  const legacy = current && !ITEM_CATEGORIES.includes(current);
+  ITEM_CATEGORIES.forEach(c => opts.push(`<option value="${c}"${current === c ? ' selected' : ''}>${c}</option>`));
+  if (legacy) opts.push(`<option value="${current}" selected>${current} (legado)</option>`);
+  return opts.join('');
+}
+
 async function loadItems() {
   try {
     const dbRows = await sbSelect('items');
@@ -5313,13 +5336,14 @@ async function loadItems() {
 }
 
 function populateItemCategoryFilter() {
-  const cats = [...new Set(S.it.all.map(i => i.category).filter(Boolean))].sort();
+  // Filtro do topo mostra tanto as categorias fixas quanto qualquer legado que
+  // ainda esteja salvo em itens antigos.
+  const dbCats = [...new Set(S.it.all.map(i => i.category).filter(Boolean))];
+  const cats = [...new Set([...ITEM_CATEGORIES, ...dbCats])];
   const sel = document.getElementById('it-f-cat');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   sel.value = cur;
-  const dl = document.getElementById('nit-category-list');
-  if (dl) dl.innerHTML = cats.map(c => `<option value="${c}">`).join('');
 }
 
 function filterIt() { applyItFilter(); }
@@ -5356,6 +5380,7 @@ function renderItemsList() {
         <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0">${iconHtml}</span>
         <span class="entry-name">${it.name}</span>
         <span class="badge badge-pt">${it.category || 'Sem categoria'}</span>
+        ${it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>' : ''}
         ${it.flags?.pokemart?.enabled ? '<span title="PokéMart">🛒</span>' : ''}
         ${it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : ''}
         <span class="chev">▼</span>
@@ -5373,18 +5398,21 @@ function renderItemsList() {
           <div style="flex:1">
             <div class="field-row" style="margin-bottom:10px">
               <div class="field-lbl pt">Categoria</div>
-              <input class="mv-meta-input field-pt${it.category ? ' filled' : ''}" id="it-category-${slug}" value="${it.category || ''}" list="nit-category-list" style="width:100%" oninput="markFilled(this)">
+              <select class="mv-meta-input field-pt filled" id="it-category-${slug}" style="width:100%">${categoryOptionsHtml(it.category || '')}</select>
             </div>
-            <div style="display:flex;gap:20px;margin-bottom:10px">
+            <div style="display:flex;gap:20px;margin-bottom:10px;flex-wrap:wrap">
               <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
                 <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''}> PokéMart
               </label>
               <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
                 <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''}> Pickup
               </label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="it-flag-consumivel-${slug}" style="margin:0" ${it.flags?.consumivel?.enabled ? 'checked' : ''} onchange="document.getElementById('it-consumivel-hint-${slug}').style.display=this.checked?'':'none'"> Consumível
+              </label>
             </div>
             <div class="field-row">
-              <div class="field-lbl pt">📄 Descrição</div>
+              <div class="field-lbl pt">📄 Descrição <span id="it-consumivel-hint-${slug}" style="font-weight:800;color:var(--red);${it.flags?.consumivel?.enabled ? '' : 'display:none'}">— a legenda começa com CONSUMÍVEL em negrito</span></div>
               <textarea class="field-pt${it.description ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this)">${it.description || ''}</textarea>
             </div>
           </div>
@@ -5402,12 +5430,13 @@ function renderItemsList() {
 // Atualiza só as chaves "enabled" de pokemart/pickup dentro do jsonb "flags",
 // preservando qualquer outro dado que já esteja lá (ex: preço, raridade)
 // pra quando os sistemas de PokéMart/Pickup existirem de verdade.
-function mergeItemFlags(existingFlags, pokemartOn, pickupOn) {
+function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
     ...f,
     pokemart: { ...(f.pokemart || {}), enabled: !!pokemartOn },
     pickup: { ...(f.pickup || {}), enabled: !!pickupOn },
+    consumivel: { ...(f.consumivel || {}), enabled: !!consumivelOn },
   };
 }
 
@@ -5417,9 +5446,10 @@ async function saveItem(name) {
   const description = document.getElementById(`it-description-${slug}`)?.value.trim() || null;
   const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
   const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
+  const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
   try {
     const existing = S.it.dbMap[name] || { name };
-    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn);
+    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn);
     const row = { ...existing, name, category, description, flags, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
@@ -5431,8 +5461,9 @@ async function saveItem(name) {
     if (entry) {
       const catBadge = entry.querySelector('.entry-head .badge');
       if (catBadge) catBadge.textContent = category || 'Sem categoria';
-      entry.querySelectorAll('.entry-head span[title="PokéMart"], .entry-head span[title="Pickup"]').forEach(el => el.remove());
+      entry.querySelectorAll('.entry-head span[title="PokéMart"], .entry-head span[title="Pickup"], .entry-head span[title="Consumível"]').forEach(el => el.remove());
       const chev = entry.querySelector('.entry-head .chev');
+      if (consumivelOn) chev?.insertAdjacentHTML('beforebegin', '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>');
       if (pokemartOn) chev?.insertAdjacentHTML('beforebegin', '<span title="PokéMart">🛒</span>');
       if (pickupOn) chev?.insertAdjacentHTML('beforebegin', '<span title="Pickup">🔍</span>');
     }
@@ -5455,12 +5486,43 @@ async function deleteItem(name) {
 
 function openNewItem() {
   ['nit-name','nit-category','nit-description'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
-  ['nit-flag-pokemart','nit-flag-pickup'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   const prev = document.getElementById('nit-icon-preview');
   const ph = document.getElementById('nit-icon-placeholder');
   if (prev) { prev.src = ''; prev.style.display = 'none'; prev.dataset.b64 = ''; }
   if (ph) ph.style.display = 'flex';
-  document.getElementById('new-item-modal').classList.add('open');
+  const form = document.getElementById('nit-inline-form');
+  form.style.display = '';
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('nit-name')?.focus();
+}
+
+function closeNewItemForm() {
+  document.getElementById('nit-inline-form').style.display = 'none';
+}
+
+// Gera o items.json (mesmo formato usado pelo fallback do ItemDex) e baixa
+// pro computador. Não commitamos direto no GitHub por aqui — por segurança,
+// esse painel nunca guarda token do GitHub no cliente (já vazou um antes).
+// Fluxo: baixa o arquivo, depois só arrastar pra raiz do repo
+// alphx-r/kingdomplatinum e commitar (mesmo lugar do pokemon.json).
+async function backupItemsNow() {
+  try {
+    const data = S.it.all.map(it => ({
+      name: it.name,
+      category: it.category || null,
+      description: it.description || null,
+      icon_url: it.icon_url || null,
+      flags: it.flags || {},
+    }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'items.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(`📤 items.json gerado (${data.length} itens). Suba pra raiz do repo alphx-r/kingdomplatinum.`, 'ok');
+  } catch (e) { toast('Erro ao gerar items.json: ' + e.message, 'err'); }
 }
 
 function handleNewItemIconFile(inputEl) {
@@ -5516,6 +5578,7 @@ async function saveNewItem() {
   const description = document.getElementById('nit-description').value.trim() || null;
   const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
+  const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   if (S.it.dbMap[name]) { toast('Já existe um item com esse nome.', 'err'); return; }
   try {
@@ -5524,7 +5587,7 @@ async function saveNewItem() {
     if (iconB64) {
       icon_url = await uploadImgStorage(iconB64, 'pokemons', `items/${toSlugBase(name)}.png`) + '?t=' + Date.now();
     }
-    const flags = mergeItemFlags(null, pokemartOn, pickupOn);
+    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn);
     const row = { name, category, description, icon_url, flags, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
@@ -5532,7 +5595,7 @@ async function saveNewItem() {
     S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     populateItemCategoryFilter();
     applyItFilter();
-    closeModal('new-item-modal');
+    closeNewItemForm();
     toast(`Item "${name}" salvo!`, 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
 }
