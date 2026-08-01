@@ -3705,6 +3705,9 @@ function calcSyncSelects(){
                 <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="estacao" style="margin:0"/> 🌦️ Estação</label>
                 <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="paginas" style="margin:0"/> 📝 Páginas</label>
                 <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="calculadora-adm" style="margin:0"/> 🧮 Calculadora</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="mapa-adm" style="margin:0"/> 🗺️ Mapa</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="bonus-adm" style="margin:0"/> ✨ Bônus</label>
+                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="manutencao" style="margin:0"/> 🚧 Manutenção</label>
               </div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="adicionarAdmin()">+ Adicionar Admin</button>
@@ -5769,10 +5772,9 @@ function admTab(sec,el){
     const busca = document.getElementById('mapaAdmBusca');
     if(busca) busca.value = '';
   }, 0); }
-  // verifica permissão
+  // verifica permissão — toda seção exige permissão explícita (ou super admin)
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
-  const protegidas = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','calculadora-adm'];
-  if(protegidas.includes(sec) && !perms.includes(sec) && !isSuperAdmin()){
+  if(!perms.includes(sec) && !isSuperAdmin()){
     alert('Você não tem permissão para acessar esta seção.');return;
   }
   document.querySelectorAll('.adm-section').forEach(s=>s.classList.remove('active'));
@@ -6265,7 +6267,7 @@ async function salvarMensagemManutencao(){
 // ADMINS
 // ══════════════════════════════════════
 const SUPER_ADMIN = 'adm@nendo.ne';
-const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','estacao','forcados','paginas','calculadora-adm'];
+const ALL_PERMS = ['personagens','biomas','pokemons','npcs-adm','editor','historicos','eventos','estacao','forcados','paginas','calculadora-adm','mapa-adm','bonus-adm','manutencao'];
 
 function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
 
@@ -6281,12 +6283,11 @@ function getAdminPerms(a){
 
 function aplicarPermissoesSidebar(){
   const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
-  // Seções abertas para todos os ADMs (não precisam de permissão específica)
-  const abertas = ['mapa-adm','manutencao','bonus-adm','estacao','forcados'];
-  // botões com data-sec
+  // Nenhuma seção é liberada por padrão — tudo depende de permissão explícita
+  // (ou de ser super admin, que já recebe ALL_PERMS via getAdminPerms).
   document.querySelectorAll('.adm-nav-btn[data-sec]').forEach(btn=>{
     const sec = btn.dataset.sec;
-    btn.style.display = (abertas.includes(sec) || perms.includes(sec)) ? '' : 'none';
+    btn.style.display = perms.includes(sec) ? '' : 'none';
   });
   // botão admins: só super admin vê
   const btnAdmins = document.getElementById('btn-sec-admins');
@@ -6346,8 +6347,8 @@ async function salvarPermsAdmin(id, email){
 }
 function renderTbodyAdmins(){
   const superAdmin = isSuperAdmin();
-  const permIcons  = {personagens:'👥',biomas:'🗺️',pokemons:'⚡','npcs-adm':'🧑',editor:'🎨',historicos:'🗑️',eventos:'🎉',estacao:'🌦️',forcados:'🎯',paginas:'📝','calculadora-adm':'🧮'};
-  const permNames  = {personagens:'Personagens',biomas:'Biomas',pokemons:'Pokémon','npcs-adm':'NPCs',editor:'Editor',historicos:'Históricos',eventos:'Eventos',estacao:'Estação',forcados:'Forçar Resultado',paginas:'Páginas','calculadora-adm':'Calculadora'};
+  const permIcons  = {personagens:'👥',biomas:'🗺️',pokemons:'⚡','npcs-adm':'🧑',editor:'🎨',historicos:'🗑️',eventos:'🎉',estacao:'🌦️',forcados:'🎯',paginas:'📝','calculadora-adm':'🧮','mapa-adm':'🗺️','bonus-adm':'✨',manutencao:'🚧'};
+  const permNames  = {personagens:'Personagens',biomas:'Biomas',pokemons:'Pokémon','npcs-adm':'NPCs',editor:'Editor',historicos:'Históricos',eventos:'Eventos',estacao:'Estação',forcados:'Forçar Resultado',paginas:'Páginas','calculadora-adm':'Calculadora','mapa-adm':'Mapa','bonus-adm':'Bônus',manutencao:'Manutenção'};
   const tbody = document.getElementById('tbody-admins');
   if(!admins || admins.length === 0){
     tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);font-size:13px;padding:16px 10px">Nenhum administrador cadastrado.</td></tr>';
