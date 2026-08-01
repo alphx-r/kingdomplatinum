@@ -1106,7 +1106,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
     <div id="nit-inline-form" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:4px;letter-spacing:.04em">＋ NOVO ITEM</div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Adiciona um item do RPG (poké bolas, consumíveis, chave, etc). Será salvo no Supabase e listado no ItemDex.</p>
-      <div style="max-width:640px">
+      <div>
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
           <div style="flex-shrink:0;text-align:center">
             <div class="field-lbl pt" style="margin-bottom:4px">Ícone</div>
@@ -1116,9 +1116,10 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
               Enviar
               <input type="file" accept="image/*" style="display:none" onchange="handleNewItemIconFile(this)">
             </label>
+            <input class="mv-meta-input" id="nit-icon-slug" type="text" placeholder="slug do ícone" style="width:100px;margin-top:6px;font-size:11px;text-align:center" title="Opcional: nome do arquivo no storage. Se vazio, usa o slug do nome do item.">
           </div>
-          <div style="flex:1">
-            <div style="margin-bottom:12px">
+          <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
               <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
               <input class="mv-meta-input" id="nit-name" type="text" placeholder="ex: Pokébola" style="width:100%">
             </div>
@@ -1136,13 +1137,13 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
         </div>
         <div style="display:flex;gap:20px;margin-bottom:12px;flex-wrap:wrap">
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-consumivel" style="margin:0" onchange="toggleConsumivelPrefix('nit-description', this.checked)"> Consumível <span style="font-weight:400;color:var(--muted)">(insere "CONSUMÍVEL" no início da descrição)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pokemart" style="margin:0"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pickup" style="margin:0"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
-          </label>
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="nit-flag-consumivel" style="margin:0"> Consumível <span style="font-weight:400;color:var(--muted)">(legenda inicia em negrito)</span>
           </label>
         </div>
         <div style="margin-bottom:12px">
@@ -5351,7 +5352,7 @@ function applyItFilter() {
   const q = document.getElementById('it-search').value.toLowerCase();
   const fCat = document.getElementById('it-f-cat').value;
   S.it.filtered = S.it.all.filter(it => {
-    const nm = !q || (it.name || '').toLowerCase().includes(q) || (it.description || '').toLowerCase().includes(q);
+    const nm = !q || (it.name || '').toLowerCase().includes(q) || (it.item_desc || '').toLowerCase().includes(q);
     const cat = !fCat || it.category === fCat;
     return nm && cat;
   });
@@ -5372,8 +5373,8 @@ function renderItemsList() {
   }
   con.innerHTML = items.map((it, i) => {
     const slug = toSlugBase(it.name) || ('item-' + i);
-    const iconHtml = it.icon_url
-      ? `<img src="${it.icon_url}" style="width:32px;height:32px;object-fit:contain" alt="">`
+    const iconHtml = it.sprite
+      ? `<img src="${it.sprite}" style="width:32px;height:32px;object-fit:contain" alt="">`
       : `<span style="font-size:18px">🎒</span>`;
     return `<div class="entry" id="it-entry-${slug}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="toggleEntry('it-entry-${slug}')">
@@ -5388,8 +5389,8 @@ function renderItemsList() {
       <div class="entry-body">
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px">
           <div style="flex-shrink:0;text-align:center">
-            <img id="it-icon-preview-${slug}" src="${it.icon_url || ''}" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;${it.icon_url ? '' : 'display:none'};margin-bottom:6px">
-            <div id="it-icon-placeholder-${slug}" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px;${it.icon_url ? 'display:none' : ''}">🎒</div>
+            <img id="it-icon-preview-${slug}" src="${it.sprite || ''}" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;${it.sprite ? '' : 'display:none'};margin-bottom:6px">
+            <div id="it-icon-placeholder-${slug}" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px;${it.sprite ? 'display:none' : ''}">🎒</div>
             <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
               Trocar
               <input type="file" accept="image/*" style="display:none" onchange="handleItemIconFile('${jsEsc(it.name)}',this)">
@@ -5402,19 +5403,29 @@ function renderItemsList() {
             </div>
             <div style="display:flex;gap:20px;margin-bottom:10px;flex-wrap:wrap">
               <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="it-flag-consumivel-${slug}" style="margin:0" ${it.flags?.consumivel?.enabled ? 'checked' : ''} onchange="toggleConsumivelPrefix('it-description-${slug}', this.checked)"> Consumível
+              </label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
                 <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''}> PokéMart
               </label>
               <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
                 <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''}> Pickup
               </label>
-              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-                <input type="checkbox" id="it-flag-consumivel-${slug}" style="margin:0" ${it.flags?.consumivel?.enabled ? 'checked' : ''} onchange="document.getElementById('it-consumivel-hint-${slug}').style.display=this.checked?'':'none'"> Consumível
-              </label>
             </div>
             <div class="field-row">
-              <div class="field-lbl pt">📄 Descrição <span id="it-consumivel-hint-${slug}" style="font-weight:800;color:var(--red);${it.flags?.consumivel?.enabled ? '' : 'display:none'}">— a legenda começa com CONSUMÍVEL em negrito</span></div>
-              <textarea class="field-pt${it.description ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this)">${it.description || ''}</textarea>
+              <div class="field-lbl pt">📄 Descrição</div>
+              <textarea class="field-pt${it.item_desc ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this)">${it.item_desc || ''}</textarea>
             </div>
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <div class="field-lbl pt" style="margin-bottom:4px">Ícone (upload direto por slug)</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="mv-meta-input" id="it-icon-slug-${slug}" type="text" value="${toSlugBase(it.name) || ''}" placeholder="slug" style="max-width:200px">
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
+              Enviar por slug
+              <input type="file" accept="image/*" style="display:none" onchange="handleItemIconFileBySlug('${jsEsc(it.name)}',document.getElementById('it-icon-slug-${slug}').value,this)">
+            </label>
           </div>
         </div>
         <div class="entry-foot">
@@ -5430,6 +5441,27 @@ function renderItemsList() {
 // Atualiza só as chaves "enabled" de pokemart/pickup dentro do jsonb "flags",
 // preservando qualquer outro dado que já esteja lá (ex: preço, raridade)
 // pra quando os sistemas de PokéMart/Pickup existirem de verdade.
+// Ao marcar "Consumível", insere "CONSUMÍVEL " no início da descrição (se
+// ainda não estiver lá). Ao desmarcar, remove só se for exatamente esse
+// prefixo — nunca mexe no resto do texto que o usuário escreveu.
+function toggleConsumivelPrefix(textareaId, checked) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  const PREFIX = 'CONSUMÍVEL';
+  const cur = ta.value;
+  if (checked) {
+    if (!cur.trim().toUpperCase().startsWith(PREFIX)) {
+      ta.value = cur ? `${PREFIX} ${cur}` : PREFIX;
+    }
+  } else {
+    const trimmed = cur.replace(/^\s*/, '');
+    if (trimmed.toUpperCase().startsWith(PREFIX)) {
+      ta.value = trimmed.slice(PREFIX.length).replace(/^[\s—-]+/, '');
+    }
+  }
+  markFilled(ta);
+}
+
 function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
@@ -5443,14 +5475,14 @@ function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn) {
 async function saveItem(name) {
   const slug = toSlugBase(name) || name;
   const category = document.getElementById(`it-category-${slug}`)?.value.trim() || null;
-  const description = document.getElementById(`it-description-${slug}`)?.value.trim() || null;
+  const item_desc = document.getElementById(`it-description-${slug}`)?.value.trim() || null;
   const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
   const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
   const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
   try {
     const existing = S.it.dbMap[name] || { name };
     const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn);
-    const row = { ...existing, name, category, description, flags, updated_at: new Date().toISOString() };
+    const row = { ...existing, name, category, item_desc, flags, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
     const idx = S.it.all.findIndex(i => i.name === name);
@@ -5485,7 +5517,7 @@ async function deleteItem(name) {
 }
 
 function openNewItem() {
-  ['nit-name','nit-category','nit-description'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nit-name','nit-category','nit-description','nit-icon-slug'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   const prev = document.getElementById('nit-icon-preview');
   const ph = document.getElementById('nit-icon-placeholder');
@@ -5511,8 +5543,8 @@ async function backupItemsNow() {
     const data = S.it.all.map(it => ({
       name: it.name,
       category: it.category || null,
-      description: it.description || null,
-      icon_url: it.icon_url || null,
+      item_desc: it.item_desc || null,
+      sprite: it.sprite || null,
       flags: it.flags || {},
     }));
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -5542,28 +5574,37 @@ function handleNewItemIconFile(inputEl) {
 }
 
 function handleItemIconFile(name, inputEl) {
+  const slug = toSlugBase(name) || name;
+  handleItemIconFileBySlug(name, slug, inputEl);
+}
+
+// Faz upload do ícone usando um slug explícito (não necessariamente derivado
+// do nome atual do item) — útil pra reaproveitar um arquivo já nomeado com o
+// slug certo, ou pra corrigir o caminho de storage sem renomear o item.
+function handleItemIconFileBySlug(name, slugInput, inputEl) {
   const file = inputEl.files && inputEl.files[0];
   if (!file) return;
-  const slug = toSlugBase(name) || name;
+  const domSlug = toSlugBase(name) || name;
+  const uploadSlug = toSlugBase((slugInput || '').trim()) || domSlug;
   const reader = new FileReader();
   reader.onload = async () => {
     let out = reader.result;
     try { out = await trimAndFitSprite(out, 512); } catch (e) {}
     try {
       const ext = 'png';
-      const icon_url = await uploadImgStorage(out, 'pokemons', `items/${slug}.${ext}`) + '?t=' + Date.now();
+      const sprite = await uploadImgStorage(out, 'pokemons', `items/${uploadSlug}.${ext}`) + '?t=' + Date.now();
       const existing = S.it.dbMap[name] || { name };
-      const row = { ...existing, name, icon_url, updated_at: new Date().toISOString() };
+      const row = { ...existing, name, sprite, updated_at: new Date().toISOString() };
       await sbUpsert('items', row);
       S.it.dbMap[name] = row;
       const idx = S.it.all.findIndex(i => i.name === name);
       if (idx >= 0) S.it.all[idx] = row;
-      const prev = document.getElementById(`it-icon-preview-${slug}`);
-      const ph = document.getElementById(`it-icon-placeholder-${slug}`);
-      if (prev) { prev.src = icon_url; prev.style.display = ''; }
+      const prev = document.getElementById(`it-icon-preview-${domSlug}`);
+      const ph = document.getElementById(`it-icon-placeholder-${domSlug}`);
+      if (prev) { prev.src = sprite; prev.style.display = ''; }
       if (ph) ph.style.display = 'none';
-      const listIcon = document.querySelector(`#it-entry-${slug} .entry-head img`);
-      if (listIcon) listIcon.src = icon_url;
+      const listIcon = document.querySelector(`#it-entry-${domSlug} .entry-head img`);
+      if (listIcon) listIcon.src = sprite;
       toast('🖼️ Ícone do item enviado!', 'ok');
     } catch (e) { toast('Erro ao enviar ícone: ' + e.message, 'err'); }
     inputEl.value = '';
@@ -5572,23 +5613,25 @@ function handleItemIconFile(name, inputEl) {
   reader.readAsDataURL(file);
 }
 
+
 async function saveNewItem() {
   const name = document.getElementById('nit-name').value.trim();
   const category = document.getElementById('nit-category').value.trim() || null;
-  const description = document.getElementById('nit-description').value.trim() || null;
+  const item_desc = document.getElementById('nit-description').value.trim() || null;
   const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
   const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   if (S.it.dbMap[name]) { toast('Já existe um item com esse nome.', 'err'); return; }
   try {
-    let icon_url = null;
+    let sprite = null;
     const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
     if (iconB64) {
-      icon_url = await uploadImgStorage(iconB64, 'pokemons', `items/${toSlugBase(name)}.png`) + '?t=' + Date.now();
+      const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
+      sprite = await uploadImgStorage(iconB64, 'pokemons', `items/${uploadSlug}.png`) + '?t=' + Date.now();
     }
     const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn);
-    const row = { name, category, description, icon_url, flags, updated_at: new Date().toISOString() };
+    const row = { name, category, item_desc, sprite, flags, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
     S.it.all.push(row);
