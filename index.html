@@ -333,8 +333,9 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .hist-header{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .hist-del-btn{background:#fde8e8;color:var(--red);border:1px solid #f0c0c0;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap}
 .hist-del-btn:hover{background:#f8c8c8}
-.hist-body{padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap}
-.hist-poke{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border-radius:8px;border:1px solid var(--border);min-width:160px}
+.hist-body{padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.hist-poke{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:16px 10px 14px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
+.hist-poke:hover{border-color:var(--border2);box-shadow:0 4px 16px rgba(20,30,50,.09)}
 /* ROLADOR DE DADOS */
 .dice-roller-wrap{margin:0 auto}
 .dice-header{text-align:center;margin-bottom:28px;padding-top:8px}
@@ -392,7 +393,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .rol-entry-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px}
 .rol-entry-bioma{font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;background:var(--brand-light);padding:2px 8px;border-radius:5px}
 .rol-entry-hora{font-size:11px;color:var(--muted)}
-.rol-pokes-wrap{display:flex;flex-wrap:wrap;gap:8px}
+.rol-pokes-wrap{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .bioma-raridade-section{margin-bottom:8px;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden}
 .bioma-raridade-title{font-size:13px;font-weight:700;color:var(--text);padding:12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;background:var(--surface);user-select:none;transition:background .15s}
 .bioma-raridade-title:hover{background:var(--surface2)}
@@ -600,10 +601,9 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   .poke-card{padding:10px;gap:8px}
   .poke-card-img{width:60px;height:60px}
   .poke-card-img img{width:50px;height:50px}
-  .hist-body{gap:6px;display:grid;grid-template-columns:1fr 1fr}
-  .hist-poke{min-width:0;width:auto;flex-direction:column;align-items:center;text-align:center;padding:10px 6px}
-  .hist-poke>div:first-child{align-items:center}
-  .hist-poke>div:last-child{align-items:center;width:100%}
+  .hist-body{gap:8px;display:grid;grid-template-columns:repeat(2,1fr)}
+  .hist-poke{padding:12px 8px}
+  .rol-pokes-wrap{gap:8px;grid-template-columns:repeat(2,1fr)}
   .hist-header{flex-direction:column;align-items:flex-start;gap:4px}
   .ficha-header{flex-direction:column;align-items:flex-start;gap:10px}
   .search-bar{width:100%}
@@ -10382,31 +10382,34 @@ function renderRolagens(){
     if(e._tipo==='pokemon'){
       const pokes=Array.isArray(e.pokes)?e.pokes:[];
       const pokesHtml=pokes.map((pk,pkIdx)=>{
-        const rShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'background:var(--surface);border:1px solid var(--border)';
-        // Mesma cascata das cartas de sorteio/biomas: DB atual -> PokeAPI ao
-        // vivo -> só então Unown (que é o esperado apenas pra Nendo/formas alt).
-        let rShinySrc=pk.isShiny?(pk.sprite_shiny||pk.sprite):pk.sprite;
+        const rShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'';
+        // Mesma cascata das cartas de sorteio/biomas, mas agora priorizando o
+        // sprite ATUAL do cadastro sobre o congelado na rolagem (ver
+        // pkFreshSprite): DB atual -> congelado -> PokeAPI ao vivo -> Unown
+        // (Unown esperado apenas pra Nendo/formas alt sem sprite cadastrado).
+        let rShinySrc=pkFreshSprite(pk.nome, pk.isShiny);
+        const rUsingFresh=!!rShinySrc;
         let rNeedsApiLookup=false;
-        if(!rShinySrc){ rShinySrc=pkFreshSprite(pk.nome, pk.isShiny); if(!rShinySrc){ rNeedsApiLookup=true; rShinySrc=FALLBACK_SPRITE; } }
-        if(!rNeedsApiLookup && pk.isShiny && !pk.sprite_shiny && rShinySrc.includes('raw.githubusercontent.com')){ rShinySrc=rShinySrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/'); }
+        if(!rShinySrc) rShinySrc=pk.isShiny?(pk.sprite_shiny||pk.sprite):pk.sprite;
+        if(!rShinySrc){ rNeedsApiLookup=true; rShinySrc=FALLBACK_SPRITE; }
+        if(!rNeedsApiLookup && !rUsingFresh && pk.isShiny && !pk.sprite_shiny && rShinySrc.includes('raw.githubusercontent.com')){ rShinySrc=rShinySrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/'); }
         const rGlow=pk.isShiny?'drop-shadow(0 0 5px #ffd700)':'';
         const rNomeEsc=(pk.nome||'').replace(/'/g,"\\'");
         const rOnloadAttr=rNeedsApiLookup?`onload="if(!this.dataset.apiTried){this.dataset.apiTried='1';pkResolvePokeApiSprite(this,'${rNomeEsc}',${pk.isShiny?'true':'false'});}" `:'';
         const rFalhou=(pk.nome==='???');
         const rerollBtn=rFalhou?`<button class="reroll-falha-btn" onclick="rerollarPokeFalho('${e.id}',${pkIdx},this)" style="margin-top:2px;font-size:9px;font-weight:700;padding:3px 8px;border-radius:8px;border:1.5px solid var(--red);background:#fdeaea;color:var(--red);cursor:pointer;white-space:nowrap">🔄 Re-rolar</button>`:'';
         return`
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;${rShiny};border-radius:8px;padding:8px 10px;min-width:88px;max-width:108px;position:relative">
-          ${pk.isShiny?`<div title="${pk.bonusShiny&&pk.bonusShiny.length?`Shiny (${pk.bonusShiny.join(' + ')})`:'Shiny'}" style="position:absolute;top:-6px;right:-4px;font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 5px;white-space:nowrap">✨</div>`:''}
-          <div style="width:52px;height:52px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden">
-            <img src="${rShinySrc}" data-sprite-stage="${rNeedsApiLookup?'1':'0'}" style="width:52px;height:52px;object-fit:contain;filter:${rGlow}" ${rOnloadAttr}onerror="handleHistSpriteError(this,'${rNomeEsc}',${pk.isShiny?'true':'false'});this.style.filter='${rGlow}'"/>
+        <div class="hist-poke" style="${rShiny}">
+          <div style="width:64px;height:64px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:2px">
+            <img src="${rShinySrc}" data-sprite-stage="1" style="width:64px;height:64px;object-fit:contain;filter:${rGlow}" ${rOnloadAttr}onerror="handleHistSpriteError(this,'${rNomeEsc}',${pk.isShiny?'true':'false'});this.style.filter='${rGlow}'"/>
           </div>
-          <div style="font-size:10px;font-weight:700;font-family:var(--font-title);color:var(--text);text-align:center;line-height:1.2">
-            ${pk.nome}<span style="color:${pk.genderC||'#888'}"> ${pk.genderS||''}</span>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:2px">
-            ${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}
-          </div>
-          <span class="poke-rarity ${rcls[pk.rarity]||'rc'}" style="font-size:9px;padding:1px 6px">${rlbl[pk.rarity]||''}</span>
+          <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text);line-height:1.25">${pk.nome} <span class="gender-icon" style="color:${pk.genderC||'#888'}">${pk.genderS||''}</span></div>
+          ${pk.isShiny?`<div style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY${pk.bonusShiny&&pk.bonusShiny.length?` (${pk.bonusShiny.join(' + ')})`:''}</div>`:''}
+          <div>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</div>
+          <div><span class="poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]||''}</span></div>
+          <div style="font-size:11px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
+          ${pk.nature?.en?`<div style="font-size:10px;color:var(--muted);font-style:italic">${pk.nature.en}</div>`:''}
+          ${pk.condicao?`<div style="font-size:9px;font-weight:700;color:#7a4a00;background:#fff3d4;border:1px solid #e8c86a;border-radius:6px;padding:2px 6px;line-height:1.3;margin-top:2px">${pk.condicao}</div>`:''}
           ${rerollBtn}
         </div>`;}).join('');
       return`<div class="rol-entry">
@@ -10629,37 +10632,40 @@ function renderHistorico(){
     const ph=pokes.map(pk=>{
       const hShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'';
       const hHoney=(pk.isHoney&&!pk.isShiny)?'border:2px solid #d4a017':'';
-      // Se não veio sprite baked no histórico (rolls de bônus/extra às vezes não
-      // salvam esse campo), tenta o sprite atual do DB na hora; se também não
-      // achar, marca pra buscar na PokeAPI assim que a imagem placeholder carregar
-      // (sem isso, o onerror nunca dispara pq o placeholder carrega com sucesso).
-      let shinySprSrc=pk.sprite;
+      // Histórico sempre prioriza o sprite ATUAL do cadastro (pkFreshSprite),
+      // não o congelado no momento da rolagem — assim, se o admin trocar/
+      // re-processar um sprite depois, o histórico acompanha a atualização
+      // automaticamente. Só cai pro valor congelado (pk.sprite) se o
+      // Pokémon/forma não existir mais no cadastro atual (ex: removido),
+      // e só cai pra PokeAPI/Unown se nem isso existir.
+      let shinySprSrc=pkFreshSprite(pk.nome, pk.isShiny);
+      const usingFresh=!!shinySprSrc;
       let needsApiLookup=false;
-      if(!shinySprSrc){
-        shinySprSrc=pkFreshSprite(pk.nome, pk.isShiny);
-        if(!shinySprSrc){ needsApiLookup=true; shinySprSrc=FALLBACK_SPRITE; }
+      if(!shinySprSrc) shinySprSrc=pk.sprite||null;
+      if(!shinySprSrc){ needsApiLookup=true; shinySprSrc=FALLBACK_SPRITE; }
+      if(pk.isShiny && !usingFresh){
+        if(pk.sprite_shiny){shinySprSrc=pk.sprite_shiny;}
+        else if(!needsApiLookup && shinySprSrc.includes('raw.githubusercontent.com')){shinySprSrc=shinySprSrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/');}
       }
-      if(pk.isShiny){ if(pk.sprite_shiny){shinySprSrc=pk.sprite_shiny;} else if(!needsApiLookup && shinySprSrc.includes('raw.githubusercontent.com')){shinySprSrc=shinySprSrc.replace('/sprites/pokemon/other/official-artwork/','/sprites/pokemon/other/official-artwork/shiny/');} }
       const hGlow=pk.isShiny?'drop-shadow(0 0 5px #ffd700)':'';
       const nomeEsc=(pk.nome||'').replace(/'/g,"\\'");
+      // Já tentamos o sprite fresco (ou concluímos que ele não existe) antes
+      // de renderizar, então o handler de erro nunca precisa repetir esse
+      // passo — sempre pula direto pra tentativa na PokeAPI.
       const onloadAttr=needsApiLookup?`onload="if(!this.dataset.apiTried){this.dataset.apiTried='1';pkResolvePokeApiSprite(this,'${nomeEsc}',${pk.isShiny?'true':'false'});}" `:'';
       return`
       <div class="hist-poke" style="${hShiny};${hHoney}">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
-          <div style="width:56px;height:56px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden">
-            <img src="${shinySprSrc}" data-sprite-stage="${needsApiLookup?'1':'0'}" style="width:56px;height:56px;object-fit:contain;filter:${hGlow}" ${onloadAttr}onerror="handleHistSpriteError(this,'${nomeEsc}',${pk.isShiny?'true':'false'});this.style.filter='${hGlow}'"/>
-          </div>
-          <div style="font-size:10px;font-weight:600;color:var(--text);text-align:center;font-family:var(--font-title);line-height:1.2">${pk.nome} <span style="color:${pk.genderC}">${pk.genderS}</span></div>
-          ${pk.isShiny?`<div style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY${pk.bonusShiny&&pk.bonusShiny.length?` (${pk.bonusShiny.join(' + ')})`:''}</div>`:''}
-          ${pk.isHoney?`<div style="font-size:9px;font-weight:800;color:#7a5010;background:#fff3d4;border:1px solid #d4a017;border-radius:8px;padding:1px 6px">HONEY</div>`:''}
+        <div style="width:64px;height:64px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:2px">
+          <img src="${shinySprSrc}" data-sprite-stage="1" style="width:64px;height:64px;object-fit:contain;filter:${hGlow}" ${onloadAttr}onerror="handleHistSpriteError(this,'${nomeEsc}',${pk.isShiny?'true':'false'});this.style.filter='${hGlow}'"/>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
-          <div>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</div>
-          <div><span class="poke-rarity ${rcls[pk.rarity]||'rc'}" style="font-size:9px;padding:1px 7px">${rlbl[pk.rarity]||''}</span></div>
-          <div style="font-size:10px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
-          ${pk.nature?.en?`<div style="font-size:9px;color:var(--muted);font-style:italic;text-align:center">${pk.nature.en}</div>`:''}
-          ${pk.condicao?`<div style="font-size:9px;font-weight:700;color:#7a4a00;background:#fff3d4;border:1px solid #e8c86a;border-radius:6px;padding:2px 6px;text-align:center;line-height:1.3;margin-top:2px">${pk.condicao}</div>`:''}
-        </div>
+        <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text);line-height:1.25">${pk.nome} <span class="gender-icon" style="color:${pk.genderC}">${pk.genderS}</span></div>
+        ${pk.isShiny?`<div style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY${pk.bonusShiny&&pk.bonusShiny.length?` (${pk.bonusShiny.join(' + ')})`:''}</div>`:''}
+        ${pk.isHoney?`<div style="font-size:9px;font-weight:800;color:#7a5010;background:#fff3d4;border:1px solid #d4a017;border-radius:8px;padding:1px 6px">HONEY</div>`:''}
+        <div>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</div>
+        <div><span class="poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]||''}</span></div>
+        <div style="font-size:11px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
+        ${pk.nature?.en?`<div style="font-size:10px;color:var(--muted);font-style:italic">${pk.nature.en}</div>`:''}
+        ${pk.condicao?`<div style="font-size:9px;font-weight:700;color:#7a4a00;background:#fff3d4;border:1px solid #e8c86a;border-radius:6px;padding:2px 6px;line-height:1.3;margin-top:2px">${pk.condicao}</div>`:''}
       </div>`;}).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
