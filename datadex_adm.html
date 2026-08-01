@@ -225,6 +225,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 /* Modais de novo move e nova ability: fullscreen igual ao edit-pokemon-modal */
 #new-move-modal .modal{max-width:760px}
 #new-ability-modal .modal{max-width:680px}
+#new-item-modal .modal{max-width:680px}
 #type-icon-modal .modal{max-width:640px}
 .ticon-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
 .ticon-row:last-of-type{border-bottom:none}
@@ -645,6 +646,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <button class="tab active" id="tab-pokemon" onclick="switchTab('pokemon')">Pokémon <span class="tab-badge" id="badge-pokemon">—</span></button>
     <button class="tab" id="tab-abilities" onclick="switchTab('abilities')">Abilities <span class="tab-badge" id="badge-abilities">0</span></button>
     <button class="tab" id="tab-moves" onclick="switchTab('moves')">Moves <span class="tab-badge" id="badge-moves">0</span></button>
+    <button class="tab" id="tab-items" onclick="switchTab('items')">Items <span class="tab-badge" id="badge-items">0</span></button>
     <button class="tab" id="tab-rpg" onclick="switchTab('rpg')">＋</button>
   </div>
 
@@ -1091,6 +1093,24 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
     <div id="mv-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando movimentos…</div></div></div>
+  </div>
+
+  <!-- ITEMS -->
+  <div class="panel" id="panel-items">
+    <div class="stats-bar">
+      <div class="stat-item"><span class="stat-val" id="it-total">—</span><span class="stat-lbl">Total</span></div>
+      <div class="sdiv"></div>
+      <div class="stat-item"><span class="stat-val g" id="it-cats">0</span><span class="stat-lbl">Categorias</span></div>
+    </div>
+    <div class="toolbar">
+      <div class="sinput-wrap">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input class="sinput" id="it-search" placeholder="Buscar item…" oninput="filterIt()">
+      </div>
+      <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
+      <button class="btn btn-primary btn-sm" onclick="openNewItem()" style="margin-left:auto">＋ Novo Item</button>
+    </div>
+    <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
   </div>
 
   <!-- RPG POKÉMON -->
@@ -1565,6 +1585,53 @@ Caterpie"></textarea>
   </div>
 </div>
 
+<div class="modal-ov" id="new-item-modal">
+  <div class="modal" style="position:relative">
+    <div class="modal-title" style="margin-bottom:4px">＋ Novo Item</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Adiciona um item do RPG (poké bolas, consumíveis, chave, etc). Será salvo no Supabase e listado no ItemDex.</p>
+    <div style="max-width:640px">
+      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
+        <div style="flex-shrink:0;text-align:center">
+          <div class="field-lbl pt" style="margin-bottom:4px">Ícone</div>
+          <img id="nit-icon-preview" src="" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;display:none;margin-bottom:6px">
+          <div id="nit-icon-placeholder" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px">🎒</div>
+          <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
+            Enviar
+            <input type="file" accept="image/*" style="display:none" onchange="handleNewItemIconFile(this)">
+          </label>
+        </div>
+        <div style="flex:1">
+          <div style="margin-bottom:12px">
+            <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
+            <input class="mv-meta-input" id="nit-name" type="text" placeholder="ex: Pokébola" style="width:100%">
+          </div>
+          <div>
+            <div class="field-lbl pt" style="margin-bottom:4px">Categoria</div>
+            <input class="mv-meta-input" id="nit-category" type="text" list="nit-category-list" placeholder="ex: Consumível" style="width:100%">
+            <datalist id="nit-category-list"></datalist>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:20px;margin-bottom:12px">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+          <input type="checkbox" id="nit-flag-pokemart" style="margin:0"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+          <input type="checkbox" id="nit-flag-pickup" style="margin:0"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
+        </label>
+      </div>
+      <div style="margin-bottom:12px">
+        <div class="field-lbl pt" style="margin-bottom:4px">Descrição</div>
+        <textarea class="field-pt" id="nit-description" rows="4" placeholder="Efeito / descrição do item…" style="width:100%"></textarea>
+      </div>
+      <div class="modal-foot" style="padding:0;margin-top:8px">
+        <button class="btn btn-outline" onclick="closeModal('new-item-modal')">Cancelar</button>
+        <button class="btn btn-success" onclick="saveNewItem()">✓ Salvar no Supabase</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ══════════════════════════════════════════
    SLUG — geração unificada nome→slug, com sufixo de região
@@ -1727,6 +1794,12 @@ async function sbDeleteByName(table, name) {
    HELPERS
 ══════════════════════════════════════════ */
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, ' '); }
+// Escapa aspas simples e barras invertidas pra uso seguro dentro de
+// atributos onclick="fn('...')" com nomes que podem ter apóstrofo, etc.
+function jsEsc(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+// CSS.escape com fallback simples, pra usar nomes de item (com acento/espaço)
+// dentro de seletores tipo document.querySelector('#it-entry-' + cssEsc(x)).
+function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(String(s || '')) : String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_'); }
 
 const TC = { normal:{bg:'#c8c8a0',c:'#4a4a2a'},fire:{bg:'#ff9b4a',c:'#7a2a00'},water:{bg:'#6ab8ff',c:'#003a6a'},electric:{bg:'#ffe030',c:'#5a4a00'},grass:{bg:'#78d878',c:'#1a5a1a'},ice:{bg:'#96d8d8',c:'#1a4a4a'},fighting:{bg:'#c03030',c:'#fff'},poison:{bg:'#a060c0',c:'#fff'},ground:{bg:'#e0c060',c:'#3a2a00'},flying:{bg:'#88aaee',c:'#1a1a5a'},psychic:{bg:'#ff8fb0',c:'#6a0030'},bug:{bg:'#a0c020',c:'#2a3a00'},rock:{bg:'#b8a050',c:'#3a2a00'},ghost:{bg:'#9090c0',c:'#1a1a4a'},dragon:{bg:'#7060f0',c:'#fff'},dark:{bg:'#705040',c:'#fff'},steel:{bg:'#aababb',c:'#2a3a3a'},fairy:{bg:'#ffaad8',c:'#6a0050'},light:{bg:'#e5d38a',c:'#4a3a10'},scent:{bg:'#3cc492',c:'#fff'} };
 function pill(t) { const c = TC[t]||{bg:'#999',c:'#fff'}; return `<span class="tpill" style="background:${c.bg};color:${c.c}">${t.toUpperCase()}</span>`; }
@@ -1782,6 +1855,7 @@ const S = {
   pk: { all: [], filtered: [], filter: 'all', dbMap: {} },
   ab: { all: [], filtered: [], filter: 'all', dbMap: {} },
   mv: { all: [], filtered: [], filter: 'all', dbMap: {} },
+  it: { all: [], filtered: [], dbMap: {} },
   biomas: [],
 };
 
@@ -5221,6 +5295,250 @@ async function loadMoves() {
 }
 
 /* ══════════════════════════════════════════
+   ██ ITEMS
+══════════════════════════════════════════ */
+async function loadItems() {
+  try {
+    const dbRows = await sbSelect('items');
+    S.it.dbMap = {};
+    dbRows.forEach(r => { S.it.dbMap[r.name] = r; });
+    const items = dbRows.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    S.it.all = items;
+    S.it.filtered = items;
+    populateItemCategoryFilter();
+    applyItFilter();
+  } catch (e) {
+    document.getElementById('it-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar itens</div></div>`;
+  }
+}
+
+function populateItemCategoryFilter() {
+  const cats = [...new Set(S.it.all.map(i => i.category).filter(Boolean))].sort();
+  const sel = document.getElementById('it-f-cat');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  sel.value = cur;
+  const dl = document.getElementById('nit-category-list');
+  if (dl) dl.innerHTML = cats.map(c => `<option value="${c}">`).join('');
+}
+
+function filterIt() { applyItFilter(); }
+function applyItFilter() {
+  const q = document.getElementById('it-search').value.toLowerCase();
+  const fCat = document.getElementById('it-f-cat').value;
+  S.it.filtered = S.it.all.filter(it => {
+    const nm = !q || (it.name || '').toLowerCase().includes(q) || (it.description || '').toLowerCase().includes(q);
+    const cat = !fCat || it.category === fCat;
+    return nm && cat;
+  });
+  renderItemsList();
+}
+
+function renderItemsList() {
+  const con = document.getElementById('it-list');
+  const items = S.it.filtered;
+  document.getElementById('it-total').textContent = S.it.all.length;
+  document.getElementById('it-cats').textContent = new Set(S.it.all.map(i => i.category).filter(Boolean)).size;
+  document.getElementById('badge-items').textContent = S.it.all.length;
+  if (!items.length) {
+    con.innerHTML = S.it.all.length
+      ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhum item encontrado</div></div>`
+      : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum item no banco ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "＋ Novo Item" acima pra criar o primeiro.</div></div>`;
+    return;
+  }
+  con.innerHTML = items.map((it, i) => {
+    const slug = toSlugBase(it.name) || ('item-' + i);
+    const iconHtml = it.icon_url
+      ? `<img src="${it.icon_url}" style="width:32px;height:32px;object-fit:contain" alt="">`
+      : `<span style="font-size:18px">🎒</span>`;
+    return `<div class="entry" id="it-entry-${slug}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
+      <div class="entry-head" onclick="toggleEntry('it-entry-${slug}')">
+        <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0">${iconHtml}</span>
+        <span class="entry-name">${it.name}</span>
+        <span class="badge badge-pt">${it.category || 'Sem categoria'}</span>
+        ${it.flags?.pokemart?.enabled ? '<span title="PokéMart">🛒</span>' : ''}
+        ${it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : ''}
+        <span class="chev">▼</span>
+      </div>
+      <div class="entry-body">
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px">
+          <div style="flex-shrink:0;text-align:center">
+            <img id="it-icon-preview-${slug}" src="${it.icon_url || ''}" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;${it.icon_url ? '' : 'display:none'};margin-bottom:6px">
+            <div id="it-icon-placeholder-${slug}" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px;${it.icon_url ? 'display:none' : ''}">🎒</div>
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
+              Trocar
+              <input type="file" accept="image/*" style="display:none" onchange="handleItemIconFile('${jsEsc(it.name)}',this)">
+            </label>
+          </div>
+          <div style="flex:1">
+            <div class="field-row" style="margin-bottom:10px">
+              <div class="field-lbl pt">Categoria</div>
+              <input class="mv-meta-input field-pt${it.category ? ' filled' : ''}" id="it-category-${slug}" value="${it.category || ''}" list="nit-category-list" style="width:100%" oninput="markFilled(this)">
+            </div>
+            <div style="display:flex;gap:20px;margin-bottom:10px">
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''}> PokéMart
+              </label>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''}> Pickup
+              </label>
+            </div>
+            <div class="field-row">
+              <div class="field-lbl pt">📄 Descrição</div>
+              <textarea class="field-pt${it.description ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this)">${it.description || ''}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="entry-foot">
+          <span class="save-ind" id="it-ind-${slug}">✓ Salvo!</span>
+          <button class="btn btn-success btn-sm" onclick="saveItem('${jsEsc(it.name)}')">💾 Salvar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteItem('${jsEsc(it.name)}')" title="Remove este item do banco de dados" style="margin-left:auto">🗑️ Excluir</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Atualiza só as chaves "enabled" de pokemart/pickup dentro do jsonb "flags",
+// preservando qualquer outro dado que já esteja lá (ex: preço, raridade)
+// pra quando os sistemas de PokéMart/Pickup existirem de verdade.
+function mergeItemFlags(existingFlags, pokemartOn, pickupOn) {
+  const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
+  return {
+    ...f,
+    pokemart: { ...(f.pokemart || {}), enabled: !!pokemartOn },
+    pickup: { ...(f.pickup || {}), enabled: !!pickupOn },
+  };
+}
+
+async function saveItem(name) {
+  const slug = toSlugBase(name) || name;
+  const category = document.getElementById(`it-category-${slug}`)?.value.trim() || null;
+  const description = document.getElementById(`it-description-${slug}`)?.value.trim() || null;
+  const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
+  const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
+  try {
+    const existing = S.it.dbMap[name] || { name };
+    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn);
+    const row = { ...existing, name, category, description, flags, updated_at: new Date().toISOString() };
+    await sbUpsert('items', row);
+    S.it.dbMap[name] = row;
+    const idx = S.it.all.findIndex(i => i.name === name);
+    if (idx >= 0) S.it.all[idx] = row;
+    const ind = document.getElementById('it-ind-' + slug);
+    if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
+    const entry = document.getElementById('it-entry-' + slug);
+    if (entry) {
+      const catBadge = entry.querySelector('.entry-head .badge');
+      if (catBadge) catBadge.textContent = category || 'Sem categoria';
+      entry.querySelectorAll('.entry-head span[title="PokéMart"], .entry-head span[title="Pickup"]').forEach(el => el.remove());
+      const chev = entry.querySelector('.entry-head .chev');
+      if (pokemartOn) chev?.insertAdjacentHTML('beforebegin', '<span title="PokéMart">🛒</span>');
+      if (pickupOn) chev?.insertAdjacentHTML('beforebegin', '<span title="Pickup">🔍</span>');
+    }
+    populateItemCategoryFilter();
+    toast('💾 Item salvo!', 'ok');
+  } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+async function deleteItem(name) {
+  if (!confirm(`Excluir o item "${name}" do banco de dados?\n\nEle deixa de aparecer no ItemDex.`)) return;
+  try {
+    await sbDeleteByName('items', name);
+    delete S.it.dbMap[name];
+    S.it.all = S.it.all.filter(i => i.name !== name);
+    applyItFilter();
+    populateItemCategoryFilter();
+    toast('🗑️ Item excluído.', 'ok');
+  } catch (e) { toast('Erro ao excluir: ' + e.message, 'err'); }
+}
+
+function openNewItem() {
+  ['nit-name','nit-category','nit-description'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nit-flag-pokemart','nit-flag-pickup'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  const prev = document.getElementById('nit-icon-preview');
+  const ph = document.getElementById('nit-icon-placeholder');
+  if (prev) { prev.src = ''; prev.style.display = 'none'; prev.dataset.b64 = ''; }
+  if (ph) ph.style.display = 'flex';
+  document.getElementById('new-item-modal').classList.add('open');
+}
+
+function handleNewItemIconFile(inputEl) {
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    let out = reader.result;
+    try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+    const prev = document.getElementById('nit-icon-preview');
+    const ph = document.getElementById('nit-icon-placeholder');
+    prev.src = out; prev.style.display = ''; prev.dataset.b64 = out;
+    ph.style.display = 'none';
+  };
+  reader.onerror = () => toast('Erro ao ler o arquivo.', 'err');
+  reader.readAsDataURL(file);
+}
+
+function handleItemIconFile(name, inputEl) {
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+  const slug = toSlugBase(name) || name;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    let out = reader.result;
+    try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+    try {
+      const ext = 'png';
+      const icon_url = await uploadImgStorage(out, 'pokemons', `items/${slug}.${ext}`) + '?t=' + Date.now();
+      const existing = S.it.dbMap[name] || { name };
+      const row = { ...existing, name, icon_url, updated_at: new Date().toISOString() };
+      await sbUpsert('items', row);
+      S.it.dbMap[name] = row;
+      const idx = S.it.all.findIndex(i => i.name === name);
+      if (idx >= 0) S.it.all[idx] = row;
+      const prev = document.getElementById(`it-icon-preview-${slug}`);
+      const ph = document.getElementById(`it-icon-placeholder-${slug}`);
+      if (prev) { prev.src = icon_url; prev.style.display = ''; }
+      if (ph) ph.style.display = 'none';
+      const listIcon = document.querySelector(`#it-entry-${slug} .entry-head img`);
+      if (listIcon) listIcon.src = icon_url;
+      toast('🖼️ Ícone do item enviado!', 'ok');
+    } catch (e) { toast('Erro ao enviar ícone: ' + e.message, 'err'); }
+    inputEl.value = '';
+  };
+  reader.onerror = () => toast('Erro ao ler o arquivo.', 'err');
+  reader.readAsDataURL(file);
+}
+
+async function saveNewItem() {
+  const name = document.getElementById('nit-name').value.trim();
+  const category = document.getElementById('nit-category').value.trim() || null;
+  const description = document.getElementById('nit-description').value.trim() || null;
+  const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
+  const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
+  if (!name) { toast('Nome é obrigatório.', 'err'); return; }
+  if (S.it.dbMap[name]) { toast('Já existe um item com esse nome.', 'err'); return; }
+  try {
+    let icon_url = null;
+    const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
+    if (iconB64) {
+      icon_url = await uploadImgStorage(iconB64, 'pokemons', `items/${toSlugBase(name)}.png`) + '?t=' + Date.now();
+    }
+    const flags = mergeItemFlags(null, pokemartOn, pickupOn);
+    const row = { name, category, description, icon_url, flags, updated_at: new Date().toISOString() };
+    await sbUpsert('items', row);
+    S.it.dbMap[name] = row;
+    S.it.all.push(row);
+    S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    populateItemCategoryFilter();
+    applyItFilter();
+    closeModal('new-item-modal');
+    toast(`Item "${name}" salvo!`, 'ok');
+  } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
+}
+
+
+/* ══════════════════════════════════════════
    IMPORTAÇÃO — Abilities e Moves direto da PokeAPI pro Supabase.
    Mesmo espírito do importRegionalFormsFromPokeapi: sobe pro banco pra
    loadAbilities()/loadMoves() poderem ler só do Supabase (sem depender
@@ -7384,7 +7702,7 @@ async function doImport() {
     closeImport();
     toast(`${count} registros importados!`, 'ok');
     // Reload
-    await Promise.all([loadPokemon(), loadAbilities(), loadMoves()]);
+    await Promise.all([loadPokemon(), loadAbilities(), loadMoves(), loadItems()]);
   } catch (e) { toast('Erro ao importar: ' + e.message, 'err'); }
 }
 
@@ -8353,6 +8671,7 @@ loadRpgPokemon();
 document.querySelector('.pk-reg-btn[data-reg="Kanto"]')?.classList.add('active');
 loadAbilities();
 loadMoves();
+loadItems();
 
 </script>
 </body>
