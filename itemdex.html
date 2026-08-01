@@ -189,12 +189,17 @@ function cardHtml(it){
   const icon = it.icon_url
     ? `<img class="item-icon" src="${it.icon_url}" alt="${it.name}" loading="lazy">`
     : `<div class="item-icon-fallback">🎒</div>`;
+  const isConsumivel = !!it.flags?.consumivel?.enabled;
+  const descBody = it.description ? it.description : (isConsumivel ? '' : '<span class="mv-dash">—</span>');
+  const desc = isConsumivel
+    ? `<b>CONSUMÍVEL</b>${descBody ? ' — ' + descBody : ''}`
+    : descBody;
   return `<div class="item-card">
     <div class="item-icon-wrap">${icon}</div>
     <div class="item-name-bar"><span class="item-name">${it.name||''}</span></div>
     <div class="item-body">
       ${it.category ? `<span class="item-cat">${it.category}</span>` : ''}
-      <span class="item-desc">${it.description || '<span class="mv-dash">—</span>'}</span>
+      <span class="item-desc">${desc}</span>
     </div>
   </div>`;
 }
@@ -226,13 +231,34 @@ function populateCatFilter(){
   sel.innerHTML='<option value="">Todas categorias</option>'+cats.map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
+// Fallback estático: items.json na raiz do repo alphx-r/kingdomplatinum
+// (mesmo padrão do pokemon.json). Só é usado se o Supabase falhar ou não
+// retornar nada — ele é atualizado manualmente via o botão "Atualizar
+// items.json" no painel admin, então pode ficar levemente desatualizado.
+const ITEMS_JSON_FALLBACK='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/items.json';
+
+async function loadItemsFallback(){
+  const res=await fetch(ITEMS_JSON_FALLBACK,{cache:'no-store'});
+  if(!res.ok) throw new Error('fallback fetch failed: '+res.status);
+  return await res.json();
+}
+
 async function init(){
+  let usedFallback=false;
   try{
     ALL=await sbFetchAllPages(`${SUPA_URL}/rest/v1/items?select=*`,SH);
+    if(!ALL.length) throw new Error('empty supabase result');
   }catch(e){
-    ALL=[];
+    try{
+      ALL=await loadItemsFallback();
+      usedFallback=true;
+    }catch(e2){
+      ALL=[];
+    }
   }
-  document.getElementById('hero-sub').textContent=`${ALL.length} itens catalogados`;
+  document.getElementById('hero-sub').textContent = usedFallback
+    ? `${ALL.length} itens catalogados (fonte: backup)`
+    : `${ALL.length} itens catalogados`;
   populateCatFilter();
   render();
 }
