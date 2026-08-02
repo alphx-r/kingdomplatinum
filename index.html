@@ -984,6 +984,8 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
         <button class="nav-drop-item" onclick="goTo('ganhos',null);closeNavDrop()">Ganhos</button>
         <button class="nav-drop-item" onclick="goTo('nature',null);closeNavDrop()">Natures</button>
         <button class="nav-drop-item" onclick="goTo('batalhas',null);closeNavDrop()">Batalhas</button>
+        <div class="adm-snav-sep" style="height:1px;background:rgba(255,255,255,.15);margin:4px 0"></div>
+        <button class="nav-drop-item" onclick="abrirPokegram();closeNavDrop()">Pokégram</button>
       </div>
     </div>
   </div>
@@ -5175,6 +5177,9 @@ const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const SUPA_HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
 
+// ⚠️ Troque pela URL real onde o Pokégram está publicado.
+const POKEGRAM_URL = 'https://SEU-DOMINIO-DO-POKEGRAM';
+
 async function sb(path, opts={}){
   const {prefer, headers:extraHeaders, ...fetchOpts} = opts;
   const isGet = !fetchOpts.method || fetchOpts.method === 'GET';
@@ -5999,6 +6004,25 @@ async function fazerLoginPlayer(){
 function fecharLoginOverlay(){
   const ov = document.getElementById('player-login-overlay');
   if(ov) ov.style.display='none';
+}
+
+// ── Handoff de sessão para o Pokégram ──────────────────────────────
+// Gera um token de uso único (válido por pouco tempo) e abre o Pokégram
+// já identificando o player logado, sem precisar digitar player+senha lá.
+async function abrirPokegram(){
+  if(!playerLogado){
+    // Sem player logado — apenas abre o Pokégram normalmente
+    window.open(POKEGRAM_URL, '_blank');
+    return;
+  }
+  try{
+    const token = await dbRpc('player_create_handoff_token', { p_player_id: playerLogado.id });
+    if(!token){ window.open(POKEGRAM_URL, '_blank'); return; }
+    window.open(`${POKEGRAM_URL}?kp_token=${encodeURIComponent(token)}`, '_blank');
+  }catch(e){
+    console.error('[abrirPokegram]', e);
+    window.open(POKEGRAM_URL, '_blank'); // fallback: abre sem token, cai no login manual
+  }
 }
 
 function mostrarBadgePlayer(){
