@@ -6488,9 +6488,14 @@ async function adicionarPersonagem(){
   const prev       =document.getElementById('np-img-preview');
   const imgData    =prev.dataset.b64||'';
   if(!player||!nome){alert('Preencha o nome do player e do personagem.');return;}
-  if(!players.find(p=>p.nome===player)){
+  if(!players.find(p=>normalizarNome(p.nome)===normalizarNome(player))){
     const res=await dbPost('players',{nome:player});
-    if(res&&res[0])players.push(res[0]);
+    if(res&&res[0]){
+      players.push(res[0]);
+    } else {
+      alert('Não foi possível criar o player "'+player+'" no banco. O personagem NÃO será criado para evitar um player fantasma (que depois dá "Player não encontrado" no login). Confira o console (F12) para o erro real e tente de novo.');
+      return;
+    }
   }
   // cria personagem primeiro para ter o ID
   const res=await dbPost('personagens',{player,nome,photoplayer:photoplayer||null,cor,img:null,ranking:1,ficha_url:fichaUrl});
@@ -6594,9 +6599,14 @@ async function salvarEdicaoPersonagem(){
     novaImg = null; // imagem removida
   }
 
-  if(novoPlayer!==p.player&&!players.find(x=>x.nome===novoPlayer)){
+  if(normalizarNome(novoPlayer)!==normalizarNome(p.player)&&!players.find(x=>normalizarNome(x.nome)===normalizarNome(novoPlayer))){
     const res=await dbPost('players',{nome:novoPlayer});
-    if(res&&res[0])players.push(res[0]);
+    if(res&&res[0]){
+      players.push(res[0]);
+    } else {
+      alert('Não foi possível criar o player "'+novoPlayer+'" no banco. As alterações NÃO serão salvas para evitar um player fantasma (que depois dá "Player não encontrado" no login). Confira o console (F12) para o erro real e tente de novo.');
+      return;
+    }
   }
   await dbPatch('personagens',`id=eq.${id}`,{player:novoPlayer,nome:novoNome,photoplayer:novoPhotoplayer||null,cor:novaCor,img:novaImg,ficha_url:novaFicha,ranking:novosRanking});
   p.player=novoPlayer;p.nome=novoNome;p.photoplayer=novoPhotoplayer||null;p.cor=novaCor;p.img=novaImg;p.ficha_url=novaFicha;p.ranking=novosRanking;
