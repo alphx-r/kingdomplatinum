@@ -5213,6 +5213,27 @@ const dbPost = (t,b)           => sb(t,{method:'POST',body:JSON.stringify(b),pre
 const dbPatch= (t,q,b)         => sb(`${t}?${q}`,{method:'PATCH',body:JSON.stringify(b),prefer:'return=representation'});
 const dbDel  = (t,q)           => sb(`${t}?${q}`,{method:'DELETE',prefer:'return=minimal'});
 
+// Chama uma função RPC do banco (roda no servidor — nunca expõe senha/hash ao navegador)
+async function dbRpc(fn, args={}){
+  const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, {
+    method:'POST',
+    headers:{
+      'apikey': SUPA_KEY,
+      'Authorization': `Bearer ${SUPA_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(args)
+  });
+  const text = await res.text();
+  let data = null;
+  try{ data = text ? JSON.parse(text) : null; }catch(e){}
+  if(!res.ok){
+    const msg = data?.message || data?.hint || `Erro ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
 // Busca tabela completa em páginas de 200 linhas para evitar statement timeout
 async function dbGetAll(tabela, query='', pageSize=200){
   let all=[], offset=0, tentativas=0;
@@ -5417,7 +5438,7 @@ async function iniciarSessaoPlayer(){
 
   // Carrega players se necessário
   if(!players.length){
-    const p = await dbGet('players','select=*');
+    const p = await dbGet('players','select=id,nome');
     players = p||[];
   }
   const restaurado = await restaurarSessaoPlayer();
@@ -5487,7 +5508,7 @@ async function carregarAba(page){
     }
     else if(page==='fichario'){
       const [_players,_personagens] = await Promise.all([
-        dbGet('players'),
+        dbGet('players','select=id,nome'),
         dbGet('personagens'),
       ]);
       players=_players; personagens=_personagens;
@@ -5554,8 +5575,8 @@ async function carregarAba(page){
     else if(page==='adm'){
       if(!admLogado){ return; }
       const [_admins,_players,_personagens,_biomas,_npcCidades] = await Promise.all([
-        dbGet('admins'),
-        dbGet('players'),
+        dbRpc('admin_list',{}),
+        dbGet('players','select=id,nome'),
         dbGet('personagens'),
         dbGet('biomas'),
         sb('npc_cidades?order=nome.asc'),
@@ -5784,7 +5805,7 @@ function admTab(sec,el){
   if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();}
   if(sec==='biomas')renderTbodyBiomas();
   if(sec==='pokemons'){syncBiomaSelects();}
-  if(sec==='admins'){ if(!admins||admins.length===0){ dbGet('admins').then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
+  if(sec==='admins'){ if(!admins||admins.length===0){ dbRpc('admin_list',{}).then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
     // Popula selects de personagem buscando direto do banco
@@ -5821,21 +5842,32 @@ function admTab(sec,el){
 // ══════════════════════════════════════
 // LOGIN
 // ══════════════════════════════════════
+// Guardada só em memória (nunca em localStorage) — some ao recarregar a página.
+// Usada para reautenticar ações sensíveis (alterar/resetar senha de player, criar admin)
+// sem precisar manter a senha em texto puro em nenhum lugar persistente.
+let _admSenhaSessao = null;
+
 async function fazerLogin(){
   const email=document.getElementById('login-email').value.trim();
   const senha=document.getElementById('login-senha').value;
   const errEl=document.getElementById('login-erro');
   errEl.style.display='none';
-  // Autenticação direta pela tabela admins — email + senha devem bater sempre
-  const lista=await dbGet('admins','select=*');
-  const match=lista.find(a=>a.nome===email&&a.senha===senha);
+  // Autenticação via função do banco (admin_login) — a senha é conferida no
+  // servidor contra o hash; nunca baixamos a lista de admins com senha.
+  let match=null;
+  try{
+    const r = await dbRpc('admin_login', {p_nome: email, p_senha: senha});
+    match = Array.isArray(r) ? r[0] : r;
+  }catch(e){ console.error('[fazerLogin]', e); }
   if(!match){errEl.style.display='block';return;}
   const loggedEmail = match.nome;
   admLogado={email:loggedEmail};
+  _admSenhaSessao = senha;
   localStorage.setItem('adm_session', JSON.stringify(admLogado));
   showEditBtnIfAdm();
   renderPersonagensDatalist();
-  admins=lista;
+  // admins fica só com dados públicos (sem senha) — usado pra permissões/telas
+  admins = await dbRpc('admin_list',{});
   document.getElementById('adm-login-wrap').style.display='none';
   document.getElementById('adm-painel').style.display='block';
   document.getElementById('adm-user-label').textContent=loggedEmail;
@@ -5845,6 +5877,7 @@ async function fazerLogin(){
 }
 async function fazerLogout(){
   admLogado=null;
+  _admSenhaSessao = null;
   localStorage.removeItem('adm_session');
   showEditBtnIfAdm();
   renderPersonagensDatalist();
@@ -5852,6 +5885,16 @@ async function fazerLogout(){
   document.getElementById('adm-painel').style.display='none';
   document.getElementById('login-email').value='';
   document.getElementById('login-senha').value='';
+}
+
+// Garante que temos a senha do admin logado em memória para chamar uma ação
+// sensível (RPC exige nome+senha do admin a cada chamada). Se a página foi
+// recarregada e a sessão foi restaurada do localStorage, pede a senha de novo.
+function garantirSenhaAdmSessao(){
+  if(_admSenhaSessao) return _admSenhaSessao;
+  const s = prompt('Confirme sua senha de admin para continuar:');
+  if(s) _admSenhaSessao = s;
+  return _admSenhaSessao;
 }
 
 // ══════════════════════════════════════
@@ -5877,28 +5920,22 @@ function sanitizarInputPlayer(el){
   }
 }
 
-// Cache dos players carregados na tela de login (evita múltiplas requisições enquanto o user digita)
-let _loginPlayerCache = null;
-
-async function _getPlayersLogin(){
-  if(!_loginPlayerCache){
-    _loginPlayerCache = await dbGet('players','select=*');
-  }
-  return _loginPlayerCache || [];
-}
-
 // Chamado ao digitar no campo Player: decide se exibe o campo de confirmação (primeiro login)
+// Agora usa a função player_check (RPC) — nunca baixa a lista de players com senha.
 let _verificarTimer = null;
 async function verificarPrimeiroLogin(){
   clearTimeout(_verificarTimer);
   _verificarTimer = setTimeout(async ()=>{
     const nome = document.getElementById('pl-player').value;
-    if(!nome.trim()){ document.getElementById('pl-conf-wrap').style.display='none'; return; }
-    const lista = await _getPlayersLogin();
-    const match = lista.find(p => normalizarNome(p.nome) === normalizarNome(nome));
-    const isPrimeiro = match && !match.senha;
     const confWrap = document.getElementById('pl-conf-wrap');
     const sub = document.getElementById('pl-sub');
+    if(!nome.trim()){ confWrap.style.display='none'; return; }
+    let status = null;
+    try{
+      const r = await dbRpc('player_check', {p_nome: nome});
+      status = Array.isArray(r) ? r[0] : r;
+    }catch(e){ console.error('[verificarPrimeiroLogin]', e); }
+    const isPrimeiro = status && status.existe && status.precisa_senha;
     if(isPrimeiro){
       confWrap.style.display='';
       sub.textContent = 'Primeiro acesso — crie sua senha';
@@ -5918,30 +5955,37 @@ async function fazerLoginPlayer(){
   if(!nomeDigitado){ errEl.textContent='Informe seu nome de player.'; errEl.style.display='block'; return; }
   if(!senha){ errEl.textContent='Informe a senha.'; errEl.style.display='block'; return; }
 
-  const lista = await _getPlayersLogin();
-  const match = lista.find(p => normalizarNome(p.nome) === normalizarNome(nomeDigitado));
+  let status = null;
+  try{
+    const r = await dbRpc('player_check', {p_nome: nomeDigitado});
+    status = Array.isArray(r) ? r[0] : r;
+  }catch(e){ errEl.textContent='Erro de conexão. Tente novamente.'; errEl.style.display='block'; return; }
 
-  if(!match){ errEl.textContent='Player não encontrado.'; errEl.style.display='block'; return; }
+  if(!status || !status.existe){ errEl.textContent='Player não encontrado.'; errEl.style.display='block'; return; }
 
-  const isPrimeiro = !match.senha;
+  let match = null;
 
-  if(isPrimeiro){
-    // Primeiro login: define a senha agora
+  if(status.precisa_senha){
+    // Primeiro login: define a senha agora (a própria função só grava se ainda não houver senha)
     if(!conf){ errEl.textContent='Confirme sua senha.'; errEl.style.display='block'; return; }
     if(senha !== conf){ errEl.textContent='As senhas não coincidem.'; errEl.style.display='block'; return; }
     if(senha.length < 4){ errEl.textContent='A senha deve ter pelo menos 4 caracteres.'; errEl.style.display='block'; return; }
-    // Salva senha no banco
-    await dbPatch('players',`id=eq.${match.id}`,{senha});
-    match.senha = senha;
-    _loginPlayerCache = null; // invalida cache
+    try{
+      const r = await dbRpc('player_set_initial_password', {p_nome: nomeDigitado, p_senha: senha});
+      match = Array.isArray(r) ? r[0] : r;
+    }catch(e){ errEl.textContent='Não foi possível criar a senha. Tente novamente.'; errEl.style.display='block'; return; }
+    if(!match){ errEl.textContent='Este player já possui uma senha definida.'; errEl.style.display='block'; return; }
   } else {
-    // Login normal: valida senha
-    if(match.senha !== senha){ errEl.textContent='Senha incorreta.'; errEl.style.display='block'; return; }
+    // Login normal: valida senha no servidor (hash), nunca no navegador
+    try{
+      const r = await dbRpc('player_login', {p_nome: nomeDigitado, p_senha: senha});
+      match = Array.isArray(r) ? r[0] : r;
+    }catch(e){ errEl.textContent='Erro de conexão. Tente novamente.'; errEl.style.display='block'; return; }
+    if(!match){ errEl.textContent='Senha incorreta.'; errEl.style.display='block'; return; }
   }
 
   playerLogado = {nome: match.nome, id: match.id};
   localStorage.setItem('player_session', JSON.stringify(playerLogado));
-  _loginPlayerCache = null;
   // Carrega personagens se ainda não carregados
   if(!personagens.length){
     const p = await dbGet('personagens');
@@ -6002,7 +6046,7 @@ async function restaurarSessaoPlayer(){
     // apague uma sessão válida.
     let lista = players;
     if(!lista || !lista.length){
-      lista = await dbGet('players','select=*');
+      lista = await dbGet('players','select=id,nome');
     }
     if(!lista || !lista.length){
       // Lista vazia provavelmente indica falha de rede/timeout, não ausência real
@@ -6073,7 +6117,7 @@ function adm_preencherNomeAtual(){
   if(p && novoEl) novoEl.value = p.nome;
 }
 
-// Alterar senha de player pelo super ADM
+// Alterar senha de player pelo super ADM (via RPC — senha é hasheada no servidor)
 async function admAlterarSenhaPlayer(){
   if(!isSuperAdmin()){ alert('Apenas o super admin pode alterar senhas de players.'); return; }
   const selEl = document.getElementById('adm-senha-player');
@@ -6085,10 +6129,16 @@ async function admAlterarSenhaPlayer(){
   errEl.style.display='none';
   if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
   if(novaSenha.length<4){ errEl.textContent='A senha deve ter pelo menos 4 caracteres.'; errEl.style.display='block'; return; }
-  await dbPatch('players',`id=eq.${playerId}`,{senha:novaSenha});
-  const p = players.find(x=>String(x.id)===String(playerId));
-  if(p) p.senha=novaSenha;
-  _loginPlayerCache = null;
+  const minhaSenha = garantirSenhaAdmSessao();
+  if(!minhaSenha) return;
+  try{
+    await dbRpc('admin_set_player_password', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_player_id: playerId, p_nova_senha: novaSenha});
+  }catch(e){
+    _admSenhaSessao = null; // senha guardada pode estar errada/expirada
+    errEl.textContent = 'Não autorizado ou erro ao salvar. Tente confirmar sua senha novamente.';
+    errEl.style.display='block';
+    return;
+  }
   fb('adm-senha-fb');
   senhaEl.value='';
 }
@@ -6103,9 +6153,16 @@ async function admResetarSenhaPlayer(){
   if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
   const p = players.find(x=>String(x.id)===String(playerId));
   if(!confirm(`Resetar a senha de "${p?p.nome:'este player'}"? Ele poderá entrar com o mesmo login e criar uma nova senha.`)) return;
-  await dbPatch('players',`id=eq.${playerId}`,{senha:null});
-  if(p) p.senha=null;
-  _loginPlayerCache = null;
+  const minhaSenha = garantirSenhaAdmSessao();
+  if(!minhaSenha) return;
+  try{
+    await dbRpc('admin_set_player_password', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_player_id: playerId, p_nova_senha: null});
+  }catch(e){
+    _admSenhaSessao = null;
+    errEl.textContent = 'Não autorizado ou erro ao resetar. Tente confirmar sua senha novamente.';
+    errEl.style.display='block';
+    return;
+  }
   document.getElementById('adm-senha-nova').value='';
   const okEl = document.getElementById('adm-senha-fb');
   okEl.textContent = '✓ Senha resetada! O player poderá criar uma nova no próximo login.';
@@ -6131,10 +6188,12 @@ async function restaurarSessaoAdm(){
     const sess = JSON.parse(saved);
     if(!sess?.email) return false;
     // Sempre valida contra o banco — nunca confia só no localStorage
-    const lista = await dbGet('admins','select=*');
-    const match = lista.find(a=>a.nome===sess.email);
+    const lista = await dbRpc('admin_list',{});
+    const match = (lista||[]).find(a=>a.nome===sess.email);
     if(!match){ localStorage.removeItem('adm_session'); admLogado=null; return false; }
     admLogado = {email: sess.email};
+    // _admSenhaSessao fica null após reload — ações sensíveis vão pedir a senha
+    // de novo via garantirSenhaAdmSessao(), o que é esperado e mais seguro.
     admins = lista;
     return true;
   } catch(e){ admLogado=null; return false; }
@@ -6313,14 +6372,19 @@ async function adicionarAdmin(){
   if(admins.find(a=>a.nome===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
   const perms=[...document.querySelectorAll('#adm-new-perms input[type=checkbox]:checked')].map(c=>c.dataset.perm);
 
-  // Salva direto na tabela admins (sem Supabase Auth)
-  const res=await dbPost('admins',{nome:email, senha, permissoes:perms});
-  if(res&&res[0]){admins.push(res[0]);fb('adm-fb-ok');}
-  else{
-    const msg=Array.isArray(res)&&res.message ? res.message : (res?.message||'Verifique as permissões da tabela admins no Supabase (RLS).');
-    errEl.textContent='Erro: '+msg;
+  const minhaSenha = garantirSenhaAdmSessao();
+  if(!minhaSenha) return;
+  let novo=null;
+  try{
+    const r = await dbRpc('admin_create', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_novo_nome: email, p_nova_senha: senha, p_permissoes: perms});
+    novo = Array.isArray(r) ? r[0] : r;
+  }catch(e){
+    _admSenhaSessao = null;
+    errEl.textContent='Erro: '+(e.message||'não autorizado.');
     errEl.style.display='block';
+    return;
   }
+  if(novo){admins.push(novo);fb('adm-fb-ok');}
 
   document.getElementById('adm-new-email').value='';document.getElementById('adm-new-senha').value='';
   document.querySelectorAll('#adm-new-perms input[type=checkbox]').forEach(c=>{
@@ -6333,14 +6397,22 @@ async function removerAdmin(id,email){
   if(email===SUPER_ADMIN){alert('O super admin não pode ser removido.');return;}
   if(email===admLogado?.email){alert('Você não pode remover a si mesmo.');return;}
   if(!confirm(`Remover o admin "${email}"?`))return;
-  await dbDel('admins',`id=eq.${id}`);
+  const minhaSenha = garantirSenhaAdmSessao();
+  if(!minhaSenha) return;
+  try{
+    await dbRpc('admin_delete', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_target_id: id});
+  }catch(e){ _admSenhaSessao=null; alert('Não autorizado ou erro ao remover.'); return; }
   admins=admins.filter(a=>a.id!==id);
   renderTbodyAdmins();
 }
 async function salvarPermsAdmin(id, email){
   if(!isSuperAdmin()) return;
   const checks=[...document.querySelectorAll(`#perms-row-${id} input[type=checkbox]:checked`)].map(c=>c.dataset.perm);
-  await dbPatch('admins',`id=eq.${id}`,{permissoes:checks});
+  const minhaSenha = garantirSenhaAdmSessao();
+  if(!minhaSenha) return;
+  try{
+    await dbRpc('admin_set_permissions', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_target_id: id, p_permissoes: checks});
+  }catch(e){ _admSenhaSessao=null; alert('Não autorizado ou erro ao salvar permissões.'); return; }
   const a=admins.find(x=>x.id===id);if(a)a.permissoes=checks;
   renderTbodyAdmins();
   fb('adm-fb-ok');
@@ -13825,7 +13897,7 @@ init();
         PK.load().then(r=>{ if(r&&r.length) pokemonDB=r; }),
         dbGet('biomas').then(r=>{ if(r) biomas=(r||[]).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR')); }),
         dbGet('personagens').then(r=>{ if(r) personagens=r||[]; }),
-        dbGet('players').then(r=>{ if(r) players=r||[]; }),
+        dbGet('players','select=id,nome').then(r=>{ if(r) players=r||[]; }),
         dbGet('config','chave=eq.estacao_ativa').then(r=>{ if(r&&r[0]) estacaoAtiva=r[0].valor; })
       );
 
@@ -13839,7 +13911,7 @@ init();
 
       if(loaded.adm){
         refreshPromises.push(
-          dbGet('admins').then(r=>{ if(r) admins=r||[]; })
+          dbRpc('admin_list',{}).then(r=>{ if(r) admins=r||[]; })
         );
       }
 
