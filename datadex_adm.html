@@ -155,6 +155,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .field-pt{width:100%;font-size:12px;line-height:1.6;background:#fff;padding:9px 12px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);resize:vertical;min-height:44px;outline:none;transition:border .2s;color:var(--text)}
 .field-pt:focus{border-color:var(--green)}
 .field-pt.filled{border-color:#80dfc0;background:var(--green-light)}
+#nit-description.filled,.it-desc-field.filled{background:#fff}
 
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:580px){.two-col{grid-template-columns:1fr}}
@@ -1157,16 +1158,18 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       </div>
     </div>
 
-    <div class="toolbar">
-      <div class="sinput-wrap">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input class="sinput" id="it-search" placeholder="Buscar item…" oninput="filterIt()">
+    <div id="it-browse-area">
+      <div class="toolbar">
+        <div class="sinput-wrap">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="sinput" id="it-search" placeholder="Buscar item…" oninput="filterIt()">
+        </div>
+        <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
+        <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado agora, sem esperar o cron diário">📤 Atualizar items.json</button>
+        <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
-      <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
-      <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado agora, sem esperar o cron diário">📤 Atualizar items.json</button>
-      <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
+      <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
     </div>
-    <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
   </div>
 
   <!-- RPG POKÉMON -->
@@ -5388,13 +5391,17 @@ function renderItemsList() {
       </div>
       <div class="entry-body">
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px">
-          <div style="flex-shrink:0;text-align:center">
-            <img id="it-icon-preview-${slug}" src="${it.sprite || ''}" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;${it.sprite ? '' : 'display:none'};margin-bottom:6px">
-            <div id="it-icon-placeholder-${slug}" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px;${it.sprite ? 'display:none' : ''}">🎒</div>
-            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
-              Trocar
-              <input type="file" accept="image/*" style="display:none" onchange="handleItemIconFile('${jsEsc(it.name)}',this)">
-            </label>
+          <div style="flex-shrink:0;text-align:center;width:76px">
+            <div id="it-icon-drop-${slug}" class="it-icon-drop" style="position:relative;width:76px;height:76px;border-radius:10px;background:var(--surface2);border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:border-color .15s,background .15s"
+                 onclick="document.getElementById('it-icon-file-${slug}').click()"
+                 ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='var(--accent-light)'"
+                 ondragleave="this.style.borderColor='var(--border2)';this.style.background='var(--surface2)'"
+                 ondrop="handleItemIconDrop(event,'${jsEsc(it.name)}','${slug}')">
+              <img id="it-icon-preview-${slug}" src="${it.sprite || ''}" style="width:100%;height:100%;object-fit:contain;${it.sprite ? '' : 'display:none'}" alt="">
+              <span id="it-icon-placeholder-${slug}" style="font-size:26px;${it.sprite ? 'display:none' : ''}">🎒</span>
+              <input type="file" id="it-icon-file-${slug}" accept="image/*" style="display:none" onchange="handleItemIconFileBySlug('${jsEsc(it.name)}',document.getElementById('it-icon-slug-${slug}').value,this)">
+            </div>
+            <div style="font-size:9.5px;color:var(--muted);margin-top:4px;line-height:1.3">clique ou<br>arraste</div>
           </div>
           <div style="flex:1">
             <div class="field-row" style="margin-bottom:10px">
@@ -5414,19 +5421,17 @@ function renderItemsList() {
             </div>
             <div class="field-row">
               <div class="field-lbl pt">📄 Descrição</div>
-              <textarea class="field-pt${it.item_desc ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this)">${it.item_desc || ''}</textarea>
+              <textarea class="field-pt it-desc-field${it.item_desc ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this)">${it.item_desc || ''}</textarea>
             </div>
           </div>
         </div>
         <div style="margin-bottom:10px">
-          <div class="field-lbl pt" style="margin-bottom:4px">Ícone (upload direto por slug)</div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input class="mv-meta-input" id="it-icon-slug-${slug}" type="text" value="${toSlugBase(it.name) || ''}" placeholder="slug" style="max-width:200px">
-            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">
-              Enviar por slug
-              <input type="file" accept="image/*" style="display:none" onchange="handleItemIconFileBySlug('${jsEsc(it.name)}',document.getElementById('it-icon-slug-${slug}').value,this)">
-            </label>
+          <div class="field-lbl pt" style="margin-bottom:4px">Slug do item na PokeAPI</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="mv-meta-input" id="it-icon-slug-${slug}" type="text" value="${toSlugBase(it.name) || ''}" placeholder="ex: premier-ball" style="max-width:200px">
+            <button type="button" id="it-icon-pokeapi-btn-${slug}" class="btn btn-outline btn-sm" onclick="fetchItemIconFromPokeapi('${jsEsc(it.name)}','${slug}')" title="Puxar ícone da PokeAPI">🌐</button>
           </div>
+          <div style="font-size:10.5px;color:var(--muted);margin-top:3px">Busca o ícone oficial na PokeAPI a partir deste slug e salva no storage. Pra um ícone customizado (item fanmade), clique ou arraste na área ao lado ⬆️.</div>
         </div>
         <div class="entry-foot">
           <span class="save-ind" id="it-ind-${slug}">✓ Salvo!</span>
@@ -5525,12 +5530,14 @@ function openNewItem() {
   if (ph) ph.style.display = 'flex';
   const form = document.getElementById('nit-inline-form');
   form.style.display = '';
+  document.getElementById('it-browse-area').style.display = 'none';
   form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('nit-name')?.focus();
 }
 
 function closeNewItemForm() {
   document.getElementById('nit-inline-form').style.display = 'none';
+  document.getElementById('it-browse-area').style.display = '';
 }
 
 // Gera o items.json (mesmo formato usado pelo fallback do ItemDex) e baixa
@@ -5573,6 +5580,34 @@ function handleNewItemIconFile(inputEl) {
   reader.readAsDataURL(file);
 }
 
+// Busca o ícone oficial de um item na PokeAPI (endpoint /item/{slug}) e
+// reaproveita o mesmo pipeline de upload usado pro clique/drag-and-drop —
+// baixa o PNG oficial e sobe pro nosso Supabase Storage (não depende do
+// PokeAPI/GitHub estarem no ar depois de salvo uma vez).
+async function fetchItemIconFromPokeapi(name, domSlug) {
+  const btn = document.getElementById(`it-icon-pokeapi-btn-${domSlug}`);
+  const slugInput = document.getElementById(`it-icon-slug-${domSlug}`);
+  const slug = toSlugBase((slugInput?.value || '').trim());
+  if (!slug) { toast('Digite o slug do item na PokeAPI (ex: premier-ball).', 'err'); return; }
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Buscando…'; }
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/item/${slug}`);
+    if (!res.ok) throw new Error(res.status === 404 ? `item "${slug}" não encontrado na PokeAPI` : `erro ${res.status}`);
+    const data = await res.json();
+    const spriteUrl = data.sprites?.default;
+    if (!spriteUrl) throw new Error('esse item não tem ícone cadastrado na PokeAPI');
+    const imgRes = await fetch(spriteUrl);
+    if (!imgRes.ok) throw new Error('não consegui baixar o ícone da PokeAPI');
+    const blob = await imgRes.blob();
+    await uploadItemIconFile(name, slug, blob);
+  } catch (e) {
+    toast('Erro ao buscar na PokeAPI: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
+}
+
 function handleItemIconFile(name, inputEl) {
   const slug = toSlugBase(name) || name;
   handleItemIconFileBySlug(name, slug, inputEl);
@@ -5584,6 +5619,26 @@ function handleItemIconFile(name, inputEl) {
 function handleItemIconFileBySlug(name, slugInput, inputEl) {
   const file = inputEl.files && inputEl.files[0];
   if (!file) return;
+  uploadItemIconFile(name, slugInput, file, () => { inputEl.value = ''; });
+}
+
+// Recebe o arquivo solto (drag-and-drop) na área de ícone do item e reusa o
+// mesmo fluxo de upload, respeitando o slug atual do campo ao lado.
+function handleItemIconDrop(evt, name, domSlug) {
+  evt.preventDefault();
+  const dropEl = evt.currentTarget;
+  dropEl.style.borderColor = 'var(--border2)';
+  dropEl.style.background = 'var(--surface2)';
+  const file = evt.dataTransfer && evt.dataTransfer.files && evt.dataTransfer.files[0];
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) { toast('Solte um arquivo de imagem.', 'err'); return; }
+  const slugInput = document.getElementById(`it-icon-slug-${domSlug}`)?.value || '';
+  uploadItemIconFile(name, slugInput, file);
+}
+
+// Núcleo único do upload de ícone de item — usado tanto pelo clique (input
+// file) quanto pelo drag-and-drop, sempre respeitando o slug informado.
+async function uploadItemIconFile(name, slugInput, file, done) {
   const domSlug = toSlugBase(name) || name;
   const uploadSlug = toSlugBase((slugInput || '').trim()) || domSlug;
   const reader = new FileReader();
@@ -5607,7 +5662,7 @@ function handleItemIconFileBySlug(name, slugInput, inputEl) {
       if (listIcon) listIcon.src = sprite;
       toast('🖼️ Ícone do item enviado!', 'ok');
     } catch (e) { toast('Erro ao enviar ícone: ' + e.message, 'err'); }
-    inputEl.value = '';
+    if (done) done();
   };
   reader.onerror = () => toast('Erro ao ler o arquivo.', 'err');
   reader.readAsDataURL(file);
