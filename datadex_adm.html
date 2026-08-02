@@ -647,6 +647,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <button class="tab" id="tab-abilities" onclick="switchTab('abilities')">Abilities <span class="tab-badge" id="badge-abilities">0</span></button>
     <button class="tab" id="tab-moves" onclick="switchTab('moves')">Moves <span class="tab-badge" id="badge-moves">0</span></button>
     <button class="tab" id="tab-items" onclick="switchTab('items')">Items <span class="tab-badge" id="badge-items">0</span></button>
+    <button class="tab" id="tab-locais" onclick="switchTab('locais')">Locais <span class="tab-badge" id="badge-locais">0</span></button>
     <button class="tab" id="tab-rpg" onclick="switchTab('rpg')">＋</button>
   </div>
 
@@ -881,13 +882,18 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="epk-base-only epk-tab-normal" style="margin-bottom:4px">
         <div class="two-col">
           <div style="padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
-            <div class="field-lbl en" style="margin-bottom:6px">🗺️ Bioma(s), raridade e condição</div>
+            <div class="field-lbl en" style="margin-bottom:6px">🧬 Afinidade de biomas</div>
+            <div id="epk-afinidade-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+            <div style="font-size:11px;color:var(--muted)">Define em quais locais esse Pokémon PODE aparecer — só locais compatíveis com pelo menos um bioma marcado aqui ficam disponíveis abaixo.</div>
+          </div>
+          <div style="padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
+            <div class="field-lbl en" style="margin-bottom:6px">🗺️ Local(is), raridade e condição</div>
             <div id="epk-biomas-tags" style="margin-bottom:8px"></div>
             <div style="display:flex;gap:8px;align-items:center">
               <select class="mv-meta-input" id="epk-bioma-select" style="width:100%"><option value="">— Carregando —</option></select>
-              <button type="button" class="btn btn-primary btn-sm" onclick="epkAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Bioma</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="epkAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Local</button>
             </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada bioma adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro do bioma.</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada local adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro dele. Só aparecem locais compatíveis com a afinidade de biomas acima.</div>
           </div>
           <div style="padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
             <div class="field-lbl en" style="margin-bottom:6px">🌦️ Estação</div>
@@ -1096,6 +1102,52 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
   </div>
 
   <!-- ITEMS -->
+  <div class="panel" id="panel-locais">
+    <div class="stats-bar">
+      <div class="stat-item"><span class="stat-val" id="loc-total">—</span><span class="stat-lbl">Total</span></div>
+    </div>
+
+    <!-- FORM INLINE NOVO/EDITAR LOCAL -->
+    <div id="loc-inline-form" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:4px;letter-spacing:.04em" id="loc-form-title">＋ NOVO LOCAL</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Um local é um ponto específico do mapa (ex: "Floresta Sombria"). Sua composição de biomas define quais Pokémon (por afinidade) podem aparecer nele, e influencia a raridade final.</p>
+      <input type="hidden" id="loc-edit-id" value="">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="field-lbl pt" style="margin-bottom:4px">Nome do local</div>
+          <input class="mv-meta-input" id="loc-nome" type="text" placeholder="ex: Floresta Sombria" style="width:100%">
+        </div>
+        <div>
+          <div class="field-lbl pt" style="margin-bottom:4px">Bioma primário</div>
+          <select class="mv-meta-input" id="loc-bioma-primario" style="width:100%"></select>
+        </div>
+        <div>
+          <div class="field-lbl pt" style="margin-bottom:4px">Bioma secundário</div>
+          <select class="mv-meta-input" id="loc-bioma-secundario" style="width:100%"></select>
+        </div>
+        <div>
+          <div class="field-lbl pt" style="margin-bottom:4px">Bioma terciário</div>
+          <select class="mv-meta-input" id="loc-bioma-terciario" style="width:100%"></select>
+        </div>
+      </div>
+      <div class="modal-foot" style="padding:0;margin-top:8px">
+        <button class="btn btn-outline" onclick="closeLocalForm()">Cancelar</button>
+        <button class="btn btn-success" onclick="saveLocal()">✓ Salvar Local</button>
+      </div>
+    </div>
+
+    <div id="loc-browse-area">
+      <div class="toolbar">
+        <div class="sinput-wrap">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="sinput" id="loc-search" placeholder="Buscar local…" oninput="filterLocais()">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openNewLocal()">＋ Novo Local</button>
+      </div>
+      <div id="loc-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando locais…</div></div></div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-items">
     <div class="stats-bar">
       <div class="stat-item"><span class="stat-val" id="it-total">—</span><span class="stat-lbl">Total</span></div>
@@ -1354,13 +1406,18 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <div class="nrpg-base-only nrpg-tab-normal" style="margin-bottom:4px">
         <div class="two-col">
           <div style="padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
-            <div class="field-lbl en" style="margin-bottom:6px">🗺️ Bioma(s), raridade e condição</div>
+            <div class="field-lbl en" style="margin-bottom:6px">🧬 Afinidade de biomas</div>
+            <div id="nrpg-afinidade-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+            <div style="font-size:11px;color:var(--muted)">Define em quais locais esse Pokémon PODE aparecer — só locais compatíveis com pelo menos um bioma marcado aqui ficam disponíveis abaixo.</div>
+          </div>
+          <div style="padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
+            <div class="field-lbl en" style="margin-bottom:6px">🗺️ Local(is), raridade e condição</div>
             <div id="nrpg-biomas-tags" style="margin-bottom:8px"></div>
             <div style="display:flex;gap:8px;align-items:center">
               <select class="mv-meta-input" id="nrpg-bioma-select" style="width:100%"><option value="">— Carregando —</option></select>
-              <button type="button" class="btn btn-primary btn-sm" onclick="nrpgAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Bioma</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="nrpgAddBioma()" style="flex-shrink:0;white-space:nowrap">+ Local</button>
             </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada bioma adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro do bioma.</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">Cada local adicionado tem sua própria raridade e condição de captura — ajuste nos campos que aparecem dentro dele. Só aparecem locais compatíveis com a afinidade de biomas acima.</div>
           </div>
           <div style="padding:12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2)">
             <div class="field-lbl en" style="margin-bottom:6px">🌦️ Estação</div>
@@ -1860,6 +1917,7 @@ function switchTab(tab) {
   // true desde o carregamento inicial da página (ver INIT no fim do arquivo),
   // então reaproveitá-la aqui deixava o dropdown travado em "— Carregando —".
   if (tab === 'rpg' && !S.rpg._formInit) { S.rpg._formInit = true; openNewRpgPokemon(); }
+  if (tab === 'locais' && !S.locais._loaded) { S.locais._loaded = true; loadLocais(); }
 }
 
 /* ══════════════════════════════════════════
@@ -1871,6 +1929,7 @@ const S = {
   mv: { all: [], filtered: [], filter: 'all', dbMap: {} },
   it: { all: [], filtered: [], dbMap: {} },
   biomas: [],
+  locais: { all: [], filtered: [] },
 };
 
 /* ══════════════════════════════════════════
@@ -2078,6 +2137,8 @@ async function openEditPokemon(id) {
 
   // Biomas — cada um com raridade/condição própria (se o registro ainda estiver
   // no formato antigo — array de strings — usa raridade/condição globais como fallback)
+  epkAfinidadeSel = db.afinidade_biomas || [];
+  epkRenderAfinidade();
   epkRenderBiomas(db.biomas || [], db.raridade, db.condicao);
 
   // Bio
@@ -2171,28 +2232,43 @@ function biomaRowHtml(prefix, item) {
 // Fallback estático (usado só enquanto a lista do Supabase ainda não carregou).
 const EPK_BIOMAS = ['Urbano', 'Polar', 'Assombrado', 'Florestal', 'Montanhoso', 'Árido', 'Caverna', 'Pantanoso', 'Planície', 'Rios e Lagos', 'Praia', 'Costeiro', 'Marítimo', 'Recifes', 'Vulcânico', 'Pelágico'];
 let epkBiomasSel = [];
+let epkAfinidadeSel = [];
+
+function epkRenderAfinidade() {
+  const wrap = document.getElementById('epk-afinidade-tags');
+  if (!wrap) return;
+  wrap.innerHTML = afinidadeChipsHtml('epk', epkAfinidadeSel);
+}
+
+function epkToggleAfinidade(nome) {
+  const i = epkAfinidadeSel.indexOf(nome);
+  if (i >= 0) epkAfinidadeSel.splice(i, 1); else epkAfinidadeSel.push(nome);
+  epkRenderAfinidade();
+  // Não remove locais já cadastrados que deixaram de ser compatíveis — só
+  // deixa de oferecê-los como opção nova daqui pra frente.
+  epkRenderBiomaSelect();
+}
 
 function epkRenderBiomaTags() {
   const wrap = document.getElementById('epk-biomas-tags');
   if (!wrap) return;
   wrap.innerHTML = epkBiomasSel.map(item => biomaRowHtml('epk', item)).join('')
-    || '<span class="bioma-row-vazio">Nenhum bioma selecionado.</span>';
+    || '<span class="bioma-row-vazio">Nenhum local selecionado.</span>';
 }
 
 function epkRenderBiomaSelect() {
   const sel = document.getElementById('epk-bioma-select');
   if (!sel) return;
-  const todos = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome) : EPK_BIOMAS;
+  const compativeis = locaisCompativeis(epkAfinidadeSel);
+  const todos = compativeis.map(l => l.nome);
   const disponiveis = todos.filter(b => !epkBiomasSel.some(item => item.nome === b));
   sel.innerHTML = disponiveis.length
     ? disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
-    : '<option value="">— Nenhum bioma disponível —</option>';
-  // Se a lista ainda não tiver sido carregada do Supabase, busca agora e re-renderiza
-  // preservando a seleção atual — assim o formulário de edição fica sempre igual ao de criação.
-  if (!S.biomas || !S.biomas.length) {
-    rpgFetchBiomas().then(lista2 => {
-      if (lista2 && lista2.length) { S.biomas = lista2; epkRenderBiomaSelect(); }
-    });
+    : `<option value="">— ${(S.locais.all && S.locais.all.length) ? 'Nenhum local compatível' : 'Nenhum local cadastrado ainda'} —</option>`;
+  // Se a lista de locais ainda não tiver sido carregada, busca agora e
+  // re-renderiza preservando a seleção atual.
+  if (!S.locais.all || !S.locais.all.length) {
+    ensureLocaisLoaded().then(() => epkRenderBiomaSelect());
   }
 }
 
@@ -2219,6 +2295,147 @@ function epkSetBiomaField(nome, field, value) {
 // Popula o seletor a partir dos biomas já salvos do Pokémon (chamado ao abrir o modal de edição).
 // legacyRaridade/legacyCondicao são usados como fallback só se o registro ainda estiver no
 // formato antigo (biomas como array de strings, com raridade/condição nos campos globais).
+/* ══════════════════════════════════════════
+   ██ LOCAIS (mapa) — substitui o "bioma" solto por um ponto
+   específico do mapa, cuja composição de biomas (primário/
+   secundário/terciário, usando EPK_BIOMAS como tipos) define
+   afinidade e ajuste de raridade dos Pokémon que aparecem nele.
+══════════════════════════════════════════ */
+function biomaTipoOptionsHtml(selecionado, incluirVazio) {
+  const vazio = incluirVazio ? '<option value="">— nenhum —</option>' : '';
+  return vazio + EPK_BIOMAS.map(b => `<option value="${b}"${b === selecionado ? ' selected' : ''}>${b}</option>`).join('');
+}
+
+async function loadLocais() {
+  try {
+    S.locais.all = await sbSelect('locais');
+  } catch (e) {
+    console.error('Erro ao carregar locais:', e);
+    S.locais.all = [];
+  }
+  S.locais.filtered = S.locais.all;
+  renderLocaisList();
+}
+
+// Carregamento "silencioso" de locais pros formulários de Pokémon (fora da aba
+// Locais em si) — usado pelo seletor de local do epk/nrpg/formas alfa.
+let _locaisFetchPromise = null;
+function ensureLocaisLoaded() {
+  if (S.locais.all && S.locais.all.length) return Promise.resolve(S.locais.all);
+  if (_locaisFetchPromise) return _locaisFetchPromise;
+  _locaisFetchPromise = sbSelect('locais')
+    .then(l => { S.locais.all = l || []; return S.locais.all; })
+    .catch(() => { S.locais.all = []; return []; });
+  return _locaisFetchPromise;
+}
+
+// Retorna os locais cujo bioma primário/secundário/terciário bate com pelo
+// menos um item da afinidade informada. Sem afinidade definida ainda, não
+// restringe nada (mostra todos) — assim o cadastro não fica travado antes
+// do usuário preencher a afinidade.
+function locaisCompativeis(afinidade) {
+  const todos = S.locais.all || [];
+  if (!afinidade || !afinidade.length) return todos;
+  return todos.filter(l => afinidade.some(b => [l.bioma_primario, l.bioma_secundario, l.bioma_terciario].includes(b)));
+}
+
+// ── Chips de afinidade de biomas (reaproveita o estilo .pk-bioma-tag) ──
+function afinidadeChipsHtml(prefix, selecionados) {
+  return EPK_BIOMAS.map(b =>
+    `<span class="pk-bioma-tag${(selecionados || []).includes(b) ? ' sel' : ''}" onclick="${prefix}ToggleAfinidade('${b}')">${b}</span>`
+  ).join('');
+}
+
+function filterLocais() {
+  const q = (document.getElementById('loc-search')?.value || '').toLowerCase();
+  S.locais.filtered = S.locais.all.filter(l => !q || (l.nome || '').toLowerCase().includes(q));
+  renderLocaisList();
+}
+
+function renderLocaisList() {
+  const el = document.getElementById('loc-total');
+  if (el) el.textContent = S.locais.all.length;
+  const badge = document.getElementById('badge-locais');
+  if (badge) badge.textContent = S.locais.all.length;
+
+  const wrap = document.getElementById('loc-list');
+  if (!wrap) return;
+  if (!S.locais.filtered.length) {
+    wrap.innerHTML = '<div class="loading-text" style="padding:20px">Nenhum local cadastrado ainda.</div>';
+    return;
+  }
+  wrap.innerHTML = S.locais.filtered.map(l => {
+    const composicao = [l.bioma_primario, l.bioma_secundario, l.bioma_terciario].filter(Boolean).join(' · ');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface)">
+      <div>
+        <div style="font-weight:700;font-size:13px">${l.nome}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${composicao || '—'}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-outline btn-sm" onclick="editLocal(${l.id})">Editar</button>
+        <button class="btn btn-outline btn-sm" onclick="deleteLocal(${l.id}, '${(l.nome||'').replace(/'/g, "\\'")}')" style="color:var(--red)">Remover</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openNewLocal() {
+  document.getElementById('loc-form-title').textContent = '＋ NOVO LOCAL';
+  document.getElementById('loc-edit-id').value = '';
+  document.getElementById('loc-nome').value = '';
+  document.getElementById('loc-bioma-primario').innerHTML = biomaTipoOptionsHtml(null, false);
+  document.getElementById('loc-bioma-secundario').innerHTML = biomaTipoOptionsHtml(null, true);
+  document.getElementById('loc-bioma-terciario').innerHTML = biomaTipoOptionsHtml(null, true);
+  document.getElementById('loc-inline-form').style.display = 'block';
+}
+
+function editLocal(id) {
+  const l = S.locais.all.find(x => x.id === id);
+  if (!l) return;
+  document.getElementById('loc-form-title').textContent = '✎ EDITAR LOCAL';
+  document.getElementById('loc-edit-id').value = l.id;
+  document.getElementById('loc-nome').value = l.nome || '';
+  document.getElementById('loc-bioma-primario').innerHTML = biomaTipoOptionsHtml(l.bioma_primario, false);
+  document.getElementById('loc-bioma-secundario').innerHTML = biomaTipoOptionsHtml(l.bioma_secundario, true);
+  document.getElementById('loc-bioma-terciario').innerHTML = biomaTipoOptionsHtml(l.bioma_terciario, true);
+  document.getElementById('loc-inline-form').style.display = 'block';
+}
+
+function closeLocalForm() {
+  document.getElementById('loc-inline-form').style.display = 'none';
+}
+
+async function saveLocal() {
+  const id = document.getElementById('loc-edit-id').value;
+  const nome = document.getElementById('loc-nome').value.trim();
+  if (!nome) { alert('Informe o nome do local.'); return; }
+  const bioma_primario = document.getElementById('loc-bioma-primario').value;
+  if (!bioma_primario) { alert('Bioma primário é obrigatório.'); return; }
+  const bioma_secundario = document.getElementById('loc-bioma-secundario').value || null;
+  const bioma_terciario = document.getElementById('loc-bioma-terciario').value || null;
+
+  const row = { nome, bioma_primario, bioma_secundario, bioma_terciario };
+  if (id) row.id = Number(id);
+
+  try {
+    await sbUpsert('locais', row);
+    closeLocalForm();
+    await loadLocais();
+  } catch (e) {
+    alert('Erro ao salvar local: ' + e.message);
+  }
+}
+
+async function deleteLocal(id, nome) {
+  if (!confirm(`Remover o local "${nome}"? Pokémon que já referenciam esse local não serão apagados, mas ficarão com um local órfão.`)) return;
+  try {
+    await sbDelete('locais', id);
+    await loadLocais();
+  } catch (e) {
+    alert('Erro ao remover local: ' + e.message);
+  }
+}
+
 function epkRenderBiomas(sel = [], legacyRaridade = null, legacyCondicao = null) {
   const lista = Array.isArray(sel) ? sel : (sel ? [sel] : []);
   epkBiomasSel = lista.map(b => typeof b === 'string'
@@ -4729,6 +4946,7 @@ async function savePkModal(approve) {
       formas_alfa: formasAlfa.length ? formasAlfa : null,
       formas_alt: formasAlt.length ? formasAlt : null,
       genero, biomas: biomas.length ? biomas : null,
+      afinidade_biomas: epkAfinidadeSel.length ? epkAfinidadeSel : null,
       estacao, estacao_boost: estacaoBoost,
       hp, atk, def, spa, spd, spe,
       weight, height, egg_group,
@@ -7423,7 +7641,7 @@ async function mesclarFormasAltDuplicadas() {
   // Campos escalares — no merge, o primeiro valor não-vazio "vence"; se os
   // dois tiverem valor e forem diferentes, vira conflito reportado (mas o
   // merge segue, mantendo o da primeira ocorrência, pra não travar).
-  const SCALAR_FIELDS = ['tipo1','tipo2','habilidade1','habilidade2','habilidade_oculta','classification','height','weight','genero','egg_group','hp','atk','def','spa','spd','spe','sprite','sprite_shiny','bio','biomas','forca_alfa'];
+  const SCALAR_FIELDS = ['tipo1','tipo2','habilidade1','habilidade2','habilidade_oculta','classification','height','weight','genero','egg_group','hp','atk','def','spa','spd','spe','sprite','sprite_shiny','bio','biomas','afinidade_biomas','forca_alfa'];
   // Campos array — mescla ficando com o array mais completo (maior length);
   // se o segundo for mais completo, ele "ganha" (não é conflito, é upgrade).
   const ARRAY_FIELDS = ['evolucoes','moves_level','moves_tm','moves_egg','moves_tutor'];
@@ -7649,7 +7867,7 @@ async function migratePokemonFromPrevSupabase() {
       'habilidade1', 'habilidade2', 'habilidade_oculta', 'habilidade_mega', 'forca_alfa',
       'genero', 'hp', 'atk', 'def', 'spa', 'spd', 'spe', 'weight', 'height', 'egg_group',
       'evolucoes', 'moves_level', 'moves_tm', 'moves_egg', 'moves_tutor',
-      'is_fakemon', 'source', 'approved', 'formas_alfa', 'formas_alt', 'estacao', 'estacao_boost', 'biomas'
+      'is_fakemon', 'source', 'approved', 'formas_alfa', 'formas_alt', 'estacao', 'estacao_boost', 'biomas', 'afinidade_biomas'
     ]);
 
     let ok = 0, fail = 0, i = 0;
@@ -7776,6 +7994,7 @@ async function migratePokemonJsonToSupabase() {
               ? { nome: b, raridade: p.raridade || 'comum', condicao: p.condicao || null }
               : { nome: b.nome, raridade: b.raridade || p.raridade || 'comum', condicao: b.condicao ?? p.condicao ?? null })
           : null,
+        afinidade_biomas: (p.afinidade_biomas && p.afinidade_biomas.length) ? p.afinidade_biomas : null,
         hp: p.hp ?? null, atk: p.atk ?? null, def: p.def ?? null,
         spa: p.spa ?? null, spd: p.spd ?? null, spe: p.spe ?? null,
         weight: p.weight ?? null, height: p.height ?? null,
@@ -8379,35 +8598,39 @@ function nrpgToggleTipo2(el) {
 
 let _rpgBiomas = [];
 let nrpgBiomasSel = [];
+let nrpgAfinidadeSel = [];
 async function openNewRpgPokemon() {
-  if (!_rpgBiomas.length) {
-    _rpgBiomas = await rpgFetchBiomas();
-    S.biomas = _rpgBiomas;
-  }
+  await ensureLocaisLoaded();
+  nrpgRenderAfinidade();
   nrpgRenderBiomaSelect();
   nrpgRenderBiomaTags();
   nrpgRefreshFormsNav();
 }
 
+function nrpgRenderAfinidade() {
+  const wrap = document.getElementById('nrpg-afinidade-tags');
+  if (!wrap) return;
+  wrap.innerHTML = afinidadeChipsHtml('nrpg', nrpgAfinidadeSel);
+}
+
+function nrpgToggleAfinidade(nome) {
+  const i = nrpgAfinidadeSel.indexOf(nome);
+  if (i >= 0) nrpgAfinidadeSel.splice(i, 1); else nrpgAfinidadeSel.push(nome);
+  nrpgRenderAfinidade();
+  nrpgRenderBiomaSelect();
+}
+
 function nrpgRenderBiomaSelect() {
   const sel = document.getElementById('nrpg-bioma-select');
   if (!sel) return;
-  // Mesmo fallback do formulário de edição (epkRenderBiomaSelect/faltRenderBiomaSelect):
-  // se S.biomas/_rpgBiomas ainda não carregaram do Supabase, usa a lista fixa
-  // EPK_BIOMAS em vez de deixar o dropdown vazio.
-  const todos = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome)
-    : ((_rpgBiomas && _rpgBiomas.length) ? _rpgBiomas.map(b => b.nome) : EPK_BIOMAS);
+  const compativeis = locaisCompativeis(nrpgAfinidadeSel);
+  const todos = compativeis.map(l => l.nome);
   const disponiveis = todos.filter(b => !nrpgBiomasSel.some(item => item.nome === b));
   sel.innerHTML = disponiveis.length
     ? disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
-    : '<option value="">— Nenhum bioma disponível —</option>';
-  // Autocorreção: se a lista ainda não veio do Supabase, busca agora e
-  // re-renderiza preservando a seleção já feita — sem isso, uma falha
-  // temporária na 1ª busca deixava o dropdown vazio pra sempre.
-  if (!S.biomas || !S.biomas.length) {
-    rpgFetchBiomas().then(lista2 => {
-      if (lista2 && lista2.length) { S.biomas = lista2; _rpgBiomas = lista2; nrpgRenderBiomaSelect(); }
-    });
+    : `<option value="">— ${(S.locais.all && S.locais.all.length) ? 'Nenhum local compatível' : 'Nenhum local cadastrado ainda'} —</option>`;
+  if (!S.locais.all || !S.locais.all.length) {
+    ensureLocaisLoaded().then(() => nrpgRenderBiomaSelect());
   }
 }
 
@@ -8415,7 +8638,7 @@ function nrpgRenderBiomaTags() {
   const wrap = document.getElementById('nrpg-biomas-tags');
   if (!wrap) return;
   wrap.innerHTML = nrpgBiomasSel.map(item => biomaRowHtml('nrpg', item)).join('')
-    || '<span class="bioma-row-vazio">Nenhum bioma selecionado.</span>';
+    || '<span class="bioma-row-vazio">Nenhum local selecionado.</span>';
 }
 
 function nrpgAddBioma() {
@@ -8545,6 +8768,8 @@ function nrpgResetForm() {
   const nrpgFormasList = document.getElementById('nrpg-formas-alfa'); if (nrpgFormasList) nrpgFormasList.innerHTML = '';
   const nrpgFormasAltList = document.getElementById('nrpg-formas-alt'); if (nrpgFormasAltList) nrpgFormasAltList.innerHTML = '';
   nrpgBiomasSel = [];
+  nrpgAfinidadeSel = [];
+  nrpgRenderAfinidade();
   nrpgRenderBiomaTags();
   nrpgRenderBiomaSelect();
   nrpgRecalcBst();
@@ -8655,6 +8880,7 @@ async function saveNewRpgPokemon() {
       genero, weight, height, egg_group: eggGroup,
       estacao, estacao_boost: estacaoBoost,
       biomas: biomas.length ? biomas : null,
+      afinidade_biomas: nrpgAfinidadeSel.length ? nrpgAfinidadeSel : null,
       bio,
       sprite, sprite_shiny: spriteShiny,
       evolucoes:   evolucoes.length   ? evolucoes   : null,
