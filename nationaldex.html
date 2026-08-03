@@ -882,7 +882,7 @@ function buildBioBodyHtml(bioText,biomas,label,types,genus,TT,sazonal,afinidade)
       <strong style="color:${TT.dark}">${label}${genus?`, ${genus}`:''}.${types&&types.length?` Um ${types.map(cap).join('/')}-type.`:''}</strong> ${bioText}
     </div>`;
   }
-  html+=biomasEncontradoHtml(biomas,sazonal,afinidade);
+  html+=biomasEncontradoHtml(biomas,sazonal,afinidade,label);
   return html;
 }
 
@@ -1232,29 +1232,58 @@ function raridadeAjustada(base,encaixe){
   return RARIDADE_ORDEM[Math.min(idx+deslocamento,RARIDADE_ORDEM.length-1)];
 }
 
+// Hash simples e determinístico (mesma string sempre gera o mesmo número) —
+// usado só pra ESCOLHER entre as variações de frase abaixo, não pra nada
+// criptográfico. Garante que o mesmo Pokémon/local sempre mostra a mesma
+// redação entre visitas (não muda a cada reload), mas locais e Pokémon
+// diferentes tendem a sortear frases diferentes.
+function ndxHash(str){
+  let h=0;
+  for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))|0; }
+  return Math.abs(h);
+}
+function ndxPick(arr,seed){ return arr[ndxHash(seed)%arr.length]; }
+
+// Variações da frase de abertura de um local — todas aceitam o advérbio de
+// frequência (RARIDADE_ADV) e o nome do local já formatado em <strong>.
+const NDX_ABERTURA=[
+  (adv,local)=>`Encontrado ${adv} em ${local}`,
+  (adv,local)=>`Pode ser encontrado ${adv} em ${local}`,
+  (adv,local)=>`Costuma aparecer, ${adv}, em ${local}`,
+  (adv,local)=>`É avistado ${adv} em ${local}`,
+  (adv,local)=>`Sua presença é registrada, ${adv}, em ${local}`,
+  (adv,local)=>`Habita, ${adv}, os arredores de ${local}`,
+];
+// Variações do conector que introduz as cláusulas de condição
+// ("Torna-se/Fica/Passa a ser X durante/em Y").
+const NDX_CONECTOR=['Torna-se','Fica','Passa a ser'];
+
 // Monta a frase de um único local a partir das suas regras: uma regra-base (condição
 // "sempre", ou a primeira regra se não houver nenhuma "sempre") define a frequência
 // padrão; as demais regras entram como cláusulas "Torna-se X durante/em Y".
 // `afinidade` (array de biomas do Pokémon) é usada pra ajustar a raridade exibida
-// conforme o encaixe com a composição de biomas do Local (fase 4).
-function ndxBiomaFrase(item,afinidade){
+// conforme o encaixe com a composição de biomas do Local (fase 4). `seed` varia a
+// redação (abertura + conector) sem mudar o conteúdo factual.
+function ndxBiomaFrase(item,afinidade,seed){
   const regras=item.regras&&item.regras.length?item.regras:[{categoria:'clima',condicao:'sempre',raridade:'comum'}];
   const encaixe=melhorEncaixe(afinidade,item.nome);
   const base=regras.find(r=>!r.legado&&r.condicao==='sempre')||regras[0];
   const extras=regras.filter(r=>r!==base);
   const advBase=RARIDADE_ADV[raridadeAjustada(base.raridade,encaixe)]||'comumente';
-  let frase=`Encontrado ${advBase} em <strong>${item.nome}</strong>`;
+  const abertura=ndxPick(NDX_ABERTURA,seed||item.nome);
+  const conector=ndxPick(NDX_CONECTOR,(seed||item.nome)+'|conector');
+  let frase=abertura(advBase,`<strong>${item.nome}</strong>`);
   const clausulas=extras.map(r=>{
     const adj=RARIDADE_ADJ[raridadeAjustada(r.raridade,encaixe)]||r.raridade||'comum';
     const cond=r.legado?r.condicao:(CONDICAO_TEXTO[r.condicao]||r.condicao);
     return cond?`${adj} ${cond}`:null;
   }).filter(Boolean);
   if(clausulas.length===1){
-    frase+=`. Torna-se ${clausulas[0]}`;
+    frase+=`. ${conector} ${clausulas[0]}`;
   }else if(clausulas.length>1){
     const ultima=clausulas[clausulas.length-1];
     const resto=clausulas.slice(0,-1).join(', ');
-    frase+=`. Torna-se ${resto} e ${ultima}`;
+    frase+=`. ${conector} ${resto} e ${ultima}`;
   }
   return frase+'.';
 }
@@ -1287,10 +1316,10 @@ function ndxSazonalFrase(sazonal){
 // o datadex_adm — regras estruturadas de categoria/condição/raridade por local) e do
 // comportamento sazonal (sazonal). Aceita tanto o formato novo (regras[]) quanto os
 // formatos legados de biomas (string solta ou {nome,raridade,condicao}).
-function biomasEncontradoHtml(biomas,sazonal,afinidade){
+function biomasEncontradoHtml(biomas,sazonal,afinidade,seedBase){
   const itens=(biomas||[]).map(ndxNormalizarBioma);
   if(!itens.length&&!sazonalTemComportamentoNaoNormal(sazonal)) return '';
-  const frasesLocais=itens.map(item=>ndxBiomaFrase(item,afinidade));
+  const frasesLocais=itens.map(item=>ndxBiomaFrase(item,afinidade,`${seedBase||''}|${item.nome}`));
   const fraseSazonal=ndxSazonalFrase(sazonal);
   const texto=[...frasesLocais,fraseSazonal].filter(Boolean).join(' ');
   if(!texto) return '';
