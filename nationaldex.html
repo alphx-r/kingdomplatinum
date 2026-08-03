@@ -1242,7 +1242,7 @@ function ndxHash(str){
   for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))|0; }
   return Math.abs(h);
 }
-function ndxPick(arr,seed){ return arr[ndxHash(seed)%arr.length]; }
+function ndxPick(arr,seed){ return ndxHash(seed)%arr.length; }
 
 // Variações da frase de abertura de um local — todas aceitam o advérbio de
 // frequência (RARIDADE_ADV) e o nome do local já formatado em <strong>.
@@ -1264,28 +1264,33 @@ const NDX_CONECTOR=['Torna-se','Fica','Passa a ser'];
 // `afinidade` (array de biomas do Pokémon) é usada pra ajustar a raridade exibida
 // conforme o encaixe com a composição de biomas do Local (fase 4). `seed` varia a
 // redação (abertura + conector) sem mudar o conteúdo factual.
-function ndxBiomaFrase(item,afinidade,seed){
+function ndxBiomaFrase(item,afinidade,seed,evitarAberturaIdx){
   const regras=item.regras&&item.regras.length?item.regras:[{categoria:'clima',condicao:'sempre',raridade:'comum'}];
   const encaixe=melhorEncaixe(afinidade,item.nome);
   const base=regras.find(r=>!r.legado&&r.condicao==='sempre')||regras[0];
   const extras=regras.filter(r=>r!==base);
   const advBase=RARIDADE_ADV[raridadeAjustada(base.raridade,encaixe)]||'comumente';
-  const abertura=ndxPick(NDX_ABERTURA,seed||item.nome);
-  const conector=ndxPick(NDX_CONECTOR,(seed||item.nome)+'|conector');
-  let frase=abertura(advBase,`<strong>${item.nome}</strong>`);
+  let aberturaIdx=ndxPick(NDX_ABERTURA,seed||item.nome);
+  // Nunca repete a mesma variação de abertura duas vezes seguidas pro mesmo
+  // Pokémon (ex: dois locais um atrás do outro ambos "Costuma aparecer...").
+  if(evitarAberturaIdx!=null && NDX_ABERTURA.length>1 && aberturaIdx===evitarAberturaIdx){
+    aberturaIdx=(aberturaIdx+1)%NDX_ABERTURA.length;
+  }
+  const conectorIdx=ndxPick(NDX_CONECTOR,(seed||item.nome)+'|conector');
+  let frase=NDX_ABERTURA[aberturaIdx](advBase,`<strong>${item.nome}</strong>`);
   const clausulas=extras.map(r=>{
     const adj=RARIDADE_ADJ[raridadeAjustada(r.raridade,encaixe)]||r.raridade||'comum';
     const cond=r.legado?r.condicao:(CONDICAO_TEXTO[r.condicao]||r.condicao);
     return cond?`${adj} ${cond}`:null;
   }).filter(Boolean);
   if(clausulas.length===1){
-    frase+=`. ${conector} ${clausulas[0]}`;
+    frase+=`. ${NDX_CONECTOR[conectorIdx]} ${clausulas[0]}`;
   }else if(clausulas.length>1){
     const ultima=clausulas[clausulas.length-1];
     const resto=clausulas.slice(0,-1).join(', ');
-    frase+=`. ${conector} ${resto} e ${ultima}`;
+    frase+=`. ${NDX_CONECTOR[conectorIdx]} ${resto} e ${ultima}`;
   }
-  return frase+'.';
+  return {texto:frase+'.',aberturaIdx};
 }
 
 // Rótulos e frases pro comportamento sazonal (espelha COMPORTAMENTO_SAZONAL_OPTS do
@@ -1319,7 +1324,13 @@ function ndxSazonalFrase(sazonal){
 function biomasEncontradoHtml(biomas,sazonal,afinidade,seedBase){
   const itens=(biomas||[]).map(ndxNormalizarBioma);
   if(!itens.length&&!sazonalTemComportamentoNaoNormal(sazonal)) return '';
-  const frasesLocais=itens.map(item=>ndxBiomaFrase(item,afinidade,`${seedBase||''}|${item.nome}`));
+  const frasesLocais=[];
+  let aberturaAnterior=null;
+  itens.forEach(item=>{
+    const r=ndxBiomaFrase(item,afinidade,`${seedBase||''}|${item.nome}`,aberturaAnterior);
+    frasesLocais.push(r.texto);
+    aberturaAnterior=r.aberturaIdx;
+  });
   const fraseSazonal=ndxSazonalFrase(sazonal);
   const texto=[...frasesLocais,fraseSazonal].filter(Boolean).join(' ');
   if(!texto) return '';
