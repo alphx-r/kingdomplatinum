@@ -1947,7 +1947,7 @@ const S = {
   mv: { all: [], filtered: [], filter: 'all', dbMap: {} },
   it: { all: [], filtered: [], dbMap: {} },
   biomas: [],
-  locais: { all: [], filtered: [] },
+  locais: { all: [], filtered: [], loaded: false },
 };
 
 /* ══════════════════════════════════════════
@@ -2285,7 +2285,7 @@ function epkRenderBiomaSelect() {
     : `<option value="">— ${(S.locais.all && S.locais.all.length) ? 'Nenhum local compatível' : 'Nenhum local cadastrado ainda'} —</option>`;
   // Se a lista de locais ainda não tiver sido carregada, busca agora e
   // re-renderiza preservando a seleção atual.
-  if (!S.locais.all || !S.locais.all.length) {
+  if (!S.locais.loaded) {
     ensureLocaisLoaded().then(() => epkRenderBiomaSelect());
   }
 }
@@ -2331,19 +2331,27 @@ async function loadLocais() {
     console.error('Erro ao carregar locais:', e);
     S.locais.all = [];
   }
+  S.locais.loaded = true;
   S.locais.filtered = S.locais.all;
   renderLocaisList();
 }
 
 // Carregamento "silencioso" de locais pros formulários de Pokémon (fora da aba
 // Locais em si) — usado pelo seletor de local do epk/nrpg/formas alfa.
+//
+// ⚠️ Usa S.locais.loaded (não S.locais.all.length) pra saber se já buscou —
+// checar só o tamanho da lista causava um loop infinito silencioso sempre
+// que a tabela "locais" existia mas estava vazia (0 registros): a lista
+// vinha vazia, cada render via "ainda vazio" e disparava uma nova busca,
+// que terminava vazia de novo, disparando outra busca — pra sempre, sem
+// nunca lançar erro (travava a aba inteira, com o console limpo).
 let _locaisFetchPromise = null;
 function ensureLocaisLoaded() {
-  if (S.locais.all && S.locais.all.length) return Promise.resolve(S.locais.all);
+  if (S.locais.loaded) return Promise.resolve(S.locais.all);
   if (_locaisFetchPromise) return _locaisFetchPromise;
   _locaisFetchPromise = sbSelect('locais')
-    .then(l => { S.locais.all = l || []; return S.locais.all; })
-    .catch(() => { S.locais.all = []; return []; });
+    .then(l => { S.locais.all = l || []; S.locais.loaded = true; return S.locais.all; })
+    .catch(() => { S.locais.all = []; S.locais.loaded = true; return []; });
   return _locaisFetchPromise;
 }
 
@@ -4140,7 +4148,7 @@ function faltRenderBiomaSelect(row) {
   sel.innerHTML = disponiveis.length
     ? `<option value="">— Selecionar local —</option>` + disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
     : `<option value="">— ${(S.locais.all && S.locais.all.length) ? 'Nenhum local compatível' : 'Nenhum local cadastrado ainda'} —</option>`;
-  if (!S.locais.all || !S.locais.all.length) {
+  if (!S.locais.loaded) {
     ensureLocaisLoaded().then(() => faltRenderBiomaSelect(row));
   }
 }
@@ -5080,7 +5088,7 @@ function btRenderBiomaSelect() {
   sel.innerHTML = todos.length
     ? todos.map(b => `<option value="${b}">${b}</option>`).join('')
     : '<option value="">— Nenhum local cadastrado ainda —</option>';
-  if (!S.locais.all || !S.locais.all.length) {
+  if (!S.locais.loaded) {
     ensureLocaisLoaded().then(() => btRenderBiomaSelect());
   }
 }
@@ -8672,7 +8680,7 @@ function nrpgRenderBiomaSelect() {
   sel.innerHTML = disponiveis.length
     ? disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
     : `<option value="">— ${(S.locais.all && S.locais.all.length) ? 'Nenhum local compatível' : 'Nenhum local cadastrado ainda'} —</option>`;
-  if (!S.locais.all || !S.locais.all.length) {
+  if (!S.locais.loaded) {
     ensureLocaisLoaded().then(() => nrpgRenderBiomaSelect());
   }
 }
