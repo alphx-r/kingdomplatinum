@@ -6849,39 +6849,49 @@ async function fixAlphaHaloUrl(url) {
 async function fixSpriteAlphaHalo() {
   if (!confirm('Isso vai baixar cada sprite já hospedado no seu Storage, endurecer o alpha da borda (removendo a transparência intermediária que causa o halo cinza) e re-subir no MESMO lugar — sem mexer no recorte ou na centralização, só na transparência. Sprites que vieram direto da PokeAPI (URL externa) não são tocados. Pode levar alguns minutos. Continuar?')) return;
 
-  const rows = await sbSelect('pokemons');
-  const isOwn = u => typeof u === 'string' && u.startsWith(SUPA_URL);
-  const targets = rows.filter(p => isOwn(p.sprite) || isOwn(p.sprite_shiny));
-
-  showProgress('Corrigindo halo de transparência…');
-  let done = 0, fixedCount = 0, skippedCount = 0;
+  // ⚠️ showProgress()/hideProgress() precisam ficar num try/finally: se
+  // qualquer coisa aqui dentro lançar um erro antes de chegar no
+  // hideProgress() (ex: applyPkFilter() falhando), o overlay cinza de
+  // progresso (#progress-modal) fica aberto pra sempre — travando a tela
+  // inteira (parecia "área de edição bloqueada"; só reload resolvia).
+  let fixedCount = 0, skippedCount = 0;
   const erros = [];
+  try {
+    const rows = await sbSelect('pokemons');
+    const isOwn = u => typeof u === 'string' && u.startsWith(SUPA_URL);
+    const targets = rows.filter(p => isOwn(p.sprite) || isOwn(p.sprite_shiny));
 
-  for (const p of targets) {
-    try {
-      const patch = {};
-      if (isOwn(p.sprite)) {
-        const fixed = await fixAlphaHaloUrl(p.sprite);
-        if (fixed) patch.sprite = fixed; else skippedCount++;
+    showProgress('Corrigindo halo de transparência…');
+    let done = 0;
+
+    for (const p of targets) {
+      try {
+        const patch = {};
+        if (isOwn(p.sprite)) {
+          const fixed = await fixAlphaHaloUrl(p.sprite);
+          if (fixed) patch.sprite = fixed; else skippedCount++;
+        }
+        if (isOwn(p.sprite_shiny)) {
+          const fixed = await fixAlphaHaloUrl(p.sprite_shiny);
+          if (fixed) patch.sprite_shiny = fixed; else skippedCount++;
+        }
+        if (Object.keys(patch).length) {
+          await sbPatch('pokemons', p.id, patch);
+          Object.assign(p, patch);
+          fixedCount++;
+        }
+      } catch (e) {
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
       }
-      if (isOwn(p.sprite_shiny)) {
-        const fixed = await fixAlphaHaloUrl(p.sprite_shiny);
-        if (fixed) patch.sprite_shiny = fixed; else skippedCount++;
-      }
-      if (Object.keys(patch).length) {
-        await sbPatch('pokemons', p.id, patch);
-        Object.assign(p, patch);
-        fixedCount++;
-      }
-    } catch (e) {
-      erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      done++;
+      updateProgress(done, targets.length, p.name || p.id);
     }
-    done++;
-    updateProgress(done, targets.length, p.name || p.id);
+
+    applyPkFilter();
+  } finally {
+    hideProgress();
   }
 
-  applyPkFilter();
-  hideProgress();
   if (erros.length) {
     console.warn('Falhas ao corrigir halo:', erros);
     toast(`✓ ${fixedCount} corrigido(s), ${skippedCount} já ok, ${erros.length} falha(s) — veja o console.`, 'err');
@@ -6893,33 +6903,38 @@ async function fixSpriteAlphaHalo() {
 async function runSpriteNormalization() {
   if (!confirm('Isso vai baixar, normalizar e re-subir os sprites de todos os Pokémon. Pode levar alguns minutos. Continuar?')) return;
 
-  const rows = await sbSelect('pokemons');
-  const withSprite = rows.filter(p => p.sprite || p.sprite_shiny);
-
-  showProgress('Normalizando sprites');
+  // ⚠️ mesmo cuidado de fixSpriteAlphaHalo: hideProgress() precisa estar
+  // num finally, senão um erro antes dele deixa o overlay cinza travado.
   let done = 0;
   const erros = [];
+  try {
+    const rows = await sbSelect('pokemons');
+    const withSprite = rows.filter(p => p.sprite || p.sprite_shiny);
 
-  for (const p of withSprite) {
-    try {
-      const patch = {};
-      if (p.sprite) {
-        patch.sprite = await normalizeAndUpload(p.sprite, SPRITE_BUCKET, `normalized/${p.id}.png`);
+    showProgress('Normalizando sprites');
+
+    for (const p of withSprite) {
+      try {
+        const patch = {};
+        if (p.sprite) {
+          patch.sprite = await normalizeAndUpload(p.sprite, SPRITE_BUCKET, `normalized/${p.id}.png`);
+        }
+        if (p.sprite_shiny) {
+          patch.sprite_shiny = await normalizeAndUpload(p.sprite_shiny, SPRITE_SHINY_BUCKET, `normalized/${p.id}-shiny.png`);
+        }
+        if (Object.keys(patch).length) {
+          await sbPatch('pokemons', p.id, patch);
+        }
+      } catch (e) {
+        erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
       }
-      if (p.sprite_shiny) {
-        patch.sprite_shiny = await normalizeAndUpload(p.sprite_shiny, SPRITE_SHINY_BUCKET, `normalized/${p.id}-shiny.png`);
-      }
-      if (Object.keys(patch).length) {
-        await sbPatch('pokemons', p.id, patch);
-      }
-    } catch (e) {
-      erros.push(`${p.id} (${p.name || '?'}): ${e.message}`);
+      done++;
+      updateProgress(done, withSprite.length, p.name || p.id);
     }
-    done++;
-    updateProgress(done, withSprite.length, p.name || p.id);
+  } finally {
+    hideProgress();
   }
 
-  hideProgress();
   if (erros.length) {
     console.warn('Falhas na normalização:', erros);
     toast(`Concluído com ${erros.length} falha(s) — veja o console.`, 'err');
