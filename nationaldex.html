@@ -875,14 +875,14 @@ function buildStatsGridHtml(statFields,TT){
 // Monta o conteúdo (texto + biomas) da seção "Biology" — usado tanto no
 // primeiro render quanto ao trocar de forma, já que cada forma pode ter
 // sua própria descrição/biomas (ex: cada estilo de Oricorio).
-function buildBioBodyHtml(bioText,biomas,label,types,genus,TT){
+function buildBioBodyHtml(bioText,biomas,label,types,genus,TT,sazonal,afinidade){
   let html='';
   if(bioText){
     html+=`<div style="padding:16px 20px;font-size:13px;color:var(--text);line-height:1.7">
       <strong style="color:${TT.dark}">${label}${genus?`, ${genus}`:''}.${types&&types.length?` Um ${types.map(cap).join('/')}-type.`:''}</strong> ${bioText}
     </div>`;
   }
-  html+=biomasEncontradoHtml(biomas);
+  html+=biomasEncontradoHtml(biomas,sazonal,afinidade);
   return html;
 }
 
@@ -1149,21 +1149,153 @@ const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea','N
 // Labels de exibição pra raridade dos biomas (mesmos valores salvos pelo admin em RARIDADE_OPTS,
 // só sem as faixas numéricas — aqui é exibição pública, não a tela de edição).
 const RARIDADE_LABELS={comum:'Comum',incomum:'Incomum',raro:'Raro',rarissimo:'Raríssimo'};
+// Advérbio de frequência usado na frase de abertura ("Encontrado X em ...").
+const RARIDADE_ADV={comum:'comumente',incomum:'com pouca frequência',raro:'raramente',rarissimo:'muito raramente'};
+// Adjetivo usado nas cláusulas "Torna-se X durante/em ..." (condições que alteram a raridade base).
+const RARIDADE_ADJ={comum:'comum',incomum:'incomum',raro:'raro',rarissimo:'raríssimo'};
 
-// Monta a lista "Pode ser encontrado em: Bioma (Raridade), Bioma (Raridade)..." a partir
-// da coluna biomas (compartilhada com o datadex_adm). Aceita tanto o formato novo
-// (array de {nome,raridade,condicao}) quanto o legado (array de strings).
-function biomasEncontradoHtml(biomas){
-  if(!biomas||!biomas.length) return '';
-  const itens=biomas.map(b=>{
-    const nome=typeof b==='string'?b:b.nome;
-    const raridade=typeof b==='string'?'comum':(b.raridade||'comum');
-    const condicao=typeof b==='string'?null:b.condicao;
-    const rarLabel=RARIDADE_LABELS[raridade]||cap(raridade);
-    return `<strong>${nome}</strong> (${rarLabel})${condicao?` — <em>${condicao}</em>`:''}`;
-  }).join(', ');
-  return `<div style="padding:0 20px 16px;margin-top:-4px;font-size:12px;color:var(--text)">
-    <strong>Pode ser encontrado em:</strong> ${itens}
+// Frase natural (com preposição já embutida) pra cada condição estruturada cadastrada no
+// admin (CONDICAO_OPTS de datadex_adm.html). Cobre as 6 categorias: clima, período, ambiente,
+// recursos, interações e eventos. "sempre" não entra aqui — é tratado como a regra-base.
+const CONDICAO_TEXTO={
+  // clima
+  ensolarado:'em dias ensolarados', nublado:'em dias nublados', chuva:'durante chuva',
+  tempestade:'durante tempestades', garoa:'durante garoa', neblina:'em neblina',
+  ventania:'durante ventania', seca:'em época de seca', neve:'durante neve', granizo:'durante granizo',
+  // período
+  dia:'durante o dia', noite:'durante a noite', amanhecer:'ao amanhecer', entardecer:'ao entardecer',
+  // ambiente
+  agua_doce:'em água doce', agua_salgada:'em água salgada', agua_rasa:'em água rasa',
+  agua_profunda:'em água profunda', prox_vegetacao:'perto de vegetação', prox_arvores:'perto de árvores',
+  prox_flores:'perto de flores', prox_rochas:'perto de rochas', cavernas:'dentro de cavernas',
+  locais_elevados:'em locais elevados', areas_sombreadas:'em áreas sombreadas', areas_abertas:'em áreas abertas',
+  // recursos
+  arvores_frutiferas:'perto de árvores frutíferas', cogumelos:'perto de cogumelos', flores:'perto de flores',
+  algas:'perto de algas', corpos_dagua:"perto de corpos d'água", madeira_caida:'perto de madeira caída',
+  // interações
+  em_grupo:'quando em grupo', sozinho:'quando sozinho', prox_mesma_especie:'perto de outros da mesma espécie',
+  prox_predadores:'perto de predadores', prox_presas:'perto de presas',
+  // eventos
+  lua_cheia:'em noites de lua cheia', lua_nova:'em noites de lua nova', eclipse:'durante eclipses',
+  chuva_meteoros:'durante chuvas de meteoros', evento_especial:'durante eventos especiais',
+};
+
+// Normaliza um item de bioma pro formato atual {nome, regras:[{categoria,condicao,raridade}]},
+// aceitando os 3 formatos legados já suportados pelo datadex_adm (string solta,
+// {nome,raridade,condicao} e o normalizado com regras).
+function ndxNormalizarBioma(raw){
+  if(typeof raw==='string') return {nome:raw, regras:[{categoria:'clima',condicao:'sempre',raridade:'comum'}]};
+  if(Array.isArray(raw.regras)) return {nome:raw.nome, regras:raw.regras.length?raw.regras:[{categoria:'clima',condicao:'sempre',raridade:'comum'}]};
+  if(raw.condicao) return {nome:raw.nome, regras:[{legado:true,condicao:raw.condicao,raridade:raw.raridade||'comum'}]};
+  return {nome:raw.nome, regras:[{categoria:'clima',condicao:'sempre',raridade:raw.raridade||'comum'}]};
+}
+
+// ── Fase 4: ajuste automático de raridade por afinidade × composição do Local ──
+// Cache da tabela `locais` (nome → {bioma_primario,bioma_secundario,bioma_terciario}),
+// carregada uma vez em initList() e reaproveitada em toda ficha de detalhe.
+let LOCAIS_MAP=null;
+async function ndxCarregarLocais(){
+  if(LOCAIS_MAP) return LOCAIS_MAP;
+  try{
+    const rows=await sbSelect('locais');
+    LOCAIS_MAP={};
+    (rows||[]).forEach(l=>{ LOCAIS_MAP[l.nome]=l; });
+  }catch(e){ LOCAIS_MAP={}; }
+  return LOCAIS_MAP;
+}
+// Escala de raridade do melhor pro pior — usada pra deslocar N níveis sem
+// nunca passar do último (satura em "rarissimo").
+const RARIDADE_ORDEM=['comum','incomum','raro','rarissimo'];
+// Descobre em qual camada do Local (primário/secundário/terciário) a afinidade
+// de biomas do Pokémon melhor se encaixa. undefined = sem afinidade cadastrada
+// ou Local ainda não cadastrado em `locais` — não penaliza (trata como se
+// batesse no primário). null = tem afinidade e Local cadastrado, mas não bate
+// em nenhuma das 3 camadas (pior caso, "fora do habitat natural").
+function melhorEncaixe(afinidade,localNome){
+  if(!afinidade||!afinidade.length) return undefined;
+  const local=LOCAIS_MAP&&LOCAIS_MAP[localNome];
+  if(!local) return undefined;
+  if(afinidade.includes(local.bioma_primario)) return 'primario';
+  if(local.bioma_secundario&&afinidade.includes(local.bioma_secundario)) return 'secundario';
+  if(local.bioma_terciario&&afinidade.includes(local.bioma_terciario)) return 'terciario';
+  return null;
+}
+// Aplica o deslocamento de raridade conforme o encaixe: sem afinidade/local
+// cadastrado ou encaixe no primário não mexe; secundário piora 1 nível;
+// terciário piora 2; nenhum encaixe satura no pior nível (raríssimo).
+function raridadeAjustada(base,encaixe){
+  const idx=RARIDADE_ORDEM.indexOf(base);
+  if(idx===-1) return base;
+  if(encaixe===undefined||encaixe==='primario') return base;
+  if(encaixe===null) return RARIDADE_ORDEM[RARIDADE_ORDEM.length-1];
+  const deslocamento=encaixe==='secundario'?1:2;
+  return RARIDADE_ORDEM[Math.min(idx+deslocamento,RARIDADE_ORDEM.length-1)];
+}
+
+// Monta a frase de um único local a partir das suas regras: uma regra-base (condição
+// "sempre", ou a primeira regra se não houver nenhuma "sempre") define a frequência
+// padrão; as demais regras entram como cláusulas "Torna-se X durante/em Y".
+// `afinidade` (array de biomas do Pokémon) é usada pra ajustar a raridade exibida
+// conforme o encaixe com a composição de biomas do Local (fase 4).
+function ndxBiomaFrase(item,afinidade){
+  const regras=item.regras&&item.regras.length?item.regras:[{categoria:'clima',condicao:'sempre',raridade:'comum'}];
+  const encaixe=melhorEncaixe(afinidade,item.nome);
+  const base=regras.find(r=>!r.legado&&r.condicao==='sempre')||regras[0];
+  const extras=regras.filter(r=>r!==base);
+  const advBase=RARIDADE_ADV[raridadeAjustada(base.raridade,encaixe)]||'comumente';
+  let frase=`Encontrado ${advBase} em <strong>${item.nome}</strong>`;
+  const clausulas=extras.map(r=>{
+    const adj=RARIDADE_ADJ[raridadeAjustada(r.raridade,encaixe)]||r.raridade||'comum';
+    const cond=r.legado?r.condicao:(CONDICAO_TEXTO[r.condicao]||r.condicao);
+    return cond?`${adj} ${cond}`:null;
+  }).filter(Boolean);
+  if(clausulas.length===1){
+    frase+=`. Torna-se ${clausulas[0]}`;
+  }else if(clausulas.length>1){
+    const ultima=clausulas[clausulas.length-1];
+    const resto=clausulas.slice(0,-1).join(', ');
+    frase+=`. Torna-se ${resto} e ${ultima}`;
+  }
+  return frase+'.';
+}
+
+// Rótulos e frases pro comportamento sazonal (espelha COMPORTAMENTO_SAZONAL_OPTS do
+// datadex_adm). "normal" nunca gera cláusula própria — só entra se pelo menos uma das
+// 4 estações tiver um comportamento diferente, pra não afirmar o óbvio à toa.
+const SEASON_LABEL={primavera:'Na primavera',verao:'No verão',outono:'No outono',inverno:'No inverno'};
+const SAZONAL_FRASE={
+  normal:'seu comportamento é normal', boost_sazonal:'fica mais comum', raro:'fica mais raro',
+  ausencia:'não é encontrado', estacao_exclusiva:'só é encontrado nesta estação',
+  reproducao:'entra em período de reprodução', migracao:'migra para outra região',
+  hibernacao:'entra em hibernação', mais_ativo:'fica mais ativo', menos_ativo:'fica menos ativo',
+};
+const ESTACOES_ORDEM=['primavera','verao','outono','inverno'];
+function sazonalTemComportamentoNaoNormal(sazonal){
+  if(!sazonal) return false;
+  return ESTACOES_ORDEM.some(v=>(sazonal[v]||'normal')!=='normal');
+}
+function ndxSazonalFrase(sazonal){
+  if(!sazonalTemComportamentoNaoNormal(sazonal)) return '';
+  const partes=ESTACOES_ORDEM.map(v=>{
+    const b=sazonal[v]||'normal';
+    return `${SEASON_LABEL[v]} ${SAZONAL_FRASE[b]||SAZONAL_FRASE.normal}`;
+  });
+  return partes.join('; ')+'.';
+}
+
+// Monta o texto "estilo pokédex" completo a partir da coluna biomas (compartilhada com
+// o datadex_adm — regras estruturadas de categoria/condição/raridade por local) e do
+// comportamento sazonal (sazonal). Aceita tanto o formato novo (regras[]) quanto os
+// formatos legados de biomas (string solta ou {nome,raridade,condicao}).
+function biomasEncontradoHtml(biomas,sazonal,afinidade){
+  const itens=(biomas||[]).map(ndxNormalizarBioma);
+  if(!itens.length&&!sazonalTemComportamentoNaoNormal(sazonal)) return '';
+  const frasesLocais=itens.map(item=>ndxBiomaFrase(item,afinidade));
+  const fraseSazonal=ndxSazonalFrase(sazonal);
+  const texto=[...frasesLocais,fraseSazonal].filter(Boolean).join(' ');
+  if(!texto) return '';
+  return `<div style="padding:0 20px 16px;margin-top:-4px;font-size:12px;color:var(--text);line-height:1.6">
+    ${texto}
   </div>`;
 }
 
@@ -1244,7 +1376,7 @@ function rpgUrlSlug(p){
 }
 
 async function initList(){
-  await loadRpgData();
+  await Promise.all([loadRpgData(), ndxCarregarLocais()]);
   // Lista base (Pokémon oficiais) vem da PokeAPI — o Supabase agora só guarda
   // Nendo, formas alternativas e overrides de biografia, não os 1025
   // Pokémon oficiais. Um único fetch traz id+nome de todos; tipos são
@@ -1449,6 +1581,7 @@ async function loadPokemon(slug){
   const navToken=++_detailNavToken;
   const dc=document.getElementById('detail-content');
   dc.innerHTML=`<div class="spinner-wrap"><div class="spinner dark"></div><div class="spinner-text dark">Consultando registros…</div></div>`;
+  ndxCarregarLocais(); // dispara em paralelo (cacheia); não bloqueia a navegação
 
   // Caso 1: navegação interna (clique no card) já manda o id prefixado
   if(slug.startsWith('__rpg__')){
@@ -1779,8 +1912,9 @@ async function renderRpgDetail(p, container, navToken){
     if(flavor) bioText=flavor.flavor_text.replace(/\f/g,' ').replace(/\n/g,' ');
   }
   const temBiomas=p.biomas&&p.biomas.length;
-  const bioBodyInner=buildBioBodyHtml(bioText,p.biomas,label,tipos,genus,TT);
-  const bioHtml=`<div class="section" style="border-color:${TT.mid}40${(bioText||temBiomas)?'':';display:none'}" id="rpg-bio-section">
+  const temSazonal=sazonalTemComportamentoNaoNormal(p.sazonal);
+  const bioBodyInner=buildBioBodyHtml(bioText,p.biomas,label,tipos,genus,TT,p.sazonal,p.afinidade_biomas);
+  const bioHtml=`<div class="section" style="border-color:${TT.mid}40${(bioText||temBiomas||temSazonal)?'':';display:none'}" id="rpg-bio-section">
     <div class="sec-header" style="background:${TT.dark}" id="rpg-bio-header"><div class="sec-title">Biology</div></div>
     <div class="sec-body" id="rpg-bio-body">${bioBodyInner}</div>
   </div>`;
@@ -1968,7 +2102,7 @@ async function renderRpgDetail(p, container, navToken){
     hp:statFields.hp, attack:statFields.attack, defense:statFields.defense,
     'special-attack':statFields['special-attack'], 'special-defense':statFields['special-defense'], speed:statFields.speed,
     moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves},
-    bio:bioText, biomas:p.biomas||null, evolucoes:p.evolucoes||null
+    bio:bioText, biomas:p.biomas||null, sazonal:p.sazonal||null, evolucoes:p.evolucoes||null
   }];
   if(p.formas_alt&&p.formas_alt.length){
     for(const f of p.formas_alt){
@@ -1996,7 +2130,7 @@ async function renderRpgDetail(p, container, navToken){
         sprite:f.sprite, sprite_shiny:f.sprite_shiny,
         hp:f.hp, attack:f.atk, defense:f.def,
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
-        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null,
+        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null, sazonal:f.sazonal||null,
         height:f.height||null, weight:f.weight||null,
         genero:f.genero||null, classification:f.classification||null, egg_group:f.egg_group||null,
         evolucoes:f.evolucoes||null
@@ -2194,9 +2328,9 @@ async function renderRpgDetail(p, container, navToken){
     const bioSectionEl=document.getElementById('rpg-bio-section');
     const bioBodyEl=document.getElementById('rpg-bio-body');
     const bioHeaderEl=document.getElementById('rpg-bio-header');
-    const hasBio=!!(f.bio||(f.biomas&&f.biomas.length));
+    const hasBio=!!(f.bio||(f.biomas&&f.biomas.length)||sazonalTemComportamentoNaoNormal(f.sazonal));
     if(bioSectionEl){ bioSectionEl.style.display=hasBio?'':'none'; bioSectionEl.style.borderColor=fTT.mid+'40'; }
-    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,formDisplayName(f.nome),fTypes,genus,fTT):'';
+    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,formDisplayName(f.nome),fTypes,genus,fTT,f.sazonal,p.afinidade_biomas):'';
     if(bioHeaderEl) bioHeaderEl.style.background=fTT.dark;
 
     ['rpg-mv-level','rpg-mv-tm','rpg-mv-egg','rpg-mv-tutor'].forEach(elId=>{
@@ -2359,6 +2493,8 @@ async function renderDetail(p,s,container,navToken){
   // Biomas vêm sempre do mesmo registro do admin usado pra bio acima (dbRec) —
   // não existe equivalente de biomas na PokéAPI.
   const dbBiomasOfficial=dbRec?.biomas;
+  const dbSazonalOfficial=dbRec?.sazonal;
+  const dbAfinidadeOfficial=dbRec?.afinidade_biomas;
   // Gênero: prioriza o campo cadastrado no admin (dbRec.genero), igual à
   // classificação/bio/biomas acima; só cai pro gender_rate da PokéAPI
   // quando o banco não tiver nada preenchido.
@@ -2576,7 +2712,7 @@ async function renderDetail(p,s,container,navToken){
     'special-defense':p.stats.find(st=>st.stat.name==='special-defense')?.base_stat,
     speed:p.stats.find(st=>st.stat.name==='speed')?.base_stat,
     moves:{level:levelMoves, tm:tmMoves, egg:eggMoves, tutor:tutorMoves},
-    bio:flavorText, biomas:dbBiomasOfficial||null, evolucoes:dbRec?.evolucoes||null
+    bio:flavorText, biomas:dbBiomasOfficial||null, sazonal:dbSazonalOfficial||null, evolucoes:dbRec?.evolucoes||null
   }];
   if(dbRec?.formas_alt&&dbRec.formas_alt.length){
     for(const f of dbRec.formas_alt){
@@ -2593,7 +2729,7 @@ async function renderDetail(p,s,container,navToken){
         sprite:f.sprite, sprite_shiny:f.sprite_shiny,
         hp:f.hp, attack:f.atk, defense:f.def,
         'special-attack':f.spa, 'special-defense':f.spd, speed:f.spe,
-        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null,
+        moves:fMoves, bio:f.bio||'', biomas:f.biomas||null, sazonal:f.sazonal||null,
         evolucoes:f.evolucoes||null
       });
     }
@@ -2688,9 +2824,9 @@ async function renderDetail(p,s,container,navToken){
     <div class="sec-body" id="dmg-body-main">${dmgHtml||'<div style="font-size:12px;color:var(--muted)">No modifiers</div>'}</div>
   </div>
 
-  ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length))?`<div class="section" style="border-color:${TT.mid}40" id="official-bio-section">
+  ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length)||sazonalTemComportamentoNaoNormal(dbSazonalOfficial))?`<div class="section" style="border-color:${TT.mid}40" id="official-bio-section">
     <div class="sec-header" style="background:${TT.dark}" id="official-bio-header"><div class="sec-title">Biology</div></div>
-    <div class="sec-body" id="official-bio-body">${buildBioBodyHtml(flavorText,dbBiomasOfficial,cap(p.name),types,genus,TT)}</div>
+    <div class="sec-body" id="official-bio-body">${buildBioBodyHtml(flavorText,dbBiomasOfficial,cap(p.name),types,genus,TT,dbSazonalOfficial,dbAfinidadeOfficial)}</div>
   </div>`:`<div class="section" style="border-color:${TT.mid}40;display:none" id="official-bio-section">
     <div class="sec-header" style="background:${TT.dark}" id="official-bio-header"><div class="sec-title">Biology</div></div>
     <div class="sec-body" id="official-bio-body"></div>
@@ -2806,9 +2942,9 @@ async function renderDetail(p,s,container,navToken){
     const bioSectionEl=document.getElementById('official-bio-section');
     const bioBodyEl=document.getElementById('official-bio-body');
     const bioHeaderEl=document.getElementById('official-bio-header');
-    const hasBio=!!(f.bio||(f.biomas&&f.biomas.length));
+    const hasBio=!!(f.bio||(f.biomas&&f.biomas.length)||sazonalTemComportamentoNaoNormal(f.sazonal));
     if(bioSectionEl){ bioSectionEl.style.display=hasBio?'':'none'; bioSectionEl.style.borderColor=fTT.mid+'40'; }
-    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,formDisplayName(f.nome),fTypes,genus,fTT):'';
+    if(bioBodyEl) bioBodyEl.innerHTML=hasBio?buildBioBodyHtml(f.bio,f.biomas,formDisplayName(f.nome),fTypes,genus,fTT,f.sazonal,dbAfinidadeOfficial):'';
     if(bioHeaderEl) bioHeaderEl.style.background=fTT.dark;
 
     ['mv-level','mv-tm','mv-egg','mv-tutor'].forEach(elId=>{
