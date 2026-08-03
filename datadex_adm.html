@@ -579,7 +579,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     </div>
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
-      <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um bioma/raridade, colando uma lista">🔀 Transferência em massa</button>
+      <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um local/raridade, colando uma lista">🔀 Transferência em massa</button>
       <div class="adm-more-wrap">
         <button class="btn btn-outline" id="btn-adm-more" onclick="admToggleMoreMenu(event)">⋯ Mais ações</button>
         <div class="adm-more-menu" id="adm-more-menu">
@@ -1578,8 +1578,8 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
 </div>
 <div class="modal-ov" id="bulk-transfer-modal">
   <div class="modal" style="max-width:520px">
-    <div class="modal-title">🔀 Transferência em massa — Bioma/Raridade</div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Cole uma lista de Pokémon (nome ou #ID, um por linha) e escolha o bioma + raridade de destino. Se o Pokémon já tiver esse bioma, a raridade/condição são atualizadas; senão, o bioma é adicionado — os outros biomas dele não são mexidos (a menos que marque "substituir" abaixo).</p>
+    <div class="modal-title">🔀 Transferência em massa — Local/Raridade</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Cole uma lista de Pokémon (nome ou #ID, um por linha) e escolha o local + raridade de destino. Se o Pokémon já tiver esse local, a raridade/condição são atualizadas; senão, o local é adicionado — os outros locais dele não são mexidos (a menos que marque "substituir" abaixo).</p>
     <textarea class="modal-ta" id="bt-lista" placeholder="Ex:
 Pidgey
 Rattata
@@ -1587,7 +1587,7 @@ Rattata
 Caterpie"></textarea>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
       <div>
-        <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px">Bioma de destino</label>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px">Local de destino</label>
         <select class="mv-meta-input" id="bt-bioma" style="width:100%"><option value="">— Carregando —</option></select>
       </div>
       <div>
@@ -1807,13 +1807,31 @@ async function sbFetchAllPages(url, headers, pageSize = 1000) {
   return all;
 }
 
-async function sbUpsert(table, row) {
+async function sbUpsert(table, row, _retriedMissing) {
+  _retriedMissing = _retriedMissing || new Set();
   const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: { ...SH, 'Prefer': 'resolution=merge-duplicates' },
     body: JSON.stringify(row)
   });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const errText = await r.text();
+    // Coluna inexistente no schema (ex: migração rodada no projeto/banco
+    // errado, ou ainda não rodada): em vez de derrubar o salvamento
+    // INTEIRO por causa de 1 campo novo, remove só o campo problemático e
+    // tenta de novo — assim falta de uma coluna nunca bloqueia edições
+    // básicas (nome, sprite, etc.) que não têm nada a ver com ela.
+    const m = errText.match(/Could not find the '([^']+)' column/);
+    if (m && !_retriedMissing.has(m[1]) && (m[1] in row)) {
+      console.warn(`[sbUpsert] Coluna "${m[1]}" não existe na tabela "${table}" — salvando sem ela. Confira se a migração SQL foi rodada no projeto certo.`);
+      const rowSemCampo = { ...row };
+      delete rowSemCampo[m[1]];
+      _retriedMissing.add(m[1]);
+      if (typeof toast === 'function') toast(`⚠️ Campo "${m[1]}" não foi salvo (coluna não existe no banco ainda) — o resto foi salvo normalmente.`, 'err');
+      return sbUpsert(table, rowSemCampo, _retriedMissing);
+    }
+    throw new Error(errText);
+  }
   const text = await r.text();
   return text ? JSON.parse(text) : {};
 }
@@ -2437,6 +2455,8 @@ async function deleteLocal(id, nome) {
 }
 
 function epkRenderBiomas(sel = [], legacyRaridade = null, legacyCondicao = null) {
+
+
   const lista = Array.isArray(sel) ? sel : (sel ? [sel] : []);
   epkBiomasSel = lista.map(b => typeof b === 'string'
     ? { nome: b, raridade: legacyRaridade || 'comum', condicao: legacyCondicao || null }
@@ -4099,23 +4119,29 @@ function faltRenderBiomaTags(row) {
   if (!wrap) return;
   const arr = faltGetBiomas(row);
   wrap.innerHTML = arr.map(item => faltBiomaRowHtml(item)).join('')
-    || '<span class="bioma-row-vazio">Nenhum bioma selecionado.</span>';
+    || '<span class="bioma-row-vazio">Nenhum local selecionado.</span>';
+}
+// Formas alternativas não têm afinidade própria — reaproveitam a afinidade
+// da forma principal do Pokémon (epk ou nrpg, dependendo de onde a linha vive).
+// (Formas Alfa — Mega/Gigantamax/Tera — não têm seletor de local, então essa
+// função nunca é chamada nesse contexto.)
+function faltAfinidadeContexto(row) {
+  if (row.closest('#epk-formas-alt')) return epkAfinidadeSel;
+  if (row.closest('#nrpg-formas-alt')) return nrpgAfinidadeSel;
+  return [];
 }
 function faltRenderBiomaSelect(row) {
   const sel = row.querySelector('.falt-bioma-select');
   if (!sel) return;
-  const todos = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome) : EPK_BIOMAS;
+  const compativeis = locaisCompativeis(faltAfinidadeContexto(row));
+  const todos = compativeis.map(l => l.nome);
   const selecionados = faltGetBiomas(row);
   const disponiveis = todos.filter(b => !selecionados.some(item => item.nome === b));
   sel.innerHTML = disponiveis.length
-    ? `<option value="">— Selecionar bioma —</option>` + disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
-    : '<option value="">— Nenhum bioma disponível —</option>';
-  // Mesma lógica de fallback do formulário principal: se a lista do Supabase
-  // ainda não carregou, busca agora e re-renderiza preservando a seleção.
-  if (!S.biomas || !S.biomas.length) {
-    rpgFetchBiomas().then(lista2 => {
-      if (lista2 && lista2.length) { S.biomas = lista2; faltRenderBiomaSelect(row); }
-    });
+    ? `<option value="">— Selecionar local —</option>` + disponiveis.map(b => `<option value="${b}">${b}</option>`).join('')
+    : `<option value="">— ${(S.locais.all && S.locais.all.length) ? 'Nenhum local compatível' : 'Nenhum local cadastrado ainda'} —</option>`;
+  if (!S.locais.all || !S.locais.all.length) {
+    ensureLocaisLoaded().then(() => faltRenderBiomaSelect(row));
   }
 }
 function faltAddBioma(btn) {
@@ -5050,10 +5076,12 @@ function btNorm(s) {
 function btRenderBiomaSelect() {
   const sel = document.getElementById('bt-bioma');
   if (!sel) return;
-  const todos = (S.biomas && S.biomas.length) ? S.biomas.map(b => b.nome) : EPK_BIOMAS;
-  sel.innerHTML = todos.map(b => `<option value="${b}">${b}</option>`).join('');
-  if (!S.biomas || !S.biomas.length) {
-    rpgFetchBiomas().then(lista => { if (lista && lista.length) { S.biomas = lista; btRenderBiomaSelect(); } });
+  const todos = (S.locais.all || []).map(l => l.nome);
+  sel.innerHTML = todos.length
+    ? todos.map(b => `<option value="${b}">${b}</option>`).join('')
+    : '<option value="">— Nenhum local cadastrado ainda —</option>';
+  if (!S.locais.all || !S.locais.all.length) {
+    ensureLocaisLoaded().then(() => btRenderBiomaSelect());
   }
 }
 
