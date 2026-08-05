@@ -2934,10 +2934,15 @@ async function saveLocal() {
   const pos_y = posYraw === '' ? null : Number(posYraw);
 
   const row = { nome, bioma_primario, bioma_secundario, bioma_terciario, zona_climatica, map_local_id, pos_x, pos_y };
-  if (id) row.id = Number(id);
 
   try {
-    await sbUpsert('locais', row);
+    if (id) {
+      // Edição: PATCH por id. `id` é coluna identity (GENERATED ALWAYS) —
+      // não pode ir no corpo de um insert/upsert, só como filtro no PATCH.
+      await sbPatch('locais', Number(id), row);
+    } else {
+      await sbUpsert('locais', row);
+    }
     // Se houver um pin vinculado e a posição fixa estiver definida, sincroniza
     // a posição do pin no mapa também — assim ADM e mapa nunca ficam
     // dessincronizados quando a edição parte daqui.
