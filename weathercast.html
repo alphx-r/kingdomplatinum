@@ -167,8 +167,12 @@
   .hourly{ display:flex; justify-content:space-between; gap:6px; overflow-x:auto; }
   .hour-item{ text-align:center; flex:1; min-width:52px; }
   .hour-item .h{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono', monospace; }
-  .hour-item .hi{ width:30px; height:30px; margin:8px auto 6px; }
-  .hour-item .hi svg{ width:100%; height:100%; }
+  .hour-item .hi{
+    width:38px; height:38px; border-radius:11px; margin:8px auto 6px;
+    background:rgba(255,255,255,.05);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .hour-item .hi svg{ width:27px; height:27px; display:block; }
   .hour-item .ht{ font-size:13px; font-weight:700; }
   .hour-item .hp{ font-size:10px; color:var(--blue); margin-top:2px; font-family:'IBM Plex Mono', monospace; }
 
@@ -184,8 +188,12 @@
   .flrow .fl-day{ width:64px; font-weight:700; text-transform:capitalize; }
   .flrow.is-today .fl-day{ color:var(--accent); }
   .flrow .fl-cond{ flex:1; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12.5px; }
-  .flrow .fl-icon{ width:22px; height:22px; flex-shrink:0; }
-  .flrow .fl-icon svg{ width:100%; height:100%; }
+  .flrow .fl-icon{
+    width:30px; height:30px; border-radius:9px; flex-shrink:0;
+    background:rgba(255,255,255,.05);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .flrow .fl-icon svg{ width:21px; height:21px; display:block; }
   .flrow .fl-range{ margin-left:auto; font-weight:700; white-space:nowrap; }
   .flrow .fl-range .lo{ color:var(--muted); font-weight:500; margin-left:6px; }
 
@@ -656,9 +664,13 @@ let LOCAL_ATUAL = null;
 let ESTACAO_ATIVA = null;
 
 // % de chance de chuva pro dia inteiro (mesmo hash usado na lista de
-// previsão), reaproveitado no cabeçalho do "agora".
+// previsão), reaproveitado no cabeçalho do "agora". Usa a mesma posKey
+// do resto do clima, pra locais no mesmo pin baterem entre si.
 function chanceChuvaDia(local, data){
-  return Math.max(4, hashStr(local.nome + fmtData(data) + 'p') % 40);
+  const posKey = (local.pos_x != null && local.pos_y != null)
+    ? `${Number(local.pos_x).toFixed(2)},${Number(local.pos_y).toFixed(2)}`
+    : local.nome;
+  return Math.max(4, hashStr(posKey + fmtData(data) + 'p') % 40);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -738,10 +750,15 @@ function render(local){
   document.getElementById('air-umidade').innerHTML = `<b>${info.umidade}%</b><span class="lbl">Umidade</span>`;
   document.getElementById('air-vento').innerHTML = `<b>${info.vento} km/h</b><span class="lbl">Vento</span>`;
 
-  // nascer/pôr fictício (flavor, determinístico)
-  const hSun = hashStr(local.nome+fmtData(hoje)+'sun');
+  // nascer/pôr fictício (flavor, determinístico) — usa a mesma posKey do
+  // resto do clima: locais com pos_x/pos_y idênticos (mesmo pin) têm o
+  // mesmo horário de sol, já que fisicamente é o mesmo lugar no mapa.
+  const posKeySol = (local.pos_x != null && local.pos_y != null)
+    ? `${Number(local.pos_x).toFixed(2)},${Number(local.pos_y).toFixed(2)}`
+    : local.nome;
+  const hSun = hashStr(posKeySol+fmtData(hoje)+'sun');
   const nascer = `0${5 + (hSun%3)}:${String((hSun*7)%60).padStart(2,'0')}`.slice(-5);
-  const hSet = hashStr(local.nome+fmtData(hoje)+'set');
+  const hSet = hashStr(posKeySol+fmtData(hoje)+'set');
   const por = `${18 + (hSet%3)}:${String((hSet*13)%60).padStart(2,'0')}`;
   document.getElementById('air-sol').innerHTML = `<b>${nascer} · ${por}</b><span class="lbl">Nascer · Pôr do sol</span>`;
 
