@@ -647,7 +647,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
           <button onclick="migratePokemonFromPrevSupabase()" title="Importa a tabela pokemons inteira do projeto Supabase anterior (fatdzivyqipmcbzaiftc) — necessário porque o projeto novo nasceu vazio">⬇️ Pokémon (banco anterior)</button>
           <button onclick="migrateMovesAbilitiesFromPrevSupabase()" title="Importa as tabelas moves e abilities do projeto Supabase anterior (fatdzivyqipmcbzaiftc) — necessário porque o projeto novo nasceu vazio nessas duas tabelas">⬇️ Moves/Abilities (banco anterior)</button>
-          <button onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase">🔄 Migrar JSON</button>
+          <button onclick="migratePokemonJsonToSupabase()" title="Migrar pokemon.json → Supabase — só Nendo/fakemon e Pokémon com forma alternativa (oficiais puros ficam só no pokemon.json, pra não gastar egress à toa)">🔄 Migrar JSON</button>
         </div>
       </div>
     </div>
@@ -2087,6 +2087,7 @@ function renderPkList() {
     const badgeTxt = appr ? '✓' : hasPt ? '…' : '○';
     return `<div class="pk-card${appr?' approved':' pending'}${hasAlt?' has-alt':''}" onclick="openEditPokemon('${pk.id}')" style="animation-delay:${Math.min(i*0.008,0.3)}s">
       <span style="position:absolute;top:6px;right:6px" class="pk-card-badge ${badgeCls}">${badgeTxt}</span>
+      ${pk._apenasBackup ? `<span style="position:absolute;top:6px;left:6px;font-size:10px;opacity:.55" title="Só existe no pokemon.json (backup) — editar e salvar recria a linha no Supabase">💾</span>` : ''}
       ${spriteUrl ? `<img class="pk-card-sprite" src="${spriteUrl}" alt="${pk.name}" onerror="this.style.opacity='.15'">` : `<div class="pk-card-sprite" style="display:flex;align-items:center;justify-content:center;font-size:28px;opacity:.3">?</div>`}
       <span class="pk-card-num">${numLabel}</span>
       <span class="pk-card-name">${cap(pk.name)}</span>
@@ -5398,6 +5399,7 @@ async function savePkModal(approve) {
     await sbUpsert('pokemons', row);
     S.pk.dbMap[newId] = row;
     Object.assign(pk, row);
+    delete pk._apenasBackup; // já foi salvo de verdade no Supabase, não é só backup mais
     // Mantém a evolutionary chain sincronizada: se este Pokémon (ou alguma
     // forma alternativa dele) cita outros estágios já existentes no banco,
     // replica a mesma cadeia neles também.
@@ -5456,6 +5458,21 @@ async function markAllPokemonPending() {
   } catch (e) { toast('Erro ao marcar como pendente: ' + e.message, 'err'); }
 }
 
+// Cache do pokemon.json em memória — loadPokemon() é chamada de novo depois
+// de quase toda operação em massa (import, migração, etc.), então sem cache
+// isso baixaria o arquivo inteiro repetidas vezes na mesma sessão à toa.
+let _pkBackupCache = null;
+async function fetchPokemonBackupJson() {
+  if (_pkBackupCache) return _pkBackupCache;
+  try {
+    _pkBackupCache = await fetch('/pokemon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : []);
+  } catch (e) {
+    console.warn('Não deu pra carregar o pokemon.json (backup):', e);
+    _pkBackupCache = [];
+  }
+  return _pkBackupCache;
+}
+
 async function loadPokemon() {
   try {
     // Fonte de verdade agora é o Supabase — pokemon.json virou só backup.
@@ -5464,6 +5481,21 @@ async function loadPokemon() {
     dbRows.forEach(r => { S.pk.dbMap[r.id] = r; });
 
     S.pk.all = dbRows.map(p => ({ ...p, _isRpg: !!(p.is_fakemon || /^[A-Za-z]/.test(String(p.id))) }));
+
+    // Pokémon oficiais "puros" (sem forma alt/alfa) foram removidos do
+    // Supabase pra economizar egress (ver migratePokemonJsonToSupabase) —
+    // mas ainda precisam aparecer aqui pra edição. Completa a lista com
+    // quem só existe no pokemon.json/backup; editar e salvar um desses
+    // recria a linha no Supabase na hora (sbUpsert insere se ainda não
+    // existir), então só "volta" pro banco quando você realmente mexer nele.
+    const backupRows = await fetchPokemonBackupJson();
+    backupRows.forEach(p => {
+      if (S.pk.dbMap[p.id]) return; // já veio do Supabase, não sobrescreve
+      const entry = { ...p, _isRpg: !!(p.is_fakemon || /^[A-Za-z]/.test(String(p.id))), _apenasBackup: true };
+      S.pk.dbMap[p.id] = entry;
+      S.pk.all.push(entry);
+    });
+
     S.pk.filtered = S.pk.all;
     renderPkList();
     updatePkStats();
@@ -8408,17 +8440,29 @@ async function migrateMovesAbilitiesFromPrevSupabase() {
    seguro rodar mais de uma vez — não duplica, só sobrescreve.
 ══════════════════════════════════════════ */
 async function migratePokemonJsonToSupabase() {
-  if (!confirm('Isso vai ler o pokemon.json (backup) e sobrescrever no Supabase (vnccljhhexlsthjaaorr) todos os Pokémon que estiverem lá, campo a campo. Pode demorar um pouco. Continuar?')) return;
+  if (!confirm('Isso vai ler o pokemon.json (backup) e sobrescrever no Supabase (vnccljhhexlsthjaaorr) os Pokémon de Nendo/fakemon e os que têm forma alternativa cadastrada. Pokémon oficiais sem forma alternativa são pulados (o Supabase não precisa deles — só o pokemon.json). Pode demorar um pouco. Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Migrando…'; }
   showProgress('Migrando pokemon.json → Supabase…');
 
   try {
-    const all = await fetch('/pokemon.json', { cache: 'no-cache' }).then(r => {
+    const allRaw = await fetch('/pokemon.json', { cache: 'no-cache' }).then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     });
+
+    // Todo Pokémon do Supabase precisa estar no pokemon.json (isso já
+    // acontece no backup automático), mas o inverso NÃO — a base oficial
+    // inteira (~1000+ Pokémon vindos da PokeAPI) não precisa duplicar no
+    // Supabase, já que fica só no pokemon.json estático. Reescrever todos
+    // eles de volta no Supabase a cada migração gera egress à toa. Só
+    // interessa migrar: (1) Pokémon de Nendo/fakemon (is_fakemon), que são
+    // gerenciados ativamente no admin, e (2) qualquer Pokémon (oficial ou
+    // não) que tenha forma alternativa cadastrada, já que essa informação
+    // não existe na PokeAPI e só vive no Supabase/pokemon.json mesmo.
+    const all = allRaw.filter(p => p.is_fakemon || (p.formas_alt && p.formas_alt.length));
+    const pulados = allRaw.length - all.length;
 
     let ok = 0, fail = 0, i = 0;
     const total = all.length;
@@ -8476,9 +8520,9 @@ async function migratePokemonJsonToSupabase() {
 
     if (fail) {
       console.warn('Falhas na migração:', erros);
-      toast(`Migração concluída: ${ok} ok, ${fail} falharam (veja o console).`, 'err');
+      toast(`Migração concluída: ${ok} ok, ${fail} falharam, ${pulados} pulados (oficiais sem forma alt.) — veja o console.`, 'err');
     } else {
-      toast(`✓ Migração concluída: ${ok} Pokémon migrados!`, 'ok');
+      toast(`✓ Migração concluída: ${ok} migrados, ${pulados} pulados (oficiais sem forma alternativa).`, 'ok');
     }
     await loadPokemon();
   } catch (e) {
