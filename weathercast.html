@@ -96,25 +96,12 @@
 
   /* ============ CARD PRINCIPAL ============ */
   .card{
-    background: linear-gradient(150deg, var(--bg1, var(--card-1)), var(--bg2, var(--card-2)));
-    border-radius:22px;
-    padding:30px 32px 26px;
+    background: var(--bg1, var(--card-1));
+    border-radius:16px;
+    padding:28px 30px 24px;
     position:relative;
     overflow:hidden;
-    box-shadow:0 30px 60px -20px rgba(15,25,40,.45);
-  }
-  .card::before{
-    /* textura sutil de ruído/estrelas */
-    content:"";
-    position:absolute; inset:0;
-    background-image:
-      radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,.35) 0, transparent 60%),
-      radial-gradient(1px 1px at 80% 10%, rgba(255,255,255,.25) 0, transparent 60%),
-      radial-gradient(1.5px 1.5px at 60% 70%, rgba(255,255,255,.2) 0, transparent 60%),
-      radial-gradient(1px 1px at 30% 85%, rgba(255,255,255,.25) 0, transparent 60%),
-      radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,.2) 0, transparent 60%);
-    pointer-events:none;
-    opacity:.8;
+    box-shadow:0 8px 24px -12px rgba(15,25,40,.35);
   }
   .card-top{
     display:flex; justify-content:space-between; align-items:flex-start;
@@ -140,8 +127,7 @@
     display:flex; align-items:flex-start; gap:4px;
   }
   .temp-big .deg{ font-size:34px; font-weight:600; margin-top:6px; }
-  .cond-label{ font-size:19px; font-weight:600; margin-top:6px; color:#e7ecf5; }
-  .cond-flavor{ font-size:13px; color:var(--muted); margin-top:4px; max-width:280px; line-height:1.5; }
+  .cond-label{ font-size:16px; font-weight:500; margin-top:8px; color:var(--muted); }
 
   .now-icon{
     width:110px; height:110px; flex-shrink:0;
@@ -186,19 +172,21 @@
   /* ============ PREVISÃO 5 DIAS ============ */
   .forecast{
     margin-top:22px; padding-top:18px; border-top:1px solid var(--line);
-    display:flex; gap:10px;
+    display:flex; gap:6px;
     position:relative; z-index:1;
+    overflow-x:auto;
   }
   .fday{
-    flex:1; background:rgba(255,255,255,.03); border:1px solid var(--line);
-    border-radius:12px; padding:12px 8px; text-align:center;
+    flex:1; min-width:56px; text-align:center; padding:8px 4px;
+    border-radius:10px;
   }
-  .fday .fd-name{ font-size:11.5px; color:var(--muted); font-weight:700; text-transform:capitalize; }
-  .fday .fd-icon{ width:30px; height:30px; margin:9px auto 8px; }
+  .fday.is-today{ background:rgba(255,255,255,.05); }
+  .fday .fd-name{ font-size:11px; color:var(--muted); font-weight:600; text-transform:capitalize; }
+  .fday.is-today .fd-name{ color:var(--text); font-weight:700; }
+  .fday .fd-icon{ width:22px; height:22px; margin:8px auto 6px; opacity:.9; }
   .fday .fd-icon svg{ width:100%; height:100%; }
-  .fday .fd-range{ font-size:13px; font-weight:700; }
-  .fday .fd-range .lo{ color:var(--muted); font-weight:500; }
-  .fday .fd-cond{ font-size:10px; color:var(--muted); margin-top:5px; line-height:1.3; min-height:26px; }
+  .fday .fd-range{ font-size:12.5px; font-weight:600; }
+  .fday .fd-range .lo{ color:var(--muted); font-weight:400; }
 
   /* linha mobile: dia + %, ícone, faixa de temp — parecido com a referência mobile */
   .forecast-list{ display:none; flex-direction:column; gap:0; margin-top:6px; }
@@ -208,6 +196,8 @@
     font-size:13px;
   }
   .flrow:last-child{ border-bottom:none; }
+  .flrow.is-today .fl-day{ color:var(--text); }
+  .flrow.is-today{ background:rgba(255,255,255,.04); border-radius:8px; }
   .flrow .fl-day{ width:64px; font-weight:700; }
   .flrow .fl-prob{ width:44px; color:#7fb8e0; font-size:11px; font-family:'IBM Plex Mono', monospace; }
   .flrow .fl-icon{ width:24px; height:24px; }
@@ -340,6 +330,12 @@ async function carregarEstacaoAtiva(){
 
 const ESTACAO_LABEL = { primavera:'Primavera', verao:'Verão', outono:'Outono', inverno:'Inverno' };
 const ESTACAO_EMOJI = { primavera:'🌱', verao:'☀️', outono:'🍂', inverno:'❄️' };
+
+// A estação/zona climática é uma informação de "bastidor" do jogo (não deve
+// aparecer pro jogador comum) — só é exibida quando a página é acessada com
+// ?admin=1 na URL. Ajuste esta checagem se o projeto já tiver um esquema de
+// login/sessão próprio (ex: checar um token ou role vindo do Supabase auth).
+const IS_ADMIN = new URLSearchParams(window.location.search).get('admin') === '1';
 
 /* ══════════════════════════════════════════════════════════════
    PERFIS CLIMÁTICOS POR ZONA CLIMÁTICA × ESTAÇÃO DO RPG
@@ -658,23 +654,26 @@ function render(local){
       </div>`;
   });
 
-  // previsão 5 dias (cards desktop + lista mobile)
+  // previsão: 5 dias pra trás + hoje + 5 dias pra frente (11 dias, cards
+  // desktop + lista mobile). O clima de dias passados usa a mesma função
+  // determinística (hash por local+data), então é consistente/reproduzível
+  // mesmo sem guardar histórico em banco.
   const DIAS = ["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
   let fCardsHtml = '', fListHtml = '';
-  for (let i=0;i<5;i++){
+  for (let i=-5;i<=5;i++){
     const d = new Date(hoje); d.setDate(d.getDate()+i);
     const dc = climaDoLocal(local, d);
     const nomeDia = i===0 ? 'Hoje' : DIAS[d.getDay()];
     const hi = dc.temp + 2, lo = dc.temp - 4;
+    const todayCls = i===0 ? ' is-today' : '';
     fCardsHtml += `
-      <div class="fday">
+      <div class="fday${todayCls}">
         <div class="fd-name">${nomeDia}</div>
         <div class="fd-icon">${svgIcon(dc.condicao.icon)}</div>
         <div class="fd-range">${hi}° <span class="lo">${lo}°</span></div>
-        <div class="fd-cond">${dc.condicao.nome}</div>
       </div>`;
     fListHtml += `
-      <div class="flrow">
+      <div class="flrow${todayCls}">
         <div class="fl-day">${nomeDia}</div>
         <div class="fl-prob">💧${Math.max(4, (hashStr(local.nome+fmtData(d)+'p')%40))}%</div>
         <div class="fl-icon">${svgIcon(dc.condicao.icon)}</div>
@@ -693,7 +692,7 @@ function render(local){
       <div>
         <div class="loc-name">${local.nome}</div>
         <div class="loc-meta">
-          <span>${dataFmt}</span><span class="dot">·</span><span>${ESTACAO_EMOJI[info.estacao]||''} ${ESTACAO_LABEL[info.estacao]||info.estacao}</span><span class="dot">·</span><span>zona ${info.zona}</span>
+          <span>${dataFmt}</span>${IS_ADMIN ? `<span class="dot">·</span><span>${ESTACAO_EMOJI[info.estacao]||''} ${ESTACAO_LABEL[info.estacao]||info.estacao}</span><span class="dot">·</span><span>zona ${info.zona}</span>` : ''}
         </div>
       </div>
     </div>
@@ -702,7 +701,6 @@ function render(local){
       <div class="now-left">
         <div class="temp-big">${info.temp}<span class="deg">°C</span></div>
         <div class="cond-label">${info.condicao.nome}</div>
-        <div class="cond-flavor">${info.condicao.flavor}</div>
       </div>
       <div class="now-icon">${svgIcon(info.condicao.icon)}</div>
       <div class="now-stats">
@@ -771,6 +769,10 @@ function initUI(){
 
 async function boot(){
   initUI();
+  if (!IS_ADMIN){
+    const note = document.querySelector('.source-note');
+    if (note) note.style.display = 'none';
+  }
   try {
     const [rows] = await Promise.all([
       sbSelect('locais'),
