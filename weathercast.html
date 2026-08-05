@@ -518,7 +518,15 @@ function sortearCondicao(condPesos, seed){
 
 function climaDoLocal(local, data, estacaoOverride){
   const estacao = estacaoOverride || ESTACAO_ATIVA || estacaoPorMesFallback();
-  const seedBase = `${local.nome}-${fmtData(data)}`;
+  // A semente do sorteio (condição do dia, temp exata dentro da faixa etc.)
+  // usa a POSIÇÃO fixa do local quando ela existe, não o nome — assim, dois
+  // locais vinculados ao mesmo pin/coordenada (ex: uma fazenda dentro dos
+  // limites de uma cidade) têm o clima do dia idêntico, não só parecido.
+  // Sem posição cadastrada, cai de volta pro nome (comportamento antigo).
+  const posKey = (local.pos_x != null && local.pos_y != null)
+    ? `${Number(local.pos_x).toFixed(2)},${Number(local.pos_y).toFixed(2)}`
+    : local.nome;
+  const seedBase = `${posKey}-${fmtData(data)}`;
   const faixa = faixaBlendadaComVizinhos(local, estacao);
 
   const iconEscolhido = sortearCondicao(faixa.condPesos, seedBase + '-cond');
@@ -540,7 +548,10 @@ function climaDoLocal(local, data, estacaoOverride){
 }
 
 function climaNaHora(local, data, hora){
-  const seed = `${local.nome}-${fmtData(data)}-h${hora}`;
+  const posKey = (local.pos_x != null && local.pos_y != null)
+    ? `${Number(local.pos_x).toFixed(2)},${Number(local.pos_y).toFixed(2)}`
+    : local.nome;
+  const seed = `${posKey}-${fmtData(data)}-h${hora}`;
   const base = climaDoLocal(local, data);
   const hVar = hashStr(seed + '-hvar');
   const oscil = Math.sin((hora/24)*Math.PI*2 - Math.PI/2) * 4; // pico de calor à tarde
