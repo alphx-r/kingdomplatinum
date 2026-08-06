@@ -2513,6 +2513,8 @@ function calcSyncSelects(){
       />
       <!-- Pins gerados via JS -->
       <div id="mapaPins"></div>
+      <!-- Overlay dos pontos climáticos (só visível no modo "ver clima" do ADM) -->
+      <div id="mapaClimaOverlay" style="position:absolute;inset:0;pointer-events:none;z-index:5;display:none"></div>
     </div>
     <!-- Controles zoom -->
     <div class="mapa-controles">
@@ -4424,6 +4426,7 @@ function calcSyncSelects(){
           <div style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin-bottom:20px">
             <button class="pk-tab-btn active" onclick="mapaAdmTab('locais',this)" style="font-size:12px;padding:7px 14px">Locais</button>
             <button class="pk-tab-btn" onclick="mapaAdmTab('novo',this)" style="font-size:12px;padding:7px 14px">+ Novo local</button>
+            <button class="pk-tab-btn" onclick="mapaAdmTab('clima',this)" style="font-size:12px;padding:7px 14px">🌡️ Clima</button>
             <button class="pk-tab-btn" onclick="mapaAdmTab('filtros',this)" style="font-size:12px;padding:7px 14px">Filtros</button>
           </div>
 
@@ -4465,6 +4468,43 @@ function calcSyncSelects(){
             </div>
             <div class="fb fb-ok" id="mapaNovoFbOk">✓ Local criado!</div>
             <div class="fb fb-err" id="mapaNovoFbErr">Erro ao criar.</div>
+          </div>
+
+          <!-- Tab: Clima -->
+          <div id="mapaAdmTabClima" style="display:none">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+              Marque zonas mais frias ou mais quentes no mapa (ex: nordeste mais frio). Cada zona desloca a
+              temperatura dos locais dentro do raio dela no WeatherCast — some com a zona climática cadastrada
+              de cada local, não substitui.
+            </div>
+            <div class="field">
+              <label>Nome da zona (opcional)</label>
+              <input type="text" id="climaNovoNome" placeholder="Ex: Nordeste gelado" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+              <div class="field" style="margin-bottom:0">
+                <label>Tipo</label>
+                <select id="climaNovoTipo">
+                  <option value="frio">❄️ Mais frio</option>
+                  <option value="quente">🔥 Mais quente</option>
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Intensidade (°C)</label>
+                <input type="number" id="climaNovoIntensidade" value="4" min="1" max="10" step="0.5" />
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Raio (% do mapa)</label>
+                <input type="number" id="climaNovoRaio" value="25" min="5" max="60" step="1" />
+              </div>
+            </div>
+            <div id="climaNovoStatus" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--surface2);color:var(--muted);margin-bottom:10px;display:none"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:20px">
+              <button class="btn" id="mapaClimaToggleBtn" onclick="toggleMapaClimaOverlay()">👁️ Ver no mapa</button>
+              <button class="btn btn-primary" onclick="mapaAdmIniciarMarcarClima()">Marcar no Mapa</button>
+            </div>
+            <div class="mapa-adm-tipo-label">Zonas marcadas</div>
+            <div id="mapaClimaLista"></div>
           </div>
 
           <!-- Tab: Filtros -->
@@ -14255,6 +14295,17 @@ async function carregarMapaLocais() {
   MAPA_LOCAIS = [];
 }
 
+// ── Pontos climáticos marcados no mapa (tabela map_climate_pontos) ──
+// Cada ponto desloca a temperatura de locais próximos no WeatherCast:
+// {id, nome, x, y, ajuste (°C, negativo=frio/positivo=quente), raio (% do mapa)}
+let MAPA_CLIMA_PONTOS = [];
+async function carregarMapaClimaPontos() {
+  try {
+    const rows = await dbGet('map_climate_pontos', 'select=*');
+    MAPA_CLIMA_PONTOS = Array.isArray(rows) ? rows : [];
+  } catch(e) { console.warn('[mapa] carregarMapaClimaPontos erro:', e); MAPA_CLIMA_PONTOS = []; }
+}
+
 // ── Tipos do mapa — carregados do Supabase (map_tipos) ────
 let MAPA_TIPOS = [];
 
@@ -14487,6 +14538,7 @@ async function initMapa() {
     carregarPosicoesPins(),
     carregarMapaFichas(),
     carregarShinyBonusConfig(),
+    carregarMapaClimaPontos(),
     mapaFiltrosCarregarDB(), // no-op, dados vêm de carregarMapaTipos
   ]);
 
@@ -14494,6 +14546,7 @@ async function initMapa() {
   if (bar) bar.style.width = '100%';
 
   renderMapaPins();
+  renderMapaClimaOverlay();
   renderMapaFiltros();
   initMapaPanZoom();
   // Mostra pill de distância junto com o filtro
@@ -14795,11 +14848,14 @@ function mapaAdmTab(tab, btn) {
   const tabLocais   = document.getElementById('mapaAdmTabLocais');
   const tabNovo     = document.getElementById('mapaAdmTabNovo');
   const tabFiltros  = document.getElementById('mapaAdmTabFiltros');
+  const tabClima    = document.getElementById('mapaAdmTabClima');
   if(tabLocais)  tabLocais.style.display  = tab === 'locais'  ? '' : 'none';
   if(tabNovo)    tabNovo.style.display    = tab === 'novo'    ? '' : 'none';
   if(tabFiltros) tabFiltros.style.display = tab === 'filtros' ? '' : 'none';
+  if(tabClima)   tabClima.style.display   = tab === 'clima'   ? '' : 'none';
   if(tab === 'filtros') mapaFiltrosCarregarInputs();
   if(tab === 'locais')  mapaAdmRenderCards('');
+  if(tab === 'clima')   mapaAdmRenderClimaLista();
   if(tab === 'bonus-adm'){ renderBonusAdmLista(); renderBonusAtivosAdmLista(); }
 }
 
@@ -14870,6 +14926,92 @@ function _mapaCliqueNovoLocal(clientX, clientY) {
   document.getElementById('mapaNovoNome').value='';
   document.getElementById('mapaNovoId').value='';
   return true;
+}
+
+// ── Marcar zona climática por clique no mapa ────────────────
+// Mesmo padrão de "novo local": arma o modo crosshair, guarda o que foi
+// preenchido no formulário, e no próximo clique no mapa salva o ponto.
+let _mapaModoClima = false;
+let _mapaClimaPendente = null; // {nome, ajuste, raio} enquanto aguarda o clique
+
+function mapaAdmIniciarMarcarClima() {
+  const nome        = document.getElementById('climaNovoNome').value.trim();
+  const tipo        = document.getElementById('climaNovoTipo').value; // 'frio' | 'quente'
+  const intensidade = parseFloat(document.getElementById('climaNovoIntensidade').value);
+  const raio        = parseFloat(document.getElementById('climaNovoRaio').value);
+  if (!intensidade || intensidade <= 0) { alert('Informe uma intensidade maior que 0.'); return; }
+  if (!raio || raio <= 0) { alert('Informe um raio maior que 0.'); return; }
+
+  _mapaClimaPendente = { nome, ajuste: tipo === 'frio' ? -Math.abs(intensidade) : Math.abs(intensidade), raio };
+  _mapaModoClima = true;
+  const status = document.getElementById('climaNovoStatus');
+  status.style.display = 'block';
+  status.style.background = '#fef3c7'; status.style.color = '#92400e';
+  status.textContent = '📍 Clique no mapa pra marcar o centro da zona ' + (tipo === 'frio' ? 'fria' : 'quente') + '.';
+  document.getElementById('mapaWrap').style.cursor = 'crosshair';
+  const navBtn = document.querySelector('.nav-link[onclick*="mapa"]');
+  if (typeof goTo === 'function') goTo('mapa', navBtn);
+}
+
+function _mapaCliqueMarcarClima(clientX, clientY) {
+  if (!_mapaModoClima || !_mapaClimaPendente) return false;
+  const img = document.getElementById('mapaImg');
+  if (!img) return false;
+  const rect = img.getBoundingClientRect();
+  const xPct = ((clientX - rect.left) / rect.width  * 100).toFixed(2);
+  const yPct = ((clientY - rect.top)  / rect.height * 100).toFixed(2);
+  _mapaModoClima = false;
+  document.getElementById('mapaWrap').style.cursor = '';
+
+  const payload = {
+    nome: _mapaClimaPendente.nome || null,
+    x: parseFloat(xPct), y: parseFloat(yPct),
+    ajuste: _mapaClimaPendente.ajuste, raio: _mapaClimaPendente.raio
+  };
+  _mapaClimaPendente = null;
+
+  dbPost('map_climate_pontos', payload).then(rows => {
+    const salvo = (Array.isArray(rows) && rows[0]) ? rows[0] : payload;
+    MAPA_CLIMA_PONTOS.push(salvo);
+    renderMapaClimaOverlay();
+    mapaAdmRenderClimaLista();
+    const status = document.getElementById('climaNovoStatus');
+    if (status) { status.style.background = '#d1fae5'; status.style.color = '#065f46'; status.textContent = '✓ Zona climática marcada!'; }
+    document.getElementById('climaNovoNome').value = '';
+  }).catch(e => {
+    console.error('[mapa] salvar ponto climático:', e);
+    const status = document.getElementById('climaNovoStatus');
+    if (status) { status.style.background = '#fee2e2'; status.style.color = '#991b1b'; status.textContent = 'Erro ao salvar — tente de novo.'; }
+  });
+
+  return true;
+}
+
+function mapaAdmRenderClimaLista() {
+  const wrap = document.getElementById('mapaClimaLista');
+  if (!wrap) return;
+  if (!MAPA_CLIMA_PONTOS.length) {
+    wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Nenhuma zona marcada ainda.</div>';
+    return;
+  }
+  wrap.innerHTML = MAPA_CLIMA_PONTOS.map(p => {
+    const frio = Number(p.ajuste) < 0;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px">
+      <span>${frio ? '❄️' : '🔥'}</span>
+      <span style="flex:1">${p.nome || (frio ? 'Zona fria' : 'Zona quente')} — ${p.ajuste > 0 ? '+' : ''}${p.ajuste}°C, raio ${p.raio}%</span>
+      <button class="btn btn-sm" style="padding:2px 8px;font-size:11px" onclick="mapaAdmExcluirClimaPonto('${p.id}')">🗑️</button>
+    </div>`;
+  }).join('');
+}
+
+async function mapaAdmExcluirClimaPonto(id) {
+  if (!confirm('Remover esta zona climática do mapa?')) return;
+  try {
+    await dbDel('map_climate_pontos', `id=eq.${id}`);
+    MAPA_CLIMA_PONTOS = MAPA_CLIMA_PONTOS.filter(p => String(p.id) !== String(id));
+    renderMapaClimaOverlay();
+    mapaAdmRenderClimaLista();
+  } catch(e) { console.error('[mapa] excluir ponto climático:', e); alert('Erro ao excluir.'); }
 }
 
 function toggleMapaFullscreen() {
@@ -15019,6 +15161,57 @@ function renderMapaPins() {
     }
     wrap.appendChild(pin);
   });
+}
+
+// ── Camada de zonas climáticas marcadas no mapa (só visual, ADM) ──
+// Cada ponto é um círculo semitransparente + rótulo com o ajuste de
+// temperatura (°C) que ele aplica; o WeatherCast lê os mesmos pontos
+// (tabela map_climate_pontos) pra somar esse ajuste ao clima dos locais
+// próximos, com o mesmo tipo de decaimento por distância já usado ali.
+function renderMapaClimaOverlay() {
+  const wrap = document.getElementById('mapaClimaOverlay');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  MAPA_CLIMA_PONTOS.forEach(p => {
+    const frio = Number(p.ajuste) < 0;
+    const cor = frio ? '#3c7fa0' : '#c0472a';
+    const raio = Math.max(2, Number(p.raio) || 25);
+    const circulo = document.createElement('div');
+    circulo.style.position = 'absolute';
+    circulo.style.left = p.x + '%';
+    circulo.style.top = p.y + '%';
+    circulo.style.width = (raio * 2) + '%';
+    circulo.style.height = (raio * 2) + '%';
+    circulo.style.transform = 'translate(-50%,-50%)';
+    circulo.style.borderRadius = '50%';
+    circulo.style.border = `1.5px dashed ${cor}`;
+    circulo.style.background = `${cor}22`;
+    wrap.appendChild(circulo);
+
+    const label = document.createElement('div');
+    label.style.position = 'absolute';
+    label.style.left = p.x + '%';
+    label.style.top = p.y + '%';
+    label.style.transform = 'translate(-50%,-50%)';
+    label.style.fontSize = '11px';
+    label.style.fontWeight = '700';
+    label.style.color = '#fff';
+    label.style.background = cor;
+    label.style.padding = '2px 7px';
+    label.style.borderRadius = '10px';
+    label.style.whiteSpace = 'nowrap';
+    label.textContent = `${frio ? '❄️' : '🔥'} ${p.nome ? p.nome + ' · ' : ''}${p.ajuste > 0 ? '+' : ''}${p.ajuste}°C`;
+    wrap.appendChild(label);
+  });
+}
+
+function toggleMapaClimaOverlay() {
+  const wrap = document.getElementById('mapaClimaOverlay');
+  const btn = document.getElementById('mapaClimaToggleBtn');
+  if (!wrap) return;
+  const visivel = wrap.style.display !== 'none';
+  wrap.style.display = visivel ? 'none' : 'block';
+  if (btn) btn.textContent = visivel ? '👁️ Ver no mapa' : '🙈 Esconder do mapa';
 }
 
 // ── Cache de fichas ────────────────────────────────────────
@@ -15460,9 +15653,10 @@ function initMapaPanZoom() {
     setScale(_mapaScale * (1 - e.deltaY * 0.001), e.clientX - rect.left, e.clientY - rect.top);
   }, {passive:false});
 
-  // Clique no canvas: novo local (modo crosshair)
+  // Clique no canvas: novo local (modo crosshair) ou marcar zona climática
   wrap.addEventListener('click', e => {
-    if (_mapaCliqueNovoLocal(e.clientX, e.clientY)) e.stopPropagation();
+    if (_mapaCliqueNovoLocal(e.clientX, e.clientY)) { e.stopPropagation(); return; }
+    if (_mapaCliqueMarcarClima(e.clientX, e.clientY)) { e.stopPropagation(); return; }
   });
   window.addEventListener('resize', () => {
     const minScale = getMinScale();
