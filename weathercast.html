@@ -390,6 +390,13 @@
       vez de saltar de zona pra zona sem transição. Locais sem posição cadastrada usam só a própria zona/estação.
     </p>
     <p>
+      Além disso, a própria posição no mapa desloca um pouco a temperatura da zona: com a configuração atual de
+      <code>GRADIENTE_MAPA</code>, locais mais ao sul (<code>pos_y</code> maior) ficam levemente mais quentes e
+      mais ao norte levemente mais frios, até um teto de <code>maxAjuste</code>. É só uma influência — a zona
+      climática cadastrada continua sendo quem decide a faixa e as condições (chuva, neve etc.); zonas cujo calor
+      não vem da superfície (Vulcânica, Subterrânea) ficam de fora desse ajuste.
+    </p>
+    <p>
       O clima do dia continua sendo <b>determinístico</b>: calculado a partir de um hash de
       <code>nome do local + data</code>, então todo mundo vê a mesma condição no mesmo dia sem precisar salvar nada
       em banco. A faixa horária e a previsão de 11 dias são a mesma função rodada pra horas/dias diferentes.
@@ -555,6 +562,49 @@ const ZONA_PERFIL = {
 const RAIO_INFLUENCIA_VIZINHOS = 22;
 
 /* ══════════════════════════════════════════════════════════════
+   GRADIENTE DE TEMPERATURA POR POSIÇÃO NO MAPA
+   Camada extra que NÃO substitui a zona climática — só desloca um
+   pouco a faixa de temperatura dela pra cima ou pra baixo de acordo
+   com a posição (pos_x/pos_y, escala 0–100, igual ao mapa interativo)
+   do local. Ex.: com eixo 'y' e direcao 1, locais "mais pro sul" (pos_y
+   maior) ficam um pouco mais quentes e "mais pro norte" um pouco mais
+   frios que a média da própria zona — mas continuam sendo, por
+   exemplo, "Fria" ou "Tropical" antes de mais nada.
+   Ajuste os valores abaixo conforme a geografia real da Região Nendo:
+   - eixo: 'y' (norte/sul) ou 'x' (leste/oeste)
+   - direcao: 1 = valores maiores de pos_x/pos_y ficam mais quentes;
+              -1 = inverte (valores maiores ficam mais frios)
+   - referencia: coordenada (0–100) tratada como "neutra" (0°C de ajuste)
+   - intensidade: quanto ajusta por cada % de distância da referência
+   - maxAjuste: teto do ajuste, pra não estourar zonas já extremas
+   ══════════════════════════════════════════════════════════════ */
+const GRADIENTE_MAPA = {
+  ativo: true,
+  eixo: 'y',
+  direcao: 1,
+  referencia: 50,
+  intensidade: 0.12,
+  maxAjuste: 6
+};
+
+// Zonas cujo clima não é regido pela superfície do mapa (calor vulcânico
+// vem da própria rocha, caverna é isolada do tempo externo) — ficam de
+// fora do gradiente pra não terem "inverno" só por estarem ao norte.
+const GRADIENTE_ZONAS_EXCLUIDAS = new Set(['Vulcânica', 'Subterrânea']);
+
+// Ajuste (°C) que a posição no mapa aplica sobre a faixa de temperatura
+// da zona climática do local. Retorna 0 se o gradiente estiver desativado,
+// a zona estiver na lista de exclusão, ou o local não tiver posição.
+function ajusteGradienteMapa(local, zona){
+  if (!GRADIENTE_MAPA.ativo || GRADIENTE_ZONAS_EXCLUIDAS.has(zona)) return 0;
+  const pos = GRADIENTE_MAPA.eixo === 'x' ? local.pos_x : local.pos_y;
+  if (pos == null) return 0;
+  const distancia = (Number(pos) - GRADIENTE_MAPA.referencia) * GRADIENTE_MAPA.direcao;
+  const ajuste = distancia * GRADIENTE_MAPA.intensidade;
+  return Math.max(-GRADIENTE_MAPA.maxAjuste, Math.min(GRADIENTE_MAPA.maxAjuste, ajuste));
+}
+
+/* ══════════════════════════════════════════════════════════════
    HASH DETERMINÍSTICO
    ══════════════════════════════════════════════════════════════ */
 function hashStr(str){
@@ -571,11 +621,20 @@ function zonaDoLocal(local){
 }
 
 // Perfil (faixas + pesos de condição) do local na estação ativa.
+// O gradiente por posição no mapa entra aqui, deslocando tempMin/tempMax
+// da própria zona — por isso já é levado em conta pela mistura com
+// vizinhos em faixaBlendadaComVizinhos, sem precisar de lógica extra lá.
 function perfilDoLocal(local, estacao){
   const zona = zonaDoLocal(local);
   const porZona = ZONA_PERFIL[zona] || ZONA_PERFIL['Temperada'];
   const porEstacao = porZona.estacoes[estacao] || porZona.estacoes.primavera;
-  return { zona, bg: porZona.bg, ...porEstacao };
+  const ajuste = ajusteGradienteMapa(local, zona);
+  return {
+    zona, bg: porZona.bg, ...porEstacao,
+    tempMin: porEstacao.tempMin + ajuste,
+    tempMax: porEstacao.tempMax + ajuste,
+    gradiente: ajuste
+  };
 }
 
 // Distância entre dois locais no espaço do mapa (mesma escala 0–100% do
@@ -631,7 +690,7 @@ function faixaBlendadaComVizinhos(localOriginal, estacao){
     somaW += w;
   }
   return {
-    zona: proprio.zona, bg: proprio.bg, condPesos: proprio.condPesos,
+    zona: proprio.zona, bg: proprio.bg, condPesos: proprio.condPesos, gradiente: proprio.gradiente,
     tempMin: tMin / somaW, tempMax: tMax / somaW, umid: umid / somaW, vento: vento / somaW
   };
 }
@@ -678,7 +737,7 @@ function climaDoLocal(local, data, estacaoOverride){
   const hVento = hashStr(seedBase + '-vento');
   const vento = Math.max(2, Math.round(faixa.vento + ((hVento % 11) - 5)));
 
-  return { perfil: { bg: faixa.bg }, zona: faixa.zona, estacao, condicao, temp, umidade, vento };
+  return { perfil: { bg: faixa.bg }, zona: faixa.zona, gradiente: faixa.gradiente, estacao, condicao, temp, umidade, vento };
 }
 
 function climaNaHora(local, data, hora){
@@ -817,7 +876,7 @@ function render(local){
 
   document.getElementById('hero-loc').textContent = local.nome;
   document.getElementById('hero-meta').innerHTML =
-    `<span>${dataFmt}</span>${IS_ADMIN ? `<span class="dot">·</span><span>${ESTACAO_EMOJI[info.estacao]||''} ${ESTACAO_LABEL[info.estacao]||info.estacao}</span><span class="dot">·</span><span>zona ${info.zona}</span>` : ''}`;
+    `<span>${dataFmt}</span>${IS_ADMIN ? `<span class="dot">·</span><span>${ESTACAO_EMOJI[info.estacao]||''} ${ESTACAO_LABEL[info.estacao]||info.estacao}</span><span class="dot">·</span><span>zona ${info.zona}</span><span class="dot">·</span><span>gradiente ${info.gradiente>=0?'+':''}${info.gradiente.toFixed(1)}°C</span>` : ''}`;
   document.getElementById('hero-rain').innerHTML = `Chance de chuva: <b>${chuvaHoje}%</b>`;
   document.getElementById('hero-temp').innerHTML = `${info.temp}<span class="deg">°C</span>`;
   document.getElementById('hero-cond').textContent = info.condicao.nome;
