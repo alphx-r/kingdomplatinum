@@ -232,7 +232,7 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .mapa-evento-card-desc{font-size:12px;color:var(--muted);line-height:1.5}
 .mapa-evento-card-tipo{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:10px;margin-bottom:6px}
 /* Controles do mapa */
-.mapa-controles{position:absolute;bottom:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:30}
+.mapa-controles{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:30}
 .mapa-ctrl-btn{width:36px;height:36px;border-radius:8px;border:none;background:rgba(255,255,255,.9);color:var(--brand);font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.3);transition:background .15s}
 .mapa-ctrl-btn:hover{background:#fff}
 
@@ -977,6 +977,10 @@ body{padding-left:0!important}
 .adm-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--brand);color:#fff;flex-wrap:wrap}
 .adm-topbar-title{font-family:var(--font-title);font-weight:700;letter-spacing:.5px;font-size:15px}
 .adm-topbar-title span{color:var(--accent)}
+.adm-topbar-tabs{display:flex;gap:6px}
+.adm-topbar-tab{font-family:var(--font-body);font-size:12px;font-weight:700;padding:7px 14px;border-radius:20px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:#fff;cursor:pointer;transition:all .15s;white-space:nowrap}
+.adm-topbar-tab:hover{border-color:#fff}
+.adm-topbar-tab.active{background:#fff;color:var(--brand);border-color:#fff}
 .adm-topbar-right{display:flex;align-items:center;gap:12px;font-size:12px}
 .adm-topbar-user{opacity:.85}
 .adm-topbar .btn{padding:7px 14px;font-size:12px}
@@ -1004,11 +1008,17 @@ body{padding-left:0!important}
   <!-- Barra do admin — some por padrão, aparece após login -->
   <div class="adm-topbar" id="adm-topbar" style="display:none">
     <div class="adm-topbar-title">Mapa<span> · ADM</span></div>
+    <div class="adm-topbar-tabs">
+      <button class="adm-topbar-tab active" id="admTabMapaBtn" onclick="admTrocarAba('mapa')">🗺️ Mapa</button>
+      <button class="adm-topbar-tab" id="admTabPainelBtn" onclick="admTrocarAba('painel')">⚙️ Painel admin</button>
+    </div>
     <div class="adm-topbar-right">
       <span class="adm-topbar-user" id="adm-user-label">—</span>
       <button class="btn" onclick="fazerLogout()">Sair</button>
     </div>
   </div>
+  <!-- Aba "Mapa" — mapa em si, visível por padrão -->
+  <div id="mapaViewWrap">
   <!-- Container do mapa com pan/zoom -->
   <div class="mapa-wrap" id="mapaWrap">
     <!-- Loading overlay -->
@@ -1035,7 +1045,7 @@ body{padding-left:0!important}
       <button class="mapa-ctrl-btn" onclick="mapaReset()" title="Reset" style="font-size:13px">⟳</button>
       <button class="mapa-ctrl-btn" id="mapaEditBtn" onclick="toggleModoEdicaoPins()" title="Editar pins" style="display:none;font-size:13px">✏️</button>
       <button class="mapa-ctrl-btn" id="mapaSalvarBtn" onclick="salvarPosicoesPins()" title="Salvar posições" style="display:none;font-size:13px;background:#e8a020;color:#fff">💾</button>
-      <button class="mapa-ctrl-btn" id="mapaAdmBtn" onclick="abrirLoginAdm()" title="Área administrativa" style="font-size:13px;opacity:.55">🔐</button>
+      <button class="mapa-ctrl-btn" id="mapaAdmBtn" onclick="abrirLoginAdm()" title="Área administrativa" style="display:none;font-size:13px;opacity:.55">🔐</button>
     </div>
     <!-- Botão fullscreen (só mobile) -->
     <!-- Pill de rota -->
@@ -1178,8 +1188,9 @@ body{padding-left:0!important}
     </div>
     <div class="mapa-lightbox-dots" id="mapaLbDots"></div>
   </div>
+  </div><!-- fecha #mapaViewWrap -->
 
-  <!-- Painel CRUD do admin — some por padrão, aparece após login -->
+  <!-- Aba "Painel admin" — some por padrão, alternada pelas abas do topbar -->
   <div id="adm-shell-wrap" style="display:none">
   <div class="adm-shell">
         <div class="adm-section active" id="sec-mapa-adm" style="padding:24px 4px 40px">
@@ -3437,6 +3448,7 @@ function fazerLogout(){
   try{ sessionStorage.removeItem(MAPA_ADM_SESSION_KEY); }catch(e){}
   document.getElementById('adm-topbar').style.display = 'none';
   document.getElementById('adm-shell-wrap').style.display = 'none';
+  document.getElementById('mapaViewWrap').style.display = 'block';
   document.getElementById('login-email').value = '';
   document.getElementById('login-senha').value = '';
   const admBtn = document.getElementById('mapaAdmBtn');
@@ -3466,17 +3478,37 @@ async function restaurarSessaoMapaAdm(){
   }catch(e){ admLogado = null; return false; }
 }
 
+// Alterna entre a aba "Mapa" e a aba "Painel admin" (não mexe em display do
+// mapa em si além de escondê-lo — o mapa continua carregado, só sai de vista).
+function admTrocarAba(aba){
+  const mapaWrap = document.getElementById('mapaViewWrap');
+  const painelWrap = document.getElementById('adm-shell-wrap');
+  const btnMapa = document.getElementById('admTabMapaBtn');
+  const btnPainel = document.getElementById('admTabPainelBtn');
+  if(aba === 'painel'){
+    mapaWrap.style.display = 'none';
+    painelWrap.style.display = 'block';
+    btnMapa.classList.remove('active');
+    btnPainel.classList.add('active');
+  } else {
+    mapaWrap.style.display = 'block';
+    painelWrap.style.display = 'none';
+    btnPainel.classList.remove('active');
+    btnMapa.classList.add('active');
+  }
+}
+
 // Revela a barra e o painel do admin (chamado após login ou ao restaurar sessão).
 // Não reinicializa o mapa — ele já foi carregado no DOMContentLoaded pra todo mundo.
 function mostrarPainelAdm(){
   fecharLoginAdm();
   document.getElementById('adm-topbar').style.display = 'flex';
-  document.getElementById('adm-shell-wrap').style.display = 'block';
   document.getElementById('adm-user-label').textContent = admLogado.email;
   const admBtn = document.getElementById('mapaAdmBtn');
   if(admBtn) admBtn.style.display = 'none';
   const editBtn = document.getElementById('mapaEditBtn');
   if(editBtn) editBtn.style.display = 'flex';
+  admTrocarAba('mapa'); // sempre começa na aba do mapa, não direto no painel
   mapaAdmTab('locais', document.querySelector('#sec-mapa-adm .pk-tab-btn'));
   document.title = 'Mapa · ADM — PKMN Kingdom Platinum';
 }
@@ -3488,7 +3520,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 2. O mapa carrega sempre, pra qualquer visitante.
   await initMapa();
   // 3. Se havia sessão de admin válida, revela a barra/painel do admin.
-  if(ok) mostrarPainelAdm();
+  //    Caso contrário, revela o cadeado de acesso admin (só pra quem
+  //    ainda não está logado — some completamente se já estiver).
+  if(ok){
+    mostrarPainelAdm();
+  } else {
+    const admBtn = document.getElementById('mapaAdmBtn');
+    if(admBtn) admBtn.style.display = 'flex';
+  }
 });
 
 </script>
