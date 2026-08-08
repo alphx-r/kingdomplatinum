@@ -964,7 +964,14 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .adm-itens-lista-wrap{display:flex;flex-wrap:wrap;gap:8px;min-height:52px;padding:4px 0;margin-bottom:12px;}
 /* ── Ajustes para funcionar como página standalone (sem a sidenav do site) ── */
 body{padding-left:0!important}
-#page-mapa{min-height:100vh}
+/* #page-mapa herda a classe genérica .page (padding:28px; max-width:1000px;
+   margin:0 auto) usada pelas abas internas do index.html. Isso fazia o mapa
+   ficar confinado a 1000px com uma moldura branca ao redor no lugar de
+   ocupar a tela toda — e, pior, fazia .mapa-wrap medir clientWidth/Height
+   dentro dessa área encolhida, o que desalinhava a escala mínima e o pan,
+   dando a impressão de que os pins estavam "fora do lugar". Zerando o
+   padding/max-width aqui, o mapa volta a ocupar 100% da viewport. */
+#page-mapa.page{padding:0;max-width:none;margin:0;width:100%;min-height:100vh;min-height:100dvh}
 /* Botões flutuantes do admin (alternar Mapa/Painel + sair) — só ícone,
    sobrepostos ao mapa, sempre visíveis independente da aba ativa. */
 #adm-float-tabs{position:fixed;bottom:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:3500}
@@ -972,7 +979,10 @@ body{padding-left:0!important}
 .adm-float-btn:hover{transform:scale(1.06)}
 .adm-float-btn.active{background:var(--brand);color:#fff}
 .adm-shell{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
-#mapaWrap{border-radius:var(--r);overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+/* Sem border-radius/box-shadow aqui: essas regras faziam sentido quando o
+   mapa vivia dentro do card com padding de .page; em tela cheia (standalone)
+   cantos arredondados/sombra na borda da viewport ficam com aparência de bug. */
+#mapaWrap{overflow:hidden}
 </style>
 </head>
 <body>
@@ -2807,7 +2817,7 @@ function initMapaPanZoom() {
       // reaproveitado à força no celular (tela estreita) e vice-versa,
       // fazendo a "câmera" mostrar um pedaço torto do mapa (os pins não se
       // moviam, só pareciam fora do lugar porque o enquadramento tava errado).
-      localStorage.setItem('mapa_view', JSON.stringify({
+      localStorage.setItem('mapa_view_v2', JSON.stringify({
         scale: _mapaScale, panX: _mapaPanX, panY: _mapaPanY,
         wW: wrap.clientWidth, wH: wrap.clientHeight
       }));
@@ -2839,7 +2849,9 @@ function initMapaPanZoom() {
     // dá a impressão de que os pins "pularam de lugar".
     let restored = false;
     try {
-      const saved = JSON.parse(localStorage.getItem('mapa_view') || 'null');
+      // v2: chave renomeada para descartar câmeras salvas antes do fix do
+      // padding de .page (que media clientWidth/Height do container errado).
+      const saved = JSON.parse(localStorage.getItem('mapa_view_v2') || 'null');
       const tolX = wrap.clientWidth  * 0.2;
       const tolY = wrap.clientHeight * 0.2;
       const telaCompativel = saved && typeof saved.wW === 'number' && typeof saved.wH === 'number'
