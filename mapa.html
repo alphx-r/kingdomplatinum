@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
-<style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
@@ -316,8 +315,11 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .pk-adm-card img{width:56px;height:56px;object-fit:contain}
 .pk-adm-card-name{font-family:var(--font-title);font-size:10px;color:var(--text);line-height:1.3}
 /* ADM */
-.adm-login-wrap{max-width:380px;margin:40px auto}
-.adm-login-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:32px 28px}
+.adm-login-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3000;display:none;align-items:center;justify-content:center;padding:20px}
+.adm-login-wrap{max-width:380px;width:100%}
+.adm-login-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:32px 28px;position:relative}
+.adm-login-fechar{position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:4px}
+.adm-login-fechar:hover{color:var(--text)}
 .adm-login-icon{width:56px;height:56px;background:var(--brand-light);border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:26px}
 .adm-login-title{font-family:var(--font-title);font-size:18px;color:var(--brand);text-align:center;margin-bottom:4px}
 .adm-login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px}
@@ -651,7 +653,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   .hist-header{flex-direction:column;align-items:flex-start;gap:4px}
   .ficha-header{flex-direction:column;align-items:flex-start;gap:10px}
   .search-bar{width:100%}
-  .adm-login-wrap{margin:20px auto;padding:0 4px}
+  .adm-login-overlay{padding:12px}
   .adm-layout{grid-template-columns:1fr;gap:12px}
   .adm-sidebar{position:static;padding:10px;overflow-x:auto;white-space:nowrap}
   .adm-sidebar-user{display:none}
@@ -969,14 +971,44 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .item-tag-adm .adm-item-actions button{width:22px;height:22px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);cursor:pointer;font-size:12px;color:var(--red);display:inline-flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;padding:0;}
 .item-tag-adm .adm-item-actions button:hover{background:#fde8e8;border-color:var(--red);}
 .adm-itens-lista-wrap{display:flex;flex-wrap:wrap;gap:8px;min-height:52px;padding:4px 0;margin-bottom:12px;}
-</style>
 /* ── Ajustes para funcionar como página standalone (sem a sidenav do site) ── */
 body{padding-left:0!important}
 #page-mapa{min-height:100vh}
+.adm-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--brand);color:#fff;flex-wrap:wrap}
+.adm-topbar-title{font-family:var(--font-title);font-weight:700;letter-spacing:.5px;font-size:15px}
+.adm-topbar-title span{color:var(--accent)}
+.adm-topbar-right{display:flex;align-items:center;gap:12px;font-size:12px}
+.adm-topbar-user{opacity:.85}
+.adm-topbar .btn{padding:7px 14px;font-size:12px}
+.adm-shell{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+#mapaWrap{border-radius:var(--r);overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.15)}
 </style>
 </head>
 <body>
+<!-- Overlay de login admin — some por padrão, aberto pelo botão discreto nos controles do mapa -->
+<div id="adm-login-overlay" class="adm-login-overlay" onclick="if(event.target===this)fecharLoginAdm()">
+  <div class="adm-login-wrap">
+    <div class="adm-login-card">
+      <button class="adm-login-fechar" onclick="fecharLoginAdm()" title="Fechar">×</button>
+      <div class="adm-login-icon">🔐</div>
+      <div class="adm-login-title">Área ADM — Mapa</div>
+      <div class="adm-login-sub">Acesso restrito aos administradores</div>
+      <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="seu@email.com"/></div>
+      <div class="field"><label>Senha</label><input type="password" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()"/></div>
+      <button class="btn btn-primary btn-full" style="margin-top:4px" onclick="fazerLogin()">Entrar</button>
+      <div class="fb fb-err" id="login-erro">Usuário ou senha incorretos.</div>
+    </div>
+  </div>
+</div>
 <div class="page active" id="page-mapa">
+  <!-- Barra do admin — some por padrão, aparece após login -->
+  <div class="adm-topbar" id="adm-topbar" style="display:none">
+    <div class="adm-topbar-title">Mapa<span> · ADM</span></div>
+    <div class="adm-topbar-right">
+      <span class="adm-topbar-user" id="adm-user-label">—</span>
+      <button class="btn" onclick="fazerLogout()">Sair</button>
+    </div>
+  </div>
   <!-- Container do mapa com pan/zoom -->
   <div class="mapa-wrap" id="mapaWrap">
     <!-- Loading overlay -->
@@ -1003,6 +1035,7 @@ body{padding-left:0!important}
       <button class="mapa-ctrl-btn" onclick="mapaReset()" title="Reset" style="font-size:13px">⟳</button>
       <button class="mapa-ctrl-btn" id="mapaEditBtn" onclick="toggleModoEdicaoPins()" title="Editar pins" style="display:none;font-size:13px">✏️</button>
       <button class="mapa-ctrl-btn" id="mapaSalvarBtn" onclick="salvarPosicoesPins()" title="Salvar posições" style="display:none;font-size:13px;background:#e8a020;color:#fff">💾</button>
+      <button class="mapa-ctrl-btn" id="mapaAdmBtn" onclick="abrirLoginAdm()" title="Área administrativa" style="font-size:13px;opacity:.55">🔐</button>
     </div>
     <!-- Botão fullscreen (só mobile) -->
     <!-- Pill de rota -->
@@ -1145,8 +1178,241 @@ body{padding-left:0!important}
     </div>
     <div class="mapa-lightbox-dots" id="mapaLbDots"></div>
   </div>
-</div>
 
+  <!-- Painel CRUD do admin — some por padrão, aparece após login -->
+  <div id="adm-shell-wrap" style="display:none">
+  <div class="adm-shell">
+        <div class="adm-section active" id="sec-mapa-adm" style="padding:24px 4px 40px">
+          <div class="sec-title">Mapa — Fichas de Locais</div>
+          <div class="sec-sub">Gerencie as informações exibidas no popup de cada local do mapa da Região Nendo</div>
+
+          <!-- Tabs ADM -->
+          <div style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin-bottom:20px">
+            <button class="pk-tab-btn active" onclick="mapaAdmTab('locais',this)" style="font-size:12px;padding:7px 14px">Locais</button>
+            <button class="pk-tab-btn" onclick="mapaAdmTab('novo',this)" style="font-size:12px;padding:7px 14px">+ Novo local</button>
+            <button class="pk-tab-btn" onclick="mapaAdmTab('clima',this)" style="font-size:12px;padding:7px 14px">🌡️ Clima</button>
+            <button class="pk-tab-btn" onclick="mapaAdmTab('filtros',this)" style="font-size:12px;padding:7px 14px">Filtros</button>
+          </div>
+
+          <!-- Tab: Cards de locais -->
+          <div id="mapaAdmTabLocais">
+            <!-- Busca rápida -->
+            <div style="margin-bottom:14px">
+              <input type="text" id="mapaAdmBusca" placeholder="Buscar local..." oninput="mapaAdmFiltrarCards(this.value)"
+                style="width:100%;padding:8px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)"/>
+            </div>
+            <!-- Grid de cards por tipo -->
+            <div id="mapaAdmCardsWrap"></div>
+          </div>
+
+          <!-- Tab: Novo local -->
+          <div id="mapaAdmTabNovo" style="display:none">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+              Preencha os dados e clique em <b>Posicionar no Mapa</b>. Depois clique no mapa para definir a posição do pin.
+            </div>
+            <div class="field">
+              <label>Nome do local</label>
+              <input type="text" id="mapaNovoNome" placeholder="Ex: Ambrosia Town" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+              <div class="field" style="margin-bottom:0">
+                <label>Tipo</label>
+                <select id="mapaNovoTipo">
+                  <!-- opções preenchidas dinamicamente por popularSelectTipos() -->
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>ID (sem espaços)</label>
+                <input type="text" id="mapaNovoId" placeholder="ambrosiatown" />
+              </div>
+            </div>
+            <div id="mapaNovoStatus" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--surface2);color:var(--muted);margin-bottom:10px;display:none"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-primary" onclick="mapaAdmIniciarPosicionar()">Posicionar no Mapa</button>
+            </div>
+            <div class="fb fb-ok" id="mapaNovoFbOk">✓ Local criado!</div>
+            <div class="fb fb-err" id="mapaNovoFbErr">Erro ao criar.</div>
+          </div>
+
+          <!-- Tab: Clima -->
+          <div id="mapaAdmTabClima" style="display:none">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+              Configure o tipo/intensidade/raio abaixo e depois clique (ou arraste, com "🖌️ Pintar" ativado) direto
+              no mapa. Cada zona desloca a temperatura dos locais dentro do raio dela no WeatherCast — some com a
+              zona climática cadastrada de cada local, não substitui.
+            </div>
+            <div class="field">
+              <label>Nome da zona (opcional)</label>
+              <input type="text" id="climaNovoNome" placeholder="Ex: Nordeste gelado" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px">
+              <div class="field" style="margin-bottom:0">
+                <label>Tipo</label>
+                <select id="climaNovoTipo">
+                  <option value="frio">❄️ Mais frio</option>
+                  <option value="quente">🔥 Mais quente</option>
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Intensidade (°C)</label>
+                <input type="number" id="climaNovoIntensidade" value="4" min="1" max="10" step="0.5" />
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label>Raio (% do mapa)</label>
+                <input type="number" id="climaNovoRaio" value="20" min="3" max="60" step="1" />
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer">
+                <input type="checkbox" id="climaPintarModo" style="margin:0"/> 🖌️ Pintar (arrastar no mapa em vez de clicar)
+              </label>
+              <span style="font-size:11px;color:var(--muted)">No modo pintura, use um raio menor (ex: 8–12) pra pintar com mais precisão.</span>
+            </div>
+            <div id="climaNovoStatus" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--surface2);color:var(--muted);margin-bottom:10px;display:none"></div>
+
+            <!-- Mini-mapa embutido no próprio ADM: clique/arraste marca a zona direto aqui -->
+            <div id="climaMiniMapaWrap" style="position:relative;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);margin-bottom:16px;cursor:crosshair;line-height:0">
+              <img id="climaMiniMapaImg" src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
+                alt="Mapa da Região Nendo" draggable="false" style="width:100%;display:block;user-select:none"/>
+              <div id="climaMiniMapaOverlay" style="position:absolute;inset:0;pointer-events:none"></div>
+            </div>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:20px">
+              <button class="btn" id="mapaClimaToggleBtn" onclick="toggleMapaClimaOverlay()">👁️ Mostrar também no mapa público</button>
+            </div>
+            <div class="mapa-adm-tipo-label">Zonas marcadas</div>
+            <div id="mapaClimaLista"></div>
+          </div>
+
+          <!-- Tab: Filtros -->
+          <div id="mapaAdmTabFiltros" style="display:none">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Edite os nomes exibidos no menu de filtro do mapa. As alterações são salvas e aplicadas imediatamente.</div>
+            <div style="display:flex;flex-direction:column;gap:10px" id="mapaFiltrosEditList">
+              <!-- preenchido dinamicamente por mapaFiltrosCarregarInputs() -->
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+              <button class="btn btn-warn btn-sm" onclick="mapaFiltrosReset()">↩ Restaurar padrão</button>
+              <button class="btn btn-primary" onclick="mapaFiltrosSalvar()">Salvar nomes</button>
+            </div>
+            <div class="fb fb-ok" id="mapaFiltrosFbOk">✓ Nomes atualizados!</div>
+            <div class="fb fb-err" id="mapaFiltrosFbErr">Erro ao salvar.</div>
+          </div>
+
+          <!-- hidden inputs para modal (compatibilidade com mapaAdmSalvarFicha) -->
+          <input type="hidden" id="mapaFichaId"/>
+        </div>
+</div>
+</div>
+<div class="mapa-ficha-modal-overlay" id="mapaFichaModalOverlay" onclick="if(event.target===this)fecharMapaFichaModal()">
+  <div class="mapa-ficha-modal" id="mapaFichaModal">
+    <div class="mapa-ficha-modal-header">
+      <div class="mapa-ficha-modal-titulo" id="mapaFichaModalTitulo">Local</div>
+      <span class="mapa-ficha-modal-badge" id="mapaFichaModalBadge"></span>
+      <div class="mapa-ficha-modal-status" id="mapaAdmStatusBadge"></div>
+      <button class="mapa-ficha-modal-close" onclick="fecharMapaFichaModal()">×</button>
+    </div>
+    <div class="mapa-ficha-modal-body" id="mapaAdmForm">
+      <div class="field" style="margin-bottom:0">
+        <label>Imagem principal (URL)</label>
+        <input type="text" id="mapaFichaImagem" placeholder="https://..." />
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Resumo curto</label>
+        <textarea id="mapaFichaResumo" rows="2" placeholder="Breve descrição do local..." style="resize:vertical"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Descrição completa</label>
+        <textarea id="mapaFichaDescricao" rows="4" placeholder="História e detalhes do local..." style="resize:vertical"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Pontos turísticos</label>
+        <textarea id="mapaFichaPontos" rows="2" placeholder="Lista de pontos turísticos..." style="resize:vertical"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div class="field" style="margin-bottom:0">
+          <label>Bioma 1</label>
+          <input type="text" id="mapaFichaBioma1" placeholder="Ex: Floresta" />
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Bioma 2</label>
+          <input type="text" id="mapaFichaBioma2" placeholder="Ex: Rio" />
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Bioma 3</label>
+          <input type="text" id="mapaFichaBioma3" placeholder="Ex: Montanha" />
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Galeria (URLs separadas por vírgula)</label>
+        <textarea id="mapaFichaGaleria" rows="2" placeholder="url1, url2, url3..." style="resize:vertical"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Rosa dos ventos (descrição das direções)</label>
+        <textarea id="mapaFichaRosa" rows="4" placeholder="N: Cidade X
+S: Dungeon Y
+NE: Vila Z
+O: Floresta..." style="resize:vertical"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Rotas (distâncias em km)</label>
+        <textarea id="mapaFichaRotas" rows="3" placeholder="rota1: 12
+yukoncity: 45
+koencity: 30" style="resize:vertical"></textarea>
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">Uma por linha: <b>id_do_local: km</b></div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Cor do local</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="color" id="mapaFichaCor" value="#2563a8" style="width:48px;height:36px;border:none;border-radius:8px;cursor:pointer;padding:2px;background:var(--surface2)"/>
+          <div style="display:flex;gap:6px;flex-wrap:wrap" id="mapaFichaCorPresets">
+            <button onclick="mapaFichaCorPreset('#2563a8')" style="width:22px;height:22px;border-radius:50%;background:#2563a8;border:2px solid transparent;cursor:pointer" title="Azul"></button>
+            <button onclick="mapaFichaCorPreset('#7c3aed')" style="width:22px;height:22px;border-radius:50%;background:#7c3aed;border:2px solid transparent;cursor:pointer" title="Roxo"></button>
+            <button onclick="mapaFichaCorPreset('#b45309')" style="width:22px;height:22px;border-radius:50%;background:#b45309;border:2px solid transparent;cursor:pointer" title="Laranja"></button>
+            <button onclick="mapaFichaCorPreset('#1a7a1a')" style="width:22px;height:22px;border-radius:50%;background:#1a7a1a;border:2px solid transparent;cursor:pointer" title="Verde"></button>
+            <button onclick="mapaFichaCorPreset('#0e7490')" style="width:22px;height:22px;border-radius:50%;background:#0e7490;border:2px solid transparent;cursor:pointer" title="Ciano"></button>
+            <button onclick="mapaFichaCorPreset('#dc2626')" style="width:22px;height:22px;border-radius:50%;background:#dc2626;border:2px solid transparent;cursor:pointer" title="Vermelho"></button>
+            <button onclick="mapaFichaCorPreset('#d97706')" style="width:22px;height:22px;border-radius:50%;background:#d97706;border:2px solid transparent;cursor:pointer" title="Âmbar"></button>
+            <button onclick="mapaFichaCorPreset('#db2777')" style="width:22px;height:22px;border-radius:50%;background:#db2777;border:2px solid transparent;cursor:pointer" title="Rosa"></button>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
+        <button class="btn" onclick="fecharMapaFichaModal(true)" style="font-size:13px">Cancelar</button>
+        <button class="btn btn-primary" onclick="mapaAdmSalvarFicha()" style="font-size:13px">Salvar ficha</button>
+      </div>
+      <div class="fb fb-ok" id="mapaAdmFbOk">✓ Ficha salva!</div>
+      <div class="fb fb-err" id="mapaAdmFbErr">Erro ao salvar.</div>
+    </div>
+  </div>
+  </div><!-- fecha #adm-shell-wrap -->
+</div><!-- fecha #page-mapa -->
+
+<div class="mapa-local-edit-overlay" id="mapaLocalEditOverlay" onclick="if(event.target===this)fecharMapaLocalEdit()">
+  <div class="mapa-local-edit-modal">
+    <div class="mapa-local-edit-title" id="mapaLocalEditTitle">Editar Local</div>
+    <input type="hidden" id="mapaLocalEditId"/>
+    <div class="mapa-local-edit-field">
+      <label>Nome</label>
+      <input type="text" id="mapaLocalEditNome"/>
+    </div>
+    <div class="mapa-local-edit-field">
+      <label>Tipo</label>
+      <select id="mapaLocalEditTipo">
+        <!-- opções preenchidas dinamicamente por popularSelectTipos() -->
+      </select>
+    </div>
+    <div class="mapa-local-edit-field">
+      <label>Descrição</label>
+      <textarea id="mapaLocalEditDesc" rows="2"></textarea>
+    </div>
+    <div class="mapa-local-edit-actions">
+      <button class="mapa-local-edit-del" onclick="excluirMapaLocal()">Excluir</button>
+      <button class="btn" onclick="fecharMapaLocalEdit(true)" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarMapaLocalEdit()" style="flex:1">Salvar</button>
+    </div>
+    <div id="mapaLocalEditFb" style="font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>
+  </div>
+</div>
 <script>
 // ══════════════════════════════════════
 // SUPABASE CONFIG (mesma base do site principal)
@@ -1190,7 +1456,28 @@ const dbPost = (t,b)           => sb(t,{method:'POST',body:JSON.stringify(b),pre
 const dbPatch= (t,q,b)         => sb(`${t}?${q}`,{method:'PATCH',body:JSON.stringify(b),prefer:'return=representation'});
 const dbDel  = (t,q)           => sb(`${t}?${q}`,{method:'DELETE',prefer:'return=minimal'});
 
-// Visualizador standalone: nunca há admin logado (edição fica no site principal)
+// Chama uma função RPC do banco (roda no servidor — nunca expõe senha/hash ao navegador)
+async function dbRpc(fn, args={}){
+  const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, {
+    method:'POST',
+    headers:{
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(args)
+  });
+  const text = await res.text();
+  let data = null;
+  try{ data = text ? JSON.parse(text) : null; }catch(e){}
+  if(!res.ok){
+    const msg = data?.message || data?.hint || `Erro ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+// Sessão de admin — controlada pelo login desta página (ver adm_auth.js)
 let admLogado = null;
 
 // Stub — no site principal isso carrega config de bônus de shiny pro rolador;
@@ -3107,8 +3394,103 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pageMapa) observer.observe(pageMapa, {attributes:true, attributeFilter:['class']});
 });
 
-// ── Inicialização direta (sem SPA / sem goTo) ──
-document.addEventListener('DOMContentLoaded', () => { initMapa(); });
+// ══════════════════════════════════════
+// LOGIN / SESSÃO — admin embutido na mesma página do mapa
+// A sessão fica em sessionStorage (some ao fechar a aba/janela) e é sempre
+// revalidada contra o banco (admin_list) — nunca confia cegamente no que
+// está salvo no navegador. O mapa em si é público e carrega sempre; só a
+// barra e o painel de administração ficam escondidos até o login.
+// ══════════════════════════════════════
+const MAPA_ADM_SESSION_KEY = 'mapa_adm_session';
+
+function abrirLoginAdm(){
+  const errEl = document.getElementById('login-erro');
+  if(errEl) errEl.style.display = 'none';
+  document.getElementById('adm-login-overlay').style.display = 'flex';
+  const emailEl = document.getElementById('login-email');
+  if(emailEl) emailEl.focus();
+}
+
+function fecharLoginAdm(){
+  document.getElementById('adm-login-overlay').style.display = 'none';
+}
+
+async function fazerLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const senha = document.getElementById('login-senha').value;
+  const errEl = document.getElementById('login-erro');
+  errEl.style.display = 'none';
+  if(!email || !senha){ errEl.textContent = 'Preencha e-mail e senha.'; errEl.style.display = 'block'; return; }
+  let match = null;
+  try{
+    const r = await dbRpc('admin_login', {p_nome: email, p_senha: senha});
+    match = Array.isArray(r) ? r[0] : r;
+  }catch(e){ console.error('[fazerLogin]', e); }
+  if(!match){ errEl.textContent = 'Usuário ou senha incorretos.'; errEl.style.display = 'block'; return; }
+  admLogado = {email: match.nome};
+  try{ sessionStorage.setItem(MAPA_ADM_SESSION_KEY, JSON.stringify(admLogado)); }catch(e){}
+  mostrarPainelAdm();
+}
+
+function fazerLogout(){
+  admLogado = null;
+  try{ sessionStorage.removeItem(MAPA_ADM_SESSION_KEY); }catch(e){}
+  document.getElementById('adm-topbar').style.display = 'none';
+  document.getElementById('adm-shell-wrap').style.display = 'none';
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-senha').value = '';
+  const admBtn = document.getElementById('mapaAdmBtn');
+  if(admBtn) admBtn.style.display = 'flex';
+  const editBtn = document.getElementById('mapaEditBtn');
+  const salvarBtn = document.getElementById('mapaSalvarBtn');
+  if(editBtn) editBtn.style.display = 'none';
+  if(salvarBtn) salvarBtn.style.display = 'none';
+  // Se estava em modo de edição de pins, sai dele também
+  if(typeof _mapaModoEdicao !== 'undefined' && _mapaModoEdicao){ toggleModoEdicaoPins(); }
+  document.title = 'Mapa — PKMN Kingdom Platinum';
+}
+
+// Revalida a sessão salva contra a tabela de admins (nunca confia só no
+// que está em sessionStorage — se o admin foi removido, a sessão cai).
+async function restaurarSessaoMapaAdm(){
+  try{
+    const saved = sessionStorage.getItem(MAPA_ADM_SESSION_KEY);
+    if(!saved) return false;
+    const sess = JSON.parse(saved);
+    if(!sess?.email) return false;
+    const lista = await dbRpc('admin_list', {});
+    const match = (lista||[]).find(a => a.nome === sess.email);
+    if(!match){ sessionStorage.removeItem(MAPA_ADM_SESSION_KEY); admLogado = null; return false; }
+    admLogado = {email: sess.email};
+    return true;
+  }catch(e){ admLogado = null; return false; }
+}
+
+// Revela a barra e o painel do admin (chamado após login ou ao restaurar sessão).
+// Não reinicializa o mapa — ele já foi carregado no DOMContentLoaded pra todo mundo.
+function mostrarPainelAdm(){
+  fecharLoginAdm();
+  document.getElementById('adm-topbar').style.display = 'flex';
+  document.getElementById('adm-shell-wrap').style.display = 'block';
+  document.getElementById('adm-user-label').textContent = admLogado.email;
+  const admBtn = document.getElementById('mapaAdmBtn');
+  if(admBtn) admBtn.style.display = 'none';
+  const editBtn = document.getElementById('mapaEditBtn');
+  if(editBtn) editBtn.style.display = 'flex';
+  mapaAdmTab('locais', document.querySelector('#sec-mapa-adm .pk-tab-btn'));
+  document.title = 'Mapa · ADM — PKMN Kingdom Platinum';
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // 1. Revalida sessão salva ANTES de montar o mapa, pra já nascer com os
+  //    botões de edição corretos (initMapa checa `admLogado` internamente).
+  const ok = await restaurarSessaoMapaAdm();
+  // 2. O mapa carrega sempre, pra qualquer visitante.
+  await initMapa();
+  // 3. Se havia sessão de admin válida, revela a barra/painel do admin.
+  if(ok) mostrarPainelAdm();
+});
+
 </script>
 </body>
 </html>
