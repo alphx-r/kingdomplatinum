@@ -2802,7 +2802,15 @@ function initMapaPanZoom() {
     clampPan(_mapaScale);
     canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
     try {
-      localStorage.setItem('mapa_view', JSON.stringify({scale:_mapaScale, panX:_mapaPanX, panY:_mapaPanY}));
+      // Guarda também o tamanho da tela em que essa câmera foi salva — sem
+      // isso, um enquadramento salvo no computador (tela larga) era
+      // reaproveitado à força no celular (tela estreita) e vice-versa,
+      // fazendo a "câmera" mostrar um pedaço torto do mapa (os pins não se
+      // moviam, só pareciam fora do lugar porque o enquadramento tava errado).
+      localStorage.setItem('mapa_view', JSON.stringify({
+        scale: _mapaScale, panX: _mapaPanX, panY: _mapaPanY,
+        wW: wrap.clientWidth, wH: wrap.clientHeight
+      }));
     } catch(e) {}
   }
 
@@ -2825,11 +2833,19 @@ function initMapaPanZoom() {
     img.style.width = img.naturalWidth + 'px';
     void wrap.offsetWidth;
     const minScale = getMinScale();
-    // Tenta restaurar posição salva
+    // Tenta restaurar posição salva — mas só se foi salva numa tela de
+    // tamanho parecido com a atual (± 20%). Câmera salva no computador não
+    // faz sentido pro celular (e vice-versa): o enquadramento fica torto e
+    // dá a impressão de que os pins "pularam de lugar".
     let restored = false;
     try {
       const saved = JSON.parse(localStorage.getItem('mapa_view') || 'null');
-      if (saved && saved.scale >= minScale && saved.scale <= 4) {
+      const tolX = wrap.clientWidth  * 0.2;
+      const tolY = wrap.clientHeight * 0.2;
+      const telaCompativel = saved && typeof saved.wW === 'number' && typeof saved.wH === 'number'
+        && Math.abs(saved.wW - wrap.clientWidth)  <= tolX
+        && Math.abs(saved.wH - wrap.clientHeight) <= tolY;
+      if (saved && telaCompativel && saved.scale >= minScale && saved.scale <= 4) {
         _mapaScale = saved.scale;
         _mapaPanX  = saved.panX;
         _mapaPanY  = saved.panY;
@@ -2921,10 +2937,26 @@ function initMapaPanZoom() {
   wrap.addEventListener('click', e => {
     if (_mapaCliqueNovoLocal(e.clientX, e.clientY)) { e.stopPropagation(); return; }
   });
+  // No celular, a barra de endereço do navegador aparece/some ao rolar a
+  // página, o que dispara 'resize' com pequenas variações de altura o
+  // tempo todo. Reagir a cada uma delas recentralizava o mapa sem parar,
+  // dando a impressão de que os pins ficavam "pulando" de lugar. Aqui só
+  // reagimos a mudanças de tamanho realmente relevantes (rotação de tela,
+  // redimensionar a janela) e com debounce, pra não recalcular à toa.
+  let _mapaLastResizeW = wrap.clientWidth, _mapaLastResizeH = wrap.clientHeight;
+  let _mapaResizeTimer = null;
   window.addEventListener('resize', () => {
-    const minScale = getMinScale();
-    if (_mapaScale < minScale) setScale(minScale);
-    else applyTransform();
+    clearTimeout(_mapaResizeTimer);
+    _mapaResizeTimer = setTimeout(() => {
+      const wNow = wrap.clientWidth, hNow = wrap.clientHeight;
+      const mudouLargura = Math.abs(wNow - _mapaLastResizeW) > 40;
+      const mudouAltura  = Math.abs(hNow - _mapaLastResizeH) > 100;
+      if (!mudouLargura && !mudouAltura) return;
+      _mapaLastResizeW = wNow; _mapaLastResizeH = hNow;
+      const minScale = getMinScale();
+      if (_mapaScale < minScale) setScale(minScale);
+      else applyTransform();
+    }, 150);
   });
 }
 
