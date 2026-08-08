@@ -12,7 +12,7 @@
 :root{
   --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
   --accent:#e8a020;--accent-light:#fdf3dc;
-  --bg:#808080;--surface:#fff;--surface2:#f0f3f8;
+  --bg:#eef1f6;--surface:#fff;--surface2:#f0f3f8;
   --border:#dde3ee;--border2:#c8d0e0;
   --text:#1a1f2e;--muted:#6b7a99;
   --red:#c03030;--green:#1a7a1a;
@@ -315,14 +315,6 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .pk-adm-card img{width:56px;height:56px;object-fit:contain}
 .pk-adm-card-name{font-family:var(--font-title);font-size:10px;color:var(--text);line-height:1.3}
 /* ADM */
-.adm-login-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3000;display:none;align-items:center;justify-content:center;padding:20px}
-.adm-login-wrap{max-width:380px;width:100%}
-.adm-login-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:32px 28px;position:relative}
-.adm-login-fechar{position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:4px}
-.adm-login-fechar:hover{color:var(--text)}
-.adm-login-icon{width:56px;height:56px;background:var(--brand-light);border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:26px}
-.adm-login-title{font-family:var(--font-title);font-size:18px;color:var(--brand);text-align:center;margin-bottom:4px}
-.adm-login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px}
 .adm-layout{display:grid;grid-template-columns:210px 1fr;gap:20px;padding-top:8px;align-items:start}
 .adm-sidebar{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:16px;height:fit-content;position:sticky;top:20px;max-height:calc(100vh - 40px);overflow-y:auto}
 .adm-sidebar-user{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);word-break:break-all}
@@ -653,7 +645,6 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   .hist-header{flex-direction:column;align-items:flex-start;gap:4px}
   .ficha-header{flex-direction:column;align-items:flex-start;gap:10px}
   .search-bar{width:100%}
-  .adm-login-overlay{padding:12px}
   .adm-layout{grid-template-columns:1fr;gap:12px}
   .adm-sidebar{position:static;padding:10px;overflow-x:auto;white-space:nowrap}
   .adm-sidebar-user{display:none}
@@ -989,23 +980,8 @@ body{padding-left:0!important}
 </style>
 </head>
 <body>
-<!-- Overlay de login admin — some por padrão, aberto pelo botão discreto nos controles do mapa -->
-<div id="adm-login-overlay" class="adm-login-overlay" onclick="if(event.target===this)fecharLoginAdm()">
-  <div class="adm-login-wrap">
-    <div class="adm-login-card">
-      <button class="adm-login-fechar" onclick="fecharLoginAdm()" title="Fechar">×</button>
-      <div class="adm-login-icon">🔐</div>
-      <div class="adm-login-title">Área ADM — Mapa</div>
-      <div class="adm-login-sub">Acesso restrito aos administradores</div>
-      <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="seu@email.com"/></div>
-      <div class="field"><label>Senha</label><input type="password" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()"/></div>
-      <button class="btn btn-primary btn-full" style="margin-top:4px" onclick="fazerLogin()">Entrar</button>
-      <div class="fb fb-err" id="login-erro">Usuário ou senha incorretos.</div>
-    </div>
-  </div>
-</div>
 <div class="page active" id="page-mapa">
-  <!-- Barra do admin — some por padrão, aparece após login -->
+  <!-- Barra do admin — some por padrão, aparece só se a sessão de admin do index for detectada -->
   <div class="adm-topbar" id="adm-topbar" style="display:none">
     <div class="adm-topbar-title">Mapa<span> · ADM</span></div>
     <div class="adm-topbar-tabs">
@@ -1045,7 +1021,6 @@ body{padding-left:0!important}
       <button class="mapa-ctrl-btn" onclick="mapaReset()" title="Reset" style="font-size:13px">⟳</button>
       <button class="mapa-ctrl-btn" id="mapaEditBtn" onclick="toggleModoEdicaoPins()" title="Editar pins" style="display:none;font-size:13px">✏️</button>
       <button class="mapa-ctrl-btn" id="mapaSalvarBtn" onclick="salvarPosicoesPins()" title="Salvar posições" style="display:none;font-size:13px;background:#e8a020;color:#fff">💾</button>
-      <button class="mapa-ctrl-btn" id="mapaAdmBtn" onclick="abrirLoginAdm()" title="Área administrativa" style="display:none;font-size:13px;opacity:.55">🔐</button>
     </div>
     <!-- Botão fullscreen (só mobile) -->
     <!-- Pill de rota -->
@@ -3406,53 +3381,22 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ══════════════════════════════════════
-// LOGIN / SESSÃO — admin embutido na mesma página do mapa
-// A sessão fica em sessionStorage (some ao fechar a aba/janela) e é sempre
-// revalidada contra o banco (admin_list) — nunca confia cegamente no que
-// está salvo no navegador. O mapa em si é público e carrega sempre; só a
-// barra e o painel de administração ficam escondidos até o login.
+// SESSÃO ADMIN — detectada automaticamente a partir do login do site
+// principal (index). O mapa NÃO tem formulário de login próprio: ele só
+// lê a mesma sessão salva pelo index (localStorage 'adm_session', chave
+// compartilhada, mesmo projeto Supabase) e revalida contra o banco
+// (admin_list) — nunca confia cegamente no que está salvo no navegador.
+// Se a pessoa não estiver logada como admin no site, a barra e o painel
+// de administração do mapa simplesmente nunca aparecem.
 // ══════════════════════════════════════
-const MAPA_ADM_SESSION_KEY = 'mapa_adm_session';
-
-function abrirLoginAdm(){
-  const errEl = document.getElementById('login-erro');
-  if(errEl) errEl.style.display = 'none';
-  document.getElementById('adm-login-overlay').style.display = 'flex';
-  const emailEl = document.getElementById('login-email');
-  if(emailEl) emailEl.focus();
-}
-
-function fecharLoginAdm(){
-  document.getElementById('adm-login-overlay').style.display = 'none';
-}
-
-async function fazerLogin(){
-  const email = document.getElementById('login-email').value.trim();
-  const senha = document.getElementById('login-senha').value;
-  const errEl = document.getElementById('login-erro');
-  errEl.style.display = 'none';
-  if(!email || !senha){ errEl.textContent = 'Preencha e-mail e senha.'; errEl.style.display = 'block'; return; }
-  let match = null;
-  try{
-    const r = await dbRpc('admin_login', {p_nome: email, p_senha: senha});
-    match = Array.isArray(r) ? r[0] : r;
-  }catch(e){ console.error('[fazerLogin]', e); }
-  if(!match){ errEl.textContent = 'Usuário ou senha incorretos.'; errEl.style.display = 'block'; return; }
-  admLogado = {email: match.nome};
-  try{ sessionStorage.setItem(MAPA_ADM_SESSION_KEY, JSON.stringify(admLogado)); }catch(e){}
-  mostrarPainelAdm();
-}
+const ADM_SESSION_KEY = 'adm_session'; // mesma chave usada pelo index.html
 
 function fazerLogout(){
   admLogado = null;
-  try{ sessionStorage.removeItem(MAPA_ADM_SESSION_KEY); }catch(e){}
+  try{ localStorage.removeItem(ADM_SESSION_KEY); }catch(e){}
   document.getElementById('adm-topbar').style.display = 'none';
   document.getElementById('adm-shell-wrap').style.display = 'none';
   document.getElementById('mapaViewWrap').style.display = 'block';
-  document.getElementById('login-email').value = '';
-  document.getElementById('login-senha').value = '';
-  const admBtn = document.getElementById('mapaAdmBtn');
-  if(admBtn) admBtn.style.display = 'flex';
   const editBtn = document.getElementById('mapaEditBtn');
   const salvarBtn = document.getElementById('mapaSalvarBtn');
   if(editBtn) editBtn.style.display = 'none';
@@ -3462,17 +3406,17 @@ function fazerLogout(){
   document.title = 'Mapa — PKMN Kingdom Platinum';
 }
 
-// Revalida a sessão salva contra a tabela de admins (nunca confia só no
-// que está em sessionStorage — se o admin foi removido, a sessão cai).
+// Lê a sessão salva pelo index (localStorage) e revalida contra a tabela
+// de admins — se o admin foi removido ou a sessão não existe, fica de fora.
 async function restaurarSessaoMapaAdm(){
   try{
-    const saved = sessionStorage.getItem(MAPA_ADM_SESSION_KEY);
+    const saved = localStorage.getItem(ADM_SESSION_KEY);
     if(!saved) return false;
     const sess = JSON.parse(saved);
     if(!sess?.email) return false;
     const lista = await dbRpc('admin_list', {});
     const match = (lista||[]).find(a => a.nome === sess.email);
-    if(!match){ sessionStorage.removeItem(MAPA_ADM_SESSION_KEY); admLogado = null; return false; }
+    if(!match){ admLogado = null; return false; }
     admLogado = {email: sess.email};
     return true;
   }catch(e){ admLogado = null; return false; }
@@ -3498,14 +3442,12 @@ function admTrocarAba(aba){
   }
 }
 
-// Revela a barra e o painel do admin (chamado após login ou ao restaurar sessão).
-// Não reinicializa o mapa — ele já foi carregado no DOMContentLoaded pra todo mundo.
+// Revela a barra e o painel do admin (chamado quando a sessão do index é
+// detectada). Não reinicializa o mapa — ele já foi carregado no
+// DOMContentLoaded pra todo mundo.
 function mostrarPainelAdm(){
-  fecharLoginAdm();
   document.getElementById('adm-topbar').style.display = 'flex';
   document.getElementById('adm-user-label').textContent = admLogado.email;
-  const admBtn = document.getElementById('mapaAdmBtn');
-  if(admBtn) admBtn.style.display = 'none';
   const editBtn = document.getElementById('mapaEditBtn');
   if(editBtn) editBtn.style.display = 'flex';
   admTrocarAba('mapa'); // sempre começa na aba do mapa, não direto no painel
@@ -3514,20 +3456,15 @@ function mostrarPainelAdm(){
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 1. Revalida sessão salva ANTES de montar o mapa, pra já nascer com os
-  //    botões de edição corretos (initMapa checa `admLogado` internamente).
+  // 1. Verifica se já existe sessão de admin válida (feita no index) ANTES
+  //    de montar o mapa, pra já nascer com os botões de edição corretos
+  //    (initMapa checa `admLogado` internamente).
   const ok = await restaurarSessaoMapaAdm();
   // 2. O mapa carrega sempre, pra qualquer visitante.
   await initMapa();
-  // 3. Se havia sessão de admin válida, revela a barra/painel do admin.
-  //    Caso contrário, revela o cadeado de acesso admin (só pra quem
-  //    ainda não está logado — some completamente se já estiver).
-  if(ok){
-    mostrarPainelAdm();
-  } else {
-    const admBtn = document.getElementById('mapaAdmBtn');
-    if(admBtn) admBtn.style.display = 'flex';
-  }
+  // 3. Só revela a barra/painel do admin se a sessão do index for válida.
+  //    Visitante comum (ou admin que não logou no site) nunca vê nada disso.
+  if(ok) mostrarPainelAdm();
 });
 
 </script>
