@@ -159,6 +159,16 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .mapa-wrap.grabbing{cursor:grabbing}
 .mapa-canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 .mapa-canvas img.mapa-img{display:block;max-width:none;height:auto;pointer-events:none;image-rendering:pixelated}
+/* #mapaPins precisa ser position:absolute + inset:0 pra ocupar exatamente a
+   mesma caixa da imagem (mesma largura/altura em px), já que os pins são
+   posicionados em % (left/top) relativos a esse elemento. Sem isso ele fica
+   em fluxo normal como um <div> qualquer, com largura/altura dependentes de
+   timing de layout — daí o efeito de "pin no lugar errado até atualizar":
+   às vezes os pins eram desenhados antes de #mapaPins assumir o tamanho
+   certo, então as % calculavam em cima de uma caixa errada; um refresh
+   dava tempo do layout se estabilizar e os pins reapareciam certos. */
+#mapaPins{position:absolute;inset:0;pointer-events:none}
+#mapaPins .mapa-pin{pointer-events:auto}
 /* Pin */
 .mapa-pin{position:absolute;transform:translate(-50%,-100%);cursor:pointer;z-index:10;transition:transform .15s}
 .mapa-pin:hover{transform:translate(-50%,-100%) scale(1.25)}
@@ -1752,12 +1762,17 @@ async function initMapa() {
   clearInterval(progInterval);
   if (bar) bar.style.width = '100%';
 
+  // initMapaPanZoom() primeiro: é quem dá à imagem sua largura real em px
+  // (img.style.width) e monta .mapa-canvas no tamanho certo. Antes,
+  // renderMapaPins() rodava primeiro — mas como os pins usam left/top em %
+  // relativos a #mapaPins, mesmo com o CSS corrigido é mais seguro garantir
+  // que a imagem já tem tamanho definido antes de desenhar os pins por cima.
+  initMapaPanZoom();
   renderMapaPins();
   renderMapaClimaOverlay('mapaClimaOverlay');
   renderMapaClimaOverlay('climaMiniMapaOverlay');
   initClimaMiniMapa();
   renderMapaFiltros();
-  initMapaPanZoom();
   // Mostra pill de distância junto com o filtro
   const rotaPillEl = document.getElementById('mapaRotaPill');
   if (rotaPillEl) rotaPillEl.style.display = 'block';
@@ -2785,7 +2800,15 @@ function initMapaPanZoom() {
   const canvas = document.getElementById('mapaCanvas');
   if (!wrap || !canvas) return;
 
-  // Escala mínima = caber inteiramente na tela (contain)
+  // Escala mínima = cobrir a tela inteira (cover), nunca deixar vão vazio.
+  // Antes usava Math.min (contain), que encolhe a imagem até ela caber
+  // inteira nas duas dimensões — como o mapa é bem mais largo que alto
+  // (1400×674) e a tela do celular é estreita e alta, isso deixava a
+  // largura preenchida mas sobrava uma faixa vazia embaixo (a cor de fundo
+  // do .mapa-wrap aparecendo). Math.max (cover) escala pra preencher as
+  // duas dimensões, cortando o excesso — é o comportamento esperado pra
+  // um mapa navegável, e também é o que fazia o zoom inicial parecer
+  // "sem zoom": a escala mínima estava sendo calculada baixa demais.
   function getMinScale() {
     const img = document.getElementById('mapaImg');
     if (!img || !img.naturalWidth) return 1;
@@ -2793,7 +2816,7 @@ function initMapaPanZoom() {
     // naturalWidth/Height = dimensões reais da imagem, imune ao transform atual
     const iW = img.naturalWidth,  iH = img.naturalHeight;
     if (!iW || !iH) return 1;
-    return Math.min(wW / iW, wH / iH);
+    return Math.max(wW / iW, wH / iH);
   }
 
   // Garante que o pan nunca deixa o mapa sair da área visível; centraliza se couber
@@ -2978,7 +3001,9 @@ function mapaZoom(dir) {
   if (!wrap || !img) return;
   const iNW = img.naturalWidth  || img.offsetWidth;
   const iNH = img.naturalHeight || img.offsetHeight;
-  const minScale = Math.min(wrap.clientWidth / iNW, wrap.clientHeight / iNH);
+  // Cover (Math.max) — mesma escala mínima usada em initMapaPanZoom/mapaReset,
+  // pra não permitir dar zoom out até o ponto de sobrar vão vazio na tela.
+  const minScale = Math.max(wrap.clientWidth / iNW, wrap.clientHeight / iNH);
   _mapaScale = Math.min(4, Math.max(minScale, _mapaScale + dir * 0.25));
   // Clamp pan
   const sW = iNW * _mapaScale, sH = iNH * _mapaScale;
@@ -3396,10 +3421,16 @@ function mapaReset() {
   const iW = img.naturalWidth  || img.offsetWidth;
   const iH = img.naturalHeight || img.offsetHeight;
   if (!iW || !iH) return;
-  // No fullscreen (ou desktop) faz contain completo; no mobile normal cobre só a largura
-  const minScale = Math.min(wrap.clientWidth / iW, wrap.clientHeight / iH);
-  _mapaScale = minScale; _mapaPanX = 0; _mapaPanY = 0;
-  canvas.style.transform = `translate(0,0) scale(${minScale})`;
+  // Cover (Math.max), igual à escala mínima usada em initMapaPanZoom — cobre
+  // a tela inteira em vez de deixar vão vazio (era Math.min/"contain" antes,
+  // o mesmo bug que deixava espaço vazio embaixo do mapa no mobile).
+  const minScale = Math.max(wrap.clientWidth / iW, wrap.clientHeight / iH);
+  _mapaScale = minScale;
+  // Centraliza em vez de travar em (0,0), senão o reset sempre reancora no
+  // canto superior esquerdo da imagem.
+  _mapaPanX = (wrap.clientWidth  - iW * minScale) / 2;
+  _mapaPanY = (wrap.clientHeight - iH * minScale) / 2;
+  canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${minScale})`;
 }
 
 // ── Hook no goTo ───────────────────────────────────────────
