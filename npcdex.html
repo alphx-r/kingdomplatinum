@@ -156,8 +156,6 @@ html{
 <div class="toolbar">
   <div class="search-row">
     <input class="search-input" id="busca" placeholder="Buscar NPC pelo nome..." oninput="renderCards()">
-    <button class="btn-admin" id="btn-admin-toggle" onclick="onAdminToggle()">🔒 Modo ADM</button>
-    <button class="btn-admin" id="btn-novo-npc" style="display:none" onclick="abrirModalNovoNpc()">+ Novo NPC</button>
   </div>
   <div class="cat-tabs" id="cat-tabs"></div>
 </div>
@@ -166,61 +164,9 @@ html{
   <div class="empty-state">Carregando NPCs...</div>
 </div>
 
-<!-- MODAL: novo NPC -->
-<div class="modal-overlay" id="modal-novo" onclick="if(event.target===this)fecharModalNovoNpc()">
-  <div class="modal-box">
-    <div class="modal-title">Novo NPC</div>
-    <div class="modal-field">
-      <label>Nome</label>
-      <input id="novo-nome" placeholder="Ex: Ariel Costa" oninput="sugerirSlug()">
-    </div>
-    <div class="modal-field">
-      <label>Slug (URL)</label>
-      <input id="novo-slug" placeholder="ex: ariel-costa">
-    </div>
-    <div class="modal-field">
-      <label>Categoria</label>
-      <select id="novo-categoria">
-        <option value="gymleader">Líder de Ginásio</option>
-        <option value="elitefour">Elite Four</option>
-        <option value="liga">Campeão / Liga</option>
-        <option value="vilao">Vilão</option>
-        <option value="aliado">Aliado</option>
-        <option value="comum" selected>NPC Comum</option>
-      </select>
-    </div>
-    <div class="modal-err" id="novo-err"></div>
-    <div class="modal-btns">
-      <button class="modal-btn ghost" onclick="fecharModalNovoNpc()">Cancelar</button>
-      <button class="modal-btn primary" onclick="criarNpc()">Criar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: login admin -->
-<div class="modal-overlay" id="modal-admin" onclick="if(event.target===this)fecharModalAdmin()">
-  <div class="modal-box">
-    <div class="modal-title">Acesso ADM</div>
-    <div class="modal-field">
-      <label>Senha</label>
-      <input id="admin-senha" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')confirmarAdmin()">
-    </div>
-    <div class="modal-err" id="admin-err">Senha incorreta.</div>
-    <div class="modal-btns">
-      <button class="modal-btn ghost" onclick="fecharModalAdmin()">Cancelar</button>
-      <button class="modal-btn primary" onclick="confirmarAdmin()">Entrar</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const SUPA_URL='https://fatdzivyqipmcbzaiftc.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
-
-// ── ATENÇÃO: troca essa senha antes de subir pra produção.
-// Ela precisa ser IDÊNTICA à usada em npc_ficha.html.
-const ADMIN_PASSWORD='trocaessasenha';
-const ADMIN_KEY='kp_npcdex_admin';
 
 async function api(path,opts={}){
   const isGet=!opts.method||opts.method==='GET';
@@ -233,7 +179,6 @@ async function api(path,opts={}){
   try{return JSON.parse(t);}catch{return[];}
 }
 const apiGet=(p,q='')=>api(`${p}?${q}`);
-const apiPost=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b)});
 
 const CATEGORIAS=[
   {val:'',label:'Todos',icon:'📋'},
@@ -255,7 +200,6 @@ const CAT_COLOR={
 };
 
 let todosNpcs=[], categoriaAtiva='';
-const isAdmin=()=>localStorage.getItem(ADMIN_KEY)==='1';
 
 function toggleMobileMenu(){
   document.getElementById('nav-hamburger').classList.toggle('open');
@@ -275,7 +219,7 @@ function setCategoria(v){categoriaAtiva=v;renderTabs();renderCards();}
 
 function renderCards(){
   const q=(document.getElementById('busca').value||'').toLowerCase().trim();
-  let lista=todosNpcs.filter(n=>isAdmin()||n.ativo!==false);
+  let lista=todosNpcs.filter(n=>n.ativo!==false);
   if(categoriaAtiva) lista=lista.filter(n=>(n.categoria||'comum')===categoriaAtiva);
   if(q) lista=lista.filter(n=>(n.nome||'').toLowerCase().includes(q)||(n.cargo||'').toLowerCase().includes(q));
   const wrap=document.getElementById('cards-wrap');
@@ -309,78 +253,6 @@ async function carregarNpcs(){
   renderCards();
 }
 
-// ── Admin ──────────────────────────────────
-function atualizarUiAdmin(){
-  const on=isAdmin();
-  const btn=document.getElementById('btn-admin-toggle');
-  btn.textContent=on?'🔓 ADM ativo':'🔒 Modo ADM';
-  btn.classList.toggle('on',on);
-  document.getElementById('btn-novo-npc').style.display=on?'inline-flex':'none';
-}
-function onAdminToggle(){
-  if(isAdmin()){
-    localStorage.removeItem(ADMIN_KEY);
-    atualizarUiAdmin();renderCards();
-  } else {
-    document.getElementById('admin-senha').value='';
-    document.getElementById('admin-err').style.display='none';
-    document.getElementById('modal-admin').classList.add('open');
-    setTimeout(()=>document.getElementById('admin-senha').focus(),50);
-  }
-}
-function fecharModalAdmin(){document.getElementById('modal-admin').classList.remove('open');}
-function confirmarAdmin(){
-  const v=document.getElementById('admin-senha').value;
-  if(v===ADMIN_PASSWORD){
-    localStorage.setItem(ADMIN_KEY,'1');
-    fecharModalAdmin();atualizarUiAdmin();renderCards();
-  } else {
-    document.getElementById('admin-err').style.display='block';
-  }
-}
-
-// ── Novo NPC ───────────────────────────────
-function slugify(s){
-  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
-}
-function sugerirSlug(){
-  const slugEl=document.getElementById('novo-slug');
-  if(!slugEl.dataset.touched) slugEl.value=slugify(document.getElementById('novo-nome').value);
-}
-document.addEventListener('DOMContentLoaded',()=>{
-  const slugEl=document.getElementById('novo-slug');
-  if(slugEl) slugEl.addEventListener('input',()=>slugEl.dataset.touched='1');
-});
-function abrirModalNovoNpc(){
-  document.getElementById('novo-nome').value='';
-  document.getElementById('novo-slug').value='';
-  document.getElementById('novo-slug').dataset.touched='';
-  document.getElementById('novo-categoria').value='comum';
-  document.getElementById('novo-err').style.display='none';
-  document.getElementById('modal-novo').classList.add('open');
-}
-function fecharModalNovoNpc(){document.getElementById('modal-novo').classList.remove('open');}
-async function criarNpc(){
-  const nome=document.getElementById('novo-nome').value.trim();
-  const slug=slugify(document.getElementById('novo-slug').value.trim());
-  const categoria=document.getElementById('novo-categoria').value;
-  const err=document.getElementById('novo-err');
-  if(!nome||!slug){err.textContent='Preencha nome e slug.';err.style.display='block';return;}
-  if(todosNpcs.some(n=>n.slug===slug)){err.textContent='Já existe um NPC com esse slug.';err.style.display='block';return;}
-  try{
-    const res=await apiPost('npcs',{nome,slug,categoria,time:[{},{},{},{},{},{}],relacionamentos:[],rel_total:6,ativo:true});
-    if(res&&res[0]){
-      location.href=`/npcdex/${encodeURIComponent(slug)}`;
-    } else {
-      err.textContent='Erro ao criar. Verifica a tabela npcs no Supabase.';err.style.display='block';
-    }
-  }catch(e){
-    err.textContent='Erro: '+e.message;err.style.display='block';
-  }
-}
-
-atualizarUiAdmin();
 carregarNpcs();
 </script>
 </body>
