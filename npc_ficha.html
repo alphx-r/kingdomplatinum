@@ -115,7 +115,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 /* POKÉMON ESPECIAL (Gym/House/Station) — 3 categorias (Basic/Middle/Final), 6 colunas cada, versão compacta */
 .especial-poke-cat{margin-bottom:12px}
 .especial-poke-cat:last-child{margin-bottom:0}
-.especial-poke-cat-titulo{font-size:12px;font-weight:800;color:var(--cor-poke,#1a1a1a);text-transform:uppercase;letter-spacing:.6px;font-family:var(--font-body);padding:6px 10px 4px}
+.especial-poke-cat-titulo{font-size:12px;font-weight:800;color:var(--cor-poke,#1a1a1a);text-transform:uppercase;letter-spacing:.6px;font-family:var(--font-body);padding:6px 10px 4px;text-align:center}
 .especial-poke-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:0 10px 8px}
 .especial-poke-slot{background:var(--surface);border:1px solid var(--border);border-radius:5px;display:flex;flex-direction:column;overflow:hidden}
 .especial-poke-topbar{background:var(--cor-poke,#1a1a1a);padding:2px 4px;display:flex;align-items:center;justify-content:center}
@@ -447,16 +447,18 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 <div class="cores-modal-overlay" id="crop-modal-overlay" style="display:none;z-index:300">
   <div class="cores-modal" style="max-width:560px">
     <div class="cores-modal-title">Ajustar imagem</div>
-    <div class="crop-wrap" id="crop-wrap">
-      <img id="crop-img" draggable="false"/>
-      <div class="crop-box" id="crop-box">
-        <div class="crop-handle" data-corner="nw" style="left:-6px;top:-6px;cursor:nwse-resize"></div>
-        <div class="crop-handle" data-corner="ne" style="right:-6px;top:-6px;cursor:nesw-resize"></div>
-        <div class="crop-handle" data-corner="sw" style="left:-6px;bottom:-6px;cursor:nesw-resize"></div>
-        <div class="crop-handle" data-corner="se" style="right:-6px;bottom:-6px;cursor:nwse-resize"></div>
+    <div class="crop-modal-imgbox">
+      <div class="crop-wrap" id="crop-wrap">
+        <img id="crop-img" draggable="false"/>
+        <div class="crop-box" id="crop-box">
+          <div class="crop-handle" data-corner="nw" style="left:-6px;top:-6px;cursor:nwse-resize"></div>
+          <div class="crop-handle" data-corner="ne" style="right:-6px;top:-6px;cursor:nesw-resize"></div>
+          <div class="crop-handle" data-corner="sw" style="left:-6px;bottom:-6px;cursor:nesw-resize"></div>
+          <div class="crop-handle" data-corner="se" style="right:-6px;bottom:-6px;cursor:nwse-resize"></div>
+        </div>
       </div>
     </div>
-    <div class="crop-hint">Arraste a área para mover, use os cantos para redimensionar.</div>
+    <div class="crop-hint" id="crop-hint">Arraste a área para mover, use os cantos para redimensionar.</div>
     <div class="cores-modal-btns" style="margin-top:12px;justify-content:space-between">
       <button class="btn btn-sm" style="background:#eee;border:1px solid #ccc" onclick="fecharCropModal()">Cancelar</button>
       <div style="display:flex;gap:8px">
@@ -468,7 +470,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 </div>
 
 <style>
-.crop-wrap{position:relative;display:flex;align-items:center;justify-content:center;background:#111;border-radius:4px;overflow:hidden;max-height:60vh;min-height:200px}
+.crop-modal-imgbox{display:flex;justify-content:center}
+.crop-wrap{position:relative;display:inline-flex;line-height:0;border-radius:4px;overflow:hidden}
 .crop-wrap img{display:block;max-width:100%;max-height:60vh;user-select:none;-webkit-user-drag:none}
 .crop-box{position:absolute;border:2px dashed #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:move;touch-action:none}
 .crop-handle{position:absolute;width:14px;height:14px;background:#fff;border:2px solid var(--accent,#1a1a1a);border-radius:50%;touch-action:none}
@@ -813,11 +816,24 @@ async function salvarImagemCampo(campo,dataUrl){
 }
 
 // ─── Crop de imagem (header, perfil e cenário) ─────────
-let _crop=null; // {campo,srcDataUrl,drag:null}
+const CROP_DEST_EL={foto:'header-photo-col',banner:'header-banner-col',gym_imagem:'ginasio-img-col'};
+let _crop=null; // {campo,srcDataUrl,drag:null,aspect:number|null}
+function obterAspectAlvo(campo){
+  const elId=CROP_DEST_EL[campo];
+  const el=elId&&document.getElementById(elId);
+  if(!el) return null;
+  const r=el.getBoundingClientRect();
+  if(!r.width||!r.height) return null;
+  return r.width/r.height;
+}
 function abrirCropModal(dataUrl,campo){
-  _crop={campo,srcDataUrl:dataUrl,drag:null};
+  _crop={campo,srcDataUrl:dataUrl,drag:null,aspect:obterAspectAlvo(campo)};
   const overlay=document.getElementById('crop-modal-overlay');
   const img=document.getElementById('crop-img');
+  const hint=document.getElementById('crop-hint');
+  if(hint) hint.textContent=_crop.aspect
+    ? 'Proporção travada no formato do espaço da ficha — arraste para mover, use os cantos para redimensionar.'
+    : 'Arraste a área para mover, use os cantos para redimensionar.';
   img.onload=()=>{ setTimeout(inicializarCropBox,20); };
   img.src=dataUrl;
   overlay.style.display='flex';
@@ -828,10 +844,17 @@ function fecharCropModal(){
 }
 function inicializarCropBox(){
   const img=document.getElementById('crop-img');
-  const box=document.getElementById('crop-box');
   const w=img.clientWidth, h=img.clientHeight;
-  const margin=Math.round(Math.min(w,h)*0.1);
-  const rect={x:margin,y:margin,w:w-margin*2,h:h-margin*2};
+  const aspect=_crop&&_crop.aspect;
+  let rect;
+  if(aspect){
+    let rw,rh;
+    if(w/h>aspect){ rh=h*0.92; rw=rh*aspect; } else { rw=w*0.92; rh=rw/aspect; }
+    rect={x:(w-rw)/2,y:(h-rh)/2,w:rw,h:rh};
+  } else {
+    const margin=Math.round(Math.min(w,h)*0.1);
+    rect={x:margin,y:margin,w:w-margin*2,h:h-margin*2};
+  }
   aplicarCropRect(rect);
   ligarEventosCrop();
 }
@@ -848,29 +871,51 @@ function ligarEventosCrop(){
   if(box.dataset.bound)return;
   box.dataset.bound='1';
   const MIN=24;
-  function clampRect(r){
+  function clampMoveRect(r){
     const w=img.clientWidth,h=img.clientHeight;
-    r.w=Math.max(MIN,Math.min(r.w,w));
-    r.h=Math.max(MIN,Math.min(r.h,h));
     r.x=Math.max(0,Math.min(r.x,w-r.w));
     r.y=Math.max(0,Math.min(r.y,h-r.h));
     return r;
   }
+  // Corner opposto (âncora fixa) durante o redimensionamento
+  function cornerAnchor(corner,rect0){
+    const opos={nw:'se',ne:'sw',sw:'ne',se:'nw'}[corner];
+    return {
+      x: opos.includes('w')?rect0.x:rect0.x+rect0.w,
+      y: opos.includes('n')?rect0.y:rect0.y+rect0.h
+    };
+  }
   function onMove(clientX,clientY){
     if(!_crop||!_crop.drag)return;
     const d=_crop.drag;
-    const dx=clientX-d.startX, dy=clientY-d.startY;
-    let r={..._crop.rect};
+    const w=img.clientWidth,h=img.clientHeight;
+    const aspect=_crop.aspect;
     if(d.mode==='move'){
-      r={...d.rect0,x:d.rect0.x+dx,y:d.rect0.y+dy};
-    } else {
-      r={...d.rect0};
-      if(d.mode.includes('e')) r.w=d.rect0.w+dx;
-      if(d.mode.includes('s')) r.h=d.rect0.h+dy;
-      if(d.mode.includes('w')){ r.x=d.rect0.x+dx; r.w=d.rect0.w-dx; }
-      if(d.mode.includes('n')){ r.y=d.rect0.y+dy; r.h=d.rect0.h-dy; }
+      const dx=clientX-d.startX, dy=clientY-d.startY;
+      const r={...d.rect0,x:d.rect0.x+dx,y:d.rect0.y+dy};
+      aplicarCropRect(clampMoveRect(r));
+      return;
     }
-    aplicarCropRect(clampRect(r));
+    // Redimensionar a partir de um canto, com o canto oposto fixo (âncora)
+    const imgRect=img.getBoundingClientRect();
+    let px=Math.max(0,Math.min(clientX-imgRect.left,w));
+    let py=Math.max(0,Math.min(clientY-imgRect.top,h));
+    const anchor=cornerAnchor(d.mode,d.rect0);
+    let rw=Math.abs(px-anchor.x), rh=Math.abs(py-anchor.y);
+    if(aspect){
+      if(rw/rh>aspect) rw=rh*aspect; else rh=rw/aspect;
+    }
+    if(rw<MIN){ rw=MIN; rh=aspect?rw/aspect:rh; }
+    if(rh<MIN){ rh=MIN; rw=aspect?rh*aspect:rw; }
+    const signX=px>=anchor.x?1:-1, signY=py>=anchor.y?1:-1;
+    let rx=signX>0?anchor.x:anchor.x-rw;
+    let ry=signY>0?anchor.y:anchor.y-rh;
+    // Garante que não ultrapasse os limites da imagem (reduz mantendo proporção se necessário)
+    if(rx<0){ const cut=-rx; rx=0; if(aspect){ rw-=cut; rh=rw/aspect; if(signY<0) ry=anchor.y-rh; } }
+    if(ry<0){ const cut=-ry; ry=0; if(aspect){ rh-=cut; rw=rh*aspect; if(signX<0) rx=anchor.x-rw; } }
+    if(rx+rw>w){ const over=(rx+rw)-w; rw-=over; if(aspect){ rh=rw/aspect; if(signY<0) ry=anchor.y-rh; } }
+    if(ry+rh>h){ const over=(ry+rh)-h; rh-=over; if(aspect){ rw=rh*aspect; if(signX<0) rx=anchor.x-rw; } }
+    aplicarCropRect({x:rx,y:ry,w:rw,h:rh});
   }
   function start(mode){
     return ev=>{
