@@ -119,12 +119,16 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   .poke-slot:last-child{border-bottom:none}
 }
 /* POKÉMON ESPECIAL (Gym/House/Station) — 3 categorias (Basic/Middle/Final), 6 colunas cada, versão compacta */
-.especial-poke-cat{margin-bottom:12px}
+.especial-poke-cat{margin-bottom:4px}
 .especial-poke-cat:last-child{margin-bottom:0}
-.especial-poke-cat-titulo{font-size:12px;font-weight:800;color:var(--cor-poke,#1a1a1a);text-transform:uppercase;letter-spacing:.6px;font-family:var(--font-body);padding:6px 10px 4px;text-align:center}
-.especial-poke-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:0 10px 8px}
+.especial-poke-cat-titulo{font-size:12px;font-weight:800;color:var(--cor-poke,#1a1a1a);text-transform:uppercase;letter-spacing:.6px;font-family:var(--font-body);padding:4px 10px 3px;text-align:center}
+.especial-poke-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:0 10px 6px}
 .especial-poke-slot{background:var(--surface);border:1px solid var(--border);border-radius:5px;display:flex;flex-direction:column;overflow:hidden}
-.especial-poke-topbar{background:var(--cor-poke,#1a1a1a);padding:2px 4px;display:flex;align-items:center;justify-content:center}
+.especial-poke-topbar{background:var(--cor-poke,#1a1a1a);padding:2px 4px;display:flex;align-items:center;justify-content:space-between;gap:4px}
+.especial-poke-ball-wrap{display:flex;align-items:center;gap:3px}
+.especial-poke-ball{width:32px;height:32px;object-fit:contain;flex-shrink:0}
+.especial-poke-tipos{display:flex;gap:3px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.especial-poke-tipo-img{width:32px;height:32px;object-fit:contain}
 .especial-poke-img-wrap{background:#f5f5f5;display:flex;align-items:center;justify-content:center;height:56px;overflow:hidden;border-bottom:1px solid var(--bg)}
 .especial-poke-img-wrap img{width:46px;height:46px;object-fit:contain;image-rendering:pixelated}
 .especial-poke-nome-row{background:var(--cor-poke,#1a1a1a);padding:2px 4px;text-align:center}
@@ -1186,10 +1190,14 @@ function renderPokeEspecial(){
 function slotEspecialView(pk){
   const ball=ballImg(pk.ball||'pokeball');
   const imgSrc=pk.img||FALLBACK;
+  const tipos=(pk.tipos||[]).filter(Boolean);
   const genderIcon=pk.gender==='♂'?'<span class="poke-slot-gender" style="color:#4a90d9">♂</span>':pk.gender==='♀'?'<span class="poke-slot-gender" style="color:#d94a90">♀</span>':'';
   return`<div class="especial-poke-slot">
     <div class="especial-poke-topbar">
-      <img class="poke-slot-ball" src="${ball}" onerror="this.style.display='none'"/>
+      <div class="especial-poke-ball-wrap">
+        <img class="especial-poke-ball" src="${ball}" onerror="this.style.display='none'"/>
+      </div>
+      <div class="especial-poke-tipos">${tipos.map(t=>`<img class="especial-poke-tipo-img" src="${tipoImg(t)}" title="${t}"/>`).join('')}</div>
     </div>
     <div class="especial-poke-img-wrap"><img src="${imgSrc}" alt="${pk.nome||'—'}" onerror="this.src='${FALLBACK}'"/></div>
     <div class="especial-poke-nome-row"><span class="especial-poke-nome-lbl">${pk.nome||'—'}${genderIcon}</span></div>
@@ -1203,6 +1211,9 @@ function slotEspecialEdit(stageKey,i,pk){
   const pfx=`poke-esp-${stageKey}`;
   const wrapId=`${pfx}-wrap-${i}`;
   const ballOpts=POKEBALLS.map(b=>`<option value="${b.val}" ${(pk.ball||'pokeball')===b.val?'selected':''}>${b.label}</option>`).join('');
+  const t0=(pk.tipos||[])[0]||'', t1=(pk.tipos||[])[1]||'';
+  const tipo1Opts=TIPOS_POKE.map(t=>`<option value="${t}" ${t0===t?'selected':''}>${t}</option>`).join('');
+  const tipo2Opts=['<option value="">— nenhum —</option>'].concat(TIPOS_POKE.map(t=>`<option value="${t}" ${t1===t?'selected':''}>${t}</option>`)).join('');
   const abertoCls=(pk.nome||'').trim()?' aberto':'';
   return`<div class="poke-slot-edit${abertoCls}" id="${wrapId}">
     ${slotEditHeader(pfx,i,pk)}
@@ -1210,6 +1221,8 @@ function slotEspecialEdit(stageKey,i,pk){
       <label>Pokémon</label>
       <div class="pk-ac-wrap"><input value="${pk.nome||''}" placeholder="Nome (buscar...)" id="${pfx}-nome-${i}" autocomplete="off"/></div>
       <label>Pokéball</label><select id="${pfx}-ball-${i}">${ballOpts}</select>
+      <label>Tipo 1</label><select id="${pfx}-tipo0-${i}"><option value="">— nenhum —</option>${tipo1Opts}</select>
+      <label>Tipo 2</label><select id="${pfx}-tipo1-${i}">${tipo2Opts}</select>
       <label>Imagem</label>
       ${pk.img?`<img class="poke-slot-edit-img-preview" src="${pk.img}" id="${pfx}-img-prev-${i}"/>`:`<img class="poke-slot-edit-img-preview" src="" id="${pfx}-img-prev-${i}" style="display:none"/>`}
       <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">📷 Escolher imagem própria</button>
@@ -1326,11 +1339,14 @@ async function salvarFicha(silencioso=false){
         for(let i=0;i<POKE_ESPECIAL_SLOTS;i++){
           const nome=(document.getElementById(`${pfx}-nome-${i}`)?.value||'').trim();
           const ball=document.getElementById(`${pfx}-ball-${i}`)?.value||'pokeball';
+          const t0=document.getElementById(`${pfx}-tipo0-${i}`)?.value||'';
+          const t1=document.getElementById(`${pfx}-tipo1-${i}`)?.value||'';
+          const tipos=[t0,t1].filter(Boolean);
           const img=window._pokeImgs?.[pfx]?.[i]||(npc.pokemon_ghs?.[key]?.[i]?.img||'');
           const ability=(document.getElementById(`${pfx}-ability-${i}`)?.value||'').trim();
           const gender=document.getElementById(`${pfx}-gender-${i}`)?.value||'';
           const nature=(document.getElementById(`${pfx}-nature-${i}`)?.value||'').trim();
-          arr.push(nome?{nome,ball,img,ability,gender,nature}:{});
+          arr.push(nome?{nome,ball,tipos,img,ability,gender,nature}:{});
         }
         out[key]=arr;
       });
