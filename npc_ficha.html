@@ -510,7 +510,16 @@ async function api(path,opts={}){
     headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...(isGet?{'Range':'0-9999'}:{}),...opts.headers},
     ...opts
   });
-  if(res.status===204||opts.method==='DELETE')return[];
+  if(opts.method==='DELETE'){
+    if(!res.ok){
+      let parsed=null;
+      try{parsed=JSON.parse(await res.text());}catch{}
+      const msg=(parsed&&(parsed.message||parsed.error||parsed.hint))||`HTTP ${res.status} — verifique as permissões (RLS) de DELETE na tabela.`;
+      throw new Error(msg);
+    }
+    return[];
+  }
+  if(res.status===204)return[];
   const t=await res.text();
   try{return JSON.parse(t);}catch{return[];}
 }
