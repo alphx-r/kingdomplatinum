@@ -61,6 +61,11 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .header-banner-placeholder{font-size:12px;color:#888;font-family:var(--font-body);text-align:center;padding:20px;pointer-events:none;display:flex;align-items:center;justify-content:center;height:100%}
 .header-banner-edit-btn{position:absolute;top:8px;right:10px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:3px;font-size:11px;font-family:var(--font-body);padding:4px 10px;cursor:pointer;opacity:0;transition:opacity .2s;z-index:4}
 .header-banner-col:hover .header-banner-edit-btn{opacity:1}
+.modo-edicao .header-banner-edit-btn,.modo-edicao .header-photo-edit-btn,.modo-edicao .ginimg-edit-btn{opacity:1}
+.header-banner-edit-btn-mobile{display:none;position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:3px;font-size:11px;font-family:var(--font-body);padding:4px 10px;cursor:pointer;z-index:3}
+@media(max-width:600px){
+  body.modo-edicao .header-banner-edit-btn-mobile{display:block}
+}
 .header-slogan-row{display:flex}
 /* BARRA DE DADOS (Cargo / Especialidade / Prova de Valor / Localização) */
 .dados-grid-wrap{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;margin-bottom:14px}
@@ -232,6 +237,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
       <div id="f-photo-placeholder" class="header-photo-placeholder">Sem foto</div>
       <button class="header-photo-edit-btn" id="btn-photo-edit" onclick="document.getElementById('photo-file-input').click()" style="display:none">📷 Trocar foto</button>
       <input type="file" id="photo-file-input" accept="image/*" style="display:none" onchange="onImgFile(this,'foto')"/>
+      <button class="header-banner-edit-btn-mobile" id="btn-banner-edit-mobile" type="button" onclick="document.getElementById('banner-file-input').click()">🖼 Banner</button>
     </div>
 
     <div class="header-mid">
@@ -289,8 +295,8 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
     <div class="header-banner-col" id="header-banner-col">
       <div id="f-banner-view"><div id="f-banner-placeholder" class="header-banner-placeholder">Sem banner — clique para adicionar</div></div>
       <button class="header-banner-edit-btn" id="btn-banner-edit" onclick="document.getElementById('banner-file-input').click()" style="display:none">🖼 Trocar banner</button>
-      <input type="file" id="banner-file-input" accept="image/*" style="display:none" onchange="onImgFile(this,'banner')"/>
     </div>
+    <input type="file" id="banner-file-input" accept="image/*" style="display:none" onchange="onImgFile(this,'banner')"/>
   </div>
 
   <div class="dados-grid-wrap">
@@ -681,6 +687,7 @@ function criarAutoComplete(inputId,prefix,slotIndex){
       window._pokeImgs[grupo][slotIndex]=item.sprite;
     }
     sincronizarCabecalhoSlot(prefix,slotIndex,item.nome,hasManualUpload?null:item.sprite);
+    ajustarAlturaPorSlot(prefix,slotIndex);
     // Busca stats (HP/ATK/DEF/SATK/SDEF/SPD) no Supabase e, se faltar, na PokéAPI — só no Time Principal
     if(prefix==='time-pk'){
       const statsEl=document.getElementById(`time-pk-stats-${slotIndex}`);
@@ -690,6 +697,7 @@ function criarAutoComplete(inputId,prefix,slotIndex){
         if(!window._pokeStats.time) window._pokeStats.time={};
         window._pokeStats.time[slotIndex]=stats;
         renderStatsPreview(slotIndex,stats);
+        ajustarAlturaPorSlot(prefix,slotIndex);
       });
     }
   }
@@ -1031,6 +1039,19 @@ function togglePokeSlotEdit(wrapId,forcarAberto){
   if(forcarAberto===true) el.classList.add('aberto');
   else if(forcarAberto===false) el.classList.remove('aberto');
   else el.classList.toggle('aberto');
+  ajustarAlturaSecaoPai(el);
+}
+// Recalcula o max-height da seção-acordeão pai (Time Principal, Pokémon Especial etc.)
+// para que o card do Pokémon expandido não fique cortado pela altura travada da seção.
+function ajustarAlturaSecaoPai(el){
+  const secao=el.closest('.ficha-section');
+  if(!secao||secao.classList.contains('fechada')) return;
+  const body=secao.querySelector('.ficha-section-body');
+  if(body) body.style.maxHeight=body.scrollHeight+'px';
+}
+function ajustarAlturaPorSlot(prefix,i){
+  const wrap=document.getElementById(`${prefix}-wrap-${i}`);
+  if(wrap) ajustarAlturaSecaoPai(wrap);
 }
 function sincronizarCabecalhoSlot(pfx,i,nome,img){
   const nameEl=document.getElementById(`${pfx}-header-name-${i}`);
@@ -1101,6 +1122,7 @@ function onPokeImg(i,input,grupo='time'){
     window._pokeImgs[grupo][i]=e.target.result;
     input.dataset.hasUpload='1';
     sincronizarCabecalhoSlot(pfx,i,null,e.target.result);
+    ajustarAlturaPorSlot(pfx,i);
   };
   reader.readAsDataURL(file);
 }
