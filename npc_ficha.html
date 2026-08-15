@@ -249,6 +249,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
   <div class="top-bar-title"><a href="/npcdex">← NPCdex</a> <span id="tb-nome-sep" style="opacity:.5">/</span> <span id="tb-nome"></span></div>
   <div class="top-bar-actions" id="top-bar-actions">
     <span id="autosave-status" class="hamburger-autosave"></span>
+    <button class="hamburger-btn" id="btn-admin-lock" onclick="abrirModalAdmin()" title="Entrar como ADM" aria-label="Entrar como ADM" style="display:none;color:#fff">🔒</button>
     <button class="hamburger-btn" id="btn-hamburger" onclick="toggleHamburgerMenu()" title="Menu" aria-label="Abrir menu">☰</button>
     <div class="hamburger-menu" id="hamburger-menu"></div>
   </div>
@@ -1442,7 +1443,7 @@ function cancelarEdicao(){
 async function salvarFicha(silencioso=false){
   const btn=document.getElementById('btn-salvar');
   if(!silencioso){btn.textContent='Salvando...';btn.disabled=true;}
-  else setAutoSaveStatus('Salvando...','rgba(255,255,255,.75)');
+  else setAutoSaveStatus('...','rgba(255,255,255,.75)');
   try{
     function coletarTime(){
       const arr=[];
@@ -1525,7 +1526,7 @@ async function salvarFicha(silencioso=false){
     await apiPatch('npcs',`id=eq.${npc.id}`,novoNpc);
     if(hist.length>0) await apiPost('npcs_historico',hist).catch(()=>{});
     Object.assign(npc,novoNpc);
-    if(silencioso){setAutoSaveStatus('✓ Salvo automaticamente','#7bdc8a');setTimeout(()=>setAutoSaveStatus(''),1500);}
+    if(silencioso){setAutoSaveStatus('✓','#7bdc8a');setTimeout(()=>setAutoSaveStatus(''),1500);}
     else{btn.textContent='💾 Salvar';btn.disabled=false;cancelarEdicao();}
   }catch(e){
     console.error('Erro ao salvar:',e);
@@ -1545,7 +1546,11 @@ async function excluirNpc(){
 // ─── Top bar / Admin ───────────────────────────────────
 function atualizarTopBar(){
   const menu=document.getElementById('hamburger-menu');
+  const btnLock=document.getElementById('btn-admin-lock');
+  const btnHamburger=document.getElementById('btn-hamburger');
   if(isAdmin()){
+    if(btnLock)btnLock.style.display='none';
+    if(btnHamburger)btnHamburger.style.display='flex';
     if(modoEdicao){
       menu.innerHTML=`
         <button class="btn btn-sm" style="background:#eee;border:1px solid #ccc" onclick="abrirHistorico();fecharHamburgerMenu()">Histórico</button>
@@ -1559,7 +1564,9 @@ function atualizarTopBar(){
         <button class="btn btn-sm" style="background:#eee;border:1px solid #ccc" onclick="sairAdmin();fecharHamburgerMenu()">Sair do ADM</button>`;
     }
   } else {
-    menu.innerHTML=`<button class="btn btn-sm" style="background:#eee;border:1px solid #ccc" onclick="abrirModalAdmin();fecharHamburgerMenu()">🔒 Entrar como ADM</button>`;
+    if(btnLock)btnLock.style.display='flex';
+    if(btnHamburger)btnHamburger.style.display='none';
+    menu.innerHTML='';
   }
 }
 function toggleHamburgerMenu(){document.getElementById('hamburger-menu').classList.toggle('aberto');}
@@ -1638,7 +1645,7 @@ function fecharHistorico(){document.getElementById('hist-modal-overlay').style.d
 // ─── Autosave ─────────────────────────────────────────
 let _autoSaveTimer=null;
 function setAutoSaveStatus(msg,cor='rgba(255,255,255,.75)'){const el=document.getElementById('autosave-status');if(el){el.textContent=msg;el.style.color=cor;}}
-function agendarAutoSave(){if(!modoEdicao)return;clearTimeout(_autoSaveTimer);setAutoSaveStatus('Alterações não salvas...','#ffcf7a');_autoSaveTimer=setTimeout(async()=>{setAutoSaveStatus('Salvando...','rgba(255,255,255,.75)');await salvarFicha(true);},600);}
+function agendarAutoSave(){if(!modoEdicao)return;clearTimeout(_autoSaveTimer);setAutoSaveStatus('...','#ffcf7a');_autoSaveTimer=setTimeout(async()=>{setAutoSaveStatus('...','rgba(255,255,255,.75)');await salvarFicha(true);},600);}
 function iniciarAutoSave(){document.getElementById('ficha-wrap').addEventListener('input',agendarAutoSave);document.getElementById('ficha-wrap').addEventListener('change',agendarAutoSave);}
 
 // ── Acordeão das seções (só no modo edição) ────────────
