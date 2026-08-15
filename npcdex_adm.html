@@ -235,7 +235,16 @@ async function api(path,opts={}){
   }catch(e){
     throw new Error('Falha de rede/conexão com o Supabase: '+e.message);
   }
-  if(res.status===204||opts.method==='DELETE')return[];
+  if(opts.method==='DELETE'){
+    if(!res.ok){
+      let parsed=null;
+      try{parsed=JSON.parse(await res.text());}catch{}
+      const msg=(parsed&&(parsed.message||parsed.error||parsed.hint))||`HTTP ${res.status} — verifique as permissões (RLS) de DELETE na tabela.`;
+      throw new Error(msg);
+    }
+    return[];
+  }
+  if(res.status===204)return[];
   const t=await res.text();
   let parsed;
   try{parsed=JSON.parse(t);}catch{parsed=null;}
@@ -390,7 +399,18 @@ function abrirModalNovo(){
 }
 function fecharModalNovo(){document.getElementById('modal-novo').classList.remove('open');}
 
-document.getElementById('novo-slug').addEventListener('input',function(){this.dataset.touched='1';});
+document.getElementById('novo-slug').addEventListener('input',function(){
+  this.dataset.touched='1';
+  const start=this.selectionStart;
+  const antes=this.value.length;
+  this.value=this.value.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-');
+  const diff=antes-this.value.length;
+  const pos=Math.max(0,(start||0)-diff);
+  this.setSelectionRange(pos,pos);
+});
+document.getElementById('novo-slug').addEventListener('keydown',function(e){
+  if(e.key===' ') e.preventDefault();
+});
 
 async function criarNpc(){
   const nome=document.getElementById('novo-nome').value.trim();
