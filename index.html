@@ -9430,6 +9430,54 @@ function pickFromPoolCascade(poolsObj, usedIdsObj, rarity, bioma){
   return pickFromPool([], usedIdsObj[rarity], rarity, bioma);
 }
 
+// ── Explosão de estrelas brilhosas quando um Pokémon shiny sai direto do rolador ──
+function dispararEstrelasShiny(){
+  let overlay=document.getElementById('shiny-star-overlay');
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='shiny-star-overlay';
+    overlay.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:99999;overflow:hidden';
+    document.body.appendChild(overlay);
+  }
+  if(!document.getElementById('shiny-star-style')){
+    const style=document.createElement('style');
+    style.id='shiny-star-style';
+    style.textContent=`
+@keyframes shinyStarPop{
+  0%{transform:translate(-50%,-50%) scale(0) rotate(0deg);opacity:0}
+  12%{opacity:1}
+  100%{transform:translate(calc(-50% + var(--sx)),calc(-50% + var(--sy))) scale(var(--ssc)) rotate(var(--srot));opacity:0}
+}
+.shiny-star-particle{position:absolute;top:var(--sty);left:var(--stx);font-size:var(--sfs);will-change:transform,opacity;animation:shinyStarPop 1.5s ease-out forwards}
+`;
+    document.head.appendChild(style);
+  }
+  const emojis=['✨','⭐','🌟','💫'];
+  const frag=document.createDocumentFragment();
+  const N=40;
+  for(let i=0;i<N;i++){
+    const el=document.createElement('span');
+    el.className='shiny-star-particle';
+    const ang=Math.random()*Math.PI*2;
+    const dist=120+Math.random()*260;
+    el.style.setProperty('--sx',(Math.cos(ang)*dist)+'px');
+    el.style.setProperty('--sy',(Math.sin(ang)*dist)+'px');
+    el.style.setProperty('--ssc',(0.6+Math.random()*1.2).toFixed(2));
+    el.style.setProperty('--srot',(Math.random()*360-180)+'deg');
+    el.style.setProperty('--sfs',(14+Math.random()*20)+'px');
+    el.style.setProperty('--stx',(40+Math.random()*20)+'%');
+    el.style.setProperty('--sty',(35+Math.random()*20)+'%');
+    el.textContent=emojis[Math.floor(Math.random()*emojis.length)];
+    frag.appendChild(el);
+  }
+  overlay.appendChild(frag);
+  setTimeout(()=>{ overlay.innerHTML=''; },1550);
+}
+// Só dispara quando chamado a partir de uma rolagem nova (rolador), nunca ao renderizar histórico
+function verificarEDispararShiny(pokes){
+  if(Array.isArray(pokes)&&pokes.some(p=>p&&p.isShiny)) dispararEstrelasShiny();
+}
+
 function buildCardHtml(pk,delay){
   const pills=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('');
   const natEN=pk.nature?.en||'';
@@ -9526,11 +9574,14 @@ async function locEncRolar() {
   const resultado = document.getElementById('locenc-resultado');
   if (!resultado) return;
   resultado.innerHTML = '';
+  const pokesGerados=[];
   for (let i = 0; i < qtd; i++) {
     const rarity = rollRarityLocEnc();
     const pk = pickFromPoolCascade(pools, usedIds, rarity, local);
+    pokesGerados.push(pk);
     resultado.innerHTML += buildCardHtml(pk, i * 0.08);
   }
+  verificarEDispararShiny(pokesGerados);
 }
 
 function verificarMotivoExtra(){
@@ -9925,6 +9976,7 @@ async function rolarEncontro(){
   grid.className='results-grid';
   pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
   section.appendChild(grid);
+  verificarEDispararShiny(pokes);
   await salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar,honeyBonusAplicavel);
 }
 
@@ -12608,6 +12660,7 @@ async function rolarEncontroEvento(){
     grid.className='results-grid';
     pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
     section.appendChild(grid);
+    verificarEDispararShiny(pokes);
     const agora=new Date();
     const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     const data=agora.toLocaleDateString('pt-BR');
@@ -12642,6 +12695,7 @@ async function rolarEncontroEvento(){
   grid.className='results-grid';
   pokes.forEach((pk,i)=>{ grid.innerHTML+=buildCardHtml(pk,i*0.08); });
   section.appendChild(grid);
+  verificarEDispararShiny(pokes);
   const agora=new Date();
   const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data=agora.toLocaleDateString('pt-BR');
