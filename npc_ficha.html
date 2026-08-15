@@ -132,10 +132,20 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 @media(max-width:420px){
   .especial-poke-grid{grid-template-columns:repeat(2,1fr)}
 }
-.poke-slot-edit{border:1.5px solid var(--accent);padding:6px;display:flex;flex-direction:column;gap:4px;background:var(--surface)}
-.poke-slot-edit label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px}
-.poke-slot-edit input,.poke-slot-edit textarea,.poke-slot-edit select{width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:2px;font-size:11px;font-family:var(--font-body);resize:vertical;outline:none;background:#fff}
-.poke-slot-edit input:focus,.poke-slot-edit textarea:focus,.poke-slot-edit select:focus{border-color:var(--accent)}
+.poke-slot-edit{border:1.5px solid var(--accent);border-radius:6px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+.poke-slot-edit-header{display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;background:var(--surface2);user-select:none;transition:background .15s;border-bottom:1px solid transparent}
+.poke-slot-edit-header:hover{background:#e9e9e9}
+.poke-slot-edit.aberto .poke-slot-edit-header{border-bottom-color:var(--border)}
+.poke-slot-edit-header-img{width:26px;height:26px;object-fit:contain;image-rendering:pixelated;flex-shrink:0;background:#f5f5f5;border-radius:3px}
+.poke-slot-edit-header-name{flex:1;min-width:0;font-size:11.5px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.poke-slot-edit-header-name.vazio{color:#aaa;font-weight:600;font-style:italic}
+.poke-slot-edit-header-arrow{font-size:9px;color:var(--muted);flex-shrink:0;transition:transform .2s}
+.poke-slot-edit.aberto .poke-slot-edit-header-arrow{transform:rotate(180deg)}
+.poke-slot-edit-body{display:none;flex-direction:column;gap:4px;padding:7px}
+.poke-slot-edit.aberto .poke-slot-edit-body{display:flex}
+.poke-slot-edit-body label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px}
+.poke-slot-edit-body input,.poke-slot-edit-body textarea,.poke-slot-edit-body select{width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:2px;font-size:11px;font-family:var(--font-body);resize:none;outline:none;background:#fff}
+.poke-slot-edit-body input:focus,.poke-slot-edit-body textarea:focus,.poke-slot-edit-body select:focus{border-color:var(--accent)}
 .poke-slot-edit-img-preview{width:40px;height:40px;object-fit:contain;image-rendering:pixelated;border:1px solid #eee;border-radius:2px;display:block;margin:2px auto}
 .poke-slot-edit-img-btn{width:100%;padding:3px;border:1px dashed #ccc;border-radius:2px;background:#fafafa;font-size:11px;font-family:var(--font-body);cursor:pointer;text-align:center;color:var(--muted)}
 /* AUTOCOMPLETE POKÉMON */
@@ -146,7 +156,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .pk-ac-item img{width:40px;height:40px;object-fit:contain;flex-shrink:0}
 .pk-ac-item span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* RELACIONADOS */
-.rel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0}
+.rel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0}
 .rel-item{background:var(--cor-rel,#000);padding:5px 8px;text-align:center;border:1px solid var(--bg)}
 .rel-nome{font-size:12px;font-weight:700;color:#fff;font-family:var(--font-body)}
 .rel-tipo{font-size:11px;color:#fff;font-family:var(--font-body)}
@@ -165,7 +175,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .edit-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:2px solid var(--accent);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:100;flex-wrap:wrap}
 .edit-bar-info{font-size:13px;color:var(--muted);font-family:var(--font-body)}
 .edit-bar-info strong{color:var(--accent)}
-.edit-input{width:100%;padding:6px 10px;border:1.5px solid #ccc;border-radius:3px;font-family:var(--font-body);font-size:13px;color:var(--text);background:var(--surface);outline:none;resize:vertical}
+.edit-input{width:100%;padding:6px 10px;border:1.5px solid #ccc;border-radius:3px;font-family:var(--font-body);font-size:13px;color:var(--text);background:var(--surface);outline:none;resize:none}
 .edit-input:focus{border-color:var(--accent)}
 .edit-input-sm{height:32px;resize:none}
 .view-content{display:block}
@@ -661,6 +671,7 @@ function criarAutoComplete(inputId,prefix,slotIndex){
       if(!window._pokeImgs[grupo]) window._pokeImgs[grupo]={};
       window._pokeImgs[grupo][slotIndex]=item.sprite;
     }
+    sincronizarCabecalhoSlot(prefix,slotIndex,item.nome,hasManualUpload?null:item.sprite);
     // Busca stats (HP/ATK/DEF/SATK/SDEF/SPD) no Supabase e, se faltar, na PokéAPI — só no Time Principal
     if(prefix==='time-pk'){
       const statsEl=document.getElementById(`time-pk-stats-${slotIndex}`);
@@ -685,7 +696,7 @@ function criarAutoComplete(inputId,prefix,slotIndex){
       el.addEventListener('mousedown',ev=>{ev.preventDefault();selecionar(matches[parseInt(el.dataset.idx)]);});
     });
   }
-  input.addEventListener('input',()=>renderLista(input.value));
+  input.addEventListener('input',()=>{renderLista(input.value);sincronizarCabecalhoSlot(prefix,slotIndex,input.value,null);});
   input.addEventListener('focus',()=>{if(input.value) renderLista(input.value);});
   input.addEventListener('blur',()=>setTimeout(fechar,150));
   input.addEventListener('keydown',e=>{
@@ -1004,37 +1015,69 @@ function renderTime(){
   }).join('');
   if(modoEdicao&&window._pokeDexLoaded) for(let i=0;i<6;i++) criarAutoComplete(`time-pk-nome-${i}`,'time-pk',i);
 }
+// ─── Acordeão dos cards de edição de Pokémon (time + especiais) ──
+function togglePokeSlotEdit(wrapId,forcarAberto){
+  const el=document.getElementById(wrapId);
+  if(!el) return;
+  if(forcarAberto===true) el.classList.add('aberto');
+  else if(forcarAberto===false) el.classList.remove('aberto');
+  else el.classList.toggle('aberto');
+}
+function sincronizarCabecalhoSlot(pfx,i,nome,img){
+  const nameEl=document.getElementById(`${pfx}-header-name-${i}`);
+  const imgEl=document.getElementById(`${pfx}-header-img-${i}`);
+  if(nameEl&&nome!==null&&nome!==undefined){
+    const limpo=nome.trim();
+    nameEl.textContent=limpo||'Slot vazio';
+    nameEl.classList.toggle('vazio',!limpo);
+  }
+  if(imgEl&&img) imgEl.src=img;
+}
+function slotEditHeader(pfx,i,pk){
+  const wrapId=`${pfx}-wrap-${i}`;
+  const nomeAtual=(pk.nome||'').trim();
+  return`<div class="poke-slot-edit-header" onclick="togglePokeSlotEdit('${wrapId}')">
+    <img class="poke-slot-edit-header-img" src="${pk.img||FALLBACK}" id="${pfx}-header-img-${i}" onerror="this.src='${FALLBACK}'"/>
+    <span class="poke-slot-edit-header-name${nomeAtual?'':' vazio'}" id="${pfx}-header-name-${i}">${nomeAtual||'Slot vazio'}</span>
+    <span class="poke-slot-edit-header-arrow">▾</span>
+  </div>`;
+}
 function slotEdit(i,pk){
   const pfx='time-pk';
+  const wrapId=`${pfx}-wrap-${i}`;
   const ballOpts=POKEBALLS.map(b=>`<option value="${b.val}" ${(pk.ball||'pokeball')===b.val?'selected':''}>${b.label}</option>`).join('');
   const t0=(pk.tipos||[])[0]||'', t1=(pk.tipos||[])[1]||'';
   const tipo1Opts=TIPOS_POKE.map(t=>`<option value="${t}" ${t0===t?'selected':''}>${t}</option>`).join('');
   const tipo2Opts=['<option value="">— nenhum —</option>'].concat(TIPOS_POKE.map(t=>`<option value="${t}" ${t1===t?'selected':''}>${t}</option>`)).join('');
-  return`<div class="poke-slot-edit">
-    <label>Pokémon</label>
-    <div class="pk-ac-wrap"><input value="${pk.nome||''}" placeholder="Nome (buscar...)" id="${pfx}-nome-${i}" autocomplete="off"/></div>
-    <label>Pokéball</label><select id="${pfx}-ball-${i}">${ballOpts}</select>
-    <label>Tipo 1</label><select id="${pfx}-tipo0-${i}"><option value="">— nenhum —</option>${tipo1Opts}</select>
-    <label>Tipo 2</label><select id="${pfx}-tipo1-${i}">${tipo2Opts}</select>
-    <label>Imagem</label>
-    ${pk.img?`<img class="poke-slot-edit-img-preview" src="${pk.img}" id="${pfx}-img-prev-${i}"/>`:`<img class="poke-slot-edit-img-preview" src="" id="${pfx}-img-prev-${i}" style="display:none"/>`}
-    <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">📷 Escolher imagem própria</button>
-    <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this)"/>
-    <label>Ability</label><input value="${pk.ability||''}" placeholder="Ex: Overgrow" id="${pfx}-ability-${i}"/>
-    <label>Nível</label><input value="${pk.level||''}" placeholder="Ex: 50" type="number" min="1" max="100" id="${pfx}-level-${i}"/>
-    <label>Gender</label>
-    <select id="${pfx}-gender-${i}">
-      <option value="">—</option>
-      <option value="♂" ${pk.gender==='♂'?'selected':''}>♂ Macho</option>
-      <option value="♀" ${pk.gender==='♀'?'selected':''}>♀ Fêmea</option>
-      <option value="—" ${pk.gender==='—'?'selected':''}>— Sem gênero</option>
-    </select>
-    <label>Nature</label><input value="${pk.nature||''}" placeholder="Ex: Adamant" id="${pfx}-nature-${i}"/>
-    <label>Hold Item</label><input value="${pk.item||''}" placeholder="Ex: Life Orb" id="${pfx}-item-${i}"/>
-    <label>Moveset (1 por linha)</label>
-    <textarea rows="5" id="${pfx}-moveset-${i}" placeholder="Tackle&#10;Growl&#10;...">${pk.moveset||''}</textarea>
-    <label>Stats (HP/ATK/DEF/SATK/SDEF/SPD)</label>
-    <div id="${pfx}-stats-${i}" style="font-size:11px;color:var(--muted);line-height:1.5">${statsPreviewHtml(pk.stats)}</div>
+  const abertoCls=(pk.nome||'').trim()?' aberto':'';
+  return`<div class="poke-slot-edit${abertoCls}" id="${wrapId}">
+    ${slotEditHeader(pfx,i,pk)}
+    <div class="poke-slot-edit-body">
+      <label>Pokémon</label>
+      <div class="pk-ac-wrap"><input value="${pk.nome||''}" placeholder="Nome (buscar...)" id="${pfx}-nome-${i}" autocomplete="off"/></div>
+      <label>Pokéball</label><select id="${pfx}-ball-${i}">${ballOpts}</select>
+      <label>Tipo 1</label><select id="${pfx}-tipo0-${i}"><option value="">— nenhum —</option>${tipo1Opts}</select>
+      <label>Tipo 2</label><select id="${pfx}-tipo1-${i}">${tipo2Opts}</select>
+      <label>Imagem</label>
+      ${pk.img?`<img class="poke-slot-edit-img-preview" src="${pk.img}" id="${pfx}-img-prev-${i}"/>`:`<img class="poke-slot-edit-img-preview" src="" id="${pfx}-img-prev-${i}" style="display:none"/>`}
+      <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">📷 Escolher imagem própria</button>
+      <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this)"/>
+      <label>Ability</label><input value="${pk.ability||''}" placeholder="Ex: Overgrow" id="${pfx}-ability-${i}"/>
+      <label>Nível</label><input value="${pk.level||''}" placeholder="Ex: 50" type="number" min="1" max="100" id="${pfx}-level-${i}"/>
+      <label>Gender</label>
+      <select id="${pfx}-gender-${i}">
+        <option value="">—</option>
+        <option value="♂" ${pk.gender==='♂'?'selected':''}>♂ Macho</option>
+        <option value="♀" ${pk.gender==='♀'?'selected':''}>♀ Fêmea</option>
+        <option value="—" ${pk.gender==='—'?'selected':''}>— Sem gênero</option>
+      </select>
+      <label>Nature</label><input value="${pk.nature||''}" placeholder="Ex: Adamant" id="${pfx}-nature-${i}"/>
+      <label>Hold Item</label><input value="${pk.item||''}" placeholder="Ex: Life Orb" id="${pfx}-item-${i}"/>
+      <label>Moveset (1 por linha)</label>
+      <textarea rows="5" id="${pfx}-moveset-${i}" placeholder="Tackle&#10;Growl&#10;...">${pk.moveset||''}</textarea>
+      <label>Stats (HP/ATK/DEF/SATK/SDEF/SPD)</label>
+      <div id="${pfx}-stats-${i}" style="font-size:11px;color:var(--muted);line-height:1.5">${statsPreviewHtml(pk.stats)}</div>
+    </div>
   </div>`;
 }
 function onPokeImg(i,input,grupo='time'){
@@ -1048,6 +1091,7 @@ function onPokeImg(i,input,grupo='time'){
     if(!window._pokeImgs[grupo]) window._pokeImgs[grupo]={};
     window._pokeImgs[grupo][i]=e.target.result;
     input.dataset.hasUpload='1';
+    sincronizarCabecalhoSlot(pfx,i,null,e.target.result);
   };
   reader.readAsDataURL(file);
 }
@@ -1126,24 +1170,29 @@ function slotEspecialView(pk){
 }
 function slotEspecialEdit(stageKey,i,pk){
   const pfx=`poke-esp-${stageKey}`;
+  const wrapId=`${pfx}-wrap-${i}`;
   const ballOpts=POKEBALLS.map(b=>`<option value="${b.val}" ${(pk.ball||'pokeball')===b.val?'selected':''}>${b.label}</option>`).join('');
-  return`<div class="poke-slot-edit">
-    <label>Pokémon</label>
-    <div class="pk-ac-wrap"><input value="${pk.nome||''}" placeholder="Nome (buscar...)" id="${pfx}-nome-${i}" autocomplete="off"/></div>
-    <label>Pokéball</label><select id="${pfx}-ball-${i}">${ballOpts}</select>
-    <label>Imagem</label>
-    ${pk.img?`<img class="poke-slot-edit-img-preview" src="${pk.img}" id="${pfx}-img-prev-${i}"/>`:`<img class="poke-slot-edit-img-preview" src="" id="${pfx}-img-prev-${i}" style="display:none"/>`}
-    <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">📷 Escolher imagem própria</button>
-    <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this,'${pfx}')"/>
-    <label>Ability</label><input value="${pk.ability||''}" placeholder="Ex: Overgrow" id="${pfx}-ability-${i}"/>
-    <label>Nature</label><input value="${pk.nature||''}" placeholder="Ex: Adamant" id="${pfx}-nature-${i}"/>
-    <label>Gender</label>
-    <select id="${pfx}-gender-${i}">
-      <option value="">—</option>
-      <option value="♂" ${pk.gender==='♂'?'selected':''}>♂ Macho</option>
-      <option value="♀" ${pk.gender==='♀'?'selected':''}>♀ Fêmea</option>
-      <option value="—" ${pk.gender==='—'?'selected':''}>— Sem gênero</option>
-    </select>
+  const abertoCls=(pk.nome||'').trim()?' aberto':'';
+  return`<div class="poke-slot-edit${abertoCls}" id="${wrapId}">
+    ${slotEditHeader(pfx,i,pk)}
+    <div class="poke-slot-edit-body">
+      <label>Pokémon</label>
+      <div class="pk-ac-wrap"><input value="${pk.nome||''}" placeholder="Nome (buscar...)" id="${pfx}-nome-${i}" autocomplete="off"/></div>
+      <label>Pokéball</label><select id="${pfx}-ball-${i}">${ballOpts}</select>
+      <label>Imagem</label>
+      ${pk.img?`<img class="poke-slot-edit-img-preview" src="${pk.img}" id="${pfx}-img-prev-${i}"/>`:`<img class="poke-slot-edit-img-preview" src="" id="${pfx}-img-prev-${i}" style="display:none"/>`}
+      <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">📷 Escolher imagem própria</button>
+      <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this,'${pfx}')"/>
+      <label>Ability</label><input value="${pk.ability||''}" placeholder="Ex: Overgrow" id="${pfx}-ability-${i}"/>
+      <label>Nature</label><input value="${pk.nature||''}" placeholder="Ex: Adamant" id="${pfx}-nature-${i}"/>
+      <label>Gender</label>
+      <select id="${pfx}-gender-${i}">
+        <option value="">—</option>
+        <option value="♂" ${pk.gender==='♂'?'selected':''}>♂ Macho</option>
+        <option value="♀" ${pk.gender==='♀'?'selected':''}>♀ Fêmea</option>
+        <option value="—" ${pk.gender==='—'?'selected':''}>— Sem gênero</option>
+      </select>
+    </div>
   </div>`;
 }
 
