@@ -246,16 +246,14 @@ html{
 .info-flat-stats{display:flex;flex-direction:column}
 .base-stats-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:4px}
 @media(max-width:600px){
-  .base-stats-grid{grid-template-columns:repeat(4,1fr);row-gap:8px}
+  /* 6 stats em 2 linhas de 3 colunas + BST sozinho numa linha final (ver regra abaixo). */
+  .base-stats-grid{grid-template-columns:repeat(3,1fr);row-gap:8px}
   /* BST é o último item do grid — nos breakpoints mobile ele fica sozinho
      numa linha à esquerda (grid auto-placement), então força ele a ocupar
      a linha inteira e centraliza o rótulo/valor. */
   .base-stats-grid>*:last-child{grid-column:1/-1;text-align:center;margin-top:4px;padding-top:6px;border-top:1px solid var(--border)}
   .cpill{flex:1 1 100%;width:100%;box-sizing:border-box;text-align:center;margin-left:0;order:3}
   .vtoggle{order:4}
-}
-@media(max-width:380px){
-  .base-stats-grid{grid-template-columns:repeat(3,1fr)}
 }
 .info-flat-abilities{display:flex;flex-direction:column;padding-bottom:4px}
 
@@ -965,6 +963,31 @@ function goDetail(slug,urlSlugOverride){
   showDetail(slug);
 }
 
+// Ao trocar de forma pelos botões abaixo da tipagem (formas_alt), atualiza a
+// URL sem recarregar a página: forma principal usa o slug canônico do
+// Pokémon base (ex: "squirtle"); forma regional (nome no padrão "(X) Nome",
+// ver formDisplayName) usa "<nome>-<regiao>" (ex: "squirtle-nendo"). Usa
+// replaceState (não pushState) pra não empilhar uma entrada de histórico a
+// cada clique num botão de forma.
+function updateUrlForForm(f,idx,baseUrlSlug){
+  let targetSlug=baseUrlSlug;
+  if(idx>0){
+    const display=formDisplayName(f?.nome);
+    const m=display.match(/^\(([AGHPN])\)\s*(.+)$/i);
+    if(m){
+      const regionSlug=REGION_SLUG_BY_PREFIX[m[1].toUpperCase()];
+      const nameSlug=slugify(m[2].trim());
+      if(regionSlug&&nameSlug) targetSlug=`${nameSlug}-${regionSlug}`;
+    }
+  }
+  if(!targetSlug) return;
+  const base=window.location.pathname.replace(/\/nationaldex(\/.*)?$/,'')||'';
+  const newPath=`${base}/nationaldex/${encodeURIComponent(targetSlug)}`;
+  if(window.location.pathname!==newPath){
+    history.replaceState({pokemon:targetSlug},'',newPath);
+  }
+}
+
 function showDetail(slug){
   document.getElementById('view-list').style.display='none';
   document.getElementById('view-detail').style.display='block';
@@ -1135,12 +1158,12 @@ function idPrefix(id){ const m=String(id).match(/^([AGPHN])\d+$/i); return m?m[1
 // rodar em ~1000 registros de uma vez), aqui a busca é enxuta: só
 // id+name+formas_alt, e só dos Pokémon que TÊM alguma forma alternativa
 // (formas_alt_count>0) — evita baixar o resto do payload (bio, movesets etc.)
-const REGIONAL_ALT_PREFIX_SLUG={A:'alola',G:'galar',H:'hisui',P:'paldea'};
-let _regionalAltByPrefix=null; // {A:[...], G:[...], H:[...], P:[...]}
+const REGIONAL_ALT_PREFIX_SLUG={A:'alola',G:'galar',H:'hisui',P:'paldea',N:'nendo'};
+let _regionalAltByPrefix=null; // {A:[...], G:[...], H:[...], P:[...], N:[...]}
 let _regionalAltSlugMap={};    // slug -> {baseId, idx}
 async function loadRegionalAltEntries(){
   if(_regionalAltByPrefix) return _regionalAltByPrefix;
-  const byPrefix={A:[],G:[],H:[],P:[]};
+  const byPrefix={A:[],G:[],H:[],P:[],N:[]};
   try{
     const rows=await sbFetchAllPages(
       `${SUPA_URL}/rest/v1/pokemons?formas_alt_count=gt.0&select=id,name,formas_alt`,
@@ -1149,7 +1172,7 @@ async function loadRegionalAltEntries(){
     rows.forEach(row=>{
       (row.formas_alt||[]).forEach((f,idx)=>{
         const display=formDisplayName(f?.nome);
-        const m=display.match(/^\(([AGHP])\)\s*(.+)$/i);
+        const m=display.match(/^\(([AGHPN])\)\s*(.+)$/i);
         if(!m) return; // não é forma regional reconhecida (ex: estilo do Oricorio) — ignora aqui
         const pref=m[1].toUpperCase();
         const baseName=m[2].trim();
@@ -1202,6 +1225,18 @@ function isNendoOriginal(id,name){
 
 // Slug de região (minúsculo, como usado nos nomes vindos da PokeAPI) por prefixo de id.
 const REGION_SLUG_BY_PREFIX={'A':'alola','G':'galar','H':'hisui','P':'paldea','N':'nendo'};
+
+// Garante o prefixo "(N) "/"(A) "/etc no nome exibido nos cards da grade/lista
+// quando o Pokémon é uma forma regional (idPrefix A/G/H/P, ou N quando NÃO for
+// uma espécie Nendo original — ver isNendoOriginal). Não duplica o prefixo se
+// o nome já vier salvo pronto nesse formato.
+function regionalCardLabel(p,nomeBase){
+  const pref=idPrefix(p.id);
+  if(!pref) return nomeBase;
+  if(pref==='N'&&isNendoOriginal(p.id,p.name)) return nomeBase;
+  if(/^\(\s*[AGHPN]\s*\)/i.test(nomeBase)) return nomeBase;
+  return `(${pref}) ${nomeBase}`;
+}
 
 // Labels de exibição pra raridade dos biomas (mesmos valores salvos pelo admin em RARIDADE_OPTS,
 // só sem as faixas numéricas — aqui é exibição pública, não a tela de edição).
@@ -1509,12 +1544,12 @@ function gridCard(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
     const nomeBase=isNendoOriginal(p.id,p.name)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
-    const label=(p.formas_alt_count>0)?stripFormSuffix(nomeBase):nomeBase;
+    const label=regionalCardLabel(p,(p.formas_alt_count>0)?stripFormSuffix(nomeBase):nomeBase);
     const pref=idPrefix(p.id);
     const spriteUrl=!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:(p.sprite||'');
     const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
     const urlSlug=rpgUrlSlug(p);
-    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
+    return `<div class="pk-card" style="animation-delay:${Math.min(i,20)*.025}s" onclick="goDetail('${rpgNavId(p)}','${urlSlug}')">
       <div class="pk-num" style="color:var(--cyan)">${numLabel}</div>
       ${spriteUrl?`<img class="pk-art" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pk-art" style="display:flex;align-items:center;justify-content:center;font-size:44px">❓</div>`}
@@ -1537,12 +1572,12 @@ function listRow(p,i){
   if(p._isRpg){
     const tipos=[p.tipo1,p.tipo2].filter(Boolean).map(t=>pill(t)).join('');
     const nomeBase=isNendoOriginal(p.id,p.name)?String(p.name||'').replace(/^\(\s*N\s*\)\s*/i,'').trim():p.name;
-    const label=(p.formas_alt_count>0)?stripFormSuffix(nomeBase):nomeBase;
+    const label=regionalCardLabel(p,(p.formas_alt_count>0)?stripFormSuffix(nomeBase):nomeBase);
     const pref=idPrefix(p.id);
     const spriteUrl=!pref?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:(p.sprite||'');
     const numLabel=pref?`#${pref}${String(p.id).slice(1).padStart(4,'0')}`:'#'+String(p.id).padStart(4,'0');
     const urlSlug=rpgUrlSlug(p);
-    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('__rpg__${encodeURIComponent(p.id)}','${urlSlug}')">
+    return `<div class="pl-row" style="animation-delay:${Math.min(i,10)*.018}s" onclick="goDetail('${rpgNavId(p)}','${urlSlug}')">
       <div class="pl-num" style="color:var(--cyan)">${numLabel}</div>
       ${spriteUrl?`<img class="pl-sprite" loading="lazy" src="${spriteUrl}" onerror="this.style.opacity='.3'" alt="${label}">`
         :`<div class="pl-sprite" style="display:flex;align-items:center;justify-content:center;font-size:20px">❓</div>`}
@@ -1579,16 +1614,32 @@ async function applyFilters(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const tp=document.getElementById('type-filter').value;
 
-  // Aba Nendo: só fakemon Nendo (prefixo N)
+  // Aba Nendo: fakemon Nendo com registro próprio (prefixo N) + formas Nendo
+  // migradas pra dentro de formas_alt de Pokémon oficiais/fakemon já existentes
+  // (ex: "(N) Squirtle") — mesmo padrão já usado pras abas Alola/Galar/Hisui/Paldea.
   if(curGen==='nendo'){
     if(!_rpgPokemon.length) await loadRpgData();
-    let rpgFiltered=_rpgPokemon.filter(p=>{
-      if(idPrefix(p.id)!=='N') return false;
-      const nm=!q||(p.name||'').toLowerCase().includes(q);
-      const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
-      return nm&&tpOk;
-    });
-    filtered=rpgFiltered.map(p=>({...p, _isRpg:true})).sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
+    const nendoStandalone=_rpgPokemon
+      .filter(p=>{
+        if(idPrefix(p.id)!=='N') return false;
+        const nm=!q||(p.name||'').toLowerCase().includes(q);
+        const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
+        return nm&&tpOk;
+      })
+      .map(p=>({...p, _isRpg:true}))
+      .sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
+
+    const altByPrefix=await loadRegionalAltEntries();
+    const nendoAlt=(altByPrefix['N']||[])
+      .filter(p=>{
+        const nm=!q||(p.name||'').toLowerCase().includes(q);
+        const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
+        return nm&&tpOk;
+      })
+      .map(p=>({...p, _isRpg:true}))
+      .sort((a,b)=>a._altBase-b._altBase||a._altIdx-b._altIdx);
+
+    filtered=[...nendoStandalone, ...nendoAlt];
     document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
     renderList();
     return;
@@ -1792,8 +1843,11 @@ function showNotFound(dc){
   </div>`;
 }
 
-// Renderiza página de detalhe para Pokémon RPG customizado — mesmo layout dos oficiais
-async function renderRpgDetail(p, container, navToken){
+// Renderiza página de detalhe para Pokémon RPG customizado — mesmo layout dos oficiais.
+// initialFormIdx: índice em formas_alt pra abrir direto numa forma regional
+// (ex: chegando via /squirtle-nendo ou clicando no card "(N) Squirtle" na
+// aba Nendo) em vez de sempre cair na forma principal.
+async function renderRpgDetail(p, container, navToken, initialFormIdx){
   const tipos=[p.tipo1,p.tipo2].filter(Boolean);
   const primaryType=tipos[0]||'normal';
   applyTypeTheme(primaryType);
@@ -2240,6 +2294,7 @@ async function renderRpgDetail(p, container, navToken){
   // forms[0] = forma principal (dados já computados acima); demais vêm de
   // p.formas_alt, cada uma com seu próprio moveset (campo "moves").
   const rpgFormsPkKey=String(p.id);
+  const rpgBaseUrlSlug=rpgUrlSlug(p);
   const rpgForms=[{
     nome:label, tipo1:tipos[0], tipo2:tipos[1],
     abilityEntries:habEntries,
@@ -2305,7 +2360,7 @@ async function renderRpgDetail(p, container, navToken){
     <div class="hero">
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">${numDisplay}</div>
-        <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,0,rpgFormsPkKey,label,TT)}</div>
+        <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,initialFormIdx||0,rpgFormsPkKey,label,TT)}</div>
         <div class="hero-art-stack sprite-zoomable" onclick="openHeroSpriteModal(this,document.getElementById('rpg-hero-name')?.textContent,event)" title="Ver imagem ampliada">
           <img class="hero-art hero-art-active" id="rpg-main-art"
             src="${heroSprite}"
@@ -2393,6 +2448,7 @@ async function renderRpgDetail(p, container, navToken){
   async function applyRpgForm(idx){
     const f=rpgForms[idx];
     if(!f) return;
+    updateUrlForForm(f,idx,rpgBaseUrlSlug);
     const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
     const fPrimary=fTypes[0]||'normal';
     const fTT=TYPE_THEME[fPrimary]||TYPE_THEME.normal;
@@ -2492,6 +2548,11 @@ async function renderRpgDetail(p, container, navToken){
     });
   }
   window._pkFormsRegistry[rpgFormsPkKey]={forms:rpgForms, apply:applyRpgForm};
+
+  // Abriu direto numa forma regional (deep-link /squirtle-nendo ou card
+  // "(N) Squirtle" na aba Nendo) — aplica a forma certa em vez de deixar a
+  // forma principal (Kanto) selecionada por padrão.
+  if(initialFormIdx&&rpgForms[initialFormIdx]) applyRpgForm(initialFormIdx);
 }
 
 // ── Visualização normal/shiny do hero art ──────────────────────────────
@@ -2838,6 +2899,7 @@ async function renderDetail(p,s,container,navToken){
   // forms[0] = espécie base (dados oficiais já computados acima); demais
   // vêm de dbRec.formas_alt, cada uma com seu próprio moveset ("moves").
   const officialFormsPkKey=String(id);
+  const officialBaseUrlSlug=p.name;
   const officialSpriteMain=`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
   const officialShinyMain=`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${id}.png`;
   const officialForms=[{
@@ -3011,6 +3073,7 @@ async function renderDetail(p,s,container,navToken){
   async function applyOfficialForm(idx){
     const f=officialForms[idx];
     if(!f) return;
+    updateUrlForForm(f,idx,officialBaseUrlSlug);
     const fTypes=[f.tipo1,f.tipo2].filter(Boolean);
     const fPrimary=fTypes[0]||'normal';
     const fTT=TYPE_THEME[fPrimary]||TYPE_THEME.normal;
