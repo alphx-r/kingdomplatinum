@@ -944,6 +944,18 @@ function slugify(str){
     .replace(/^-+|-+$/g,'');
 }
 
+// Gera um slug próprio pra uma forma alternativa "de base" (não regional,
+// ex: estilos do Oricorio) a partir do nome da própria forma — sem isso a
+// URL ficava idêntica à do Pokémon principal ao trocar/abrir essa forma
+// (bug: URL não mudava, então reload/voltar no histórico carregava a forma
+// base em vez da forma que estava aberta).
+// Retorna null quando não há como diferenciar (nome da forma igual ao base).
+function altFormUrlSlug(baseSlug,formName){
+  const modSlug=slugify(formName);
+  if(!modSlug||modSlug===baseSlug) return null;
+  return modSlug.startsWith(baseSlug+'-')?modSlug:`${baseSlug}-${modSlug}`;
+}
+
 function goList(){
   resetTypeTheme();
   history.pushState({},'',(window.location.pathname.replace(/\/nationaldex(\/.*)?$/,'')||'')+'/nationaldex');
@@ -978,6 +990,12 @@ function updateUrlForForm(f,idx,baseUrlSlug){
       const regionSlug=REGION_SLUG_BY_PREFIX[m[1].toUpperCase()];
       const nameSlug=slugify(m[2].trim());
       if(regionSlug&&nameSlug) targetSlug=`${nameSlug}-${regionSlug}`;
+    } else {
+      // Forma "de base", não regional (ex: estilos do Oricorio) — gera um
+      // slug próprio a partir do nome da forma em vez de deixar a URL igual
+      // à do Pokémon principal (ver altFormUrlSlug).
+      const altSlug=altFormUrlSlug(baseUrlSlug,f?.nome);
+      if(altSlug) targetSlug=altSlug;
     }
   }
   if(!targetSlug) return;
@@ -1166,14 +1184,24 @@ async function loadRegionalAltEntries(){
   const byPrefix={A:[],G:[],H:[],P:[],N:[]};
   try{
     const rows=await sbFetchAllPages(
-      `${SUPA_URL}/rest/v1/pokemons?formas_alt_count=gt.0&select=id,name,formas_alt`,
+      `${SUPA_URL}/rest/v1/pokemons?formas_alt_count=gt.0&select=id,name,url_slug,formas_alt`,
       SH_ADM
     );
     rows.forEach(row=>{
+      // Mesma prioridade usada em rpgUrlSlug(): url_slug cadastrado > nome > id.
+      const baseSlug=row.url_slug||slugify(row.name)||slugify(String(row.id));
       (row.formas_alt||[]).forEach((f,idx)=>{
         const display=formDisplayName(f?.nome);
         const m=display.match(/^\(([AGHPN])\)\s*(.+)$/i);
-        if(!m) return; // não é forma regional reconhecida (ex: estilo do Oricorio) — ignora aqui
+        if(!m){
+          // Forma "de base", não regional (ex: estilo do Oricorio) — não
+          // entra nas abas de região, mas ainda precisa de um slug próprio
+          // indexado aqui, senão um deep-link/reload/voltar no histórico
+          // cai de volta na forma padrão (mesmo bug do updateUrlForForm).
+          const altSlug=altFormUrlSlug(baseSlug,f?.nome);
+          if(altSlug&&!(altSlug in _regionalAltSlugMap)) _regionalAltSlugMap[altSlug]={baseId:row.id, idx};
+          return;
+        }
         const pref=m[1].toUpperCase();
         const baseName=m[2].trim();
         const slugWord=REGIONAL_ALT_PREFIX_SLUG[pref];
@@ -1790,22 +1818,13 @@ async function loadPokemon(slug){
   await loadRpgData();
   if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
   const slugNorm=slugify(slug);
-  // Resolve pelo slug canônico (rpgUrlSlug) contra TODOS os registros do
-  // Supabase — oficiais (id numérico), formas regionais e fakemon Nendo.
-  // A PokéAPI só é usada mais abaixo como fallback pra quem ainda não foi
-  // importado pro Supabase.
-  let rpgMatch=_rpgPokemon.find(p=>rpgUrlSlug(p)===slugNorm);
-  if(rpgMatch){
-    const full=await fetchFullPokemon(rpgMatch.id);
-    if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
-    if(full) rpgMatch={...full,_isRpg:true};
-    renderRpgDetail(rpgMatch,dc,navToken);
-    return;
-  }
 
-  // Caso 2b: deep-link pra uma forma regional migrada pra formas_alt (sem
-  // registro próprio) — resolve pelo índice de slugs montado ao carregar as
-  // abas de região (ver loadRegionalAltEntries).
+  // Caso 2a: deep-link pra uma forma alternativa (regional ou "de base", ex:
+  // estilos do Oricorio) migrada pra formas_alt — resolve pelo índice de
+  // slugs montado ao carregar as abas de região (ver loadRegionalAltEntries).
+  // Checado ANTES do match genérico abaixo de propósito: um slug como
+  // "vulpix-alola" é mais específico que "vulpix" e não pode cair na forma
+  // base por engano (era exatamente esse o bug — URL certa, ficha errada).
   await loadRegionalAltEntries();
   if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
   const altHit=_regionalAltSlugMap[slugNorm];
@@ -1816,6 +1835,19 @@ async function loadPokemon(slug){
       renderRpgDetail({...full,_isRpg:true},dc,navToken,altHit.idx);
       return;
     }
+  }
+
+  // Caso 2b: resolve pelo slug canônico (rpgUrlSlug) contra TODOS os
+  // registros do Supabase — oficiais (id numérico), formas regionais com
+  // registro próprio (modelo antigo) e fakemon Nendo. A PokéAPI só é usada
+  // mais abaixo como fallback pra quem ainda não foi importado pro Supabase.
+  let rpgMatch=_rpgPokemon.find(p=>rpgUrlSlug(p)===slugNorm);
+  if(rpgMatch){
+    const full=await fetchFullPokemon(rpgMatch.id);
+    if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
+    if(full) rpgMatch={...full,_isRpg:true};
+    renderRpgDetail(rpgMatch,dc,navToken);
+    return;
   }
 
   try{
@@ -2463,11 +2495,24 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
     if(evoHeaderEl) evoHeaderEl.style.background=fTT.dark;
     // Cadeia evolutiva: usa a cadeia curada desta forma (f.evolucoes) quando
     // existir; senão, cai pra cadeia da forma base (evoChainHtml, já calculada
-    // no início da renderização) em vez de esconder a seção.
+    // no início da renderização) em vez de esconder a seção. Não bloqueia o
+    // resto da troca de forma (nome/sprite/stats etc. abaixo) — se essa busca
+    // falhar ou demorar, o restante da ficha continua sendo atualizado.
     const evoChainWrapEl=document.getElementById('rpg-evo-chain-wrap');
-    const fEvoHtml=(f.evolucoes&&f.evolucoes.length)?await buildFormEvoChainHtml(f.evolucoes,p.id,pref):evoChainHtml;
-    if(evoChainWrapEl) evoChainWrapEl.innerHTML=fEvoHtml;
-    if(evoSectionEl) evoSectionEl.style.display=fEvoHtml?'':'none';
+    if(f.evolucoes&&f.evolucoes.length){
+      buildFormEvoChainHtml(f.evolucoes,p.id,pref)
+        .then(html=>{
+          if(evoChainWrapEl) evoChainWrapEl.innerHTML=html;
+          if(evoSectionEl) evoSectionEl.style.display=html?'':'none';
+        })
+        .catch(()=>{
+          if(evoChainWrapEl) evoChainWrapEl.innerHTML=evoChainHtml;
+          if(evoSectionEl) evoSectionEl.style.display=evoChainHtml?'':'none';
+        });
+    } else {
+      if(evoChainWrapEl) evoChainWrapEl.innerHTML=evoChainHtml;
+      if(evoSectionEl) evoSectionEl.style.display=evoChainHtml?'':'none';
+    }
 
     const artEl=document.getElementById('rpg-main-art');
     setHeroSpritePair('rpg-main-art','rpg-main-art-shiny',f.sprite||'',f.sprite_shiny||'');
@@ -2552,7 +2597,7 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
   // Abriu direto numa forma regional (deep-link /squirtle-nendo ou card
   // "(N) Squirtle" na aba Nendo) — aplica a forma certa em vez de deixar a
   // forma principal (Kanto) selecionada por padrão.
-  if(initialFormIdx&&rpgForms[initialFormIdx]) applyRpgForm(initialFormIdx);
+  if(initialFormIdx&&rpgForms[initialFormIdx]) applyRpgForm(initialFormIdx).catch(err=>console.error('Falha ao aplicar forma inicial:',err));
 }
 
 // ── Visualização normal/shiny do hero art ──────────────────────────────
@@ -3089,13 +3134,24 @@ async function renderDetail(p,s,container,navToken){
     // Cadeia evolutiva: usa a cadeia curada (f.evolucoes) se houver; senão,
     // cai pra cadeia oficial da PokéAPI já calculada (evoHtml) — vale tanto
     // pra forma raiz quanto pras formas alternativas, que antes ficavam sem
-    // nenhuma cadeia exibida quando não tinham curadoria própria.
+    // nenhuma cadeia exibida quando não tinham curadoria própria. Não
+    // bloqueia o resto da troca de forma — erro/demora aqui não trava
+    // nome/sprite/stats abaixo.
     const evoChainWrapEl=document.getElementById('evo-chain-wrap');
-    const fEvoHtml=(f.evolucoes&&f.evolucoes.length)
-      ? await buildFormEvoChainHtml(f.evolucoes,id)
-      : evoHtml;
-    if(evoChainWrapEl) evoChainWrapEl.innerHTML=fEvoHtml;
-    if(evoSectionEl) evoSectionEl.style.display=fEvoHtml?'':'none';
+    if(f.evolucoes&&f.evolucoes.length){
+      buildFormEvoChainHtml(f.evolucoes,id)
+        .then(html=>{
+          if(evoChainWrapEl) evoChainWrapEl.innerHTML=html;
+          if(evoSectionEl) evoSectionEl.style.display=html?'':'none';
+        })
+        .catch(()=>{
+          if(evoChainWrapEl) evoChainWrapEl.innerHTML=evoHtml;
+          if(evoSectionEl) evoSectionEl.style.display=evoHtml?'':'none';
+        });
+    } else {
+      if(evoChainWrapEl) evoChainWrapEl.innerHTML=evoHtml;
+      if(evoSectionEl) evoSectionEl.style.display=evoHtml?'':'none';
+    }
 
     const artEl=document.getElementById('main-art');
     setHeroSpritePair('main-art','main-art-shiny',f.sprite||'',f.sprite_shiny||'');
