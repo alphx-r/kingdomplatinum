@@ -1837,7 +1837,35 @@ async function loadPokemon(slug){
     }
   }
 
-  // Caso 2b: resolve pelo slug canônico (rpgUrlSlug) contra TODOS os
+  // Caso 2b: fallback pra quando a forma regional não apareceu no mapa acima
+  // (ex: formas_alt_count desatualizado no Supabase, ou o registro do
+  // Pokémon base tem um url_slug cadastrado errado que colide com o da forma
+  // — era exatamente esse o sintoma: link "-alola" abrindo a forma base).
+  // Em vez de confiar no scan global (que pode estar desatualizado) ou no
+  // url_slug do registro base (que pode estar errado), busca o Pokémon base
+  // pelo NOME sem o sufixo de região e confere o formas_alt do registro
+  // completo direto na fonte.
+  const REGION_SUFFIX_TO_PREFIX={alola:'A',galar:'G',hisui:'H',paldea:'P',nendo:'N'};
+  for(const suf in REGION_SUFFIX_TO_PREFIX){
+    if(!slugNorm.endsWith('-'+suf)) continue;
+    const pref=REGION_SUFFIX_TO_PREFIX[suf];
+    const baseNameSlug=slugNorm.slice(0,-(suf.length+1));
+    const baseCandidate=_rpgPokemon.find(p=>/^\d+$/.test(String(p.id))&&slugify(p.name)===baseNameSlug)
+      || _officialList.find(p=>slugify(p.name)===baseNameSlug);
+    if(!baseCandidate) break;
+    const full=await fetchFullPokemon(baseCandidate.id);
+    if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
+    if(full&&full.formas_alt&&full.formas_alt.length){
+      const idx=full.formas_alt.findIndex(f=>formDisplayName(f?.nome).toUpperCase().startsWith(`(${pref})`));
+      if(idx>=0){
+        renderRpgDetail({...full,_isRpg:true},dc,navToken,idx);
+        return;
+      }
+    }
+    break;
+  }
+
+  // Caso 2c: resolve pelo slug canônico (rpgUrlSlug) contra TODOS os
   // registros do Supabase — oficiais (id numérico), formas regionais com
   // registro próprio (modelo antigo) e fakemon Nendo. A PokéAPI só é usada
   // mais abaixo como fallback pra quem ainda não foi importado pro Supabase.
@@ -2392,7 +2420,7 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
     <div class="hero">
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">${numDisplay}</div>
-        <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,initialFormIdx||0,rpgFormsPkKey,label,TT)}</div>
+        <div class="form-switch-wrap" id="rpg-form-switch">${formSwitchButtonsHtml(rpgForms,(initialFormIdx!=null?initialFormIdx+1:0),rpgFormsPkKey,label,TT)}</div>
         <div class="hero-art-stack sprite-zoomable" onclick="openHeroSpriteModal(this,document.getElementById('rpg-hero-name')?.textContent,event)" title="Ver imagem ampliada">
           <img class="hero-art hero-art-active" id="rpg-main-art"
             src="${heroSprite}"
@@ -2597,7 +2625,11 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
   // Abriu direto numa forma regional (deep-link /squirtle-nendo ou card
   // "(N) Squirtle" na aba Nendo) — aplica a forma certa em vez de deixar a
   // forma principal (Kanto) selecionada por padrão.
-  if(initialFormIdx&&rpgForms[initialFormIdx]) applyRpgForm(initialFormIdx).catch(err=>console.error('Falha ao aplicar forma inicial:',err));
+  // initialFormIdx é o índice em p.formas_alt (0-based); em rpgForms a forma
+  // base ocupa o índice 0, então a forma alvo fica em initialFormIdx+1 — e o
+  // check precisa ser "!=null" (não só truthy), senão a PRIMEIRA forma
+  // alternativa (índice 0, o caso mais comum) nunca era aplicada.
+  if(initialFormIdx!=null&&rpgForms[initialFormIdx+1]) applyRpgForm(initialFormIdx+1).catch(err=>console.error('Falha ao aplicar forma inicial:',err));
 }
 
 // ── Visualização normal/shiny do hero art ──────────────────────────────
