@@ -1261,16 +1261,20 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:20px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="display:flex;gap:20px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-consumivel" style="margin:0" onchange="toggleConsumivelPrefix('nit-description', this.checked)"> Consumível <span style="font-weight:400;color:var(--muted)">(insere "CONSUMÍVEL" no início da descrição)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="nit-flag-pokemart" style="margin:0"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
+            <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleItemPriceField('nit-price-wrap', this.checked)"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pickup" style="margin:0"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
           </label>
+          <div id="nit-price-wrap" style="display:none;align-items:center;gap:6px">
+            <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
+            <input class="mv-meta-input" id="nit-price" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px">
+          </div>
         </div>
         <div style="margin-bottom:12px">
           <div class="field-lbl pt" style="margin-bottom:4px">Descrição</div>
@@ -6207,7 +6211,7 @@ function renderItemsList() {
         <span class="entry-name">${it.name}</span>
         <span class="badge badge-pt">${it.category || 'Sem categoria'}</span>
         ${it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>' : ''}
-        ${it.flags?.pokemart?.enabled ? '<span title="PokéMart">🛒</span>' : ''}
+        ${it.flags?.pokemart?.enabled ? `<span title="PokéMart${it.price != null ? ' — ₽ ' + it.price : ''}">🛒${it.price != null ? ' ' + it.price : ''}</span>` : ''}
         ${it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : ''}
         <span class="chev">▼</span>
       </div>
@@ -6235,11 +6239,15 @@ function renderItemsList() {
                 <input type="checkbox" id="it-flag-consumivel-${slug}" style="margin:0" ${it.flags?.consumivel?.enabled ? 'checked' : ''} onchange="toggleConsumivelPrefix('it-description-${slug}', this.checked)"> Consumível
               </label>
               <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-                <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''}> PokéMart
+                <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-price-wrap-${slug}', this.checked)"> PokéMart
               </label>
               <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
                 <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''}> Pickup
               </label>
+              <div id="it-price-wrap-${slug}" style="display:${it.flags?.pokemart?.enabled ? 'inline-flex' : 'none'};align-items:center;gap:6px">
+                <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
+                <input class="mv-meta-input" id="it-price-${slug}" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px" value="${it.price != null ? it.price : ''}">
+              </div>
             </div>
             <div class="field-row">
               <div class="field-lbl pt">📄 Descrição</div>
@@ -6289,6 +6297,14 @@ function toggleConsumivelPrefix(textareaId, checked) {
   markFilled(ta);
 }
 
+// Mostra/esconde o campo de preço ao lado do checkbox "PokéMart" (tanto no
+// formulário de item novo quanto no card de edição de um item já existente).
+function toggleItemPriceField(wrapId, checked) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  wrap.style.display = checked ? 'inline-flex' : 'none';
+}
+
 function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
@@ -6306,10 +6322,12 @@ async function saveItem(name) {
   const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
   const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
   const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
+  const priceRaw = document.getElementById(`it-price-${slug}`)?.value;
+  const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
   try {
     const existing = S.it.dbMap[name] || { name };
     const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn);
-    const row = { ...existing, name, category, item_desc, flags, updated_at: new Date().toISOString() };
+    const row = { ...existing, name, category, item_desc, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
     const idx = S.it.all.findIndex(i => i.name === name);
@@ -6320,10 +6338,10 @@ async function saveItem(name) {
     if (entry) {
       const catBadge = entry.querySelector('.entry-head .badge');
       if (catBadge) catBadge.textContent = category || 'Sem categoria';
-      entry.querySelectorAll('.entry-head span[title="PokéMart"], .entry-head span[title="Pickup"], .entry-head span[title="Consumível"]').forEach(el => el.remove());
+      entry.querySelectorAll('.entry-head span[title^="PokéMart"], .entry-head span[title="Pickup"], .entry-head span[title="Consumível"]').forEach(el => el.remove());
       const chev = entry.querySelector('.entry-head .chev');
       if (consumivelOn) chev?.insertAdjacentHTML('beforebegin', '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>');
-      if (pokemartOn) chev?.insertAdjacentHTML('beforebegin', '<span title="PokéMart">🛒</span>');
+      if (pokemartOn) chev?.insertAdjacentHTML('beforebegin', `<span title="PokéMart${price != null ? ' — ₽ ' + price : ''}">🛒${price != null ? ' ' + price : ''}</span>`);
       if (pickupOn) chev?.insertAdjacentHTML('beforebegin', '<span title="Pickup">🔍</span>');
     }
     populateItemCategoryFilter();
@@ -6344,8 +6362,9 @@ async function deleteItem(name) {
 }
 
 function openNewItem() {
-  ['nit-name','nit-category','nit-description','nit-icon-slug'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  toggleItemPriceField('nit-price-wrap', false);
   const prev = document.getElementById('nit-icon-preview');
   const ph = document.getElementById('nit-icon-placeholder');
   if (prev) { prev.src = ''; prev.style.display = 'none'; prev.dataset.b64 = ''; }
@@ -6375,6 +6394,7 @@ async function backupItemsNow() {
       item_desc: it.item_desc || null,
       sprite: it.sprite || null,
       flags: it.flags || {},
+      price: it.price ?? null,
     }));
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -6498,6 +6518,8 @@ async function saveNewItem() {
   const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
   const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
+  const priceRaw = document.getElementById('nit-price')?.value;
+  const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   if (S.it.dbMap[name]) { toast('Já existe um item com esse nome.', 'err'); return; }
   try {
@@ -6508,7 +6530,7 @@ async function saveNewItem() {
       sprite = await uploadImgStorage(iconB64, 'pokemons', `items/${uploadSlug}.png`) + '?t=' + Date.now();
     }
     const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn);
-    const row = { name, category, item_desc, sprite, flags, updated_at: new Date().toISOString() };
+    const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
     S.it.all.push(row);
