@@ -179,6 +179,7 @@
   .hero-temp .deg{ font-size:32px; font-weight:600; margin-top:4px; }
   .hero-cond{ font-size:16px; font-weight:700; margin-top:10px; }
   .hero-flavor{ font-size:13px; color:var(--muted); margin-top:4px; max-width:280px; line-height:1.5; }
+  .hero-event-note{ font-size:12.5px; color:var(--accent); margin-top:8px; max-width:300px; line-height:1.5; font-weight:600; }
 
   .hero-icon{ width:104px; height:104px; flex-shrink:0; }
   .hero-icon svg{ width:100%; height:100%; }
@@ -347,6 +348,7 @@
             <div class="hero-temp" id="hero-temp"></div>
             <div class="hero-cond" id="hero-cond"></div>
             <div class="hero-flavor" id="hero-flavor"></div>
+            <div class="hero-event-note" id="hero-event-note" style="display:none"></div>
           </div>
           <div class="hero-icon" id="hero-icon"></div>
         </div>
@@ -409,6 +411,12 @@
       pra essa tela ficar completa. Os ícones vêm do pacote <code>meteocons</code> (estilo "fill"), embutidos
       direto no <code>&lt;script&gt;</code> como SVG.
     </p>
+    <p>
+      <b>Eventos climáticos forçados</b> (ex: nevar por alguns dias numa zona) e o <b>gradiente do mapa</b> são
+      controlados no <a href="weathercast_adm.html" style="color:#b8791f;font-weight:700">weathercast_adm</a> — quando
+      ativos, os eventos têm prioridade sobre o sorteio automático. A estação usada aqui é sempre a mesma ativa no
+      index (<code>config.estacao_ativa</code>), sem exceção.
+    </p>
   </div>
 
 </div>
@@ -451,6 +459,57 @@ async function carregarEstacaoAtiva(){
     if (rows && rows[0] && rows[0].valor) return rows[0].valor;
   } catch(e){ console.warn('[weathercast] não deu pra ler a estação ativa, usando cálculo por mês:', e); }
   return estacaoPorMesFallback();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONFIG DO WEATHERCAST (weathercast_config) — chave/valor jsonb,
+   mesmo projeto do index (OLD_SUPA). Guarda só o gradiente do mapa,
+   controlado pelo weathercast_adm.html. A estação NÃO tem override
+   aqui — o weathercast sempre usa config.estacao_ativa direto do
+   index, sem exceção. Se a tabela ainda não existir ou vier vazia,
+   os valores default hardcoded abaixo continuam valendo.
+   ══════════════════════════════════════════════════════════════ */
+async function carregarWeathercastConfig(){
+  try {
+    const r = await fetch(`${OLD_SUPA_URL}/rest/v1/weathercast_config?select=chave,valor`, { headers: OLD_SH });
+    if (!r.ok) throw new Error(await r.text());
+    const rows = await r.json();
+    const mapa = {};
+    (rows || []).forEach(row => { mapa[row.chave] = row.valor; });
+    WEATHERCAST_CONFIG = mapa;
+  } catch(e){ console.warn('[weathercast] não deu pra ler weathercast_config, usando padrões:', e); WEATHERCAST_CONFIG = {}; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EVENTOS CLIMÁTICOS FORÇADOS (weathercast_overrides)
+   Cadastrados no weathercast_adm.html — ex: "nevar nesta zona durante
+   3 dias essa semana". Cada linha tem um intervalo de datas, uma
+   condição forçada e um escopo (local específico, zona climática
+   inteira, ou global/mapa todo). Quando um override bate com o
+   local+data sendo exibido, ele TEM PRIORIDADE sobre o sorteio
+   determinístico normal — é assim que a informação do ADM "sobressai".
+   Prioridade entre overrides que se sobrepõem: local > zona > global.
+   ══════════════════════════════════════════════════════════════ */
+async function carregarOverridesClimaticos(){
+  try {
+    const r = await fetch(`${OLD_SUPA_URL}/rest/v1/weathercast_overrides?select=*&ativo=is.true`, { headers: OLD_SH });
+    if (!r.ok) throw new Error(await r.text());
+    WEATHER_OVERRIDES = await r.json();
+  } catch(e){ console.warn('[weathercast] não deu pra ler eventos climáticos forçados:', e); WEATHER_OVERRIDES = []; }
+}
+
+function overrideParaLocalData(local, data){
+  if (!WEATHER_OVERRIDES.length) return null;
+  const dataStr = fmtData(data);
+  const zona = zonaDoLocal(local);
+  const ativos = WEATHER_OVERRIDES.filter(o =>
+    o.ativo !== false && o.data_inicio <= dataStr && dataStr <= o.data_fim
+  );
+  if (!ativos.length) return null;
+  return ativos.find(o => o.escopo === 'local' && o.escopo_valor === local.nome)
+      || ativos.find(o => o.escopo === 'zona' && o.escopo_valor === zona)
+      || ativos.find(o => o.escopo === 'global')
+      || null;
 }
 
 const ESTACAO_LABEL = { primavera:'Primavera', verao:'Verão', outono:'Outono', inverno:'Inverno' };
@@ -766,13 +825,24 @@ function climaDoLocal(local, data, estacaoOverride){
   const seedBase = `${posKey}-${fmtData(data)}`;
   const faixa = faixaBlendadaComVizinhos(local, estacao);
 
-  const iconEscolhido = sortearCondicao(faixa.condPesos, seedBase + '-cond');
+  // Evento climático forçado (ADM) pra este local+data, se houver — tem
+  // prioridade sobre o sorteio normal por peso da zona.
+  const forcado = overrideParaLocalData(local, data);
+  const iconEscolhido = (forcado && CONDICOES[forcado.condicao])
+    ? forcado.condicao
+    : sortearCondicao(faixa.condPesos, seedBase + '-cond');
   const condicaoDef = CONDICOES[iconEscolhido] || CONDICOES.parcial;
   const condicao = { nome: condicaoDef.nome, icon: iconEscolhido, flavor: condicaoDef.flavor, tempMod: condicaoDef.tempMod };
 
+  // Se o evento também define uma faixa de temperatura própria, ela
+  // substitui a faixa da zona só pro cálculo do dia — senão, a faixa
+  // normal da zona (+gradiente) continua valendo.
+  const tMin = (forcado && forcado.temp_min != null) ? Number(forcado.temp_min) : faixa.tempMin;
+  const tMax = (forcado && forcado.temp_max != null) ? Number(forcado.temp_max) : faixa.tempMax;
+
   const hVar = hashStr(seedBase + '-temp');
-  const spread = Math.max(1, faixa.tempMax - faixa.tempMin);
-  const baseTemp = faixa.tempMin + (hVar % 100)/100 * spread;
+  const spread = Math.max(1, tMax - tMin);
+  const baseTemp = tMin + (hVar % 100)/100 * spread;
   const temp = Math.round(baseTemp + condicao.tempMod);
 
   const hUmid = hashStr(seedBase + '-umid');
@@ -781,7 +851,10 @@ function climaDoLocal(local, data, estacaoOverride){
   const hVento = hashStr(seedBase + '-vento');
   const vento = Math.max(2, Math.round(faixa.vento + ((hVento % 11) - 5)));
 
-  return { perfil: { bg: faixa.bg }, zona: faixa.zona, gradiente: faixa.gradiente, estacao, condicao, temp, umidade, vento };
+  return {
+    perfil: { bg: faixa.bg }, zona: faixa.zona, gradiente: faixa.gradiente, estacao, condicao, temp, umidade, vento,
+    forcado: forcado ? { escopo: forcado.escopo, nota: forcado.nota || null } : null
+  };
 }
 
 function climaNaHora(local, data, hora){
@@ -842,16 +915,23 @@ function svgIcon(type, noite){
    ══════════════════════════════════════════════════════════════ */
 let LOCAIS = [];
 let LOCAL_ATUAL = null;
-let ESTACAO_ATIVA = null;
+let ESTACAO_ATIVA = null;   // sempre = config.estacao_ativa (lida do index) — sem override
+let WEATHER_OVERRIDES = []; // eventos climáticos forçados (weathercast_overrides)
+let WEATHERCAST_CONFIG = {}; // chave->valor de weathercast_config (só gradiente do mapa)
 
 // % de chance de chuva pro dia inteiro (mesmo hash usado na lista de
 // previsão), reaproveitado no cabeçalho do "agora". Usa a mesma posKey
 // do resto do clima, pra locais no mesmo pin baterem entre si.
-function chanceChuvaDia(local, data){
+function chanceChuvaDia(local, data, condicaoIcon){
   const posKey = (local.pos_x != null && local.pos_y != null)
     ? `${Number(local.pos_x).toFixed(2)},${Number(local.pos_y).toFixed(2)}`
     : local.nome;
-  return Math.max(4, hashStr(posKey + fmtData(data) + 'p') % 40);
+  const h = hashStr(posKey + fmtData(data) + 'p');
+  // condições de precipitação (inclusive as forçadas via ADM) puxam a
+  // chance de chuva pra cima, pra não mostrar "30% de chuva" num dia
+  // de tempestade forçada.
+  if (['chuva','tempestade','neve'].includes(condicaoIcon)) return 45 + (h % 45);
+  return Math.max(4, h % 35);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -881,7 +961,7 @@ function render(local){
   const dataFmt = hoje.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
   const horaAgora = hoje.getHours();
   const noiteAgora = horaAgora < 6 || horaAgora >= 19;
-  const chuvaHoje = chanceChuvaDia(local, hoje);
+  const chuvaHoje = chanceChuvaDia(local, hoje, info.condicao.icon);
   const sensacao = info.temp + (info.vento > 18 ? -3 : 0);
 
   // faixa horária (00, 04, 08, 12, 16, 20)
@@ -920,12 +1000,19 @@ function render(local){
 
   document.getElementById('hero-loc').textContent = local.nome;
   document.getElementById('hero-meta').innerHTML =
-    `<span>${dataFmt}</span>${IS_ADMIN ? `<span class="dot">·</span><span>${ESTACAO_EMOJI[info.estacao]||''} ${ESTACAO_LABEL[info.estacao]||info.estacao}</span><span class="dot">·</span><span>zona ${info.zona}</span><span class="dot">·</span><span>ajuste mapa ${info.gradiente>=0?'+':''}${info.gradiente.toFixed(1)}°C</span>` : ''}`;
+    `<span>${dataFmt}</span>${IS_ADMIN ? `<span class="dot">·</span><span>${ESTACAO_EMOJI[info.estacao]||''} ${ESTACAO_LABEL[info.estacao]||info.estacao}</span><span class="dot">·</span><span>zona ${info.zona}</span><span class="dot">·</span><span>ajuste mapa ${info.gradiente>=0?'+':''}${info.gradiente.toFixed(1)}°C</span>${info.forcado ? `<span class="dot">·</span><span>⚡ evento forçado (${info.forcado.escopo})</span>` : ''}` : ''}`;
   document.getElementById('hero-rain').innerHTML = `Chance de chuva: <b>${chuvaHoje}%</b>`;
   document.getElementById('hero-temp').innerHTML = `${info.temp}<span class="deg">°C</span>`;
   document.getElementById('hero-cond').textContent = info.condicao.nome;
   document.getElementById('hero-flavor').textContent = info.condicao.flavor;
   document.getElementById('hero-icon').innerHTML = svgIcon(info.condicao.icon, noiteAgora);
+  const evtNoteEl = document.getElementById('hero-event-note');
+  if (info.forcado && info.forcado.nota){
+    evtNoteEl.textContent = '✨ ' + info.forcado.nota;
+    evtNoteEl.style.display = 'block';
+  } else {
+    evtNoteEl.style.display = 'none';
+  }
 
   document.getElementById('air-sensacao').innerHTML = `<b>${sensacao}°C</b><span class="lbl">Sensação térmica</span>`;
   document.getElementById('air-umidade').innerHTML = `<b>${info.umidade}%</b><span class="lbl">Umidade</span>`;
@@ -996,8 +1083,16 @@ async function boot(){
     const [rows] = await Promise.all([
       sbSelect('locais'),
       carregarEstacaoAtiva().then(e => { ESTACAO_ATIVA = e; }),
-      carregarPontosClimaticos()
+      carregarPontosClimaticos(),
+      carregarOverridesClimaticos(),
+      carregarWeathercastConfig()
     ]);
+
+    // Aplica o gradiente do mapa configurado no ADM (se houver) por cima
+    // dos valores default hardcoded — mutando o mesmo objeto usado pelo
+    // resto do cálculo, então não precisa mexer em mais nada.
+    if (WEATHERCAST_CONFIG.gradiente_mapa) Object.assign(GRADIENTE_MAPA, WEATHERCAST_CONFIG.gradiente_mapa);
+
     LOCAIS = (rows || []).filter(l => l.bioma_primario);
     if (!LOCAIS.length){
       document.getElementById('shell-content').innerHTML = `<div class="empty-state">Nenhum local cadastrado ainda (ou nenhum tem bioma primário válido).<br>Cadastre locais no datadex_adm para eles aparecerem aqui.</div>`;
