@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeatherCast ADM — Kingdom Platinum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --shell-bg:#141b2c; --panel-bg:#0f1524; --panel-bg-soft:rgba(255,255,255,.04);
+    --line: rgba(255,255,255,.08); --text:#f2f5fa; --muted:#9fb0c4;
+    --accent:#f2b545; --accent-soft:rgba(242,181,69,.14); --blue:#7fb8e0;
+    --danger:#e8697a; --danger-soft:rgba(232,105,122,.14); --ok:#6fcf97;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Manrope', sans-serif;
+    background: radial-gradient(circle at 20% 0%, #1c2740 0%, transparent 55%), linear-gradient(160deg, #141b2c, #0b0f1a);
+    min-height:100vh; color:var(--text); padding:32px 16px 60px;
+  }
+  .stage{ max-width:960px; margin:0 auto; }
+  .topbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand img{ height:28px; }
+  .brand-title{ font-family:'Cinzel',serif; font-size:16px; font-weight:700; }
+  .brand-title span{ color:var(--accent); }
+  .topbar-actions{ display:flex; align-items:center; gap:10px; }
+  .topbar-actions a{ color:var(--muted); font-size:12.5px; text-decoration:none; }
+  .topbar-actions a:hover{ color:var(--text); }
+  .btn{
+    font-family:'Manrope',sans-serif; font-size:13px; font-weight:700; border-radius:10px;
+    border:1px solid var(--line); background:var(--panel-bg-soft); color:var(--text);
+    padding:9px 16px; cursor:pointer; transition:all .15s;
+  }
+  .btn:hover{ background:rgba(255,255,255,.08); }
+  .btn-primary{ background:var(--accent); color:#20140a; border-color:var(--accent); }
+  .btn-primary:hover{ background:#f5c467; }
+  .btn-danger{ background:var(--danger-soft); border-color:rgba(232,105,122,.4); color:var(--danger); }
+  .btn-danger:hover{ background:rgba(232,105,122,.24); }
+  .btn-sm{ padding:6px 12px; font-size:12px; }
+
+  /* ── LOGIN ── */
+  .login-wrap{ max-width:380px; margin:80px auto; }
+  .login-card{ background:var(--panel-bg); border:1px solid var(--line); border-radius:18px; padding:32px 28px; text-align:center; }
+  .login-icon{ width:52px; height:52px; border-radius:50%; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; font-size:24px; margin:0 auto 14px; }
+  .login-title{ font-family:'Cinzel',serif; font-size:18px; font-weight:700; margin-bottom:4px; }
+  .login-sub{ font-size:12.5px; color:var(--muted); margin-bottom:22px; }
+  .field{ text-align:left; margin-bottom:14px; }
+  .field label{ display:block; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+  .field input, .field select, .field textarea{
+    width:100%; background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:9px;
+    padding:10px 12px; font-family:'Manrope',sans-serif; font-size:13.5px; color:var(--text); outline:none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{ border-color:var(--accent); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .fb-err{ font-size:12.5px; color:var(--danger); margin-top:10px; display:none; }
+  .fb-ok{ font-size:12.5px; color:var(--ok); margin-top:10px; display:none; }
+
+  /* ── PAINEL ── */
+  #painel{ display:none; }
+  .card{ background:var(--panel-bg); border:1px solid var(--line); border-radius:16px; padding:22px 22px 24px; margin-bottom:20px; }
+  .card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:4px; flex-wrap:wrap; }
+  .card-title{ font-family:'Cinzel',serif; font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .card-sub{ font-size:12.5px; color:var(--muted); margin-bottom:18px; line-height:1.5; }
+  .badge{ font-size:10.5px; font-family:'IBM Plex Mono',monospace; padding:3px 9px; border-radius:20px; background:var(--panel-bg-soft); border:1px solid var(--line); color:var(--muted); }
+  .badge.on{ background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+
+  .radio-row{ display:flex; gap:16px; margin-bottom:14px; flex-wrap:wrap; }
+  .radio-opt{ display:flex; align-items:center; gap:7px; font-size:13px; cursor:pointer; }
+  .radio-opt input{ accent-color:var(--accent); }
+
+  table.list{ width:100%; border-collapse:collapse; font-size:12.5px; margin-top:8px; }
+  table.list th{ text-align:left; color:var(--muted); font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; padding:8px 8px; border-bottom:1px solid var(--line); }
+  table.list td{ padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.list tr:last-child td{ border-bottom:none; }
+  table.list .row-actions{ display:flex; gap:6px; white-space:nowrap; }
+  .empty-row{ color:var(--muted); text-align:center; padding:18px 0; font-size:12.5px; }
+
+  .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px 14px; margin-bottom:14px; }
+  .form-grid .full{ grid-column:1/-1; }
+  .checkbox-line{ display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:14px; }
+  .checkbox-line input{ accent-color:var(--accent); }
+  .form-actions{ display:flex; gap:10px; align-items:center; }
+  .hint{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+
+  @media (max-width:640px){
+    .field-row, .form-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="topbar">
+    <div class="brand">
+      <img src="https://kpfichas.vercel.app/favicon.png?v=5" alt="Kingdom Platinum">
+      <div class="brand-title">Weather<span>Cast</span> ADM</div>
+    </div>
+    <div class="topbar-actions">
+      <a href="weathercast.html">← Voltar pro WeatherCast</a>
+      <button class="btn btn-sm" id="btn-logout" style="display:none" onclick="fazerLogout()">Sair</button>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="login-wrap" id="login-wrap">
+    <div class="login-card">
+      <div class="login-icon">🔐</div>
+      <div class="login-title">Área ADM</div>
+      <div class="login-sub">Acesso restrito aos administradores do Kingdom Platinum</div>
+      <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="seu@email.com" autocomplete="username"></div>
+      <div class="field"><label>Senha</label><input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')fazerLogin()"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="fazerLogin()">Entrar</button>
+      <div class="fb-err" id="login-erro">Usuário ou senha incorretos.</div>
+    </div>
+  </div>
+
+  <!-- PAINEL -->
+  <div id="painel">
+
+    <!-- ESTAÇÃO -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🍂 Estação ativa</div>
+        <span class="badge on" id="badge-estacao-real">carregando…</span>
+      </div>
+      <div class="card-sub">
+        O WeatherCast sempre segue a estação real do RPG (<code>config.estacao_ativa</code>), definida no <b>index</b> —
+        sem override aqui. Quando lá estiver Primavera, aqui também é Primavera. Pra mudar a estação, mude no index.
+      </div>
+    </div>
+
+    <!-- EVENTOS CLIMÁTICOS FORÇADOS -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">⚡ Eventos climáticos forçados</div>
+      </div>
+      <div class="card-sub">
+        Força uma condição (ex: neve) num período de datas, sobrepondo o sorteio automático. Ex: "nevar por 3 dias essa
+        semana" — coloque a data de início/fim, escolha a condição e o escopo (mapa todo, uma zona climática inteira, ou
+        um local específico). Enquanto ativo, o evento <b>sempre prevalece</b> sobre o clima normal daquele(s) local(is)
+        no período. A nota é opcional e aparece pros jogadores como uma frase de sabor no card do clima.
+      </div>
+
+      <div class="form-grid">
+        <div class="field"><label>Data início</label><input type="date" id="ev-inicio"></div>
+        <div class="field"><label>Data fim</label><input type="date" id="ev-fim"></div>
+        <div class="field">
+          <label>Condição forçada</label>
+          <select id="ev-condicao">
+            <option value="sol">☀️ Céu Limpo</option>
+            <option value="parcial">⛅ Parcialmente Nublado</option>
+            <option value="nublado">☁️ Nublado</option>
+            <option value="neblina">🌫️ Neblina</option>
+            <option value="chuva">🌧️ Chuva</option>
+            <option value="tempestade">⛈️ Tempestade</option>
+            <option value="neve">❄️ Neve</option>
+            <option value="vento">💨 Ventania</option>
+            <option value="cinzas">🌋 Cinzas no Ar</option>
+            <option value="escuro">🌑 Escuridão</option>
+            <option value="lua">🌙 Céu Estrelado</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Escopo</label>
+          <select id="ev-escopo" onchange="onEscopoChange()">
+            <option value="global">Mapa inteiro</option>
+            <option value="zona">Uma zona climática</option>
+            <option value="local">Um local específico</option>
+          </select>
+        </div>
+        <div class="field" id="ev-escopo-zona-wrap" style="display:none">
+          <label>Zona climática</label>
+          <select id="ev-escopo-zona">
+            <option>Tropical</option><option>Temperada</option><option>Fria</option><option>Polar</option>
+            <option>Desértica</option><option>Oceânica</option><option>Subterrânea</option><option>Vulcânica</option>
+          </select>
+        </div>
+        <div class="field" id="ev-escopo-local-wrap" style="display:none">
+          <label>Local</label>
+          <select id="ev-escopo-local"><option value="">carregando locais…</option></select>
+        </div>
+        <div class="field"><label>Temp. mín. (°C) — opcional</label><input type="number" id="ev-temp-min" placeholder="usa a faixa da zona"></div>
+        <div class="field"><label>Temp. máx. (°C) — opcional</label><input type="number" id="ev-temp-max" placeholder="usa a faixa da zona"></div>
+        <div class="field full"><label>Nota de sabor (opcional, aparece pros jogadores)</label><input type="text" id="ev-nota" placeholder="Ex: Uma nevasca fora de época cobre a região."></div>
+      </div>
+      <div class="checkbox-line"><input type="checkbox" id="ev-ativo" checked><label for="ev-ativo">Ativo</label></div>
+      <div class="form-actions">
+        <button class="btn btn-primary btn-sm" onclick="salvarEvento()" id="ev-btn-salvar">Adicionar evento</button>
+        <button class="btn btn-sm" onclick="limparFormEvento()" id="ev-btn-cancelar" style="display:none">Cancelar edição</button>
+        <span class="fb-ok" id="ev-fb-ok">✓ Salvo!</span>
+        <span class="fb-err" id="ev-fb-err"></span>
+      </div>
+
+      <table class="list" id="ev-tabela">
+        <thead><tr><th>Período</th><th>Condição</th><th>Escopo</th><th>Temp.</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ev-tbody"><tr><td colspan="6" class="empty-row">carregando…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- GRADIENTE DO MAPA -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🧭 Gradiente do mapa</div>
+        <span class="badge" id="badge-gradiente">—</span>
+      </div>
+      <div class="card-sub">
+        Desloca a temperatura da zona climática conforme a posição no mapa (ex: "norte mais frio"). Não substitui a zona
+        climática cadastrada — só a empurra um pouco pra cima ou pra baixo.
+      </div>
+      <div class="checkbox-line"><input type="checkbox" id="gr-ativo"><label for="gr-ativo">Gradiente ativo</label></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Eixo</label>
+          <select id="gr-eixo"><option value="y">Y (norte/sul)</option><option value="x">X (leste/oeste)</option></select>
+        </div>
+        <div class="field">
+          <label>Direção</label>
+          <select id="gr-direcao"><option value="1">Maior valor = mais quente</option><option value="-1">Maior valor = mais frio</option></select>
+        </div>
+        <div class="field"><label>Referência (0–100)</label><input type="number" id="gr-referencia" min="0" max="100"></div>
+        <div class="field"><label>Intensidade (°C por % de distância)</label><input type="number" step="0.01" id="gr-intensidade"></div>
+        <div class="field"><label>Teto de ajuste (°C)</label><input type="number" id="gr-max-ajuste"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary btn-sm" onclick="salvarGradiente()">Salvar</button>
+        <span class="fb-ok" id="gr-fb-ok">✓ Salvo!</span>
+      </div>
+    </div>
+
+    <!-- ZONAS CLIMÁTICAS MARCADAS -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🌡️ Zonas climáticas marcadas no mapa</div>
+      </div>
+      <div class="card-sub">
+        Pontos com posição fixa que somam (ou subtraem) temperatura numa região do mapa, além do gradiente linear — ex:
+        "nordeste mais frio". Intensidade negativa esfria, positiva esquenta. O raio é em % do mapa (mesma escala 0–100
+        do gradiente).
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Posição X (0–100)</label><input type="number" id="pc-x" min="0" max="100"></div>
+        <div class="field"><label>Posição Y (0–100)</label><input type="number" id="pc-y" min="0" max="100"></div>
+        <div class="field"><label>Raio de influência</label><input type="number" id="pc-raio" placeholder="25"></div>
+        <div class="field"><label>Ajuste (°C)</label><input type="number" step="0.1" id="pc-ajuste" placeholder="ex: -4"></div>
+        <div class="field full"><label>Nota (opcional)</label><input type="text" id="pc-nota" placeholder="Ex: Nordeste mais frio"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary btn-sm" onclick="salvarPontoClimatico()" id="pc-btn-salvar">Adicionar ponto</button>
+        <button class="btn btn-sm" onclick="limparFormPonto()" id="pc-btn-cancelar" style="display:none">Cancelar edição</button>
+        <span class="fb-ok" id="pc-fb-ok">✓ Salvo!</span>
+        <span class="fb-err" id="pc-fb-err"></span>
+      </div>
+      <table class="list" id="pc-tabela">
+        <thead><tr><th>Posição</th><th>Raio</th><th>Ajuste</th><th>Nota</th><th></th></tr></thead>
+        <tbody id="pc-tbody"><tr><td colspan="5" class="empty-row">carregando…</td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   SUPABASE — dois projetos, igual ao weathercast.html:
+   - DATADEX (SUPA_URL): tabela "locais", só leitura, pra popular
+     o combo de "local específico" nos eventos climáticos.
+   - OLD_SUPA (projeto do index/RPG): admin_login, weathercast_config,
+     weathercast_overrides, map_climate_pontos.
+   ══════════════════════════════════════════════════════════════ */
+const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
+const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
+
+const OLD_SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const OLD_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+const OLD_SH = { 'Content-Type': 'application/json', 'apikey': OLD_SUPA_KEY, 'Authorization': 'Bearer ' + OLD_SUPA_KEY };
+
+async function dbRpcOld(fn, args={}){
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/rpc/${fn}`, { method:'POST', headers: OLD_SH, body: JSON.stringify(args) });
+  const text = await r.text();
+  let data = null;
+  try{ data = text ? JSON.parse(text) : null; }catch(e){}
+  if(!r.ok){ throw new Error(data?.message || data?.hint || `Erro ${r.status}`); }
+  return data;
+}
+async function sbGet(table, query=''){
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/${table}${query?'?'+query:''}`, { headers: OLD_SH });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function sbUpsert(table, rows){
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/${table}`, {
+    method:'POST',
+    headers: {...OLD_SH, 'Prefer':'resolution=merge-duplicates,return=representation'},
+    body: JSON.stringify(rows)
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function sbPost(table, body){
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/${table}`, { method:'POST', headers: {...OLD_SH, 'Prefer':'return=representation'}, body: JSON.stringify(body) });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function sbPatch(table, query, body){
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/${table}?${query}`, { method:'PATCH', headers: {...OLD_SH, 'Prefer':'return=representation'}, body: JSON.stringify(body) });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function sbDel(table, query){
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/${table}?${query}`, { method:'DELETE', headers: OLD_SH });
+  if(!r.ok) throw new Error(await r.text());
+  return true;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LOGIN (reaproveita a mesma RPC admin_login do index — a senha é
+   conferida no servidor, nunca baixamos hash nenhum aqui)
+   ══════════════════════════════════════════════════════════════ */
+let ADM_LOGADO = null;
+
+async function fazerLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const senha = document.getElementById('login-senha').value;
+  const errEl = document.getElementById('login-erro');
+  errEl.style.display = 'none';
+  if(!email || !senha){ errEl.textContent = 'Preencha e-mail e senha.'; errEl.style.display='block'; return; }
+  let match = null;
+  try{
+    const r = await dbRpcOld('admin_login', { p_nome: email, p_senha: senha });
+    match = Array.isArray(r) ? r[0] : r;
+  }catch(e){ console.error('[fazerLogin]', e); errEl.textContent = 'Erro: ' + (e.message||'falha de conexão.'); errEl.style.display='block'; return; }
+  if(!match){ errEl.textContent = 'Usuário ou senha incorretos.'; errEl.style.display = 'block'; return; }
+  ADM_LOGADO = { email: match.nome };
+  localStorage.setItem('adm_session', JSON.stringify(ADM_LOGADO));
+  await mostrarPainel();
+}
+
+function fazerLogout(){
+  ADM_LOGADO = null;
+  localStorage.removeItem('adm_session');
+  document.getElementById('painel').style.display = 'none';
+  document.getElementById('login-wrap').style.display = 'block';
+  document.getElementById('btn-logout').style.display = 'none';
+}
+
+async function restaurarSessaoAdm(){
+  try{
+    const saved = localStorage.getItem('adm_session');
+    if(!saved) return false;
+    const sess = JSON.parse(saved);
+    if(!sess?.email) return false;
+    // Sempre valida contra o banco — nunca confia só no localStorage
+    const lista = await dbRpcOld('admin_list', {});
+    const match = (lista||[]).find(a => a.nome === sess.email);
+    if(!match){ localStorage.removeItem('adm_session'); return false; }
+    ADM_LOGADO = { email: sess.email };
+    return true;
+  }catch(e){ return false; }
+}
+
+async function mostrarPainel(){
+  document.getElementById('login-wrap').style.display = 'none';
+  document.getElementById('painel').style.display = 'block';
+  document.getElementById('btn-logout').style.display = 'inline-block';
+  await carregarTudo();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ESTADO
+   ══════════════════════════════════════════════════════════════ */
+let LOCAIS = [];
+let WEATHERCAST_CONFIG = {}; // chave -> valor
+let EVENTOS = [];
+let PONTOS = [];
+let EVENTO_EDITANDO = null; // id do evento em edição, ou null
+let PONTO_EDITANDO = null;  // id do ponto em edição, ou null
+
+const ESTACAO_LABEL = { primavera:'Primavera', verao:'Verão', outono:'Outono', inverno:'Inverno' };
+const ESTACAO_EMOJI = { primavera:'🌱', verao:'☀️', outono:'🍂', inverno:'❄️' };
+const CONDICAO_LABEL = {
+  sol:'☀️ Céu Limpo', parcial:'⛅ Parcialmente Nublado', nublado:'☁️ Nublado', neblina:'🌫️ Neblina',
+  chuva:'🌧️ Chuva', tempestade:'⛈️ Tempestade', neve:'❄️ Neve', vento:'💨 Ventania',
+  cinzas:'🌋 Cinzas no Ar', escuro:'🌑 Escuridão', lua:'🌙 Céu Estrelado'
+};
+
+async function carregarTudo(){
+  await Promise.all([
+    carregarLocais(),
+    carregarEstacaoReal(),
+    carregarWeathercastConfig(),
+    carregarEventos(),
+    carregarPontos()
+  ]);
+  renderEstacao();
+  renderGradiente();
+  renderEventos();
+  renderPontos();
+}
+
+async function carregarLocais(){
+  try{
+    const r = await fetch(`${SUPA_URL}/rest/v1/locais?select=id,nome,zona_climatica,bioma_primario&order=nome.asc`, { headers: SH });
+    if(!r.ok) throw new Error(await r.text());
+    LOCAIS = (await r.json()) || [];
+  }catch(e){ console.warn('[weathercast_adm] não deu pra carregar locais:', e); LOCAIS = []; }
+  const sel = document.getElementById('ev-escopo-local');
+  sel.innerHTML = LOCAIS.length
+    ? LOCAIS.map(l => `<option value="${l.nome}">${l.nome}</option>`).join('')
+    : `<option value="">Nenhum local cadastrado</option>`;
+}
+
+let ESTACAO_REAL = null;
+async function carregarEstacaoReal(){
+  try{
+    const rows = await sbGet('config', 'select=valor&chave=eq.estacao_ativa');
+    ESTACAO_REAL = rows?.[0]?.valor || null;
+  }catch(e){ console.warn('[weathercast_adm] não deu pra ler a estação real:', e); ESTACAO_REAL = null; }
+}
+
+async function carregarWeathercastConfig(){
+  try{
+    const rows = await sbGet('weathercast_config', 'select=chave,valor');
+    const mapa = {};
+    (rows||[]).forEach(r => { mapa[r.chave] = r.valor; });
+    WEATHERCAST_CONFIG = mapa;
+  }catch(e){
+    console.warn('[weathercast_adm] não deu pra ler weathercast_config (a tabela existe? veja o SQL no chat):', e);
+    WEATHERCAST_CONFIG = {};
+  }
+}
+
+async function carregarEventos(){
+  try{ EVENTOS = await sbGet('weathercast_overrides', 'select=*&order=data_inicio.desc'); }
+  catch(e){ console.warn('[weathercast_adm] não deu pra ler weathercast_overrides:', e); EVENTOS = []; }
+}
+
+async function carregarPontos(){
+  try{ PONTOS = await sbGet('map_climate_pontos', 'select=*'); }
+  catch(e){ console.warn('[weathercast_adm] não deu pra ler map_climate_pontos:', e); PONTOS = []; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ESTAÇÃO
+   ══════════════════════════════════════════════════════════════ */
+function renderEstacao(){
+  const badge = document.getElementById('badge-estacao-real');
+  badge.textContent = ESTACAO_REAL ? `${ESTACAO_EMOJI[ESTACAO_REAL]||''} ${ESTACAO_LABEL[ESTACAO_REAL]||ESTACAO_REAL}` : 'estação real indisponível';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GRADIENTE DO MAPA
+   ══════════════════════════════════════════════════════════════ */
+const GRADIENTE_PADRAO = { ativo:true, eixo:'y', direcao:1, referencia:50, intensidade:0.12, maxAjuste:6 };
+function renderGradiente(){
+  const g = { ...GRADIENTE_PADRAO, ...(WEATHERCAST_CONFIG.gradiente_mapa||{}) };
+  document.getElementById('gr-ativo').checked = !!g.ativo;
+  document.getElementById('gr-eixo').value = g.eixo;
+  document.getElementById('gr-direcao').value = String(g.direcao);
+  document.getElementById('gr-referencia').value = g.referencia;
+  document.getElementById('gr-intensidade').value = g.intensidade;
+  document.getElementById('gr-max-ajuste').value = g.maxAjuste;
+  document.getElementById('badge-gradiente').textContent = g.ativo ? 'ativo' : 'desativado';
+  document.getElementById('badge-gradiente').classList.toggle('on', !!g.ativo);
+}
+async function salvarGradiente(){
+  const valor = {
+    ativo: document.getElementById('gr-ativo').checked,
+    eixo: document.getElementById('gr-eixo').value,
+    direcao: Number(document.getElementById('gr-direcao').value),
+    referencia: Number(document.getElementById('gr-referencia').value),
+    intensidade: Number(document.getElementById('gr-intensidade').value),
+    maxAjuste: Number(document.getElementById('gr-max-ajuste').value)
+  };
+  try{
+    await sbUpsert('weathercast_config', [{ chave:'gradiente_mapa', valor, atualizado_em: new Date().toISOString() }]);
+    WEATHERCAST_CONFIG.gradiente_mapa = valor;
+    renderGradiente();
+    fbOk('gr-fb-ok');
+  }catch(e){ alert('Não foi possível salvar: ' + e.message); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EVENTOS CLIMÁTICOS FORÇADOS
+   ══════════════════════════════════════════════════════════════ */
+function onEscopoChange(){
+  const escopo = document.getElementById('ev-escopo').value;
+  document.getElementById('ev-escopo-zona-wrap').style.display = escopo === 'zona' ? 'block' : 'none';
+  document.getElementById('ev-escopo-local-wrap').style.display = escopo === 'local' ? 'block' : 'none';
+}
+function limparFormEvento(){
+  EVENTO_EDITANDO = null;
+  document.getElementById('ev-inicio').value = '';
+  document.getElementById('ev-fim').value = '';
+  document.getElementById('ev-condicao').value = 'neve';
+  document.getElementById('ev-escopo').value = 'global';
+  document.getElementById('ev-temp-min').value = '';
+  document.getElementById('ev-temp-max').value = '';
+  document.getElementById('ev-nota').value = '';
+  document.getElementById('ev-ativo').checked = true;
+  onEscopoChange();
+  document.getElementById('ev-btn-salvar').textContent = 'Adicionar evento';
+  document.getElementById('ev-btn-cancelar').style.display = 'none';
+  document.getElementById('ev-fb-err').style.display = 'none';
+}
+function editarEvento(id){
+  const ev = EVENTOS.find(e => e.id === id);
+  if(!ev) return;
+  EVENTO_EDITANDO = id;
+  document.getElementById('ev-inicio').value = ev.data_inicio;
+  document.getElementById('ev-fim').value = ev.data_fim;
+  document.getElementById('ev-condicao').value = ev.condicao;
+  document.getElementById('ev-escopo').value = ev.escopo;
+  if(ev.escopo === 'zona') document.getElementById('ev-escopo-zona').value = ev.escopo_valor;
+  if(ev.escopo === 'local') document.getElementById('ev-escopo-local').value = ev.escopo_valor;
+  onEscopoChange();
+  document.getElementById('ev-temp-min').value = ev.temp_min ?? '';
+  document.getElementById('ev-temp-max').value = ev.temp_max ?? '';
+  document.getElementById('ev-nota').value = ev.nota || '';
+  document.getElementById('ev-ativo').checked = ev.ativo !== false;
+  document.getElementById('ev-btn-salvar').textContent = 'Salvar alterações';
+  document.getElementById('ev-btn-cancelar').style.display = 'inline-block';
+  window.scrollTo({ top: document.getElementById('ev-inicio').closest('.card').offsetTop - 20, behavior:'smooth' });
+}
+async function salvarEvento(){
+  const errEl = document.getElementById('ev-fb-err');
+  errEl.style.display = 'none';
+  const inicio = document.getElementById('ev-inicio').value;
+  const fim = document.getElementById('ev-fim').value;
+  if(!inicio || !fim){ errEl.textContent = 'Preencha data de início e fim.'; errEl.style.display='block'; return; }
+  if(fim < inicio){ errEl.textContent = 'A data final não pode ser antes da inicial.'; errEl.style.display='block'; return; }
+  const escopo = document.getElementById('ev-escopo').value;
+  const escopoValor = escopo === 'zona' ? document.getElementById('ev-escopo-zona').value
+                    : escopo === 'local' ? document.getElementById('ev-escopo-local').value
+                    : null;
+  if(escopo !== 'global' && !escopoValor){ errEl.textContent = 'Selecione a zona ou o local.'; errEl.style.display='block'; return; }
+  const tMinRaw = document.getElementById('ev-temp-min').value;
+  const tMaxRaw = document.getElementById('ev-temp-max').value;
+  const body = {
+    data_inicio: inicio, data_fim: fim,
+    condicao: document.getElementById('ev-condicao').value,
+    escopo, escopo_valor: escopoValor,
+    temp_min: tMinRaw === '' ? null : Number(tMinRaw),
+    temp_max: tMaxRaw === '' ? null : Number(tMaxRaw),
+    nota: document.getElementById('ev-nota').value.trim() || null,
+    ativo: document.getElementById('ev-ativo').checked
+  };
+  try{
+    if(EVENTO_EDITANDO){ await sbPatch('weathercast_overrides', `id=eq.${EVENTO_EDITANDO}`, body); }
+    else{ await sbPost('weathercast_overrides', body); }
+    await carregarEventos();
+    renderEventos();
+    limparFormEvento();
+    fbOk('ev-fb-ok');
+  }catch(e){ errEl.textContent = 'Não foi possível salvar: ' + e.message; errEl.style.display='block'; }
+}
+async function excluirEvento(id){
+  if(!confirm('Excluir este evento climático?')) return;
+  try{ await sbDel('weathercast_overrides', `id=eq.${id}`); await carregarEventos(); renderEventos(); }
+  catch(e){ alert('Não foi possível excluir: ' + e.message); }
+}
+async function alternarAtivoEvento(id, ativo){
+  try{ await sbPatch('weathercast_overrides', `id=eq.${id}`, { ativo }); await carregarEventos(); renderEventos(); }
+  catch(e){ alert('Não foi possível atualizar: ' + e.message); }
+}
+function fmtDataBR(iso){
+  if(!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+function renderEventos(){
+  const tbody = document.getElementById('ev-tbody');
+  if(!EVENTOS.length){ tbody.innerHTML = `<tr><td colspan="6" class="empty-row">Nenhum evento cadastrado ainda.</td></tr>`; return; }
+  tbody.innerHTML = EVENTOS.map(ev => {
+    const escopoTxt = ev.escopo === 'global' ? 'Mapa inteiro' : ev.escopo === 'zona' ? `Zona: ${ev.escopo_valor}` : `Local: ${ev.escopo_valor}`;
+    const tempTxt = (ev.temp_min != null || ev.temp_max != null) ? `${ev.temp_min ?? '—'}° a ${ev.temp_max ?? '—'}°` : '<span style="color:var(--muted)">faixa da zona</span>';
+    return `<tr>
+      <td>${fmtDataBR(ev.data_inicio)} – ${fmtDataBR(ev.data_fim)}</td>
+      <td>${CONDICAO_LABEL[ev.condicao] || ev.condicao}</td>
+      <td>${escopoTxt}</td>
+      <td>${tempTxt}</td>
+      <td><span class="badge ${ev.ativo !== false ? 'on' : ''}" style="cursor:pointer" onclick="alternarAtivoEvento(${ev.id}, ${ev.ativo === false})">${ev.ativo !== false ? 'ativo' : 'inativo'}</span></td>
+      <td class="row-actions">
+        <button class="btn btn-sm" onclick="editarEvento(${ev.id})">Editar</button>
+        <button class="btn btn-sm btn-danger" onclick="excluirEvento(${ev.id})">Excluir</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ZONAS CLIMÁTICAS MARCADAS (map_climate_pontos)
+   ══════════════════════════════════════════════════════════════ */
+function limparFormPonto(){
+  PONTO_EDITANDO = null;
+  document.getElementById('pc-x').value = '';
+  document.getElementById('pc-y').value = '';
+  document.getElementById('pc-raio').value = '';
+  document.getElementById('pc-ajuste').value = '';
+  document.getElementById('pc-nota').value = '';
+  document.getElementById('pc-btn-salvar').textContent = 'Adicionar ponto';
+  document.getElementById('pc-btn-cancelar').style.display = 'none';
+  document.getElementById('pc-fb-err').style.display = 'none';
+}
+function editarPonto(id){
+  const p = PONTOS.find(pt => pt.id === id);
+  if(!p) return;
+  PONTO_EDITANDO = id;
+  document.getElementById('pc-x').value = p.x;
+  document.getElementById('pc-y').value = p.y;
+  document.getElementById('pc-raio').value = p.raio;
+  document.getElementById('pc-ajuste').value = p.ajuste;
+  document.getElementById('pc-nota').value = p.nota || '';
+  document.getElementById('pc-btn-salvar').textContent = 'Salvar alterações';
+  document.getElementById('pc-btn-cancelar').style.display = 'inline-block';
+  window.scrollTo({ top: document.getElementById('pc-x').closest('.card').offsetTop - 20, behavior:'smooth' });
+}
+async function salvarPontoClimatico(){
+  const errEl = document.getElementById('pc-fb-err');
+  errEl.style.display = 'none';
+  const x = document.getElementById('pc-x').value, y = document.getElementById('pc-y').value;
+  const ajuste = document.getElementById('pc-ajuste').value;
+  if(x === '' || y === '' || ajuste === ''){ errEl.textContent = 'Preencha posição X, Y e ajuste.'; errEl.style.display='block'; return; }
+  const body = {
+    x: Number(x), y: Number(y),
+    raio: document.getElementById('pc-raio').value === '' ? 25 : Number(document.getElementById('pc-raio').value),
+    ajuste: Number(ajuste),
+    nota: document.getElementById('pc-nota').value.trim() || null
+  };
+  try{
+    if(PONTO_EDITANDO){ await sbPatch('map_climate_pontos', `id=eq.${PONTO_EDITANDO}`, body); }
+    else{ await sbPost('map_climate_pontos', body); }
+    await carregarPontos();
+    renderPontos();
+    limparFormPonto();
+    fbOk('pc-fb-ok');
+  }catch(e){ errEl.textContent = 'Não foi possível salvar: ' + e.message; errEl.style.display='block'; }
+}
+async function excluirPonto(id){
+  if(!confirm('Excluir esta zona marcada?')) return;
+  try{ await sbDel('map_climate_pontos', `id=eq.${id}`); await carregarPontos(); renderPontos(); }
+  catch(e){ alert('Não foi possível excluir: ' + e.message); }
+}
+function renderPontos(){
+  const tbody = document.getElementById('pc-tbody');
+  if(!PONTOS.length){ tbody.innerHTML = `<tr><td colspan="5" class="empty-row">Nenhuma zona marcada ainda.</td></tr>`; return; }
+  tbody.innerHTML = PONTOS.map(p => `
+    <tr>
+      <td>${p.x}, ${p.y}</td>
+      <td>${p.raio ?? 25}</td>
+      <td>${p.ajuste >= 0 ? '+' : ''}${p.ajuste}°C</td>
+      <td>${p.nota || '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="row-actions">
+        <button class="btn btn-sm" onclick="editarPonto(${p.id})">Editar</button>
+        <button class="btn btn-sm btn-danger" onclick="excluirPonto(${p.id})">Excluir</button>
+      </td>
+    </tr>`).join('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HELPERS
+   ══════════════════════════════════════════════════════════════ */
+function fbOk(id){
+  const el = document.getElementById(id);
+  el.style.display = 'inline';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 2200);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BOOT
+   ══════════════════════════════════════════════════════════════ */
+(async function boot(){
+  onEscopoChange();
+  const ok = await restaurarSessaoAdm();
+  if(ok) await mostrarPainel();
+})();
+</script>
+</body>
+</html>
