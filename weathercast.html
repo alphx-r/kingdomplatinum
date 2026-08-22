@@ -1224,14 +1224,27 @@ function calcAlturaCityGrid(){
   if (!primeiroCard) return;
   const alturaCard = primeiroCard.getBoundingClientRect().height;
   const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
-  // No mobile o grid vira 1 coluna (cada linha = 1 card), então "3
-  // linhas" mostraria só 3 cidades — muito pouco. Ali usamos 4 linhas
-  // (4 cards) antes de rolar; no desktop mantém 3 linhas (3x3 = 9).
-  const linhasVisiveis = window.matchMedia('(max-width:760px)').matches ? 4 : 3;
-  const alturaLinhas = alturaCard * linhasVisiveis + gap * (linhasVisiveis - 1);
-  wrap.style.setProperty('--city-grid-rows-h', `${Math.ceil(alturaLinhas)}px`);
+
+  if (window.matchMedia('(max-width:760px)').matches){
+    // No mobile o grid vira 1 coluna (cada linha = 1 card). Em vez de
+    // travar num número fixo de linhas, calcula quantas cabem inteiras
+    // da posição do grid até o fim da tela (menos uma margem de
+    // respiro), assim aproveita o máximo do espaço sem cortar card no
+    // meio — e se sobrar só 1 cidade cadastrada, não sobra vão vazio.
+    const margemInferior = 16;
+    const topoGrid = wrap.getBoundingClientRect().top;
+    const disponivel = window.innerHeight - topoGrid - margemInferior;
+    const linhasQueCabem = Math.max(1, Math.floor((disponivel + gap) / (alturaCard + gap)));
+    const alturaLinhas = alturaCard * linhasQueCabem + gap * (linhasQueCabem - 1);
+    wrap.style.setProperty('--city-grid-rows-h', `${Math.ceil(alturaLinhas)}px`);
+  } else {
+    // Desktop: 3 linhas fixas (3x3 = 9 cidades) antes de rolar.
+    const alturaLinhas = alturaCard * 3 + gap * 2;
+    wrap.style.setProperty('--city-grid-rows-h', `${Math.ceil(alturaLinhas)}px`);
+  }
 }
 window.addEventListener('resize', () => { calcAlturaCityGrid(); });
+window.addEventListener('orientationchange', () => { setTimeout(calcAlturaCityGrid, 150); });
 
 // % de chance de chuva pro dia inteiro (mesmo hash usado na lista de
 // previsão), reaproveitado no cabeçalho do "agora". Usa a mesma posKey
