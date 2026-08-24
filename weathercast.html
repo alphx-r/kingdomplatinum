@@ -526,12 +526,16 @@
       vez de saltar de zona pra zona sem transição. Locais sem posição cadastrada usam só a própria zona/estação.
     </p>
     <p>
-      Além disso, a posição no mapa desloca um pouco a temperatura da zona, em duas camadas que se somam:
-      um <b>gradiente linear</b> configurável (norte/sul por padrão) e <b>zonas marcadas à mão</b> em
-      ADM → Mapa → 🌡️ Clima (ex: "nordeste mais frio"), cada uma com sua intensidade e raio de influência.
-      As duas são só uma influência — a zona climática cadastrada continua decidindo a faixa e as condições
-      (chuva, neve etc.); zonas cujo calor não vem da superfície (Vulcânica, Subterrânea) ficam de fora de
-      ambas.
+      Além disso, <b>zonas marcadas à mão</b> em ADM → Mapa → 🌡️ Clima (ex: "nordeste mais frio") deslocam um
+      pouco a temperatura da zona, cada uma com sua intensidade e raio de influência — a zona climática
+      cadastrada continua decidindo a faixa e as condições (chuva, neve etc.); zonas cujo calor não vem da
+      superfície (Vulcânica, Subterrânea) ficam de fora disso.
+    </p>
+    <p>
+      Por cima de tudo isso existe uma <b>trava por latitude</b>: não importa o que a zona, o evento forçado
+      ou a mistura com vizinhos calculem, a temperatura final nunca ultrapassa o teto/piso definido pra aquela
+      posição norte/sul do mapa — garante que o norte de Nendo nunca saia "mais quente" que o sul por engano
+      de cadastro, por exemplo.
     </p>
     <p>
       O clima do dia continua sendo <b>determinístico</b>: calculado a partir de um hash de
@@ -546,9 +550,10 @@
       direto no <code>&lt;script&gt;</code> como SVG.
     </p>
     <p>
-      <b>Eventos climáticos forçados</b> (ex: nevar por alguns dias numa zona) e o <b>gradiente do mapa</b> são
+      <b>Eventos climáticos forçados</b> (ex: nevar por alguns dias numa zona) são
       controlados no <a href="weathercast_adm.html" style="color:#b8791f;font-weight:700">weathercast_adm</a> — quando
-      ativos, os eventos têm prioridade sobre o sorteio automático. A estação usada aqui é sempre a mesma ativa no
+      ativos, os eventos têm prioridade sobre o sorteio automático, inclusive sobre a trava de latitude quando o
+      evento define sua própria faixa de temperatura. A estação usada aqui é sempre a mesma ativa no
       index (<code>config.estacao_ativa</code>), sem exceção.
     </p>
   </div>
@@ -785,46 +790,44 @@ const ZONA_PERFIL = {
 const RAIO_INFLUENCIA_VIZINHOS = 22;
 
 /* ══════════════════════════════════════════════════════════════
-   GRADIENTE DE TEMPERATURA POR POSIÇÃO NO MAPA
-   Camada extra que NÃO substitui a zona climática — só desloca um
-   pouco a faixa de temperatura dela pra cima ou pra baixo de acordo
-   com a posição (pos_x/pos_y, escala 0–100, igual ao mapa interativo)
-   do local. Ex.: com eixo 'y' e direcao 1, locais "mais pro sul" (pos_y
-   maior) ficam um pouco mais quentes e "mais pro norte" um pouco mais
-   frios que a média da própria zona — mas continuam sendo, por
-   exemplo, "Fria" ou "Tropical" antes de mais nada.
-   Ajuste os valores abaixo conforme a geografia real da Região Nendo:
+   LIMITE DE TEMPERATURA POR POSIÇÃO NO MAPA (regra física do mundo)
+   Garante que a geografia da Região Nendo nunca seja contradita pelo
+   sorteio: não importa o que a zona climática, o evento forçado ou a
+   mistura com vizinhos calculem, a temperatura final de um local é
+   travada dentro do teto/piso da sua latitude (pos_y). Confirmado com
+   dados reais do mapa: pos_y baixo = norte/frio (Yukon ≈23), pos_y
+   alto = sul/quente (Koen ≈82).
    - eixo: 'y' (norte/sul) ou 'x' (leste/oeste)
-   - direcao: 1 = valores maiores de pos_x/pos_y ficam mais quentes;
-              -1 = inverte (valores maiores ficam mais frios)
-   - referencia: coordenada (0–100) tratada como "neutra" (0°C de ajuste)
-   - intensidade: quanto ajusta por cada % de distância da referência
-   - maxAjuste: teto do ajuste, pra não estourar zonas já extremas
+   - norte/sul: teto (ceiling) e piso (floor) nas duas pontas do mapa
+     (pos 0 e pos 100) — pontos entre as duas pontas interpolam linear.
+   Ajuste os valores abaixo conforme a geografia real da Região Nendo.
    ══════════════════════════════════════════════════════════════ */
-const GRADIENTE_MAPA = {
+const LIMITE_LATITUDE = {
   ativo: true,
   eixo: 'y',
-  direcao: 1,
-  referencia: 50,
-  intensidade: 0.12,
-  maxAjuste: 6
+  norte: { pos: 0,   ceiling: 12, floor: -30 },
+  sul:   { pos: 100, ceiling: 45, floor: 2   }
 };
 
 // Zonas cujo clima não é regido pela superfície do mapa (calor vulcânico
 // vem da própria rocha, caverna é isolada do tempo externo) — ficam de
-// fora do gradiente e dos pontos marcados, pra não terem "inverno" só
-// por estarem ao norte ou dentro do raio de uma zona fria marcada.
+// fora do limite de latitude e dos pontos marcados, pra não terem
+// "inverno" só por estarem ao norte ou dentro do raio de uma zona fria.
 const GRADIENTE_ZONAS_EXCLUIDAS = new Set(['Vulcânica', 'Subterrânea']);
 
-// Ajuste (°C) que o gradiente linear norte/sul (ou leste/oeste) aplica
-// sobre a faixa de temperatura da zona climática do local.
-function ajusteGradienteLinear(local){
-  if (!GRADIENTE_MAPA.ativo) return 0;
-  const pos = GRADIENTE_MAPA.eixo === 'x' ? local.pos_x : local.pos_y;
-  if (pos == null) return 0;
-  const distancia = (Number(pos) - GRADIENTE_MAPA.referencia) * GRADIENTE_MAPA.direcao;
-  const ajuste = distancia * GRADIENTE_MAPA.intensidade;
-  return Math.max(-GRADIENTE_MAPA.maxAjuste, Math.min(GRADIENTE_MAPA.maxAjuste, ajuste));
+// Teto/piso (°C) válidos pra latitude do local, interpolados entre as
+// duas pontas do mapa. Retorna null se não houver posição ou a zona
+// estiver excluída (vulcânica/subterrânea não seguem a superfície).
+function limiteDeLatitude(local, zona){
+  if (!LIMITE_LATITUDE.ativo || GRADIENTE_ZONAS_EXCLUIDAS.has(zona)) return null;
+  const pos = LIMITE_LATITUDE.eixo === 'x' ? local.pos_x : local.pos_y;
+  if (pos == null) return null;
+  const t = Math.max(0, Math.min(1, Number(pos) / 100)); // 0=norte, 1=sul
+  const { norte, sul } = LIMITE_LATITUDE;
+  return {
+    ceiling: norte.ceiling + (sul.ceiling - norte.ceiling) * t,
+    floor:   norte.floor   + (sul.floor   - norte.floor)   * t
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -865,7 +868,7 @@ function ajustePontosClimaticos(local){
 const TETO_AJUSTE_SUPERFICIE = 10;
 function ajusteSuperficieMapa(local, zona){
   if (GRADIENTE_ZONAS_EXCLUIDAS.has(zona)) return 0;
-  const total = ajusteGradienteLinear(local) + ajustePontosClimaticos(local);
+  const total = ajustePontosClimaticos(local);
   return Math.max(-TETO_AJUSTE_SUPERFICIE, Math.min(TETO_AJUSTE_SUPERFICIE, total));
 }
 
@@ -877,7 +880,19 @@ function hashStr(str){
   for (let i=0;i<str.length;i++) h = (h*31 + str.charCodeAt(i)) >>> 0;
   return h;
 }
-function fmtData(d){ return d.toISOString().slice(0,10); }
+// Formata como YYYY-MM-DD usando o fuso LOCAL do navegador (não UTC).
+// Importante: toISOString() converte pra UTC antes de cortar a data, o
+// que pode "pular" pro dia seguinte à noite em fusos como o do Brasil
+// (UTC-3) — e isso fazia eventos climáticos forçados (que comparam
+// datas em string) deixarem de bater com "hoje" horas antes da meia-
+// noite local. Usando os componentes locais, a data bate com o
+// calendário que o jogador realmente está vendo.
+function fmtData(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dia}`;
+}
 
 // Zona climática efetiva do local: usa a cadastrada, senão infere do
 // bioma primário, senão cai em Temperada (neutro) como último recurso.
@@ -1006,7 +1021,17 @@ function climaDoLocal(local, data, estacaoOverride){
   const hVar = hashStr(seedBase + '-temp');
   const spread = Math.max(1, tMax - tMin);
   const baseTemp = tMin + (hVar % 100)/100 * spread;
-  const temp = Math.round(baseTemp + condicao.tempMod);
+  let temp = Math.round(baseTemp + condicao.tempMod);
+
+  // Trava física por latitude: nunca deixa o sorteio contradizer a
+  // geografia (ex: norte "mais quente" que o sul). Um evento forçado
+  // com faixa de temperatura própria (forcado.temp_min/max) é uma
+  // decisão intencional do ADM e pula essa trava de propósito.
+  const semEventoDeTemp = !(forcado && (forcado.temp_min != null || forcado.temp_max != null));
+  if (semEventoDeTemp){
+    const limite = limiteDeLatitude(local, faixa.zona);
+    if (limite) temp = Math.max(limite.floor, Math.min(limite.ceiling, temp));
+  }
 
   const hUmid = hashStr(seedBase + '-umid');
   const umidade = Math.max(5, Math.min(98, Math.round(faixa.umid + ((hUmid % 21) - 10))));
@@ -1080,7 +1105,7 @@ let LOCAIS = [];
 let LOCAL_ATUAL = null;
 let ESTACAO_ATIVA = null;   // sempre = config.estacao_ativa (lida do index) — sem override
 let WEATHER_OVERRIDES = []; // eventos climáticos forçados (weathercast_overrides)
-let WEATHERCAST_CONFIG = {}; // chave->valor de weathercast_config (só gradiente do mapa)
+let WEATHERCAST_CONFIG = {}; // chave->valor de weathercast_config (só trava de latitude)
 let PLAYER_LOGADO = null;   // {nome,id}, lido do mesmo localStorage do index ('player_session')
 let FAVORITOS = [];         // linhas de weathercast_favoritos do player logado (sem limite)
 let VIEW = 'home';          // 'home' (busca + grid de todas as cidades) ou 'detail' (clima de um local)
@@ -1462,10 +1487,10 @@ async function boot(){
       carregarWeathercastConfig()
     ]);
 
-    // Aplica o gradiente do mapa configurado no ADM (se houver) por cima
+    // Aplica a trava de latitude configurada no ADM (se houver) por cima
     // dos valores default hardcoded — mutando o mesmo objeto usado pelo
     // resto do cálculo, então não precisa mexer em mais nada.
-    if (WEATHERCAST_CONFIG.gradiente_mapa) Object.assign(GRADIENTE_MAPA, WEATHERCAST_CONFIG.gradiente_mapa);
+    if (WEATHERCAST_CONFIG.limite_latitude) Object.assign(LIMITE_LATITUDE, WEATHERCAST_CONFIG.limite_latitude);
 
     LOCAIS = (rows || []).filter(l => l.bioma_primario);
     LOCAIS.forEach(l => { l.sigla = siglas[l.nome.trim().toUpperCase()] || null; });
