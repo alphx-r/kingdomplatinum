@@ -54,6 +54,8 @@
     width:100%; background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:9px;
     padding:10px 12px; font-family:'Manrope',sans-serif; font-size:13.5px; color:var(--text); outline:none;
   }
+  .field select{ color-scheme: dark; }
+  .field option{ background:var(--shell-bg); color:var(--text); }
   .field input:focus, .field select:focus, .field textarea:focus{ border-color:var(--accent); }
   .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .fb-err{ font-size:12.5px; color:var(--danger); margin-top:10px; display:none; }
@@ -127,10 +129,6 @@
         <div class="card-title">🍂 Estação ativa</div>
         <span class="badge on" id="badge-estacao-real">carregando…</span>
       </div>
-      <div class="card-sub">
-        O WeatherCast sempre segue a estação real do RPG (<code>config.estacao_ativa</code>), definida no <b>index</b> —
-        sem override aqui. Quando lá estiver Primavera, aqui também é Primavera. Pra mudar a estação, mude no index.
-      </div>
     </div>
 
     <!-- EVENTOS CLIMÁTICOS FORÇADOS -->
@@ -201,35 +199,37 @@
       </table>
     </div>
 
-    <!-- GRADIENTE DO MAPA -->
+    <!-- LIMITE DE LATITUDE -->
     <div class="card">
       <div class="card-head">
-        <div class="card-title">🧭 Gradiente do mapa</div>
+        <div class="card-title">🧭 Limite de latitude</div>
         <span class="badge" id="badge-gradiente">—</span>
       </div>
       <div class="card-sub">
-        Desloca a temperatura da zona climática conforme a posição no mapa (ex: "norte mais frio"). Não substitui a zona
-        climática cadastrada — só a empurra um pouco pra cima ou pra baixo.
+        Trava a temperatura final de cada local dentro de um teto/piso definido pela posição norte/sul (ou
+        leste/oeste) no mapa — garante que a geografia nunca seja contradita (ex: o norte de Nendo nunca sai
+        mais quente que o sul), não importa o que a zona climática ou os eventos calculem. Não se aplica a
+        eventos forçados com faixa de temperatura própria, nem a zonas Vulcânica/Subterrânea.
       </div>
-      <div class="checkbox-line"><input type="checkbox" id="gr-ativo"><label for="gr-ativo">Gradiente ativo</label></div>
+      <div class="checkbox-line"><input type="checkbox" id="gr-ativo"><label for="gr-ativo">Limite ativo</label></div>
       <div class="form-grid">
         <div class="field">
           <label>Eixo</label>
           <select id="gr-eixo"><option value="y">Y (norte/sul)</option><option value="x">X (leste/oeste)</option></select>
         </div>
-        <div class="field">
-          <label>Direção</label>
-          <select id="gr-direcao"><option value="1">Maior valor = mais quente</option><option value="-1">Maior valor = mais frio</option></select>
-        </div>
-        <div class="field"><label>Referência (0–100)</label><input type="number" id="gr-referencia" min="0" max="100"></div>
-        <div class="field"><label>Intensidade (°C por % de distância)</label><input type="number" step="0.01" id="gr-intensidade"></div>
-        <div class="field"><label>Teto de ajuste (°C)</label><input type="number" id="gr-max-ajuste"></div>
+      </div>
+      <div class="form-grid" style="margin-top:10px">
+        <div class="field"><label>Norte (pos 0) — teto (°C)</label><input type="number" id="gr-norte-teto"></div>
+        <div class="field"><label>Norte (pos 0) — piso (°C)</label><input type="number" id="gr-norte-piso"></div>
+        <div class="field"><label>Sul (pos 100) — teto (°C)</label><input type="number" id="gr-sul-teto"></div>
+        <div class="field"><label>Sul (pos 100) — piso (°C)</label><input type="number" id="gr-sul-piso"></div>
       </div>
       <div class="form-actions">
         <button class="btn btn-primary btn-sm" onclick="salvarGradiente()">Salvar</button>
         <span class="fb-ok" id="gr-fb-ok">✓ Salvo!</span>
       </div>
     </div>
+
 
     <!-- ZONAS CLIMÁTICAS MARCADAS -->
     <div class="card">
@@ -453,17 +453,26 @@ function renderEstacao(){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   GRADIENTE DO MAPA
+   LIMITE DE LATITUDE
    ══════════════════════════════════════════════════════════════ */
-const GRADIENTE_PADRAO = { ativo:true, eixo:'y', direcao:1, referencia:50, intensidade:0.12, maxAjuste:6 };
+const LIMITE_LATITUDE_PADRAO = {
+  ativo: true, eixo: 'y',
+  norte: { pos: 0,   ceiling: 12, floor: -30 },
+  sul:   { pos: 100, ceiling: 45, floor: 2   }
+};
 function renderGradiente(){
-  const g = { ...GRADIENTE_PADRAO, ...(WEATHERCAST_CONFIG.gradiente_mapa||{}) };
+  const salvo = WEATHERCAST_CONFIG.limite_latitude || {};
+  const g = {
+    ...LIMITE_LATITUDE_PADRAO, ...salvo,
+    norte: { ...LIMITE_LATITUDE_PADRAO.norte, ...(salvo.norte||{}) },
+    sul:   { ...LIMITE_LATITUDE_PADRAO.sul,   ...(salvo.sul||{}) }
+  };
   document.getElementById('gr-ativo').checked = !!g.ativo;
   document.getElementById('gr-eixo').value = g.eixo;
-  document.getElementById('gr-direcao').value = String(g.direcao);
-  document.getElementById('gr-referencia').value = g.referencia;
-  document.getElementById('gr-intensidade').value = g.intensidade;
-  document.getElementById('gr-max-ajuste').value = g.maxAjuste;
+  document.getElementById('gr-norte-teto').value = g.norte.ceiling;
+  document.getElementById('gr-norte-piso').value = g.norte.floor;
+  document.getElementById('gr-sul-teto').value = g.sul.ceiling;
+  document.getElementById('gr-sul-piso').value = g.sul.floor;
   document.getElementById('badge-gradiente').textContent = g.ativo ? 'ativo' : 'desativado';
   document.getElementById('badge-gradiente').classList.toggle('on', !!g.ativo);
 }
@@ -471,14 +480,12 @@ async function salvarGradiente(){
   const valor = {
     ativo: document.getElementById('gr-ativo').checked,
     eixo: document.getElementById('gr-eixo').value,
-    direcao: Number(document.getElementById('gr-direcao').value),
-    referencia: Number(document.getElementById('gr-referencia').value),
-    intensidade: Number(document.getElementById('gr-intensidade').value),
-    maxAjuste: Number(document.getElementById('gr-max-ajuste').value)
+    norte: { pos: 0,   ceiling: Number(document.getElementById('gr-norte-teto').value), floor: Number(document.getElementById('gr-norte-piso').value) },
+    sul:   { pos: 100, ceiling: Number(document.getElementById('gr-sul-teto').value),   floor: Number(document.getElementById('gr-sul-piso').value) }
   };
   try{
-    await sbUpsert('weathercast_config', [{ chave:'gradiente_mapa', valor, atualizado_em: new Date().toISOString() }]);
-    WEATHERCAST_CONFIG.gradiente_mapa = valor;
+    await sbUpsert('weathercast_config', [{ chave:'limite_latitude', valor, atualizado_em: new Date().toISOString() }]);
+    WEATHERCAST_CONFIG.limite_latitude = valor;
     renderGradiente();
     fbOk('gr-fb-ok');
   }catch(e){ alert('Não foi possível salvar: ' + e.message); }
