@@ -231,33 +231,44 @@
     </div>
 
 
-    <!-- ZONAS CLIMÁTICAS MARCADAS -->
+    <!-- ZONAS CLIMÁTICAS MARCADAS (migrado do mapa.html — clique/pinte direto no mapa) -->
     <div class="card">
       <div class="card-head">
         <div class="card-title">🌡️ Zonas climáticas marcadas no mapa</div>
       </div>
       <div class="card-sub">
-        Pontos com posição fixa que somam (ou subtraem) temperatura numa região do mapa, além do gradiente linear — ex:
-        "nordeste mais frio". Intensidade negativa esfria, positiva esquenta. O raio é em % do mapa (mesma escala 0–100
-        do gradiente).
+        Configure o tipo/intensidade/raio abaixo e depois clique (ou arraste, com "🖌️ Pintar" ativado) direto no mapa.
+        Cada zona soma (ou subtrai) temperatura dos locais dentro do raio dela, além do gradiente linear de latitude —
+        ex: "nordeste mais frio".
       </div>
+      <div class="field"><label>Nome da zona (opcional)</label><input type="text" id="pc-nome" placeholder="Ex: Nordeste gelado"></div>
       <div class="form-grid">
-        <div class="field"><label>Posição X (0–100)</label><input type="number" id="pc-x" min="0" max="100"></div>
-        <div class="field"><label>Posição Y (0–100)</label><input type="number" id="pc-y" min="0" max="100"></div>
-        <div class="field"><label>Raio de influência</label><input type="number" id="pc-raio" placeholder="25"></div>
-        <div class="field"><label>Ajuste (°C)</label><input type="number" step="0.1" id="pc-ajuste" placeholder="ex: -4"></div>
-        <div class="field full"><label>Nota (opcional)</label><input type="text" id="pc-nota" placeholder="Ex: Nordeste mais frio"></div>
+        <div class="field"><label>Tipo</label>
+          <select id="pc-tipo">
+            <option value="frio">❄️ Mais frio</option>
+            <option value="quente">🔥 Mais quente</option>
+          </select>
+        </div>
+        <div class="field"><label>Intensidade (°C)</label><input type="number" id="pc-intensidade" value="4" min="0.5" max="10" step="0.5"></div>
+        <div class="field"><label>Raio (% do mapa)</label><input type="number" id="pc-raio" value="20" min="3" max="60" step="1"></div>
       </div>
-      <div class="form-actions">
-        <button class="btn btn-primary btn-sm" onclick="salvarPontoClimatico()" id="pc-btn-salvar">Adicionar ponto</button>
-        <button class="btn btn-sm" onclick="limparFormPonto()" id="pc-btn-cancelar" style="display:none">Cancelar edição</button>
-        <span class="fb-ok" id="pc-fb-ok">✓ Salvo!</span>
-        <span class="fb-err" id="pc-fb-err"></span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="pc-pintar-modo" style="margin:0"> 🖌️ Pintar (arrastar no mapa em vez de clicar)
+        </label>
+        <span style="font-size:11px;color:var(--muted)">No modo pintura, use um raio menor (ex: 8–12) pra mais precisão.</span>
       </div>
-      <table class="list" id="pc-tabela">
-        <thead><tr><th>Posição</th><th>Raio</th><th>Ajuste</th><th>Nota</th><th></th></tr></thead>
-        <tbody id="pc-tbody"><tr><td colspan="5" class="empty-row">carregando…</td></tr></tbody>
-      </table>
+      <div id="pc-status" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--panel-bg-soft);color:var(--muted);margin-bottom:12px;display:none"></div>
+
+      <!-- Mapa embutido: clique/arraste marca a zona direto aqui -->
+      <div id="pc-mapa-wrap" style="position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px;cursor:crosshair;line-height:0">
+        <img id="pc-mapa-img" src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
+          alt="Mapa da Região Nendo" draggable="false" style="width:100%;display:block;user-select:none">
+        <div id="pc-mapa-overlay" style="position:absolute;inset:0;pointer-events:none"></div>
+      </div>
+
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">Zonas marcadas</div>
+      <div id="pc-lista"></div>
     </div>
 
   </div>
@@ -378,7 +389,6 @@ let WEATHERCAST_CONFIG = {}; // chave -> valor
 let EVENTOS = [];
 let PONTOS = [];
 let EVENTO_EDITANDO = null; // id do evento em edição, ou null
-let PONTO_EDITANDO = null;  // id do ponto em edição, ou null
 
 const ESTACAO_LABEL = { primavera:'Primavera', verao:'Verão', outono:'Outono', inverno:'Inverno' };
 const ESTACAO_EMOJI = { primavera:'🌱', verao:'☀️', outono:'🍂', inverno:'❄️' };
@@ -400,6 +410,8 @@ async function carregarTudo(){
   renderGradiente();
   renderEventos();
   renderPontos();
+  renderPontosOverlay();
+  initPcMapa();
 }
 
 async function carregarLocais(){
@@ -600,72 +612,184 @@ function renderEventos(){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   ZONAS CLIMÁTICAS MARCADAS (map_climate_pontos)
+   ZONAS CLIMÁTICAS MARCADAS (map_climate_pontos) — migrado do
+   mapa.html: em vez de digitar x/y na mão, clique (ou arraste, com
+   "🖌️ Pintar" ativado) direto na imagem do mapa abaixo. Sem "modo
+   edição" — só adicionar e excluir, igual ao mapa.html original.
    ══════════════════════════════════════════════════════════════ */
-function limparFormPonto(){
-  PONTO_EDITANDO = null;
-  document.getElementById('pc-x').value = '';
-  document.getElementById('pc-y').value = '';
-  document.getElementById('pc-raio').value = '';
-  document.getElementById('pc-ajuste').value = '';
-  document.getElementById('pc-nota').value = '';
-  document.getElementById('pc-btn-salvar').textContent = 'Adicionar ponto';
-  document.getElementById('pc-btn-cancelar').style.display = 'none';
-  document.getElementById('pc-fb-err').style.display = 'none';
-}
-function editarPonto(id){
-  const p = PONTOS.find(pt => pt.id === id);
-  if(!p) return;
-  PONTO_EDITANDO = id;
-  document.getElementById('pc-x').value = p.x;
-  document.getElementById('pc-y').value = p.y;
-  document.getElementById('pc-raio').value = p.raio;
-  document.getElementById('pc-ajuste').value = p.ajuste;
-  document.getElementById('pc-nota').value = p.nota || '';
-  document.getElementById('pc-btn-salvar').textContent = 'Salvar alterações';
-  document.getElementById('pc-btn-cancelar').style.display = 'inline-block';
-  window.scrollTo({ top: document.getElementById('pc-x').closest('.card').offsetTop - 20, behavior:'smooth' });
-}
-async function salvarPontoClimatico(){
-  const errEl = document.getElementById('pc-fb-err');
-  errEl.style.display = 'none';
-  const x = document.getElementById('pc-x').value, y = document.getElementById('pc-y').value;
-  const ajuste = document.getElementById('pc-ajuste').value;
-  if(x === '' || y === '' || ajuste === ''){ errEl.textContent = 'Preencha posição X, Y e ajuste.'; errEl.style.display='block'; return; }
-  const body = {
-    x: Number(x), y: Number(y),
-    raio: document.getElementById('pc-raio').value === '' ? 25 : Number(document.getElementById('pc-raio').value),
-    ajuste: Number(ajuste),
-    nota: document.getElementById('pc-nota').value.trim() || null
+function _pcFormValores(){
+  return {
+    nome: document.getElementById('pc-nome').value.trim(),
+    tipo: document.getElementById('pc-tipo').value, // 'frio' | 'quente'
+    intensidade: parseFloat(document.getElementById('pc-intensidade').value),
+    raio: parseFloat(document.getElementById('pc-raio').value)
   };
-  try{
-    if(PONTO_EDITANDO){ await sbPatch('map_climate_pontos', `id=eq.${PONTO_EDITANDO}`, body); }
-    else{ await sbPost('map_climate_pontos', body); }
-    await carregarPontos();
-    renderPontos();
-    limparFormPonto();
-    fbOk('pc-fb-ok');
-  }catch(e){ errEl.textContent = 'Não foi possível salvar: ' + e.message; errEl.style.display='block'; }
 }
-async function excluirPonto(id){
-  if(!confirm('Excluir esta zona marcada?')) return;
-  try{ await sbDel('map_climate_pontos', `id=eq.${id}`); await carregarPontos(); renderPontos(); }
-  catch(e){ alert('Não foi possível excluir: ' + e.message); }
+// Ajuste (°C, já com sinal) a partir do tipo+intensidade do formulário,
+// ou null se a intensidade não estiver preenchida corretamente.
+function _pcAjusteAtual(){
+  const { tipo, intensidade } = _pcFormValores();
+  if(!intensidade || intensidade <= 0) return null;
+  return tipo === 'frio' ? -Math.abs(intensidade) : Math.abs(intensidade);
+}
+// Posição (%) do clique/arraste relativa à imagem do mapa embutido —
+// sem pan/zoom envolvido (diferente do mapa público), conta direta.
+function _pcCoordsDoEvento(e){
+  const img = document.getElementById('pc-mapa-img');
+  const rect = img.getBoundingClientRect();
+  const x = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width  * 100));
+  const y = Math.max(0, Math.min(100, (e.clientY - rect.top)  / rect.height * 100));
+  return { x, y };
+}
+function _pcStatus(msg, tipo){
+  const status = document.getElementById('pc-status');
+  if(!status) return;
+  const cores = { ok: ['rgba(111,207,151,.14)', 'var(--ok)'], erro: ['var(--danger-soft)', 'var(--danger)'], aviso: ['var(--accent-soft)', 'var(--accent)'] };
+  const [bg, cor] = cores[tipo] || cores.aviso;
+  status.style.display = 'block';
+  status.style.background = bg; status.style.color = cor;
+  status.textContent = msg;
+}
+// Salva um ou mais pontos climáticos de uma vez (bulk insert do Supabase
+// aceita array no body) e atualiza mapa/lista. O mapa.html original (de
+// onde essa feature veio) grava o rótulo na coluna `nome`, mas o form
+// antigo daqui usava `nota` — sem certeza de qual coluna existe de fato
+// na tabela, tenta `nome` primeiro e, se o Postgrest reclamar que a
+// coluna não existe, refaz a chamada trocando pra `nota` antes de
+// desistir e mostrar erro.
+async function _pcSalvarPontos(payloads, campoNome){
+  const campo = campoNome || 'nome';
+  const corpo = payloads.map(p => {
+    const { nome, ...resto } = p;
+    return { ...resto, [campo]: nome };
+  });
+  try{
+    const rows = await sbPost('map_climate_pontos', corpo);
+    const salvos = (Array.isArray(rows) && rows.length) ? rows.map(r => ({ ...r, nome: r[campo] })) : payloads;
+    PONTOS.push(...salvos);
+    renderPontosOverlay();
+    renderPontos();
+    _pcStatus(payloads.length > 1 ? `✓ ${payloads.length} pontos pintados!` : '✓ Zona climática marcada!', 'ok');
+  }catch(e){
+    const colunaFaltando = /column .*['"]?nome['"]?/i.test(e.message) || /could not find.*nome/i.test(e.message);
+    if(campo === 'nome' && colunaFaltando){
+      return _pcSalvarPontos(payloads, 'nota'); // tenta de novo com a coluna antiga
+    }
+    console.error('[weathercast_adm] salvar pontos climáticos:', e);
+    _pcStatus('Erro ao salvar: ' + e.message, 'erro');
+  }
+}
+// Clique único (fora do modo pintura): marca uma zona com o raio cheio
+// informado no formulário.
+function _pcCliqueUnico(e){
+  const ajuste = _pcAjusteAtual();
+  const { nome, raio } = _pcFormValores();
+  if(ajuste == null){ _pcStatus('Informe uma intensidade maior que 0.', 'aviso'); return; }
+  if(!raio || raio <= 0){ _pcStatus('Informe um raio maior que 0.', 'aviso'); return; }
+  const { x, y } = _pcCoordsDoEvento(e);
+  _pcSalvarPontos([{ nome: nome || null, x: +x.toFixed(2), y: +y.toFixed(2), ajuste, raio }]);
+}
+// ── Modo pintura: arrastar no mapa deposita vários pontos pequenos ao
+// longo do trajeto, que somados formam o "traço" da zona pintada. ──
+let _pcPintando = false;
+let _pcUltimoPontoPintura = null;
+let _pcBufferPintura = [];
+const PC_PINTURA_ESPACAMENTO = 6; // % do mapa entre pontos pintados consecutivos
+function _pcIniciarPintura(e){
+  const ajuste = _pcAjusteAtual();
+  const { raio } = _pcFormValores();
+  if(ajuste == null){ _pcStatus('Informe uma intensidade maior que 0.', 'aviso'); return; }
+  if(!raio || raio <= 0){ _pcStatus('Informe um raio maior que 0.', 'aviso'); return; }
+  e.preventDefault();
+  _pcPintando = true;
+  _pcBufferPintura = [];
+  _pcUltimoPontoPintura = null;
+  _pcAdicionarPontoPintura(e);
+}
+function _pcAdicionarPontoPintura(e){
+  const { x, y } = _pcCoordsDoEvento(e);
+  if(_pcUltimoPontoPintura){
+    const dx = x - _pcUltimoPontoPintura.x, dy = y - _pcUltimoPontoPintura.y;
+    if(Math.sqrt(dx*dx + dy*dy) < PC_PINTURA_ESPACAMENTO) return;
+  }
+  const { nome, raio } = _pcFormValores();
+  const ajuste = _pcAjusteAtual();
+  _pcBufferPintura.push({ nome: nome || null, x: +x.toFixed(2), y: +y.toFixed(2), ajuste, raio });
+  _pcUltimoPontoPintura = { x, y };
+  renderPontosOverlay(_pcBufferPintura); // pré-visualização, ainda sem salvar
+}
+document.addEventListener('mousemove', e => { if(_pcPintando) _pcAdicionarPontoPintura(e); });
+document.addEventListener('mouseup', () => {
+  if(!_pcPintando) return;
+  _pcPintando = false;
+  const pontos = _pcBufferPintura;
+  _pcBufferPintura = [];
+  _pcUltimoPontoPintura = null;
+  if(pontos.length) _pcSalvarPontos(pontos);
+});
+// Liga os handlers do mapa uma única vez.
+function initPcMapa(){
+  const img = document.getElementById('pc-mapa-img');
+  if(!img || img.dataset.pcBound) return;
+  img.dataset.pcBound = '1';
+  img.addEventListener('click', e => {
+    if(document.getElementById('pc-pintar-modo').checked) return; // pintura usa arrastar, não clique
+    _pcCliqueUnico(e);
+  });
+  img.addEventListener('mousedown', e => {
+    if(!document.getElementById('pc-pintar-modo').checked) return;
+    _pcIniciarPintura(e);
+  });
+}
+// Desenha os pontos climáticos salvos (e, opcionalmente, um buffer de
+// pré-visualização ainda não salvo — usado durante o arrastar do pincel)
+// por cima do mapa embutido. Usa tooltip (title) em vez de rótulo
+// flutuante pra não poluir o mapa quando há muitos pontos sobrepostos.
+function renderPontosOverlay(extraPontosPreview){
+  const wrap = document.getElementById('pc-mapa-overlay');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  const desenhar = (p, preview) => {
+    const frio = Number(p.ajuste) < 0;
+    const cor = frio ? '#3c7fa0' : '#c0472a';
+    const raio = Math.max(2, Number(p.raio) || 25);
+    const circulo = document.createElement('div');
+    circulo.style.position = 'absolute';
+    circulo.style.left = p.x + '%';
+    circulo.style.top = p.y + '%';
+    circulo.style.width = (raio * 2) + '%';
+    circulo.style.height = (raio * 2) + '%';
+    circulo.style.transform = 'translate(-50%,-50%)';
+    circulo.style.borderRadius = '50%';
+    circulo.style.border = `1.5px dashed ${cor}`;
+    circulo.style.background = `${cor}${preview ? '33' : '22'}`;
+    circulo.title = `${(p.nome || p.nota) ? (p.nome || p.nota) + ' — ' : ''}${frio ? '❄️' : '🔥'} ${p.ajuste > 0 ? '+' : ''}${p.ajuste}°C (raio ${p.raio}%)`;
+    wrap.appendChild(circulo);
+  };
+  PONTOS.forEach(p => desenhar(p, false));
+  (extraPontosPreview || []).forEach(p => desenhar(p, true));
 }
 function renderPontos(){
-  const tbody = document.getElementById('pc-tbody');
-  if(!PONTOS.length){ tbody.innerHTML = `<tr><td colspan="5" class="empty-row">Nenhuma zona marcada ainda.</td></tr>`; return; }
-  tbody.innerHTML = PONTOS.map(p => `
-    <tr>
-      <td>${p.x}, ${p.y}</td>
-      <td>${p.raio ?? 25}</td>
-      <td>${p.ajuste >= 0 ? '+' : ''}${p.ajuste}°C</td>
-      <td>${p.nota || '<span style="color:var(--muted)">—</span>'}</td>
-      <td class="row-actions">
-        <button class="btn btn-sm" onclick="editarPonto(${p.id})">Editar</button>
-        <button class="btn btn-sm btn-danger" onclick="excluirPonto(${p.id})">Excluir</button>
-      </td>
-    </tr>`).join('');
+  const wrap = document.getElementById('pc-lista');
+  if(!wrap) return;
+  if(!PONTOS.length){ wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Nenhuma zona marcada ainda.</div>'; return; }
+  wrap.innerHTML = PONTOS.map(p => {
+    const frio = Number(p.ajuste) < 0;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px">
+      <span>${frio ? '❄️' : '🔥'}</span>
+      <span style="flex:1">${p.nome || p.nota || (frio ? 'Zona fria' : 'Zona quente')} — ${p.ajuste > 0 ? '+' : ''}${p.ajuste}°C, raio ${p.raio}%</span>
+      <button class="btn btn-sm btn-danger" onclick="excluirPonto('${p.id}')">🗑️</button>
+    </div>`;
+  }).join('');
+}
+async function excluirPonto(id){
+  if(!confirm('Remover esta zona climática do mapa?')) return;
+  try{
+    await sbDel('map_climate_pontos', `id=eq.${id}`);
+    PONTOS = PONTOS.filter(p => String(p.id) !== String(id));
+    renderPontosOverlay();
+    renderPontos();
+  }catch(e){ alert('Não foi possível excluir: ' + e.message); }
 }
 
 /* ══════════════════════════════════════════════════════════════
