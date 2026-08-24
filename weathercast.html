@@ -824,9 +824,14 @@ function limiteDeLatitude(local, zona){
   if (pos == null) return null;
   const t = Math.max(0, Math.min(1, Number(pos) / 100)); // 0=norte, 1=sul
   const { norte, sul } = LIMITE_LATITUDE;
+  // Arredondado aqui na origem (não só no ponto de uso) — o teto/piso
+  // interpolado é quem "vence" o Math.max/Math.min quando a trava entra
+  // em ação, então se não arredondar aqui a temperatura final do dia sai
+  // com casas decimais (ex: 23.47) mesmo já tendo passado por
+  // Math.round(baseTemp + tempMod) antes da trava.
   return {
-    ceiling: norte.ceiling + (sul.ceiling - norte.ceiling) * t,
-    floor:   norte.floor   + (sul.floor   - norte.floor)   * t
+    ceiling: Math.round(norte.ceiling + (sul.ceiling - norte.ceiling) * t),
+    floor:   Math.round(norte.floor   + (sul.floor   - norte.floor)   * t)
   };
 }
 
@@ -1386,7 +1391,15 @@ function render(local){
     const d = new Date(hoje); d.setDate(d.getDate()+i);
     const dc = climaDoLocal(local, d);
     const nomeDia = i===0 ? 'Hoje' : DIAS[d.getDay()];
-    const hi = dc.temp + 2, lo = dc.temp - 4;
+    // Min/máx REAIS do dia: mesma fórmula usada na previsão hora a hora
+    // (climaNaHora), não um deslocamento fixo — assim o card lateral nunca
+    // contradiz o que as 24 horas do dia realmente mostram.
+    let hi = -Infinity, lo = Infinity;
+    for (let h=0; h<24; h++){
+      const ht = climaNaHora(local, d, h).temp;
+      if (ht > hi) hi = ht;
+      if (ht < lo) lo = ht;
+    }
     const todayCls = i===0 ? ' is-today' : '';
     fListHtml += `
       <div class="flrow${todayCls}">
