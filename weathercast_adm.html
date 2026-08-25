@@ -123,6 +123,21 @@
   <!-- PAINEL -->
   <div id="painel">
 
+    <!-- EXPLICAÇÃO -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🧾 Por que essa temperatura?</div>
+        <span class="badge" id="expl-momento">carregando…</span>
+      </div>
+      <div class="card-sub">
+        Passo a passo de como a temperatura atual de cada cidade foi composta — zona × estação, gradiente de
+        latitude, zonas climáticas marcadas no mapa, mistura com vizinhos e eventos forçados. Usa o mesmo motor
+        (<code>weathercast_calc.js</code>) que o WeatherCast público, então o que aparece aqui é exatamente o
+        que os jogadores veem agora.
+      </div>
+      <div id="expl-lista"></div>
+    </div>
+
     <!-- ESTAÇÃO -->
     <div class="card">
       <div class="card-head">
@@ -231,49 +246,40 @@
     </div>
 
 
-    <!-- ZONAS CLIMÁTICAS MARCADAS (migrado do mapa.html — clique/pinte direto no mapa) -->
+    <!-- PINS NORTE/SUL -->
     <div class="card">
       <div class="card-head">
-        <div class="card-title">🌡️ Zonas climáticas marcadas no mapa</div>
+        <div class="card-title">🧭 Pins Norte/Sul</div>
       </div>
       <div class="card-sub">
-        Configure o tipo/intensidade/raio abaixo e depois clique (ou arraste, com "🖌️ Pintar" ativado) direto no mapa.
-        Cada zona soma (ou subtrai) temperatura dos locais dentro do raio dela, além do gradiente linear de latitude —
-        ex: "nordeste mais frio".
+        Arraste os dois pins pra qualquer ponto do mapa. Cada local recebe um ajuste de temperatura interpolado
+        entre os dois, de acordo com o quão perto está de cada pin — perto do <b>pin_norte</b> puxa pro ajuste dele
+        (normalmente frio), perto do <b>pin_sul</b> puxa pro ajuste dele (normalmente quente). Vale pro mapa
+        inteiro, sem raio — soma-se ao gradiente de latitude, que continua funcionando à parte.
       </div>
-      <div class="field"><label>Nome da zona (opcional)</label><input type="text" id="pc-nome" placeholder="Ex: Nordeste gelado"></div>
       <div class="form-grid">
-        <div class="field"><label>Tipo</label>
-          <select id="pc-tipo">
-            <option value="frio">❄️ Mais frio</option>
-            <option value="quente">🔥 Mais quente</option>
-          </select>
-        </div>
-        <div class="field"><label>Intensidade (°C)</label><input type="number" id="pc-intensidade" value="4" min="0.5" max="10" step="0.5"></div>
-        <div class="field"><label>Raio (% do mapa)</label><input type="number" id="pc-raio" value="20" min="3" max="60" step="1"></div>
+        <div class="field"><label>❄️ Ajuste pin_norte (°C)</label><input type="number" id="pin-norte-ajuste" value="-6" step="0.5"></div>
+        <div class="field"><label>🔥 Ajuste pin_sul (°C)</label><input type="number" id="pin-sul-ajuste" value="4" step="0.5"></div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer">
-          <input type="checkbox" id="pc-pintar-modo" style="margin:0"> 🖌️ Pintar (arrastar no mapa em vez de clicar)
-        </label>
-        <span style="font-size:11px;color:var(--muted)">No modo pintura, use um raio menor (ex: 8–12) pra mais precisão.</span>
+      <div class="form-actions" style="margin-bottom:14px">
+        <button class="btn btn-primary btn-sm" onclick="salvarAjustesPins()">Salvar ajustes</button>
+        <span class="fb-ok" id="pin-fb-ok">✓ Salvo!</span>
+        <span class="hint" id="pin-status" style="margin:0"></span>
       </div>
-      <div id="pc-status" style="font-size:12px;padding:8px 12px;border-radius:8px;background:var(--panel-bg-soft);color:var(--muted);margin-bottom:12px;display:none"></div>
 
-      <!-- Mapa embutido: clique/arraste marca a zona direto aqui -->
-      <div id="pc-mapa-wrap" style="position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px;cursor:crosshair;line-height:0">
-        <img id="pc-mapa-img" src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
+      <!-- Mapa embutido: arraste os pins direto aqui -->
+      <div id="pin-mapa-wrap" style="position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);margin-bottom:8px;line-height:0">
+        <img id="pin-mapa-img" src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/mapa_nendo.png"
           alt="Mapa da Região Nendo" draggable="false" style="width:100%;display:block;user-select:none">
-        <div id="pc-mapa-overlay" style="position:absolute;inset:0;pointer-events:none"></div>
+        <div id="pin-mapa-overlay" style="position:absolute;inset:0"></div>
       </div>
-
-      <div class="card-title" style="font-size:13px;margin-bottom:8px">Zonas marcadas</div>
-      <div id="pc-lista"></div>
+      <div class="hint">Clique e arraste um pin pra reposicioná-lo — salva sozinho ao soltar.</div>
     </div>
 
   </div>
 </div>
 
+<script src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/weathercast_calc.js"></script>
 <script>
 /* ══════════════════════════════════════════════════════════════
    SUPABASE — dois projetos, igual ao weathercast.html:
@@ -409,14 +415,24 @@ async function carregarTudo(){
   renderEstacao();
   renderGradiente();
   renderEventos();
-  renderPontos();
-  renderPontosOverlay();
-  initPcMapa();
+  await initPinsMapa();
+
+  // Alimenta o motor de cálculo compartilhado (weathercast_calc.js) com
+  // os mesmos dados que o WeatherCast público usa, pra aba de explicação
+  // mostrar exatamente o que os jogadores veem.
+  WeathercastCalc.configurar({
+    locais: LOCAIS.filter(l => l.bioma_primario),
+    pinsClimaticos: PINS,
+    overrides: EVENTOS,
+    limiteLatitude: WEATHERCAST_CONFIG.limite_latitude || null,
+    estacaoAtiva: ESTACAO_REAL
+  });
+  renderExplicacao();
 }
 
 async function carregarLocais(){
   try{
-    const r = await fetch(`${SUPA_URL}/rest/v1/locais?select=id,nome,zona_climatica,bioma_primario&order=nome.asc`, { headers: SH });
+    const r = await fetch(`${SUPA_URL}/rest/v1/locais?select=id,nome,zona_climatica,bioma_primario,pos_x,pos_y&order=nome.asc`, { headers: SH });
     if(!r.ok) throw new Error(await r.text());
     LOCAIS = (await r.json()) || [];
   }catch(e){ console.warn('[weathercast_adm] não deu pra carregar locais:', e); LOCAIS = []; }
@@ -612,185 +628,151 @@ function renderEventos(){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   ZONAS CLIMÁTICAS MARCADAS (map_climate_pontos) — migrado do
-   mapa.html: em vez de digitar x/y na mão, clique (ou arraste, com
-   "🖌️ Pintar" ativado) direto na imagem do mapa abaixo. Sem "modo
-   edição" — só adicionar e excluir, igual ao mapa.html original.
+   PINS NORTE/SUL (map_climate_pontos) — substitui o antigo sistema
+   de "zonas climáticas marcadas". Reaproveita a mesma tabela, mas
+   agora só com duas linhas fixas, identificadas por nome
+   ('pin_norte' / 'pin_sul'). Arrastar no mapa move o pin (PATCH
+   x/y); o campo de ajuste (°C) é salvo à parte, sob demanda.
    ══════════════════════════════════════════════════════════════ */
-function _pcFormValores(){
-  return {
-    nome: document.getElementById('pc-nome').value.trim(),
-    tipo: document.getElementById('pc-tipo').value, // 'frio' | 'quente'
-    intensidade: parseFloat(document.getElementById('pc-intensidade').value),
-    raio: parseFloat(document.getElementById('pc-raio').value)
-  };
+let PINS = { norte: null, sul: null }; // {id,x,y,ajuste} cada, depois de carregarPontos()
+
+// Lê as duas linhas de PONTOS (já carregada por carregarPontos) e separa
+// em norte/sul pelo campo nome (com fallback pra 'nota', mesma incerteza
+// de coluna que o resto do arquivo já trata).
+function _pinsDoPontos(){
+  const acha = id => PONTOS.find(p => (p.nome || p.nota) === id);
+  return { norte: acha('pin_norte') || null, sul: acha('pin_sul') || null };
 }
-// Ajuste (°C, já com sinal) a partir do tipo+intensidade do formulário,
-// ou null se a intensidade não estiver preenchida corretamente.
-function _pcAjusteAtual(){
-  const { tipo, intensidade } = _pcFormValores();
-  if(!intensidade || intensidade <= 0) return null;
-  return tipo === 'frio' ? -Math.abs(intensidade) : Math.abs(intensidade);
+
+// Cria os pins com posição/ajuste default se ainda não existirem no banco
+// (primeira vez que essa aba é aberta no projeto).
+async function _pinsGarantirExistem(){
+  const { norte, sul } = _pinsDoPontos();
+  const faltando = [];
+  if (!norte) faltando.push({ nome: 'pin_norte', x: 50, y: 8,  ajuste: -6, raio: 100 });
+  if (!sul)   faltando.push({ nome: 'pin_sul',   x: 50, y: 92, ajuste: 4,  raio: 100 });
+  if (!faltando.length) return;
+  try{
+    const criados = await _pinsSalvarPontos(faltando, 'nome');
+    if (criados) PONTOS.push(...criados);
+  }catch(e){ console.warn('[weathercast_adm] não deu pra criar os pins padrão:', e); }
 }
-// Posição (%) do clique/arraste relativa à imagem do mapa embutido —
-// sem pan/zoom envolvido (diferente do mapa público), conta direta.
-function _pcCoordsDoEvento(e){
-  const img = document.getElementById('pc-mapa-img');
+
+// Mesma estratégia de fallback nome/nota do resto do arquivo, mas
+// retornando as linhas criadas em vez de mexer em PONTOS diretamente
+// (usado tanto na criação inicial quanto, no futuro, se precisar
+// recriar um pin apagado sem querer).
+async function _pinsSalvarPontos(payloads, campoNome){
+  const campo = campoNome || 'nome';
+  const corpo = payloads.map(p => { const { nome, ...resto } = p; return { ...resto, [campo]: nome }; });
+  try{
+    const rows = await sbPost('map_climate_pontos', corpo);
+    return (Array.isArray(rows) && rows.length) ? rows.map(r => ({ ...r, nome: r[campo] })) : payloads;
+  }catch(e){
+    const colunaFaltando = /column .*['"]?nome['"]?/i.test(e.message) || /could not find.*nome/i.test(e.message);
+    if (campo === 'nome' && colunaFaltando) return _pinsSalvarPontos(payloads, 'nota');
+    throw e;
+  }
+}
+
+function _pinStatus(msg, tipo){
+  const el = document.getElementById('pin-status');
+  if(!el) return;
+  el.style.color = tipo === 'erro' ? 'var(--danger)' : 'var(--muted)';
+  el.textContent = msg;
+}
+
+// Salva os dois valores de ajuste (°C) via PATCH — as posições x/y são
+// salvas à parte, sozinhas, no momento em que o pin é solto no mapa.
+async function salvarAjustesPins(){
+  const { norte, sul } = PINS;
+  if(!norte || !sul){ _pinStatus('Pins ainda carregando…', 'erro'); return; }
+  const ajusteNorte = parseFloat(document.getElementById('pin-norte-ajuste').value);
+  const ajusteSul = parseFloat(document.getElementById('pin-sul-ajuste').value);
+  if(Number.isNaN(ajusteNorte) || Number.isNaN(ajusteSul)){ _pinStatus('Informe os dois ajustes.', 'erro'); return; }
+  try{
+    await sbPatch('map_climate_pontos', `id=eq.${norte.id}`, { ajuste: ajusteNorte });
+    await sbPatch('map_climate_pontos', `id=eq.${sul.id}`, { ajuste: ajusteSul });
+    norte.ajuste = ajusteNorte; sul.ajuste = ajusteSul;
+    _atualizarPontosDePins();
+    fbOk('pin-fb-ok');
+    _pinStatus('');
+  }catch(e){ _pinStatus('Erro ao salvar: ' + e.message, 'erro'); }
+}
+
+// Mantém PONTOS (array cru vindo do Supabase) em sincronia com PINS
+// (referência norte/sul), pra próxima leitura de _pinsDoPontos bater.
+function _atualizarPontosDePins(){
+  const idx = id => PONTOS.findIndex(p => String(p.id) === String(id));
+  if(PINS.norte){ const i = idx(PINS.norte.id); if(i>=0) Object.assign(PONTOS[i], PINS.norte); }
+  if(PINS.sul){ const i = idx(PINS.sul.id); if(i>=0) Object.assign(PONTOS[i], PINS.sul); }
+}
+
+function _pinCoordsDoEvento(e){
+  const img = document.getElementById('pin-mapa-img');
   const rect = img.getBoundingClientRect();
   const x = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width  * 100));
   const y = Math.max(0, Math.min(100, (e.clientY - rect.top)  / rect.height * 100));
   return { x, y };
 }
-function _pcStatus(msg, tipo){
-  const status = document.getElementById('pc-status');
-  if(!status) return;
-  const cores = { ok: ['rgba(111,207,151,.14)', 'var(--ok)'], erro: ['var(--danger-soft)', 'var(--danger)'], aviso: ['var(--accent-soft)', 'var(--accent)'] };
-  const [bg, cor] = cores[tipo] || cores.aviso;
-  status.style.display = 'block';
-  status.style.background = bg; status.style.color = cor;
-  status.textContent = msg;
+
+let _pinArrastando = null; // 'norte' | 'sul' | null
+function _pinIniciarArrasto(qual){
+  return (e) => { e.preventDefault(); _pinArrastando = qual; };
 }
-// Salva um ou mais pontos climáticos de uma vez (bulk insert do Supabase
-// aceita array no body) e atualiza mapa/lista. O mapa.html original (de
-// onde essa feature veio) grava o rótulo na coluna `nome`, mas o form
-// antigo daqui usava `nota` — sem certeza de qual coluna existe de fato
-// na tabela, tenta `nome` primeiro e, se o Postgrest reclamar que a
-// coluna não existe, refaz a chamada trocando pra `nota` antes de
-// desistir e mostrar erro.
-async function _pcSalvarPontos(payloads, campoNome){
-  const campo = campoNome || 'nome';
-  const corpo = payloads.map(p => {
-    const { nome, ...resto } = p;
-    return { ...resto, [campo]: nome };
-  });
-  try{
-    const rows = await sbPost('map_climate_pontos', corpo);
-    const salvos = (Array.isArray(rows) && rows.length) ? rows.map(r => ({ ...r, nome: r[campo] })) : payloads;
-    PONTOS.push(...salvos);
-    renderPontosOverlay();
-    renderPontos();
-    _pcStatus(payloads.length > 1 ? `✓ ${payloads.length} pontos pintados!` : '✓ Zona climática marcada!', 'ok');
-  }catch(e){
-    const colunaFaltando = /column .*['"]?nome['"]?/i.test(e.message) || /could not find.*nome/i.test(e.message);
-    if(campo === 'nome' && colunaFaltando){
-      return _pcSalvarPontos(payloads, 'nota'); // tenta de novo com a coluna antiga
-    }
-    console.error('[weathercast_adm] salvar pontos climáticos:', e);
-    _pcStatus('Erro ao salvar: ' + e.message, 'erro');
-  }
-}
-// Clique único (fora do modo pintura): marca uma zona com o raio cheio
-// informado no formulário.
-function _pcCliqueUnico(e){
-  const ajuste = _pcAjusteAtual();
-  const { nome, raio } = _pcFormValores();
-  if(ajuste == null){ _pcStatus('Informe uma intensidade maior que 0.', 'aviso'); return; }
-  if(!raio || raio <= 0){ _pcStatus('Informe um raio maior que 0.', 'aviso'); return; }
-  const { x, y } = _pcCoordsDoEvento(e);
-  _pcSalvarPontos([{ nome: nome || null, x: +x.toFixed(2), y: +y.toFixed(2), ajuste, raio }]);
-}
-// ── Modo pintura: arrastar no mapa deposita vários pontos pequenos ao
-// longo do trajeto, que somados formam o "traço" da zona pintada. ──
-let _pcPintando = false;
-let _pcUltimoPontoPintura = null;
-let _pcBufferPintura = [];
-const PC_PINTURA_ESPACAMENTO = 6; // % do mapa entre pontos pintados consecutivos
-function _pcIniciarPintura(e){
-  const ajuste = _pcAjusteAtual();
-  const { raio } = _pcFormValores();
-  if(ajuste == null){ _pcStatus('Informe uma intensidade maior que 0.', 'aviso'); return; }
-  if(!raio || raio <= 0){ _pcStatus('Informe um raio maior que 0.', 'aviso'); return; }
-  e.preventDefault();
-  _pcPintando = true;
-  _pcBufferPintura = [];
-  _pcUltimoPontoPintura = null;
-  _pcAdicionarPontoPintura(e);
-}
-function _pcAdicionarPontoPintura(e){
-  const { x, y } = _pcCoordsDoEvento(e);
-  if(_pcUltimoPontoPintura){
-    const dx = x - _pcUltimoPontoPintura.x, dy = y - _pcUltimoPontoPintura.y;
-    if(Math.sqrt(dx*dx + dy*dy) < PC_PINTURA_ESPACAMENTO) return;
-  }
-  const { nome, raio } = _pcFormValores();
-  const ajuste = _pcAjusteAtual();
-  _pcBufferPintura.push({ nome: nome || null, x: +x.toFixed(2), y: +y.toFixed(2), ajuste, raio });
-  _pcUltimoPontoPintura = { x, y };
-  renderPontosOverlay(_pcBufferPintura); // pré-visualização, ainda sem salvar
-}
-document.addEventListener('mousemove', e => { if(_pcPintando) _pcAdicionarPontoPintura(e); });
-document.addEventListener('mouseup', () => {
-  if(!_pcPintando) return;
-  _pcPintando = false;
-  const pontos = _pcBufferPintura;
-  _pcBufferPintura = [];
-  _pcUltimoPontoPintura = null;
-  if(pontos.length) _pcSalvarPontos(pontos);
+document.addEventListener('mousemove', e => {
+  if(!_pinArrastando) return;
+  const { x, y } = _pinCoordsDoEvento(e);
+  const pin = PINS[_pinArrastando];
+  if(!pin) return;
+  pin.x = +x.toFixed(2); pin.y = +y.toFixed(2);
+  renderPinsOverlay();
 });
-// Liga os handlers do mapa uma única vez.
-function initPcMapa(){
-  const img = document.getElementById('pc-mapa-img');
-  if(!img || img.dataset.pcBound) return;
-  img.dataset.pcBound = '1';
-  img.addEventListener('click', e => {
-    if(document.getElementById('pc-pintar-modo').checked) return; // pintura usa arrastar, não clique
-    _pcCliqueUnico(e);
-  });
-  img.addEventListener('mousedown', e => {
-    if(!document.getElementById('pc-pintar-modo').checked) return;
-    _pcIniciarPintura(e);
-  });
-}
-// Desenha os pontos climáticos salvos (e, opcionalmente, um buffer de
-// pré-visualização ainda não salvo — usado durante o arrastar do pincel)
-// por cima do mapa embutido. Usa tooltip (title) em vez de rótulo
-// flutuante pra não poluir o mapa quando há muitos pontos sobrepostos.
-function renderPontosOverlay(extraPontosPreview){
-  const wrap = document.getElementById('pc-mapa-overlay');
+document.addEventListener('mouseup', async () => {
+  if(!_pinArrastando) return;
+  const qual = _pinArrastando;
+  _pinArrastando = null;
+  const pin = PINS[qual];
+  if(!pin) return;
+  try{
+    await sbPatch('map_climate_pontos', `id=eq.${pin.id}`, { x: pin.x, y: pin.y });
+    _atualizarPontosDePins();
+    _pinStatus(`✓ pin_${qual} reposicionado.`);
+  }catch(e){ _pinStatus('Erro ao salvar posição: ' + e.message, 'erro'); }
+});
+
+function renderPinsOverlay(){
+  const wrap = document.getElementById('pin-mapa-overlay');
   if(!wrap) return;
   wrap.innerHTML = '';
-  const desenhar = (p, preview) => {
-    const frio = Number(p.ajuste) < 0;
-    const cor = frio ? '#3c7fa0' : '#c0472a';
-    const raio = Math.max(2, Number(p.raio) || 25);
-    const circulo = document.createElement('div');
-    circulo.style.position = 'absolute';
-    circulo.style.left = p.x + '%';
-    circulo.style.top = p.y + '%';
-    circulo.style.width = (raio * 2) + '%';
-    circulo.style.height = (raio * 2) + '%';
-    circulo.style.transform = 'translate(-50%,-50%)';
-    circulo.style.borderRadius = '50%';
-    circulo.style.border = `1.5px dashed ${cor}`;
-    circulo.style.background = `${cor}${preview ? '33' : '22'}`;
-    circulo.title = `${(p.nome || p.nota) ? (p.nome || p.nota) + ' — ' : ''}${frio ? '❄️' : '🔥'} ${p.ajuste > 0 ? '+' : ''}${p.ajuste}°C (raio ${p.raio}%)`;
-    wrap.appendChild(circulo);
+  const desenhar = (pin, qual, emoji, cor) => {
+    if(!pin) return;
+    const marca = document.createElement('div');
+    marca.style.position = 'absolute';
+    marca.style.left = pin.x + '%';
+    marca.style.top = pin.y + '%';
+    marca.style.transform = 'translate(-50%,-100%)';
+    marca.style.fontSize = '28px';
+    marca.style.cursor = 'grab';
+    marca.style.filter = `drop-shadow(0 0 4px ${cor})`;
+    marca.style.userSelect = 'none';
+    marca.title = `pin_${qual} — arraste pra reposicionar`;
+    marca.textContent = emoji;
+    marca.addEventListener('mousedown', _pinIniciarArrasto(qual));
+    wrap.appendChild(marca);
   };
-  PONTOS.forEach(p => desenhar(p, false));
-  (extraPontosPreview || []).forEach(p => desenhar(p, true));
+  desenhar(PINS.norte, 'norte', '📍❄️', '#3c7fa0');
+  desenhar(PINS.sul, 'sul', '📍🔥', '#c0472a');
 }
-function renderPontos(){
-  const wrap = document.getElementById('pc-lista');
-  if(!wrap) return;
-  if(!PONTOS.length){ wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Nenhuma zona marcada ainda.</div>'; return; }
-  wrap.innerHTML = PONTOS.map(p => {
-    const frio = Number(p.ajuste) < 0;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px">
-      <span>${frio ? '❄️' : '🔥'}</span>
-      <span style="flex:1">${p.nome || p.nota || (frio ? 'Zona fria' : 'Zona quente')} — ${p.ajuste > 0 ? '+' : ''}${p.ajuste}°C, raio ${p.raio}%</span>
-      <button class="btn btn-sm btn-danger" onclick="excluirPonto('${p.id}')">🗑️</button>
-    </div>`;
-  }).join('');
+
+async function initPinsMapa(){
+  await _pinsGarantirExistem();
+  PINS = _pinsDoPontos();
+  if(PINS.norte) document.getElementById('pin-norte-ajuste').value = PINS.norte.ajuste;
+  if(PINS.sul) document.getElementById('pin-sul-ajuste').value = PINS.sul.ajuste;
+  renderPinsOverlay();
 }
-async function excluirPonto(id){
-  if(!confirm('Remover esta zona climática do mapa?')) return;
-  try{
-    await sbDel('map_climate_pontos', `id=eq.${id}`);
-    PONTOS = PONTOS.filter(p => String(p.id) !== String(id));
-    renderPontosOverlay();
-    renderPontos();
-  }catch(e){ alert('Não foi possível excluir: ' + e.message); }
-}
+
 
 /* ══════════════════════════════════════════════════════════════
    HELPERS
@@ -800,6 +782,40 @@ function fbOk(id){
   el.style.display = 'inline';
   clearTimeout(el._t);
   el._t = setTimeout(() => { el.style.display = 'none'; }, 2200);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EXPLICAÇÃO — por que essa temperatura (usa o weathercast_calc.js)
+   ══════════════════════════════════════════════════════════════ */
+function renderExplicacao(){
+  const badge = document.getElementById('expl-momento');
+  const alvo = document.getElementById('expl-lista');
+  const locais = WeathercastCalc.LOCAIS;
+
+  const agora = new Date();
+  const hora = agora.getHours();
+  if (badge) badge.textContent = `agora, ${String(hora).padStart(2,'0')}h`;
+
+  if (!locais.length){
+    alvo.innerHTML = `<div class="empty-row">Nenhum local com bioma cadastrado ainda.</div>`;
+    return;
+  }
+
+  const explicacoes = locais
+    .map(l => WeathercastCalc.explicarLocal(l, agora, hora))
+    .sort((a,b) => a.local.localeCompare(b.local));
+
+  alvo.innerHTML = explicacoes.map(ex => `
+    <details style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:8px;">
+      <summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;list-style:none;">
+        <span style="font-weight:700;">${ex.local}</span>
+        <span style="font-family:'IBM Plex Mono',monospace;color:var(--accent);">${ex.temperaturaFinal}°C</span>
+      </summary>
+      <ol style="margin:10px 0 2px;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.6;">
+        ${ex.passos.map(p => `<li><b style="color:var(--text);">${p.etapa}:</b> ${p.detalhe}</li>`).join('')}
+      </ol>
+    </details>
+  `).join('');
 }
 
 /* ══════════════════════════════════════════════════════════════
