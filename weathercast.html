@@ -510,6 +510,54 @@
     </div>
   </div>
 
+  <div class="source-note">
+    <h3>De onde vêm estes dados</h3>
+    <p>
+      A lista de locais vem direto da tabela <code>locais</code> do seu Supabase — a mesma que você cadastra no
+      <b>datadex_adm</b>. Cada local tem uma <b>zona climática</b> (Tropical, Temperada, Fria, Polar, Desértica,
+      Oceânica, Subterrânea ou Vulcânica) que, cruzada com a <b>estação ativa do RPG</b> (a mesma definida em
+      ADM → Estação, que muda todo mês seguindo o calendário do jogo), define a faixa real de temperatura,
+      umidade e vento daquele ponto do mapa. Locais antigos sem zona cadastrada usam uma zona inferida do bioma
+      primário, então nada quebra.
+    </p>
+    <p>
+      Locais com <b>posição fixa</b> cadastrada (a mesma posição do pin no mapa) têm o clima aproximado com o dos
+      seus vizinhos mais próximos — assim um local coladinho numa cidade tem leituras parecidas com as dela, em
+      vez de saltar de zona pra zona sem transição. Locais sem posição cadastrada usam só a própria zona/estação.
+    </p>
+    <p>
+      Além disso, <b>zonas marcadas à mão</b> em ADM → Mapa → 🌡️ Clima (ex: "nordeste mais frio") deslocam um
+      pouco a temperatura da zona, cada uma com sua intensidade e raio de influência — a zona climática
+      cadastrada continua decidindo a faixa e as condições (chuva, neve etc.); zonas cujo calor não vem da
+      superfície (Vulcânica, Subterrânea) ficam de fora disso.
+    </p>
+    <p>
+      Por cima de tudo isso existe uma <b>trava por latitude</b>: não importa o que a zona, o evento forçado
+      ou a mistura com vizinhos calculem, a temperatura final nunca ultrapassa o teto/piso definido pra aquela
+      posição norte/sul do mapa — garante que o norte de Nendo nunca saia "mais quente" que o sul por engano
+      de cadastro, por exemplo.
+    </p>
+    <p>
+      O clima do dia continua sendo <b>determinístico</b>: calculado a partir de um hash de
+      <code>nome do local + data</code>, então todo mundo vê a mesma condição no mesmo dia sem precisar salvar nada
+      em banco. A faixa horária e a previsão de 11 dias são a mesma função rodada pra horas/dias diferentes.
+    </p>
+    <p>
+      Os perfis por zona×estação (faixas de temperatura, condições, ícones) e o catálogo de condições
+      (nome/flavor por ícone) moram no <code>weathercast_calc.js</code> — motor compartilhado com o
+      <code>weathercast_adm.html</code>, que também tem uma aba explicando o cálculo de cada cidade.
+      Cadastre a zona climática e a posição fixa de cada local no datadex_adm pra essa tela ficar completa.
+      Os ícones vêm do pacote <code>meteocons</code> (estilo "fill"), embutidos direto no <code>&lt;script&gt;</code> como SVG.
+    </p>
+    <p>
+      <b>Eventos climáticos forçados</b> (ex: nevar por alguns dias numa zona) são
+      controlados no <a href="weathercast_adm.html" style="color:#b8791f;font-weight:700">weathercast_adm</a> — quando
+      ativos, os eventos têm prioridade sobre o sorteio automático, inclusive sobre a trava de latitude quando o
+      evento define sua própria faixa de temperatura. A estação usada aqui é sempre a mesma ativa no
+      index (<code>config.estacao_ativa</code>), sem exceção.
+    </p>
+  </div>
+
 </div>
 
 <script src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/weathercast_calc.js"></script>
@@ -1067,6 +1115,13 @@ async function boot(){
   if (!IS_ADMIN){
     const note = document.querySelector('.source-note');
     if (note) note.style.display = 'none';
+  }
+  if (typeof WeathercastCalc === 'undefined'){
+    document.getElementById('city-grid').innerHTML = `<div class="empty-state">
+      Não consegui carregar o motor de clima (weathercast_calc.js, hospedado no GitHub).<br>
+      Confira se o arquivo foi commitado no repositório e se a URL raw abre direto no navegador.
+    </div>`;
+    return;
   }
   try {
     const [rows, siglas, , pinsClimaticos] = await Promise.all([
