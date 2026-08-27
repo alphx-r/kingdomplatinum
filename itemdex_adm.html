@@ -715,7 +715,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <input class="sinput" id="it-search" placeholder="Buscar item…" oninput="filterIt()">
         </div>
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
-        <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado agora, sem esperar o cron diário">📤 Atualizar items.json</button>
+        <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1370,12 +1370,16 @@ function closeNewItemForm() {
   document.getElementById('it-browse-area').style.display = '';
 }
 
-// Gera o items.json (mesmo formato usado pelo fallback do ItemDex) e baixa
-// pro computador. Não commitamos direto no GitHub por aqui — por segurança,
-// esse painel nunca guarda token do GitHub no cliente (já vazou um antes).
-// Fluxo: baixa o arquivo, depois só arrastar pra raiz do repo
-// alphx-r/kingdomplatinum e commitar (mesmo lugar do pokemon.json).
+// Gera o items.json (mesmo formato usado pelo fallback do ItemDex) e manda
+// pra rota serverless /api/commit-items, que commita direto na raiz do repo
+// alphx-r/kingdomplatinum (mesmo lugar do pokemon.json). O token do GitHub
+// nunca passa pelo cliente — fica só como env var (GITHUB_TOKEN) na Vercel,
+// lido pela function em /api/commit-items.js (evita repetir o vazamento
+// de token que já aconteceu quando isso rodava no navegador).
 async function backupItemsNow() {
+  const btn = document.getElementById('it-backup-btn');
+  const origLabel = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
   try {
     const data = S.it.all.map(it => ({
       name: it.name,
@@ -1385,14 +1389,20 @@ async function backupItemsNow() {
       flags: it.flags || {},
       price: it.price ?? null,
     }));
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'items.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-    toast(`📤 items.json gerado (${data.length} itens). Suba pra raiz do repo alphx-r/kingdomplatinum.`, 'ok');
-  } catch (e) { toast('Erro ao gerar items.json: ' + e.message, 'err'); }
+    const res = await fetch('/api/commit-items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: data }),
+    });
+    let result = {};
+    try { result = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+    toast(`✅ items.json commitado no GitHub (${data.length} itens).`, 'ok');
+  } catch (e) {
+    toast('Erro ao commitar items.json: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
 }
 
 function handleNewItemIconFile(inputEl) {
