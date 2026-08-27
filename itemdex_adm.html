@@ -1504,6 +1504,26 @@ async function fetchNewItemIconFromPokeapi() {
   }
 }
 
+// Lê um Blob como dataURL e valida que é uma imagem de verdade tentando
+// decodificá-la (em vez de confiar no header Content-Type da resposta —
+// muitos servidores/CDNs com proteção contra hotlink respondem com um
+// Content-Type genérico ou ausente mesmo quando a imagem é válida, o que
+// gerava falso positivo de "não parece ser uma imagem").
+function readBlobAsValidImageDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const img = new Image();
+      img.onload = () => resolve(dataUrl);
+      img.onerror = () => reject(new Error('o arquivo baixado não é uma imagem válida'));
+      img.src = dataUrl;
+    };
+    reader.onerror = () => reject(new Error('erro ao ler a imagem baixada'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 // Busca uma imagem a partir de uma URL colada pelo usuário pra usar no
 // formulário de NOVO item — mesma ideia do fetchNewItemIconFromPokeapi, mas
 // com a URL vindo direto do campo em vez de montada a partir de um slug.
@@ -1521,19 +1541,13 @@ async function fetchNewItemIconFromUrl() {
     const imgRes = await fetch(url);
     if (!imgRes.ok) throw new Error(`não consegui baixar a imagem (erro ${imgRes.status})`);
     const blob = await imgRes.blob();
-    if (!blob.type || !blob.type.startsWith('image/')) throw new Error('essa URL não parece ser uma imagem');
-    const reader = new FileReader();
-    reader.onload = async () => {
-      let out = reader.result;
-      try { out = await trimAndFitSprite(out, 512); } catch (e) {}
-      const prev = document.getElementById('nit-icon-preview');
-      const ph = document.getElementById('nit-icon-placeholder');
-      prev.src = out; prev.style.display = ''; prev.dataset.b64 = out;
-      ph.style.display = 'none';
-      toast('🖼️ Ícone baixado da URL!', 'ok');
-    };
-    reader.onerror = () => toast('Erro ao ler a imagem baixada.', 'err');
-    reader.readAsDataURL(blob);
+    let out = await readBlobAsValidImageDataUrl(blob);
+    try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+    const prev = document.getElementById('nit-icon-preview');
+    const ph = document.getElementById('nit-icon-placeholder');
+    prev.src = out; prev.style.display = ''; prev.dataset.b64 = out;
+    ph.style.display = 'none';
+    toast('🖼️ Ícone baixado da URL!', 'ok');
   } catch (e) {
     toast('Erro ao buscar imagem: ' + e.message + ' (pode ser bloqueio de CORS — nesse caso, baixe a imagem no seu computador e envie pelo botão "Enviar")', 'err');
   } finally {
@@ -1584,7 +1598,7 @@ async function fetchItemIconFromUrl(name, domSlug) {
     const imgRes = await fetch(url);
     if (!imgRes.ok) throw new Error(`não consegui baixar a imagem (erro ${imgRes.status})`);
     const blob = await imgRes.blob();
-    if (!blob.type || !blob.type.startsWith('image/')) throw new Error('essa URL não parece ser uma imagem');
+    await readBlobAsValidImageDataUrl(blob); // só valida que decodifica; upload usa o blob original
     const slugInput = document.getElementById(`it-icon-slug-${domSlug}`);
     await uploadItemIconFile(name, slugInput?.value || '', blob);
     if (urlInput) urlInput.value = '';
