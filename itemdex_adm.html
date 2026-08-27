@@ -618,7 +618,19 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
   </div>
 </nav>
 
-<div class="wrap">
+<!-- GATE — bloqueia o painel até confirmar sessão de admin válida -->
+<div id="adm-gate-checking" style="max-width:380px;margin:80px auto;text-align:center;color:var(--muted);font-size:13px">
+  Verificando sessão…
+</div>
+
+<div id="adm-gate-locked" style="display:none;max-width:380px;margin:60px auto;text-align:center;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:32px 28px">
+  <div style="width:56px;height:56px;background:var(--brand-light);border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:26px">🔒</div>
+  <div style="font-family:var(--font-title);font-size:18px;color:var(--brand);margin-bottom:4px">Acesso restrito</div>
+  <div style="font-size:13px;color:var(--muted);margin-bottom:22px">Esta área é só para administradores do Kingdom Platinum. Faça login para continuar.</div>
+  <a class="btn btn-primary" href="https://kingdomplatinum.vercel.app" style="display:inline-flex;text-decoration:none">🔑 Fazer login</a>
+</div>
+
+<div class="wrap" id="adm-gate-content" style="display:none">
 
   <div class="adm-header">
     <div>
@@ -722,6 +734,63 @@ const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
 
 const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
+
+/* ══════════════════════════════════════════
+   AUTENTICAÇÃO ADM — mesma sessão do index.html (kingdomplatinum.vercel.app)
+   O login em si acontece só no index.html (RPC admin_login, projeto
+   ucbkodkjlbatttiuqjtv); aqui só LEMOS a sessão salva em localStorage
+   ('adm_session', compartilhado por domínio) e revalidamos contra o banco
+   via admin_list — nunca confiamos só no localStorage, senão bastaria editar
+   o localStorage manualmente pra "logar". Se não houver sessão válida, o
+   painel inteiro fica escondido atrás de uma tela de bloqueio.
+══════════════════════════════════════════ */
+const AUTH_SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const AUTH_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+
+async function authDbRpc(fn, args = {}) {
+  const res = await fetch(`${AUTH_SUPA_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'apikey': AUTH_SUPA_KEY, 'Authorization': 'Bearer ' + AUTH_SUPA_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args)
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) {}
+  if (!res.ok) throw new Error(data?.message || data?.hint || `Erro ${res.status}`);
+  return data;
+}
+
+// Confirma se existe uma sessão de admin válida (mesmo formato salvo pelo
+// index.html: localStorage 'adm_session' = {email}) e se esse admin ainda
+// existe/é válido no banco agora — igual restaurarSessaoAdm() no index.html.
+async function checkAdmSession() {
+  try {
+    const saved = localStorage.getItem('adm_session');
+    if (!saved) return false;
+    const sess = JSON.parse(saved);
+    if (!sess?.email) return false;
+    const lista = await authDbRpc('admin_list', {});
+    const match = (lista || []).find(a => a.nome === sess.email);
+    if (!match) { localStorage.removeItem('adm_session'); return false; }
+    return true;
+  } catch (e) {
+    console.error('[checkAdmSession]', e);
+    return false;
+  }
+}
+
+// Roda antes de qualquer coisa: mostra o painel só se a sessão for válida,
+// senão mostra a tela de bloqueio com link pra fazer login no index.html.
+async function gateAdmAccess() {
+  const ok = await checkAdmSession();
+  document.getElementById('adm-gate-checking').style.display = 'none';
+  if (ok) {
+    document.getElementById('adm-gate-content').style.display = '';
+    initItemdexAdm();
+  } else {
+    document.getElementById('adm-gate-locked').style.display = '';
+  }
+}
 
 /* ══════════════════════════════════════════
    SUPABASE HELPERS
@@ -958,7 +1027,7 @@ async function uploadImgStorage(b64, bucket, path) {
 /* ══════════════════════════════════════════
    ██ ITEMS
 ══════════════════════════════════════════ */
-const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items'];
+const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items'];
 
 // Monta as <option> do select de categoria. Se o item já tiver uma categoria
 // "legada" que não está na lista fixa, ela entra como opção extra pra não
@@ -981,8 +1050,81 @@ async function loadItems() {
     S.it.filtered = items;
     populateItemCategoryFilter();
     applyItFilter();
+    // Dispara em background, sem await: itens sem sprite tentam se
+    // auto-resolver na PokeAPI enquanto o usuário já pode usar a tela.
+    autoFetchMissingItemSprites();
   } catch (e) {
     document.getElementById('it-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar itens</div></div>`;
+  }
+}
+
+// Converte um Blob em data URL (base64), pra reaproveitar o mesmo pipeline
+// de trimAndFitSprite/uploadImgStorage usado nos fluxos manuais de ícone.
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Erro ao ler blob.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Varredura silenciosa em background: pra cada item sem sprite, deriva o
+// slug do nome (toSlugBase — "Great Ball" -> "great-ball") e tenta achar
+// o ícone oficial na PokeAPI. Se achar, sobe pro Storage e atualiza o
+// registro — sem toast, sem travar a UI, sem assumir que o card do item
+// já está aberto/renderizado (diferente de uploadItemIconFile, que conta
+// com isso). Roda uma vez ao fim de loadItems(), com um limite pequeno de
+// concorrência pra não disparar dezenas de requisições simultâneas contra
+// a PokeAPI de uma vez.
+async function autoFetchMissingItemSprites() {
+  const pending = S.it.all.filter(it => !it.sprite);
+  if (!pending.length) return;
+  const CONCURRENCY = 4;
+  let idx = 0;
+  async function worker() {
+    while (idx < pending.length) {
+      const it = pending[idx++];
+      await tryAutoFetchOneSprite(it);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker));
+}
+
+async function tryAutoFetchOneSprite(it) {
+  const slug = toSlugBase(it.name);
+  if (!slug) return;
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/item/${slug}`);
+    if (!res.ok) return; // não achou na PokeAPI com esse slug — ignora silenciosamente
+    const data = await res.json();
+    const spriteUrl = data.sprites?.default;
+    if (!spriteUrl) return;
+    const imgRes = await fetch(spriteUrl);
+    if (!imgRes.ok) return;
+    const blob = await imgRes.blob();
+    let out = await blobToDataURL(blob);
+    try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+    const sprite = await uploadImgStorage(out, 'pokemons', `items/${slug}.png`) + '?t=' + Date.now();
+    const existing = S.it.dbMap[it.name] || { name: it.name };
+    const row = { ...existing, name: it.name, sprite, updated_at: new Date().toISOString() };
+    await sbUpsert('items', row);
+    S.it.dbMap[it.name] = row;
+    const arrIdx = S.it.all.findIndex(i => i.name === it.name);
+    if (arrIdx >= 0) S.it.all[arrIdx] = row;
+
+    // Atualiza só os elementos já renderizados, sem re-render da lista
+    // inteira (isso fecharia qualquer card que o usuário tenha aberto).
+    const domSlug = toSlugBase(it.name) || it.name;
+    const headIconSpan = document.querySelector(`#it-entry-${domSlug} .entry-head > span:first-child`);
+    if (headIconSpan) headIconSpan.innerHTML = `<img src="${sprite}" style="width:32px;height:32px;object-fit:contain" alt="">`;
+    const prev = document.getElementById(`it-icon-preview-${domSlug}`);
+    const ph = document.getElementById(`it-icon-placeholder-${domSlug}`);
+    if (prev) { prev.src = sprite; prev.style.display = ''; }
+    if (ph) ph.style.display = 'none';
+  } catch (e) {
+    // Falha isolada (rede, upload, etc.) não deve travar a varredura dos
+    // outros itens — ignora e segue pro próximo.
   }
 }
 
@@ -1434,7 +1576,10 @@ async function saveNewItem() {
 /* ══════════════════════════════════════════
    INIT
 ══════════════════════════════════════════ */
-loadItems();
+function initItemdexAdm() {
+  loadItems();
+}
+gateAdmAccess();
 </script>
 </body>
 </html>
