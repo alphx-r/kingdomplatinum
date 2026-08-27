@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ADM — ItemDex Kingdom Platinum</title>
+<title>ItemDex - ADM | Kingdom Platinum</title>
     <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -117,6 +117,11 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .pk-card-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;letter-spacing:.2px;text-transform:uppercase}
 
 .entry-list{display:flex;flex-direction:column;gap:6px}
+#it-list{display:flex;flex-direction:column;gap:22px}
+.it-cat-group{display:flex;flex-direction:column;gap:8px}
+.it-cat-hdr{display:flex;align-items:center;gap:8px;font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--brand);letter-spacing:.5px;text-transform:uppercase;padding-bottom:6px;border-bottom:2px solid var(--border)}
+.it-cat-count{background:var(--brand-light);color:var(--brand-mid);font-size:10px;font-weight:800;padding:2px 9px;border-radius:10px;letter-spacing:.2px}
+.it-cat-items{display:flex;flex-direction:column;gap:8px}
 .entry{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;transition:border-color .2s;animation:fadeUp .2s both}
 .entry:hover{border-color:var(--border2)}
 .entry.approved{border-color:#80dfc0}
@@ -664,6 +669,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
               <input class="mv-meta-input" id="nit-icon-slug" type="text" placeholder="slug do ícone" style="width:100px;font-size:11px;text-align:center" title="Opcional: nome do arquivo no storage/slug PokeAPI. Se vazio, usa o slug do nome do item.">
               <button type="button" id="nit-icon-pokeapi-btn" class="btn btn-outline btn-sm" style="padding:4px 6px" onclick="fetchNewItemIconFromPokeapi()" title="Puxar ícone da PokeAPI usando este slug">🌐</button>
             </div>
+            <div style="display:flex;gap:4px;margin-top:4px;align-items:center">
+              <input class="mv-meta-input" id="nit-icon-url" type="text" placeholder="URL da imagem" style="width:100px;font-size:11px;text-align:center" title="Cole a URL de uma imagem pra usar como ícone">
+              <button type="button" id="nit-icon-url-btn" class="btn btn-outline btn-sm" style="padding:4px 6px" onclick="fetchNewItemIconFromUrl()" title="Buscar ícone a partir de uma URL">🔗</button>
+            </div>
           </div>
           <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <div>
@@ -1151,6 +1160,16 @@ function applyItFilter() {
   renderItemsList();
 }
 
+// Ordem fixa das categorias conhecidas (mesma do <select> de categoria);
+// "Sem categoria" sempre por último, categorias avulsas (customizadas) ficam
+// entre as fixas e "Sem categoria", em ordem alfabética.
+const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items'];
+function itCatSortKey(cat) {
+  if (cat === 'Sem categoria') return [2, cat];
+  const i = IT_CAT_ORDER.indexOf(cat);
+  return i === -1 ? [1, cat] : [0, i];
+}
+
 function renderItemsList() {
   const con = document.getElementById('it-list');
   const items = S.it.filtered;
@@ -1162,16 +1181,33 @@ function renderItemsList() {
       : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum item no banco ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "＋ Novo Item" acima pra criar o primeiro.</div></div>`;
     return;
   }
-  con.innerHTML = items.map((it, i) => {
-    const slug = toSlugBase(it.name) || ('item-' + i);
-    const iconHtml = it.sprite
-      ? `<img src="${it.sprite}" style="width:32px;height:32px;object-fit:contain" alt="">`
-      : `<span style="font-size:18px">🎒</span>`;
-    return `<div class="entry" id="it-entry-${slug}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
+  // Agrupa por categoria — cada categoria vira sua própria seção, em vez de
+  // uma lista alfabética única misturando tudo.
+  const groups = {};
+  items.forEach(it => {
+    const cat = it.category || 'Sem categoria';
+    (groups[cat] = groups[cat] || []).push(it);
+  });
+  const catNames = Object.keys(groups).sort((a, b) => {
+    const ka = itCatSortKey(a), kb = itCatSortKey(b);
+    return ka[0] - kb[0] || (typeof ka[1] === 'number' ? ka[1] - kb[1] : String(ka[1]).localeCompare(String(kb[1])));
+  });
+  con.innerHTML = catNames.map(cat => `
+    <div class="it-cat-group">
+      <div class="it-cat-hdr">${cat}<span class="it-cat-count">${groups[cat].length}</span></div>
+      <div class="it-cat-items">${groups[cat].map((it, i) => renderItemEntry(it, i)).join('')}</div>
+    </div>`).join('');
+}
+
+function renderItemEntry(it, i) {
+  const slug = toSlugBase(it.name) || ('item-' + i);
+  const iconHtml = it.sprite
+    ? `<img src="${it.sprite}" style="width:32px;height:32px;object-fit:contain" alt="">`
+    : `<span style="font-size:18px">🎒</span>`;
+  return `<div class="entry" id="it-entry-${slug}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="toggleEntry('it-entry-${slug}')">
         <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0">${iconHtml}</span>
         <span class="entry-name">${it.name}</span>
-        <span class="badge badge-pt">${it.category || 'Sem categoria'}</span>
         ${it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>' : ''}
         ${it.flags?.pokemart?.enabled ? `<span title="PokéMart${it.price != null ? ' — ₽ ' + it.price : ''}">🛒${it.price != null ? ' ' + it.price : ''}</span>` : ''}
         ${it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : ''}
@@ -1179,8 +1215,8 @@ function renderItemsList() {
       </div>
       <div class="entry-body">
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px">
-          <div style="flex-shrink:0;text-align:center;width:76px">
-            <div id="it-icon-drop-${slug}" class="it-icon-drop" style="position:relative;width:76px;height:76px;border-radius:10px;background:var(--surface2);border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:border-color .15s,background .15s"
+          <div style="flex-shrink:0;text-align:center;width:150px">
+            <div id="it-icon-drop-${slug}" class="it-icon-drop" style="position:relative;width:76px;height:76px;margin:0 auto;border-radius:10px;background:var(--surface2);border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:border-color .15s,background .15s"
                  onclick="document.getElementById('it-icon-file-${slug}').click()"
                  ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='var(--accent-light)'"
                  ondragleave="this.style.borderColor='var(--border2)';this.style.background='var(--surface2)'"
@@ -1189,7 +1225,15 @@ function renderItemsList() {
               <span id="it-icon-placeholder-${slug}" style="font-size:26px;${it.sprite ? 'display:none' : ''}">🎒</span>
               <input type="file" id="it-icon-file-${slug}" accept="image/*" style="display:none" onchange="handleItemIconFileBySlug('${jsEsc(it.name)}',document.getElementById('it-icon-slug-${slug}').value,this)">
             </div>
-            <div style="font-size:9.5px;color:var(--muted);margin-top:4px;line-height:1.3">clique ou<br>arraste</div>
+            <div style="font-size:9.5px;color:var(--muted);margin:4px 0 8px;line-height:1.3">clique ou arraste</div>
+            <div style="display:flex;gap:4px;align-items:center">
+              <input class="mv-meta-input" id="it-icon-slug-${slug}" type="text" value="${toSlugBase(it.name) || ''}" placeholder="slug PokeAPI" style="flex:1;font-size:11px;padding:5px 6px" title="Slug do item na PokeAPI (ex: premier-ball)">
+              <button type="button" id="it-icon-pokeapi-btn-${slug}" class="btn btn-outline btn-xs" style="padding:5px 7px" onclick="fetchItemIconFromPokeapi('${jsEsc(it.name)}','${slug}')" title="Puxar ícone da PokeAPI a partir do slug">🌐</button>
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
+              <input class="mv-meta-input" id="it-icon-url-${slug}" type="text" placeholder="URL da imagem" style="flex:1;font-size:11px;padding:5px 6px" title="Cole a URL de uma imagem pra usar como ícone">
+              <button type="button" id="it-icon-url-btn-${slug}" class="btn btn-outline btn-xs" style="padding:5px 7px" onclick="fetchItemIconFromUrl('${jsEsc(it.name)}','${slug}')" title="Buscar ícone a partir de uma URL">🔗</button>
+            </div>
           </div>
           <div style="flex:1">
             <div class="field-row" style="margin-bottom:10px">
@@ -1217,14 +1261,6 @@ function renderItemsList() {
             </div>
           </div>
         </div>
-        <div style="margin-bottom:10px">
-          <div class="field-lbl pt" style="margin-bottom:4px">Slug do item na PokeAPI</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input class="mv-meta-input" id="it-icon-slug-${slug}" type="text" value="${toSlugBase(it.name) || ''}" placeholder="ex: premier-ball" style="max-width:200px">
-            <button type="button" id="it-icon-pokeapi-btn-${slug}" class="btn btn-outline btn-sm" onclick="fetchItemIconFromPokeapi('${jsEsc(it.name)}','${slug}')" title="Puxar ícone da PokeAPI">🌐</button>
-          </div>
-          <div style="font-size:10.5px;color:var(--muted);margin-top:3px">Busca o ícone oficial na PokeAPI a partir deste slug e salva no storage. Pra um ícone customizado (item fanmade), clique ou arraste na área ao lado ⬆️.</div>
-        </div>
         <div class="entry-foot">
           <span class="save-ind" id="it-ind-${slug}">✓ Salvo!</span>
           <button class="btn btn-success btn-sm" onclick="saveItem('${jsEsc(it.name)}')">💾 Salvar</button>
@@ -1232,7 +1268,6 @@ function renderItemsList() {
         </div>
       </div>
     </div>`;
-  }).join('');
 }
 
 // Atualiza só as chaves "enabled" de pokemart/pickup dentro do jsonb "flags",
@@ -1321,18 +1356,24 @@ async function saveItem(name) {
     S.it.dbMap[name] = row;
     const idx = S.it.all.findIndex(i => i.name === name);
     if (idx >= 0) S.it.all[idx] = row;
+    const categoryChanged = (existing.category || null) !== category;
+    if (categoryChanged) {
+      // A categoria mudou o grupo do item — reconstrói a lista (pra ele
+      // aparecer na seção certa) e reabre o mesmo card em seguida.
+      applyItFilter();
+      document.getElementById('it-entry-' + slug)?.classList.add('open');
+    } else {
+      const entry = document.getElementById('it-entry-' + slug);
+      if (entry) {
+        entry.querySelectorAll('.entry-head span[title^="PokéMart"], .entry-head span[title="Pickup"], .entry-head span[title="Consumível"]').forEach(el => el.remove());
+        const chev = entry.querySelector('.entry-head .chev');
+        if (consumivelOn) chev?.insertAdjacentHTML('beforebegin', '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>');
+        if (pokemartOn) chev?.insertAdjacentHTML('beforebegin', `<span title="PokéMart${price != null ? ' — ₽ ' + price : ''}">🛒${price != null ? ' ' + price : ''}</span>`);
+        if (pickupOn) chev?.insertAdjacentHTML('beforebegin', '<span title="Pickup">🔍</span>');
+      }
+    }
     const ind = document.getElementById('it-ind-' + slug);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
-    const entry = document.getElementById('it-entry-' + slug);
-    if (entry) {
-      const catBadge = entry.querySelector('.entry-head .badge');
-      if (catBadge) catBadge.textContent = category || 'Sem categoria';
-      entry.querySelectorAll('.entry-head span[title^="PokéMart"], .entry-head span[title="Pickup"], .entry-head span[title="Consumível"]').forEach(el => el.remove());
-      const chev = entry.querySelector('.entry-head .chev');
-      if (consumivelOn) chev?.insertAdjacentHTML('beforebegin', '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONSUMÍVEL</span>');
-      if (pokemartOn) chev?.insertAdjacentHTML('beforebegin', `<span title="PokéMart${price != null ? ' — ₽ ' + price : ''}">🛒${price != null ? ' ' + price : ''}</span>`);
-      if (pickupOn) chev?.insertAdjacentHTML('beforebegin', '<span title="Pickup">🔍</span>');
-    }
     populateItemCategoryFilter();
     toast('💾 Item salvo!', 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
@@ -1463,6 +1504,43 @@ async function fetchNewItemIconFromPokeapi() {
   }
 }
 
+// Busca uma imagem a partir de uma URL colada pelo usuário pra usar no
+// formulário de NOVO item — mesma ideia do fetchNewItemIconFromPokeapi, mas
+// com a URL vindo direto do campo em vez de montada a partir de um slug.
+// Passa pelo trimAndFitSprite igual aos outros fluxos, garantindo que o
+// sprite final siga sempre o mesmo padrão de exibição, não importa o
+// tamanho/origem da imagem original.
+async function fetchNewItemIconFromUrl() {
+  const btn = document.getElementById('nit-icon-url-btn');
+  const urlInput = document.getElementById('nit-icon-url');
+  const url = (urlInput?.value || '').trim();
+  if (!url) { toast('Cole a URL de uma imagem.', 'err'); return; }
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const imgRes = await fetch(url);
+    if (!imgRes.ok) throw new Error(`não consegui baixar a imagem (erro ${imgRes.status})`);
+    const blob = await imgRes.blob();
+    if (!blob.type || !blob.type.startsWith('image/')) throw new Error('essa URL não parece ser uma imagem');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let out = reader.result;
+      try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+      const prev = document.getElementById('nit-icon-preview');
+      const ph = document.getElementById('nit-icon-placeholder');
+      prev.src = out; prev.style.display = ''; prev.dataset.b64 = out;
+      ph.style.display = 'none';
+      toast('🖼️ Ícone baixado da URL!', 'ok');
+    };
+    reader.onerror = () => toast('Erro ao ler a imagem baixada.', 'err');
+    reader.readAsDataURL(blob);
+  } catch (e) {
+    toast('Erro ao buscar imagem: ' + e.message + ' (pode ser bloqueio de CORS — nesse caso, baixe a imagem no seu computador e envie pelo botão "Enviar")', 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
+}
+
 // Busca o ícone oficial de um item na PokeAPI (endpoint /item/{slug}) e
 // reaproveita o mesmo pipeline de upload usado pro clique/drag-and-drop —
 // baixa o PNG oficial e sobe pro nosso Supabase Storage (não depende do
@@ -1486,6 +1564,32 @@ async function fetchItemIconFromPokeapi(name, domSlug) {
     await uploadItemIconFile(name, slug, blob);
   } catch (e) {
     toast('Erro ao buscar na PokeAPI: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
+}
+
+// Busca uma imagem a partir de uma URL colada pelo usuário e reaproveita o
+// mesmo pipeline de upload usado pelo clique/drag-and-drop/PokeAPI
+// (uploadItemIconFile já roda o trimAndFitSprite internamente), garantindo
+// que o sprite salvo siga sempre o mesmo padrão de exibição.
+async function fetchItemIconFromUrl(name, domSlug) {
+  const btn = document.getElementById(`it-icon-url-btn-${domSlug}`);
+  const urlInput = document.getElementById(`it-icon-url-${domSlug}`);
+  const url = (urlInput?.value || '').trim();
+  if (!url) { toast('Cole a URL de uma imagem.', 'err'); return; }
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Buscando…'; }
+  try {
+    const imgRes = await fetch(url);
+    if (!imgRes.ok) throw new Error(`não consegui baixar a imagem (erro ${imgRes.status})`);
+    const blob = await imgRes.blob();
+    if (!blob.type || !blob.type.startsWith('image/')) throw new Error('essa URL não parece ser uma imagem');
+    const slugInput = document.getElementById(`it-icon-slug-${domSlug}`);
+    await uploadItemIconFile(name, slugInput?.value || '', blob);
+    if (urlInput) urlInput.value = '';
+  } catch (e) {
+    toast('Erro ao buscar imagem: ' + e.message + ' (pode ser bloqueio de CORS — nesse caso, baixe a imagem no seu computador e envie pelo botão ao lado)', 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origLabel; }
   }
