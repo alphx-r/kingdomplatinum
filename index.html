@@ -285,6 +285,11 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .bioma-poke-sprite img{width:64px;height:64px;object-fit:contain}
 .bioma-poke-name{font-family:var(--font-title);font-size:11px;font-weight:600;color:var(--text);text-align:center;line-height:1.3}
 .bioma-poke-tipos{display:flex;flex-wrap:wrap;justify-content:center;gap:2px}
+.bioma-locais-box{margin-top:20px;border:1.5px solid var(--border);border-radius:var(--r);background:var(--surface2);padding:14px 16px}
+.bioma-locais-title{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:10px}
+.bioma-locais-row{font-size:13px;color:var(--text);margin-bottom:5px;display:flex;gap:6px;flex-wrap:wrap;line-height:1.4}
+.bioma-locais-row:last-child{margin-bottom:0}
+.bioma-locais-label{font-weight:700;color:var(--muted);min-width:84px}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes diceShake{0%,100%{transform:rotate(0)}20%{transform:rotate(-8deg)}40%{transform:rotate(8deg)}60%{transform:rotate(-5deg)}80%{transform:rotate(5deg)}}
@@ -5252,6 +5257,36 @@ function goToAdm(){
 // POR BIOMA
 // ══════════════════════════════════════
 let biomaAtivo = null;
+// Locais que se encaixam em cada bioma (Primário/Secundário/Terciário)
+const BIOMA_LOCAIS = {
+  'Árido':        { primario:['Luxor Village'], secundario:[], terciario:[] },
+  'Assombrado':   { primario:['Coven Town','Briarcliff Mansion'], secundario:['Soul Forest'], terciario:['Eternal Swamp'] },
+  'Caverna':      { primario:['Rush Cave'], secundario:['Flowrest City','Wiltshire Town','Yukon City','Magmatic Cave'], terciario:[] },
+  'Costeiro':     { primario:['Laceon Town','Hartford Island'], secundario:['Aurora Beach'], terciario:['Koen City','Brutal Jungle','Ambrosia Academy'] },
+  'Florestal':    { primario:['Koen City','Flowrest City','Brutal Jungle','Soul Forest'], secundario:['Briarcliff Mansion'], terciario:[] },
+  'Marítimo':     { primario:[], secundario:['Twinlake','Bittersweet River'], terciario:[] },
+  'Montanhoso':   { primario:['Wiltshire Town','Kraka Town','Monte Aether'], secundario:['Rush Cave','Krakatoa Vulcan'], terciario:['Magmatic Cave'] },
+  'Pantanoso':    { primario:['Eternal Swamp'], secundario:[], terciario:[] },
+  'Planície':     { primario:[], secundario:['Ambrosia Academy'], terciario:[] },
+  'Polar':        { primario:['Yukon City','Trulyce Isle'], secundario:[], terciario:[] },
+  'Praia':        { primario:['Aurora Beach'], secundario:['Laceon Town','Hartford Island'], terciario:[] },
+  'Recifes':      { primario:[], secundario:[], terciario:['Hartford Island'] },
+  'Rios e Lagos': { primario:['Twinlake','Bittersweet River'], secundario:[], terciario:['Krakatoa Vulcan'] },
+  'Urbano':       { primario:['Neo Techland','Ambrosia Academy'], secundario:['Koen City'], terciario:['Coven Town','Laceon Town','Flowrest City','Wiltshire Town','Kraka Town','Yukon City'] },
+  'Vulcânico':    { primario:['Krakatoa Vulcan','Magmatic Cave'], secundario:['Kraka Town'], terciario:[] },
+};
+function renderBiomaLocaisBox(nome){
+  const d = BIOMA_LOCAIS[nome];
+  if(!d) return '';
+  const fmt = arr => (arr && arr.length) ? arr.join(', ') : '—';
+  return `
+  <div class="bioma-locais-box">
+    <div class="bioma-locais-title">Se encaixam no bioma ${nome}...</div>
+    <div class="bioma-locais-row"><span class="bioma-locais-label">Primário:</span><span>${fmt(d.primario)}</span></div>
+    <div class="bioma-locais-row"><span class="bioma-locais-label">Secundário:</span><span>${fmt(d.secundario)}</span></div>
+    <div class="bioma-locais-row"><span class="bioma-locais-label">Terciário:</span><span>${fmt(d.terciario)}</span></div>
+  </div>`;
+}
 function renderBiomaPage(){
   const tabs  = document.getElementById('bioma-tabs');
   const cont  = document.getElementById('bioma-content');
@@ -5309,7 +5344,7 @@ function renderBiomaConteudo(){
   const cont = document.getElementById('bioma-content');
   const pokes = getEncounterUnits(pokemonDB).filter(p=>pkTemBioma(p,biomaAtivo) && pkEvoDepth(p)===0);
   if(!pokes.length){
-    cont.innerHTML='<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste bioma.</div>';
+    cont.innerHTML='<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste bioma.</div>'+renderBiomaLocaisBox(biomaAtivo);
     return;
   }
   const ordem = ['comum','incomum','raro','rarissimo'];
@@ -5330,7 +5365,7 @@ function renderBiomaConteudo(){
       const bNomeEsc=(p.name||'').replace(/'/g,"\\'");
       const bOnloadAttr=bNeedsApiLookup?`onload="if(!this.dataset.apiTried){this.dataset.apiTried='1';pkResolvePokeApiSprite(this,'${bNomeEsc}',false);}" `:'';
       return `
-      <div class="bioma-poke-card">
+      <div class="bioma-poke-card" style="cursor:pointer" onclick="abrirNationaldex('${bNomeEsc}')" title="Ver no National Dex">
         <div class="bioma-poke-sprite">
           <img src="${bSrc}" data-sprite-stage="${bNeedsApiLookup?'1':'0'}" alt="${p.name}"
             style="width:64px;height:64px;object-fit:contain"
@@ -5352,7 +5387,7 @@ function renderBiomaConteudo(){
         <div class="bioma-poke-grid">${cards}</div>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + renderBiomaLocaisBox(biomaAtivo);
 }
 function toggleRaridade(r){
   document.getElementById('acc-'+r).classList.toggle('open');
@@ -9624,6 +9659,37 @@ function verificarEDispararShiny(pokes){
   if(Array.isArray(pokes)&&pokes.some(p=>p&&p.isShiny)) dispararEstrelasShiny();
 }
 
+// Gera o slug usado pelo National Dex a partir do nome do Pokémon.
+// Formas/variantes regionais entre parênteses (ex: "Meowth (Alolan)") viram
+// sufixo no padrão pokemon-regiao (ex: "n-meowth-alola"), não são descartadas.
+function pkSlugPart(s){
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+}
+function pkNationaldexSlug(nome){
+  if(!nome) return '';
+  const m = String(nome).match(/\(([^)]+)\)/);
+  const base = pkSlugPart(String(nome).replace(/\(.+?\)/g,''));
+  if(!base) return '';
+  let suffix = '';
+  if(m){
+    const variante = m[1].toLowerCase();
+    const regioes = [
+      {re:/alola/, slug:'alola'},
+      {re:/galar/, slug:'galar'},
+      {re:/hisui/, slug:'hisui'},
+      {re:/paldea/, slug:'paldea'},
+    ];
+    const achado = regioes.find(r=>r.re.test(variante));
+    suffix = achado ? achado.slug : pkSlugPart(m[1]);
+  }
+  return 'n-'+base+(suffix?'-'+suffix:'');
+}
+function abrirNationaldex(nome){
+  const slug = pkNationaldexSlug(nome);
+  if(!slug) return;
+  window.open('https://kingdomplatinum.vercel.app/datadex/nationaldex/'+slug, '_blank');
+}
 function buildCardHtml(pk,delay){
   const pills=(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('');
   const natEN=pk.nature?.en||'';
@@ -9635,7 +9701,10 @@ function buildCardHtml(pk,delay){
   // o estilo de shiny (mais raro) prevalece visualmente, mas a badge de Honey continua aparecendo.
   const honeyStyle=(pk.isHoney&&!pk.isShiny)?'border:2px solid #d4a017;box-shadow:0 0 0 2px #d4a01733':'';
   const honeyBadge=pk.isHoney?`<div style="position:absolute;top:-8px;${pk.isShiny?'left:-8px':'right:-8px'};background:#fff3d4;color:#7a5010;font-size:9px;font-weight:800;padding:3px 7px;border-radius:10px;border:1.5px solid #d4a017;letter-spacing:.3px;z-index:2;white-space:nowrap">HONEY</div>`:'';
-  return`<div class="poke-card" style="animation-delay:${delay}s;${shinyStyle};${honeyStyle};position:relative">
+  const nomeEsc=(pk.nome||'').replace(/'/g,"\\'");
+  const clicavel=!!(pk.nome && pk.nome!=='???');
+  const clickAttr=clicavel?` onclick="abrirNationaldex('${nomeEsc}')" title="Ver no National Dex"`:'';
+  return`<div class="poke-card"${clickAttr} style="${clicavel?'cursor:pointer;':''}animation-delay:${delay}s;${shinyStyle};${honeyStyle};position:relative">
     ${shinyBadge}
     ${honeyBadge}
     <div class="poke-card-left">
