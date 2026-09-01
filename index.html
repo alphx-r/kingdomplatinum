@@ -771,8 +771,12 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .loot-table-body{display:none;padding:14px 16px 16px;border-top:1.5px solid var(--border);background:var(--surface2)}
 .loot-table-wrap.open .loot-table-body{display:block}
 
-.loot-items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px}
+.loot-items-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px 8px}
+@media(max-width:560px){.loot-items-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:360px){.loot-items-grid{grid-template-columns:repeat(2,1fr)}}
 .loot-item-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 2px;cursor:default}
+.loot-group-header{grid-column:1/-1;font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:1px;padding:14px 2px 6px;border-top:1.5px solid var(--border);margin-top:6px}
+.loot-group-header:first-child{border-top:none;margin-top:0;padding-top:0}
 .loot-dice-badge{width:28px;height:28px;border-radius:50%;background:#4caf50;color:#fff;font-family:var(--font-title);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .loot-item-name{font-size:11px;font-weight:600;color:var(--text);line-height:1.35;text-align:center;width:100%;word-break:break-word;white-space:normal}
 .loot-desc-badge{display:inline-block;font-family:var(--font-title);font-size:11px;font-weight:700;background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.2);letter-spacing:.5px;cursor:pointer;vertical-align:middle;margin-left:5px;transition:all .15s}
@@ -2935,6 +2939,21 @@ function calcSyncSelects(){
         </div>
       </div>
       <button class="roll-btn" onclick="rolarDadoEvento()">Rolar Dado</button>
+
+      <!-- COLHEITA: rola vários dados de uma vez e já mostra os itens sorteados -->
+      <div id="evento-colheita-wrap" style="display:none;margin-top:18px;padding-top:18px;border-top:1.5px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px" id="evento-colheita-titulo">🍓 Colheita de Itens</div>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+          <div class="ctrl-group" style="max-width:140px">
+            <label>Qtd. de rolagens</label>
+            <input type="number" id="evento-colheita-qtd" value="10" min="1" max="50"/>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;padding-bottom:9px">
+            <input type="checkbox" id="evento-colheita-criador"/> Sou Criador (+1 rolagem bônus)
+          </label>
+        </div>
+        <button class="roll-btn" style="background:#2e7d32" onclick="rolarColheitaEvento()">🍓 Rolar Berries</button>
+      </div>
     </div>
   </div>
 
@@ -9009,6 +9028,120 @@ function _eventoMesAtivar(mes, ano){
   if(eventoAtual) _renderEventoMesesTabs(eventoAtual);
 }
 
+// ══════════════════════════════════════════════
+// SPRITES VINDOS DO ITEMDEX (Supabase próprio do ItemDex,
+// projeto separado do admin — mesma fonte que /datadex/itemdex usa)
+// ══════════════════════════════════════════════
+const ITEMDEX_SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
+const ITEMDEX_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
+const ITEMDEX_ITEMS_JSON_FALLBACK = 'https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/items.json';
+
+let _itemDexByName = null;     // Map(nome normalizado -> {name, sprite, ...})
+let _itemDexLoadPromise = null;
+
+function _itemDexNormalize(nome){
+  return String(nome||'').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+// Carrega o ItemDex inteiro 1x (Supabase, com fallback pro items.json do repo)
+// e devolve um Map por nome normalizado. Chamadas seguintes reusam o mesmo Map.
+async function _loadItemDex(){
+  if(_itemDexByName) return _itemDexByName;
+  if(_itemDexLoadPromise) return _itemDexLoadPromise;
+  _itemDexLoadPromise = (async () => {
+    let list = [];
+    try{
+      const res = await fetch(`${ITEMDEX_SUPA_URL}/rest/v1/items?select=name,sprite`, {
+        headers: { apikey: ITEMDEX_SUPA_KEY, Authorization: `Bearer ${ITEMDEX_SUPA_KEY}` }
+      });
+      if(!res.ok) throw new Error('itemdex supabase fetch failed: '+res.status);
+      list = await res.json();
+      if(!Array.isArray(list) || !list.length) throw new Error('itemdex vazio');
+    }catch(e){
+      try{
+        const res2 = await fetch(ITEMDEX_ITEMS_JSON_FALLBACK, {cache:'no-store'});
+        list = res2.ok ? await res2.json() : [];
+      }catch(e2){ list = []; }
+    }
+    const map = new Map();
+    (list||[]).forEach(it => { if(it && it.name) map.set(_itemDexNormalize(it.name), it); });
+    _itemDexByName = map;
+    return map;
+  })();
+  return _itemDexLoadPromise;
+}
+
+// Busca o sprite de um item no ItemDex; se achar, atualiza as <img> já
+// desenhadas na tela (mesmo padrão do _fetchItemSprite/PokeAPI). Retorna a
+// URL encontrada ou null.
+async function _fetchItemDexSprite(nome){
+  try{
+    const map = await _loadItemDex();
+    const item = map.get(_itemDexNormalize(nome));
+    const url = item && item.sprite ? item.sprite : null;
+    if(url){
+      document.querySelectorAll('.loot-item-sprite-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){
+        img.src = url; img.style.opacity=''; img.style.filter='';
+      });
+      document.querySelectorAll('.adm-item-img[data-item="'+CSS.escape(nome)+'"]').forEach(function(img){ img.src = url; });
+    }
+    return url;
+  }catch(e){ return null; }
+}
+
+// Monta o card de um item de loot já com sprite (custom > ItemDex > PokeAPI > fallback)
+function _lootCardHtml(nome, diceLabel){
+  const nomeAttr = String(nome).replace(/"/g,'&quot;');
+  const nomeJs   = String(nome).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
+  const src = _itemSpritesCustom[nome] || (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
+  return '<div class="loot-item-card">'
+    +'<img class="loot-item-sprite-img" data-item="'+nomeAttr+'" src="'+src+'" '
+      +'style="width:34px;height:34px;object-fit:contain" '
+      +'onerror="_lootItemImgError(this,\''+nomeJs+'\')"/>'
+    +'<span class="loot-dice-badge">'+diceLabel+'</span>'
+    +'<span class="loot-item-name" title="'+nomeAttr+'">'+nome+'</span>'
+    +'<label class="loot-upload-btn" style="display:none;align-items:center;justify-content:center;gap:3px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:2px">'
+      +'📷 trocar'
+      +'<input type="file" accept="image/*" style="display:none" onchange="_lootUploadSprite(this,\''+nomeJs+'\')"/>'
+    +'</label>'
+  +'</div>';
+}
+// Um item que comece com "###" vira um cabeçalho de grupo (linha inteira),
+// em vez de um card sorteável — usado para separar Comum/Incomum/Rara/Raríssima
+// dentro da mesma pool sem quebrar a numeração do dado.
+function _lootIsGroupHeader(nome){ return /^###\s*/.test(String(nome||'')); }
+function _lootGroupHeaderHtml(nome){
+  const label = String(nome).replace(/^###\s*/,'');
+  return '<div class="loot-group-header">'+label.replace(/</g,'&lt;')+'</div>';
+}
+// Monta o grid inteiro (cabeçalhos + cards), numerando só os itens reais
+function _lootGridHtml(itens){
+  let n = 0;
+  itens.forEach(function(nome){ if(!_lootIsGroupHeader(nome)) n++; });
+  let i = 0;
+  return itens.map(function(nome){
+    if(_lootIsGroupHeader(nome)) return _lootGroupHeaderHtml(nome);
+    i++;
+    const diceLabel = n === 1 ? '1' : String(i);
+    return _lootCardHtml(nome, diceLabel);
+  }).join('');
+}
+// Busca sprite real pra cada item: primeiro no ItemDex, só cai pra PokeAPI
+// se o item não existir lá (ou não tiver sprite cadastrado). Não mexe em
+// itens com upload manual (_itemSpritesCustom) já feito pelo admin.
+function _lootFetchSprites(itens){
+  Array.from(new Set(itens||[]))
+    .filter(function(n){ return !_lootIsGroupHeader(n); })
+    .forEach(async function(nome){
+      if(_itemSpritesCustom[nome]) return;
+      const dexUrl = await _fetchItemDexSprite(nome);
+      if(!dexUrl) _fetchItemSprite(nome);
+    });
+}
+
+
 function abrirLootModal(poolIdx){
   const overlay = document.getElementById('loot-modal-overlay');
   const grid    = document.getElementById('loot-modal-grid');
@@ -9024,14 +9157,8 @@ function abrirLootModal(poolIdx){
   const titulo = (poolAlvo?.titulo||'').trim() || (ev?.pool_titulo||'').trim() || 'Pool de Itens';
 const obs = (poolAlvo?.obs||'').trim();
   if(!itens.length) return;
-  const n = itens.length;
-  grid.innerHTML = itens.map(function(nome, i){
-    const diceLabel = n === 1 ? '1' : String(i+1);
-    return '<div class="loot-item-card">'
-      +'<span class="loot-dice-badge">'+diceLabel+'</span>'
-      +'<span class="loot-item-name" title="'+nome+'">'+nome+'</span>'
-    +'</div>';
-  }).join('');
+  grid.innerHTML = _lootGridHtml(itens);
+  _lootFetchSprites(itens);
   const tituloEl = document.getElementById('loot-modal-titulo');
   if(tituloEl) tituloEl.textContent = titulo;
   const obsEl = document.getElementById('loot-modal-obs');
@@ -9153,13 +9280,8 @@ function renderEventoItensGrid(itens){
   wrap.style.display = '';
 
   const n = itens.length;
-  grid.innerHTML = itens.map(function(nome, i){
-    const diceLabel = n === 1 ? '1' : String(i+1);
-    return '<div class="loot-item-card">'
-      +'<span class="loot-dice-badge">'+diceLabel+'</span>'
-      +'<span class="loot-item-name" title="'+nome+'">'+nome+'</span>'
-    +'</div>';
-  }).join('');
+  grid.innerHTML = _lootGridHtml(itens);
+  _lootFetchSprites(itens);
 }
 
 // ══════════════════════════════════════
@@ -12783,6 +12905,12 @@ async function iniciarPaginaEvento(slug){
       renderEventoItensGrid(_ativaDisp ? (_ativaDisp.itens||[]) : (ev.pool_itens||[]));
       renderEventoDiceBtns();
       sincEventoDiceBtn();
+      // Mostra o botão "Rolar Berries" só quando existe pool de itens ativa
+      const colheitaWrap = document.getElementById('evento-colheita-wrap');
+      const colheitaTitulo = document.getElementById('evento-colheita-titulo');
+      const poolParaColheita = _eventoPoolAtiva(ev);
+      if(colheitaWrap) colheitaWrap.style.display = poolParaColheita ? '' : 'none';
+      if(colheitaTitulo && poolParaColheita) colheitaTitulo.textContent = '🍓 ' + (poolParaColheita.titulo || 'Colheita de Itens');
     }
 
     // carrega historico do evento
@@ -12953,6 +13081,54 @@ function renderEventoDiceBtns(){
   ).join('');
 }
 
+// ── EVENTO: liga o resultado do dado ao item sorteado na pool ativa ──
+
+// Pool ativa do evento (mesmo critério usado no grid/modal de loot)
+function _eventoPoolAtiva(ev){
+  if(!ev) return null;
+  if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
+    return ev.pool_pools.find(function(p){ return p.ativa; }) || null;
+  }
+  if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){
+    return { titulo: ev.pool_titulo||'Pool de Itens', itens: ev.pool_itens };
+  }
+  return null;
+}
+// Itens "reais" de uma pool, sem os cabeçalhos "###Grupo" — na mesma ordem/
+// numeração 1..N usada na grade (índice 0 = resultado 1 do dado).
+function _poolRealItens(pool){
+  return (pool && Array.isArray(pool.itens) ? pool.itens : []).filter(function(n){ return !_lootIsGroupHeader(n); });
+}
+// Dado o resultado de um dado (1..lados) e a pool ativa do evento, devolve o
+// nome do item sorteado, ou null se não houver pool ou o resultado cair fora
+// do alcance da pool (ex.: pool com 72 itens e dado d100 rolando 73-100).
+function _itemDoResultado(ev, resultado){
+  const pool = _eventoPoolAtiva(ev);
+  if(!pool) return null;
+  const reais = _poolRealItens(pool);
+  return reais[resultado-1] || null;
+}
+// HTML do bloco "item sorteado" (com sprite), pra colar embaixo do número do dado
+function _itemGanhoBlockHtml(itemGanho, pool, resultado){
+  if(itemGanho){
+    const nomeAttr = String(itemGanho).replace(/"/g,'&quot;');
+    const nomeJs   = String(itemGanho).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(itemGanho));
+    const src = _itemSpritesCustom[itemGanho] || (dexCached && dexCached.sprite) || _itemSpriteUrl(itemGanho);
+    return `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px">
+      <img class="loot-item-sprite-img" data-item="${nomeAttr}" src="${src}" style="width:38px;height:38px;object-fit:contain;flex-shrink:0" onerror="_lootItemImgError(this,'${nomeJs}')"/>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">🎁 Item sorteado</div>
+        <div style="font-size:14px;font-weight:700;color:var(--brand)">${itemGanho}</div>
+      </div>
+    </div>`;
+  }
+  if(pool){
+    return `<div style="margin-top:10px;font-size:12px;color:var(--muted);font-style:italic">Nenhum item para o resultado ${resultado} nesta pool.</div>`;
+  }
+  return '';
+}
+
 // ── EVENTO: rolar dado ──
 async function rolarDadoEvento(){
   const ev = eventoAtual;
@@ -12974,6 +13150,11 @@ async function rolarDadoEvento(){
   const agora = new Date();
   const hora  = agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data  = agora.toLocaleDateString('pt-BR');
+
+  // Se o evento tiver uma pool de itens ativa, o resultado também sorteia
+  // o item correspondente (slot = número do resultado do dado).
+  const poolAtiva = _eventoPoolAtiva(ev);
+  const itemGanho = _itemDoResultado(ev, resultado);
 
   // Exibe resultado na área de resultados
   const section = document.getElementById('evento-results');
@@ -12998,7 +13179,9 @@ async function rolarDadoEvento(){
           <div style="font-size:12px;color:var(--muted)">${resultado} de ${lados} (${pct}%)</div>
         </div>
       </div>
+      ${_itemGanhoBlockHtml(itemGanho, poolAtiva, resultado)}
     </div>`;
+    if(itemGanho) _lootFetchSprites([itemGanho]);
   }
 
   // Salva no histórico
@@ -13008,6 +13191,77 @@ async function rolarDadoEvento(){
     if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
     else            eventoHistorico.unshift({...entry, id:Date.now(), tipo:'dado'});
   }catch(e){ eventoHistorico.unshift({...entry, id:Date.now(), tipo:'dado'}); }
+  eventoHistPagina = 0;
+  renderHistoricoEvento();
+  if(loaded.rolagens) renderRolagens();
+}
+
+// ── EVENTO: rolar berries/itens em lote (ex.: colheita 10d100, 11d100 p/ Criador) ──
+async function rolarColheitaEvento(){
+  const ev = eventoAtual;
+  if(!ev){ alert('Evento não carregado.'); return; }
+
+  const poolAtiva = _eventoPoolAtiva(ev);
+  if(!poolAtiva){ alert('Este evento não tem uma pool de itens ativa.'); return; }
+
+  const personagemEl = document.getElementById('evento-dice-personagem');
+  const ladosEl       = document.getElementById('evento-dice-lados');
+  const qtdEl         = document.getElementById('evento-colheita-qtd');
+  const criadorEl     = document.getElementById('evento-colheita-criador');
+
+  const personagem = personagemEl?.value.trim() || '';
+  const lados       = parseInt(ladosEl?.value) || 100;
+  let qtd           = parseInt(qtdEl?.value) || 10;
+  if(criadorEl?.checked) qtd += 1;
+
+  if(!personagem){ alert('Selecione o personagem!'); personagemEl?.focus(); return; }
+  if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
+  if(!qtd || qtd < 1){ alert('Quantidade de rolagens inválida.'); return; }
+
+  const agora = new Date();
+  const hora  = agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const data  = agora.toLocaleDateString('pt-BR');
+
+  const rolagens = [];
+  for(let i=0;i<qtd;i++){
+    const resultado = Math.floor(Math.random()*lados)+1;
+    rolagens.push({resultado, item: _itemDoResultado(ev, resultado)});
+  }
+  const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
+  const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
+
+  const section = document.getElementById('evento-results');
+  if(section){
+    section.innerHTML = `<div class="rol-entry" style="animation:fadeUp .35s both">
+      <div class="rol-entry-header">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🍓 Colheita · ${qtd}d${lados}</span>
+          <span class="rol-entry-bioma">🎪 ${ev.slug}</span>
+        </div>
+        <span class="rol-entry-hora">${hora} · ${data}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        ${personagem} rolou <strong>${qtd}d${lados}</strong>: [${rolagens.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${soma}</strong>
+      </div>
+      <div class="loot-items-grid">
+        ${rolagens.map(function(r){
+          if(r.item) return _lootCardHtml(r.item, String(r.resultado));
+          return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
+        }).join('')}
+      </div>
+    </div>`;
+    if(itensGanhos.length) _lootFetchSprites(itensGanhos);
+  }
+
+  // Salva cada rolagem no histórico (uma linha por dado, mesmo padrão do rolarDadoEvento)
+  for(const r of rolagens){
+    const entry = {personagem, lados, motivo: poolAtiva.titulo||'Colheita', resultado: r.resultado, hora, data, evento_slug: ev.slug};
+    try{
+      const res = await dbPost('historico_dados', entry);
+      if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
+      else            eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'});
+    }catch(e){ eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'}); }
+  }
   eventoHistPagina = 0;
   renderHistoricoEvento();
   if(loaded.rolagens) renderRolagens();
@@ -13040,6 +13294,8 @@ function renderHistoricoEvento(){
       const res=e.resultado;
       const pct=max>1?Math.round((res/max)*100):100;
       const barColor=pct>=80?'#1a7a1a':pct>=50?'var(--brand-mid)':pct>=20?'var(--accent)':'var(--red)';
+      const histPoolAtiva = _eventoPoolAtiva(eventoAtual);
+      const histItemGanho = _itemDoResultado(eventoAtual, res);
       return`<div class="hist-entry">
         <div class="hist-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -13058,6 +13314,10 @@ function renderHistoricoEvento(){
             <div style="font-size:11px;color:var(--muted)">${res} de ${max} (${pct}%)</div>
           </div>
         </div>
+        ${histItemGanho ? `<div style="display:flex;align-items:center;gap:8px;padding:0 14px 10px">
+          <img class="loot-item-sprite-img" data-item="${String(histItemGanho).replace(/"/g,'&quot;')}" src="${_itemSpritesCustom[histItemGanho] || (_itemDexByName && _itemDexByName.get(_itemDexNormalize(histItemGanho))?.sprite) || _itemSpriteUrl(histItemGanho)}" style="width:22px;height:22px;object-fit:contain" onerror="_lootItemImgError(this,'${String(histItemGanho).replace(/'/g,"\\'")}')"/>
+          <span style="font-size:11px;font-weight:700;color:var(--brand)">🎁 ${histItemGanho}</span>
+        </div>` : ''}
       </div>`;
     }
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
@@ -13093,6 +13353,7 @@ function renderHistoricoEvento(){
       <div class="hist-body">${ph}</div>
     </div>`;
   }).join('');
+  _lootFetchSprites(pagina.filter(e=>e.tipo==='dado'||(e.lados&&!e.pokes)).map(e=>_itemDoResultado(eventoAtual,e.resultado)).filter(Boolean));
 }
 
 
