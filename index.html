@@ -799,6 +799,21 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .item-tag-adm .adm-item-actions button{width:22px;height:22px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);cursor:pointer;font-size:12px;color:var(--red);display:inline-flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;padding:0;}
 .item-tag-adm .adm-item-actions button:hover{background:#fde8e8;border-color:var(--red);}
 .adm-itens-lista-wrap{display:flex;flex-wrap:wrap;gap:8px;min-height:52px;padding:4px 0;margin-bottom:12px;}
+/* Tabela pública de berries por sabor/raridade */
+.berry-tbl{ display:flex; flex-direction:column; border-radius:10px; overflow:hidden; border:1px solid #ccc; margin:10px 0; font-family:var(--font-body); }
+.berry-tbl-row{ display:grid; grid-template-columns:90px repeat(5,1fr); }
+.berry-tbl-cell{ padding:6px; border:1px solid #ccc; display:flex; flex-wrap:wrap; align-content:flex-start; justify-content:center; gap:6px; }
+.berry-tbl-header{ background:#111; color:#fff; font-weight:800; font-size:12px; align-items:center; justify-content:center; text-align:center; }
+.berry-tbl-rotulo{ background:#111; color:#fff; font-weight:800; font-size:11px; align-items:center; justify-content:center; text-align:center; }
+.berry-tbl-item{ display:flex; flex-direction:column; align-items:center; width:44px; }
+.berry-tbl-item img{ width:32px; height:32px; object-fit:contain; }
+.berry-tbl-nums{ font-size:10px; font-weight:700; color:#1a1a2e; text-align:center; line-height:1.2; }
+@media (max-width:640px){
+  .berry-tbl-row{ grid-template-columns:60px repeat(5,1fr); }
+  .berry-tbl-item{ width:34px; }
+  .berry-tbl-item img{ width:24px; height:24px; }
+  .berry-tbl-nums{ font-size:8px; }
+}
 </style>
 </head>
 <body>
@@ -8717,8 +8732,25 @@ function renderPersonagensDatalist(){
 const _poolItens = { 'ev': [], 'edit-ev': [] };
 
 // _pools[prefix] = [{titulo, obs, itens:[], ativa:bool}]
+// A partir de agora, cada item de uma pool é um objeto:
+//   { nome, sabor: 'apimentado'|'seco'|'doce'|'amargo'|'azedo', raridade: 'basica'|'intermedia'|'rara'|'bonus', numeros:[62,92,...] }
+// (formato legado — string pura — ainda é lido/rolado por índice, mas não é mais criado por aqui)
 const _pools = { 'ev': [], 'edit-ev': [] };
 let _poolAba = { 'ev': 0, 'edit-ev': 0 };
+
+const SABORES = [
+  {id:'apimentado', label:'Apimentado', cor:'#e05a3c', bgBasica:'#f0a08a', bgIntermedia:'#ea8a6e', bgRara:'#e8735c'},
+  {id:'seco',       label:'Seco',       cor:'#3b5fd9', bgBasica:'#c8d4f5', bgIntermedia:'#a8bcf0', bgRara:'#8fa5e8'},
+  {id:'doce',       label:'Doce',       cor:'#d94fb0', bgBasica:'#f8d6ea', bgIntermedia:'#f5c6e0', bgRara:'#ef9ed0'},
+  {id:'amargo',     label:'Amargo',     cor:'#3a9a3a', bgBasica:'#cceecc', bgIntermedia:'#b8e0b8', bgRara:'#8fd08f'},
+  {id:'azedo',      label:'Azedo',      cor:'#b89000', bgBasica:'#f5edc0', bgIntermedia:'#f0e0a0', bgRara:'#e8d060'}
+];
+const RARIDADES = [
+  {id:'basica',     label:'Básica'},
+  {id:'intermedia', label:'Intermédia'},
+  {id:'rara',        label:'Rara'}
+];
+function _saborInfo(id){ return SABORES.find(s=>s.id===id) || null; }
 
 function _poolHtml(prefix){
   const pools = _pools[prefix];
@@ -8765,9 +8797,29 @@ function _poolHtml(prefix){
       </div>
     </div>
     <div id="${prefix}-itens-lista-${abaIdx}" style="margin-bottom:10px"></div>
-    <div style="display:flex;gap:6px;align-items:flex-start">
-      <textarea id="${prefix}-item-nome-${abaIdx}" placeholder="Um item por linha..." rows="3" style="flex:1;resize:vertical;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;line-height:1.5"></textarea>
-      <button class="btn btn-sm btn-primary" onclick="_poolAdicionarItens('${prefix}',${abaIdx})" style="margin-top:2px">+ Adicionar</button>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:end;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome</label>
+        <input type="text" id="${prefix}-item-nome-${abaIdx}" placeholder="Ex: Oran Berry" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Sabor</label>
+        <select id="${prefix}-item-sabor-${abaIdx}" style="width:100%;padding:6px 4px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px">
+          ${SABORES.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Raridade</label>
+        <select id="${prefix}-item-raridade-${abaIdx}" style="width:100%;padding:6px 4px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px">
+          ${RARIDADES.map(r=>`<option value="${r.id}">${r.label}</option>`).join('')}
+          <option value="bonus">Bônus</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Números</label>
+        <input type="text" id="${prefix}-item-numeros-${abaIdx}" placeholder="Ex: 62,92" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="_poolAdicionarItens('${prefix}',${abaIdx})">+ Adicionar</button>
     </div>`;
 
   _renderPoolItensInline(prefix, abaIdx);
@@ -8780,12 +8832,25 @@ function _renderPoolItensInline(prefix, idx){
   if(!cont) return;
   const lista = p.itens || [];
   if(!lista.length){ cont.innerHTML = '<span style="font-size:12px;color:var(--muted)">Nenhum item.</span>'; return; }
-  cont.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">'
+  cont.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px">'
     + lista.map(function(item, i){
-      return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
-        <span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#4caf50;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${i+1}</span>
-        <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item}">${item}</span>
-        <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1" title="Remover">×</button>
+      // formato legado: string pura, sem sabor/raridade/números
+      if(typeof item === 'string'){
+        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
+          <span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#4caf50;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${i+1}</span>
+          <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item}">${item} <em style="color:var(--muted);font-weight:400">(legado)</em></span>
+          <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1" title="Remover">×</button>
+        </div>`;
+      }
+      const s = _saborInfo(item.sabor);
+      const rLabel = item.raridade==='bonus' ? 'Bônus' : (RARIDADES.find(r=>r.id===item.raridade)?.label || '—');
+      const nums = (item.numeros||[]).join(', ') || '—';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:${s?s.bgBasica+'55':'var(--surface2)'};border:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;color:${s?s.cor:'var(--text)'};flex-shrink:0">${s?s.label:'—'}</span>
+        <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.nome}">${item.nome}</span>
+        <span style="font-size:10px;color:var(--muted);flex-shrink:0">${rLabel}</span>
+        <span style="font-size:10px;font-weight:700;color:var(--brand);flex-shrink:0">(${nums})</span>
+        <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1;flex-shrink:0" title="Remover">×</button>
       </div>`;
     }).join('') + '</div>';
 }
@@ -8807,12 +8872,22 @@ function _poolSetTitulo(prefix, idx, val){
 }
 function _poolSetObs(prefix, idx, val){ if(_pools[prefix][idx]) _pools[prefix][idx].obs = val; }
 function _poolAdicionarItens(prefix, idx){
-  const inp = document.getElementById(`${prefix}-item-nome-${idx}`);
-  const linhas = (inp?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-  if(!linhas.length) return;
+  const inpNome = document.getElementById(`${prefix}-item-nome-${idx}`);
+  const selSabor = document.getElementById(`${prefix}-item-sabor-${idx}`);
+  const selRaridade = document.getElementById(`${prefix}-item-raridade-${idx}`);
+  const inpNumeros = document.getElementById(`${prefix}-item-numeros-${idx}`);
+  const nome = (inpNome?.value||'').trim();
+  const numeros = (inpNumeros?.value||'').split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
+  if(!nome || !numeros.length){ alert('Preencha o nome e ao menos um número (separados por vírgula).'); return; }
   if(!_pools[prefix][idx].itens) _pools[prefix][idx].itens = [];
-  linhas.forEach(n => _pools[prefix][idx].itens.push(n));
-  if(inp) inp.value = '';
+  _pools[prefix][idx].itens.push({
+    nome,
+    sabor: selSabor?.value || 'apimentado',
+    raridade: selRaridade?.value || 'basica',
+    numeros
+  });
+  if(inpNome) inpNome.value = '';
+  if(inpNumeros) inpNumeros.value = '';
   _renderPoolItensInline(prefix, idx);
 }
 function _poolRemoverItem(prefix, idx, itemIdx){
@@ -9103,7 +9178,8 @@ function _lootCardHtml(nome, diceLabel){
 // Um item que comece com "###" vira um cabeçalho de grupo (linha inteira),
 // em vez de um card sorteável — usado para separar Comum/Incomum/Rara/Raríssima
 // dentro da mesma pool sem quebrar a numeração do dado.
-function _lootIsGroupHeader(nome){ return /^###\s*/.test(String(nome||'')); }
+function _poolItemNome(item){ return typeof item==='string' ? item : (item && item.nome) || ''; }
+function _lootIsGroupHeader(nome){ return typeof nome==='string' && /^###\s*/.test(nome); }
 function _lootGroupHeaderHtml(nome){
   const label = String(nome).replace(/^###\s*/,'');
   return '<div class="loot-group-header">'+label.replace(/</g,'&lt;')+'</div>';
@@ -9120,12 +9196,64 @@ function _lootGridHtml(itens){
     return _lootCardHtml(nome, diceLabel);
   }).join('');
 }
+// Tabela pública de berries agrupada por sabor (colunas) x raridade (linhas),
+// no estilo da referência do Ricky. Só é usada quando os itens da pool estão
+// no formato novo (objetos com sabor/raridade/numeros).
+function _berryTableHtml(itens){
+  const objetos = itens.filter(function(it){ return it && typeof it==='object'; });
+  const porCelula = {}; // `${sabor}|${raridade}` -> [itens]
+  const bonus = [];
+  objetos.forEach(function(it){
+    if(it.raridade==='bonus'){ bonus.push(it); return; }
+    const k = it.sabor+'|'+it.raridade;
+    (porCelula[k] = porCelula[k]||[]).push(it);
+  });
+  const rotuloCol = '<div class="berry-tbl-cell berry-tbl-rotulo"></div>';
+  let html = '<div class="berry-tbl">';
+  // cabeçalho
+  html += '<div class="berry-tbl-row">' + rotuloCol + SABORES.map(function(s){
+    return `<div class="berry-tbl-cell berry-tbl-header">${s.label.toUpperCase()}</div>`;
+  }).join('') + '</div>';
+  // linhas de raridade
+  RARIDADES.forEach(function(r){
+    html += '<div class="berry-tbl-row">'
+      + `<div class="berry-tbl-cell berry-tbl-rotulo">${r.label.toUpperCase()}</div>`
+      + SABORES.map(function(s){
+        const lista = porCelula[s.id+'|'+r.id] || [];
+        const bg = r.id==='basica'?s.bgBasica:(r.id==='intermedia'?s.bgIntermedia:s.bgRara);
+        return `<div class="berry-tbl-cell berry-tbl-itens" style="background:${bg}">`
+          + lista.map(function(it){
+            return `<div class="berry-tbl-item">
+              <img class="loot-item-sprite-img" data-item="${String(it.nome).replace(/"/g,'&quot;')}" src="${_itemSpriteUrl(it.nome)}" onerror="_lootItemImgError(this,'${String(it.nome).replace(/'/g,"\\'")}')"/>
+              <div class="berry-tbl-nums">${(it.numeros||[]).map(n=>'('+n+')').join('<br>')}</div>
+            </div>`;
+          }).join('')
+          + '</div>';
+      }).join('')
+      + '</div>';
+  });
+  // linha de bônus (largura total, sem separar por sabor)
+  if(bonus.length){
+    html += '<div class="berry-tbl-row">'
+      + '<div class="berry-tbl-cell berry-tbl-rotulo">BÔNUS</div>'
+      + `<div class="berry-tbl-cell berry-tbl-itens" style="background:#dcdcdc;grid-column:span 5">`
+      + bonus.map(function(it){
+        return `<div class="berry-tbl-item">
+          <img class="loot-item-sprite-img" data-item="${String(it.nome).replace(/"/g,'&quot;')}" src="${_itemSpriteUrl(it.nome)}" onerror="_lootItemImgError(this,'${String(it.nome).replace(/'/g,"\\'")}')"/>
+          <div class="berry-tbl-nums">${(it.numeros||[]).map(n=>'('+n+')').join('<br>')}</div>
+        </div>`;
+      }).join('')
+      + '</div></div>';
+  }
+  html += '</div>';
+  return html;
+}
 // Busca sprite real pra cada item: primeiro no ItemDex, só cai pra PokeAPI
 // se o item não existir lá (ou não tiver sprite cadastrado). Não mexe em
 // itens com upload manual (_itemSpritesCustom) já feito pelo admin.
 function _lootFetchSprites(itens){
-  Array.from(new Set(itens||[]))
-    .filter(function(n){ return !_lootIsGroupHeader(n); })
+  Array.from(new Set((itens||[]).map(_poolItemNome)))
+    .filter(function(n){ return n && !_lootIsGroupHeader(n); })
     .forEach(async function(nome){
       if(_itemSpritesCustom[nome]) return;
       const dexUrl = await _fetchItemDexSprite(nome);
@@ -9149,7 +9277,8 @@ function abrirLootModal(poolIdx){
   const titulo = (poolAlvo?.titulo||'').trim() || (ev?.pool_titulo||'').trim() || 'Pool de Itens';
 const obs = (poolAlvo?.obs||'').trim();
   if(!itens.length) return;
-  grid.innerHTML = _lootGridHtml(itens);
+  const temObjeto = itens.some(function(it){ return it && typeof it==='object'; });
+  grid.innerHTML = temObjeto ? _berryTableHtml(itens) : _lootGridHtml(itens);
   _lootFetchSprites(itens);
   const tituloEl = document.getElementById('loot-modal-titulo');
   if(tituloEl) tituloEl.textContent = titulo;
@@ -9271,8 +9400,8 @@ function renderEventoItensGrid(itens){
   if(!itens || !itens.length){ wrap.style.display='none'; return; }
   wrap.style.display = '';
 
-  const n = itens.length;
-  grid.innerHTML = _lootGridHtml(itens);
+  const temObjeto = itens.some(function(it){ return it && typeof it==='object'; });
+  grid.innerHTML = temObjeto ? _berryTableHtml(itens) : _lootGridHtml(itens);
   _lootFetchSprites(itens);
 }
 
@@ -13119,17 +13248,23 @@ function _eventoPoolAtiva(ev){
   }
   return null;
 }
-// Itens "reais" de uma pool, sem os cabeçalhos "###Grupo" — na mesma ordem/
-// numeração 1..N usada na grade (índice 0 = resultado 1 do dado).
+// Itens "reais" de uma pool, sem os cabeçalhos "###Grupo" — usado só pra
+// pools no formato legado (strings), onde índice 0 = resultado 1 do dado.
 function _poolRealItens(pool){
-  return (pool && Array.isArray(pool.itens) ? pool.itens : []).filter(function(n){ return !_lootIsGroupHeader(n); });
+  return (pool && Array.isArray(pool.itens) ? pool.itens : []).filter(function(n){ return typeof n==='string' && !_lootIsGroupHeader(n); });
 }
 // Dado o resultado de um dado (1..lados) e a pool ativa do evento, devolve o
-// nome do item sorteado, ou null se não houver pool ou o resultado cair fora
-// do alcance da pool (ex.: pool com 72 itens e dado d100 rolando 73-100).
+// nome do item sorteado, ou null se não houver pool ou nenhum item cobrir o número.
+// Formato novo: cada item tem `numeros` (lista específica, não sequencial).
+// Formato legado: lista simples de strings, índice = resultado-1.
 function _itemDoResultado(ev, resultado){
   const pool = _eventoPoolAtiva(ev);
-  if(!pool) return null;
+  if(!pool || !Array.isArray(pool.itens) || !pool.itens.length) return null;
+  const temObjeto = pool.itens.some(function(it){ return it && typeof it === 'object'; });
+  if(temObjeto){
+    const achado = pool.itens.find(function(it){ return it && typeof it==='object' && Array.isArray(it.numeros) && it.numeros.includes(resultado); });
+    return achado ? achado.nome : null;
+  }
   const reais = _poolRealItens(pool);
   return reais[resultado-1] || null;
 }
@@ -13222,15 +13357,19 @@ async function rolarDadoEvento(){
     if(itensGanhos.length) _lootFetchSprites(itensGanhos);
   }
 
-  // Salva no histórico (uma linha por rolagem, mesmo quando são várias)
-  for(const r of rolagens){
-    const entry = {personagem, lados, motivo, resultado: r.resultado, hora, data, evento_slug: ev.slug};
-    try{
-      const res = await dbPost('historico_dados', entry);
-      if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
-      else            eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'});
-    }catch(e){ eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'}); }
-  }
+  // Salva UMA entrada coletiva no histórico (não uma linha por dado) —
+  // guarda o array de rolagens/itens em `lote` pra renderHistoricoEvento
+  // mostrar como um card único com o grid de itens, igual ao resultado ao vivo.
+  const entryColetiva = {
+    personagem, lados, motivo, resultado: soma,
+    hora, data, evento_slug: ev.slug,
+    lote: rolagens
+  };
+  try{
+    const res = await dbPost('historico_dados', entryColetiva);
+    if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
+    else            eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
+  }catch(e){ eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'}); }
   eventoHistPagina = 0;
   renderHistoricoEvento();
   if(loaded.rolagens) renderRolagens();
@@ -13293,15 +13432,19 @@ async function rolarColheitaEvento(){
     if(itensGanhos.length) _lootFetchSprites(itensGanhos);
   }
 
-  // Salva cada rolagem no histórico (uma linha por dado, mesmo padrão do rolarDadoEvento)
-  for(const r of rolagens){
-    const entry = {personagem, lados, motivo: poolAtiva.titulo||'Colheita', resultado: r.resultado, hora, data, evento_slug: ev.slug};
-    try{
-      const res = await dbPost('historico_dados', entry);
-      if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
-      else            eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'});
-    }catch(e){ eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'}); }
-  }
+  // Salva UMA entrada coletiva no histórico (não uma linha por dado) — mesmo
+  // padrão do rolarDadoEvento: guarda o array em `lote` pra renderizar como
+  // card único com grid de itens em vez de N linhas individuais.
+  const entryColetiva = {
+    personagem, lados, motivo: poolAtiva.titulo||'Colheita', resultado: soma,
+    hora, data, evento_slug: ev.slug,
+    lote: rolagens
+  };
+  try{
+    const res = await dbPost('historico_dados', entryColetiva);
+    if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
+    else            eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
+  }catch(e){ eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'}); }
   eventoHistPagina = 0;
   renderHistoricoEvento();
   if(loaded.rolagens) renderRolagens();
@@ -13328,7 +13471,33 @@ function renderHistoricoEvento(){
   document.getElementById('evento-hist-next').style.display=eventoHistPagina<total-1?'':'none';
   document.getElementById('evento-hist-paginacao').style.display=total>1?'flex':'none';
   lista.innerHTML=pagina.map(e=>{
+    const lote = Array.isArray(e.lote) ? e.lote : null;
     const isDado = e.tipo==='dado' || (e.lados && !e.pokes);
+    if(isDado && lote){
+      // Rolagem coletiva de berries/itens (colheita em lote) — um card só
+      // com o grid de itens, igual ao resultado ao vivo, sem números individuais.
+      const max = e.lados||'?';
+      const qtd = lote.length;
+      return `<div class="hist-entry">
+        <div class="hist-header">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
+            <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🍓 ${qtd}d${max}</span>
+            ${e.evento_slug?`<span class="rol-entry-bioma">🎪 ${e.evento_slug}</span>`:''}
+          </div>
+          <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);padding:0 14px 10px">
+          ${e.personagem} rolou <strong>${qtd}d${max}</strong> para <strong>${e.motivo||'—'}</strong>: [${lote.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${e.resultado}</strong>
+        </div>
+        <div class="loot-items-grid" style="padding:0 14px 10px">
+          ${lote.map(function(r){
+            if(r.item) return _lootCardHtml(r.item, String(r.resultado));
+            return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
+          }).join('')}
+        </div>
+      </div>`;
+    }
     if(isDado){
       const max=e.lados||'?';
       const res=e.resultado;
@@ -13393,7 +13562,11 @@ function renderHistoricoEvento(){
       <div class="hist-body">${ph}</div>
     </div>`;
   }).join('');
-  _lootFetchSprites(pagina.filter(e=>e.tipo==='dado'||(e.lados&&!e.pokes)).map(e=>_itemDoResultado(eventoAtual,e.resultado)).filter(Boolean));
+  _lootFetchSprites(pagina.flatMap(e=>{
+    if(Array.isArray(e.lote)) return e.lote.map(r=>r.item).filter(Boolean);
+    if(e.tipo==='dado'||(e.lados&&!e.pokes)) return [_itemDoResultado(eventoAtual,e.resultado)].filter(Boolean);
+    return [];
+  }));
 }
 
 
