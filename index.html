@@ -2937,23 +2937,15 @@ function calcSyncSelects(){
           <label>Motivo</label>
           <input type="text" id="evento-dice-motivo" placeholder="Ex: Ataque, Fuga..."/>
         </div>
-      </div>
-      <button class="roll-btn" onclick="rolarDadoEvento()">Rolar Dado</button>
-
-      <!-- COLHEITA: rola vários dados de uma vez e já mostra os itens sorteados -->
-      <div id="evento-colheita-wrap" style="display:none;margin-top:18px;padding-top:18px;border-top:1.5px solid var(--border)">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px" id="evento-colheita-titulo">🍓 Colheita de Itens</div>
-        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
-          <div class="ctrl-group" style="max-width:140px">
-            <label>Qtd. de rolagens</label>
-            <input type="number" id="evento-colheita-qtd" value="10" min="1" max="50"/>
-          </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;padding-bottom:9px">
-            <input type="checkbox" id="evento-colheita-criador"/> Sou Criador (+1 rolagem bônus)
-          </label>
+        <div class="ctrl-group" id="evento-colheita-qtd-wrap" style="display:none;max-width:130px">
+          <label>Qtd. de rolagens</label>
+          <input type="number" id="evento-colheita-qtd" value="10" min="1" max="50"/>
         </div>
-        <button class="roll-btn" style="background:#2e7d32" onclick="rolarColheitaEvento()">🍓 Rolar Berries</button>
       </div>
+      <label id="evento-colheita-criador-wrap" style="display:none;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;margin:-6px 0 12px">
+        <input type="checkbox" id="evento-colheita-criador"/> Sou Criador (+1 rolagem bônus)
+      </label>
+      <button class="roll-btn" id="evento-dado-roll-btn" onclick="rolarDadoEvento()">Rolar Dado</button>
     </div>
   </div>
 
@@ -12905,12 +12897,17 @@ async function iniciarPaginaEvento(slug){
       renderEventoItensGrid(_ativaDisp ? (_ativaDisp.itens||[]) : (ev.pool_itens||[]));
       renderEventoDiceBtns();
       sincEventoDiceBtn();
-      // Mostra o botão "Rolar Berries" só quando existe pool de itens ativa
-      const colheitaWrap = document.getElementById('evento-colheita-wrap');
-      const colheitaTitulo = document.getElementById('evento-colheita-titulo');
+      // Quando existe pool de itens ativa, mostra qtd/criador e adapta o botão
+      const qtdWrap = document.getElementById('evento-colheita-qtd-wrap');
+      const criadorWrap = document.getElementById('evento-colheita-criador-wrap');
+      const rollBtn = document.getElementById('evento-dado-roll-btn');
       const poolParaColheita = _eventoPoolAtiva(ev);
-      if(colheitaWrap) colheitaWrap.style.display = poolParaColheita ? '' : 'none';
-      if(colheitaTitulo && poolParaColheita) colheitaTitulo.textContent = '🍓 ' + (poolParaColheita.titulo || 'Colheita de Itens');
+      if(qtdWrap) qtdWrap.style.display = poolParaColheita ? '' : 'none';
+      if(criadorWrap) criadorWrap.style.display = poolParaColheita ? 'flex' : 'none';
+      if(rollBtn){
+        rollBtn.textContent = poolParaColheita ? ('🍓 Rolar ' + (poolParaColheita.titulo || 'Itens')) : 'Rolar Dado';
+        rollBtn.style.background = poolParaColheita ? '#2e7d32' : '';
+      }
     }
 
     // carrega historico do evento
@@ -13129,7 +13126,7 @@ function _itemGanhoBlockHtml(itemGanho, pool, resultado){
   return '';
 }
 
-// ── EVENTO: rolar dado ──
+// ── EVENTO: rolar dado (1 rolagem normal, ou N de uma vez quando há pool ativa) ──
 async function rolarDadoEvento(){
   const ev = eventoAtual;
   if(!ev){ alert('Evento não carregado.'); return; }
@@ -13137,6 +13134,8 @@ async function rolarDadoEvento(){
   const personagemEl = document.getElementById('evento-dice-personagem');
   const ladosEl      = document.getElementById('evento-dice-lados');
   const motivoEl     = document.getElementById('evento-dice-motivo');
+  const qtdEl        = document.getElementById('evento-colheita-qtd');
+  const criadorEl    = document.getElementById('evento-colheita-criador');
 
   const personagem = personagemEl?.value.trim() || '';
   const lados      = parseInt(ladosEl?.value) || 0;
@@ -13146,51 +13145,64 @@ async function rolarDadoEvento(){
   if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
   if(!motivo){ alert('Preencha o motivo da rolagem!'); motivoEl?.focus(); return; }
 
-  const resultado = Math.floor(Math.random() * lados) + 1;
+  // Pool ativa -> permite rolar N dados de uma vez (ex.: colheita 10d100,
+  // 11d100 se marcar "Sou Criador"). Sem pool, continua sendo 1 rolagem só.
+  const poolAtiva = _eventoPoolAtiva(ev);
+  let qtd = 1;
+  if(poolAtiva){
+    qtd = parseInt(qtdEl?.value) || 1;
+    if(criadorEl?.checked) qtd += 1;
+  }
+
   const agora = new Date();
   const hora  = agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data  = agora.toLocaleDateString('pt-BR');
 
-  // Se o evento tiver uma pool de itens ativa, o resultado também sorteia
-  // o item correspondente (slot = número do resultado do dado).
-  const poolAtiva = _eventoPoolAtiva(ev);
-  const itemGanho = _itemDoResultado(ev, resultado);
+  const rolagens = [];
+  for(let i=0;i<qtd;i++){
+    const resultado = Math.floor(Math.random() * lados) + 1;
+    rolagens.push({resultado, item: poolAtiva ? _itemDoResultado(ev, resultado) : null});
+  }
+  const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
 
-  // Exibe resultado na área de resultados
+  // Exibe resultado na área de resultados — sempre no mesmo formato
+  // (grade de resultados), seja 1 rolagem ou várias, com ou sem pool.
   const section = document.getElementById('evento-results');
   if(section){
-    const pct = Math.round((resultado / lados) * 100);
-    const barColor = pct>=80?'#1a7a1a':pct>=50?'var(--brand-mid)':pct>=20?'var(--accent)':'var(--red)';
+    const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
+    const rotulo = poolAtiva ? '🍓' : '🎲';
+    const resumo = qtd === 1
+      ? `${personagem} rolou <strong>1d${lados}</strong> para <strong>${motivo}</strong> e obteve: <strong style="color:var(--brand-mid)">${soma}</strong>`
+      : `${personagem} rolou <strong>${qtd}d${lados}</strong> para <strong>${motivo}</strong>: [${rolagens.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${soma}</strong>`;
     section.innerHTML = `<div class="rol-entry" style="animation:fadeUp .35s both">
       <div class="rol-entry-header">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · d${lados}</span>
+          <span class="rol-entry-bioma" style="background:${poolAtiva?'#e6f4e6':'#f0e8ff'};color:${poolAtiva?'#1a7a1a':'#5a1a9a'}">${rotulo} ${qtd}d${lados}</span>
           <span class="rol-entry-bioma">🎪 ${ev.slug}</span>
         </div>
         <span class="rol-entry-hora">${hora} · ${data}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:16px;padding:4px 0">
-        <div style="font-family:var(--font-title);font-size:48px;font-weight:700;color:var(--brand);line-height:1;min-width:60px;text-align:center">${resultado}</div>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">${motivo}</div>
-          <div style="background:var(--border);border-radius:4px;height:7px;overflow:hidden;margin-bottom:5px">
-            <div style="height:7px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .5s"></div>
-          </div>
-          <div style="font-size:12px;color:var(--muted)">${resultado} de ${lados} (${pct}%)</div>
-        </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>
+      <div class="loot-items-grid">
+        ${rolagens.map(function(r){
+          if(r.item) return _lootCardHtml(r.item, String(r.resultado));
+          if(poolAtiva) return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
+          return '<div class="loot-item-card"><span class="loot-dice-badge">'+r.resultado+'</span></div>';
+        }).join('')}
       </div>
-      ${_itemGanhoBlockHtml(itemGanho, poolAtiva, resultado)}
     </div>`;
-    if(itemGanho) _lootFetchSprites([itemGanho]);
+    if(itensGanhos.length) _lootFetchSprites(itensGanhos);
   }
 
-  // Salva no histórico
-  const entry = {personagem, lados, motivo, resultado, hora, data, evento_slug: ev.slug};
-  try{
-    const res = await dbPost('historico_dados', entry);
-    if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
-    else            eventoHistorico.unshift({...entry, id:Date.now(), tipo:'dado'});
-  }catch(e){ eventoHistorico.unshift({...entry, id:Date.now(), tipo:'dado'}); }
+  // Salva no histórico (uma linha por rolagem, mesmo quando são várias)
+  for(const r of rolagens){
+    const entry = {personagem, lados, motivo, resultado: r.resultado, hora, data, evento_slug: ev.slug};
+    try{
+      const res = await dbPost('historico_dados', entry);
+      if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
+      else            eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'});
+    }catch(e){ eventoHistorico.unshift({...entry, id: Date.now()+Math.random(), tipo:'dado'}); }
+  }
   eventoHistPagina = 0;
   renderHistoricoEvento();
   if(loaded.rolagens) renderRolagens();
