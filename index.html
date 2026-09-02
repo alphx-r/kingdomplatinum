@@ -13365,14 +13365,44 @@ async function rolarDadoEvento(){
     hora, data, evento_slug: ev.slug,
     lote: rolagens
   };
-  try{
-    const res = await dbPost('historico_dados', entryColetiva);
-    if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
-    else            eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
-  }catch(e){ eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'}); }
+  const savedRow = await _postHistoricoColetivo(entryColetiva);
+  eventoHistorico.unshift(savedRow ? {...savedRow, tipo:'dado'} : {...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
   eventoHistPagina = 0;
   renderHistoricoEvento();
   if(loaded.rolagens) renderRolagens();
+}
+
+// POST manual (bypassa sb()/dbPost, que engolem erro) pra salvar uma entrada
+// coletiva de histórico. Em falha, avisa com a mensagem REAL do Postgrest
+// (ex.: coluna "lote" não existe ainda — falta rodar a migração) em vez de
+// fingir sucesso silenciosamente. Retorna a linha salva, ou null em falha.
+async function _postHistoricoColetivo(entry){
+  try{
+    const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados`, {
+      method:'POST',
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(entry)
+    });
+    const text = await res.text();
+    let json = null;
+    try{ json = text ? JSON.parse(text) : null; }catch(e){}
+    if(!res.ok){
+      const msg = json?.message || json?.hint || json?.details || `HTTP ${res.status}`;
+      console.error('[_postHistoricoColetivo] erro Supabase:', res.status, json||text);
+      alert('Erro ao salvar no histórico: ' + msg + '\n\n(a rolagem foi exibida na tela, mas NÃO foi salva no banco — vai sumir se recarregar a página)');
+      return null;
+    }
+    return Array.isArray(json) && json[0] ? json[0] : null;
+  }catch(e){
+    console.error('[_postHistoricoColetivo] erro de rede:', e);
+    alert('Erro de rede ao salvar no histórico: ' + e.message);
+    return null;
+  }
 }
 
 // ── EVENTO: rolar berries/itens em lote (ex.: colheita 10d100, 11d100 p/ Criador) ──
@@ -13440,11 +13470,8 @@ async function rolarColheitaEvento(){
     hora, data, evento_slug: ev.slug,
     lote: rolagens
   };
-  try{
-    const res = await dbPost('historico_dados', entryColetiva);
-    if(res&&res[0]) eventoHistorico.unshift({...res[0], tipo:'dado'});
-    else            eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
-  }catch(e){ eventoHistorico.unshift({...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'}); }
+  const savedRow = await _postHistoricoColetivo(entryColetiva);
+  eventoHistorico.unshift(savedRow ? {...savedRow, tipo:'dado'} : {...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
   eventoHistPagina = 0;
   renderHistoricoEvento();
   if(loaded.rolagens) renderRolagens();
