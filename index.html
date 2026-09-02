@@ -808,6 +808,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .berry-tbl-item{ display:flex; flex-direction:column; align-items:center; width:44px; }
 .berry-tbl-item img{ width:32px; height:32px; object-fit:contain; }
 .berry-tbl-nums{ font-size:10px; font-weight:700; color:#1a1a2e; text-align:center; line-height:1.2; }
+.loot-raridade-badge{ display:inline-block; margin-top:2px; padding:1px 6px; border-radius:8px; font-size:9px; font-weight:700; color:#fff; text-transform:uppercase; letter-spacing:.3px; }
 @media (max-width:640px){
   .berry-tbl-row{ grid-template-columns:60px repeat(5,1fr); }
   .berry-tbl-item{ width:34px; }
@@ -9158,17 +9159,24 @@ async function _fetchItemDexSprite(nome){
 }
 
 // Monta o card de um item de loot já com sprite (custom > ItemDex > PokeAPI > fallback)
-function _lootCardHtml(nome, diceLabel){
+const RARIDADE_LABEL = {basica:'Comum', intermedia:'Incomum', rara:'Raro', bonus:'Bônus'};
+const RARIDADE_COR = {basica:'#6b9e6b', intermedia:'#3b7fd9', rara:'#b0862e', bonus:'#9a4fd9'};
+function _lootCardHtml(nome, diceLabel, raridade){
   const nomeAttr = String(nome).replace(/"/g,'&quot;');
   const nomeJs   = String(nome).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
   const src = _itemSpritesCustom[nome] || (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
+  const raridadeLabel = RARIDADE_LABEL[raridade];
+  const raridadeBadge = raridadeLabel
+    ? '<span class="loot-raridade-badge" style="background:'+RARIDADE_COR[raridade]+'">'+raridadeLabel+'</span>'
+    : '';
   return '<div class="loot-item-card">'
     +'<img class="loot-item-sprite-img" data-item="'+nomeAttr+'" src="'+src+'" '
       +'style="width:34px;height:34px;object-fit:contain" '
       +'onerror="_lootItemImgError(this,\''+nomeJs+'\')"/>'
     +'<span class="loot-dice-badge">'+diceLabel+'</span>'
     +'<span class="loot-item-name" title="'+nomeAttr+'">'+nome+'</span>'
+    +raridadeBadge
     +'<label class="loot-upload-btn" style="display:none;align-items:center;justify-content:center;gap:3px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:2px">'
       +'📷 trocar'
       +'<input type="file" accept="image/*" style="display:none" onchange="_lootUploadSprite(this,\''+nomeJs+'\')"/>'
@@ -13258,15 +13266,23 @@ function _poolRealItens(pool){
 // Formato novo: cada item tem `numeros` (lista específica, não sequencial).
 // Formato legado: lista simples de strings, índice = resultado-1.
 function _itemDoResultado(ev, resultado){
+  const obj = _itemObjDoResultado(ev, resultado);
+  return obj ? obj.nome : null;
+}
+// Como _itemDoResultado, mas devolve o item completo (com raridade/sabor)
+// quando a pool está no formato novo. No formato legado devolve
+// {nome} só com o nome (sem raridade — não tem essa info).
+function _itemObjDoResultado(ev, resultado){
   const pool = _eventoPoolAtiva(ev);
   if(!pool || !Array.isArray(pool.itens) || !pool.itens.length) return null;
   const temObjeto = pool.itens.some(function(it){ return it && typeof it === 'object'; });
   if(temObjeto){
     const achado = pool.itens.find(function(it){ return it && typeof it==='object' && Array.isArray(it.numeros) && it.numeros.includes(resultado); });
-    return achado ? achado.nome : null;
+    return achado || null;
   }
   const reais = _poolRealItens(pool);
-  return reais[resultado-1] || null;
+  const nome = reais[resultado-1];
+  return nome ? {nome} : null;
 }
 // HTML do bloco "item sorteado" (com sprite), pra colar embaixo do número do dado
 function _itemGanhoBlockHtml(itemGanho, pool, resultado){
@@ -13324,7 +13340,8 @@ async function rolarDadoEvento(){
   const rolagens = [];
   for(let i=0;i<qtd;i++){
     const resultado = Math.floor(Math.random() * lados) + 1;
-    rolagens.push({resultado, item: poolAtiva ? _itemDoResultado(ev, resultado) : null});
+    const itemObj = poolAtiva ? _itemObjDoResultado(ev, resultado) : null;
+    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null});
   }
   const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
   const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
@@ -13345,10 +13362,10 @@ async function rolarDadoEvento(){
         </div>
         <span class="rol-entry-hora">${hora} · ${data}</span>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>
+      ${poolAtiva ? '' : `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>`}
       <div class="loot-items-grid">
         ${rolagens.map(function(r){
-          if(r.item) return _lootCardHtml(r.item, String(r.resultado));
+          if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
           if(poolAtiva) return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
           return '<div class="loot-item-card"><span class="loot-dice-badge">'+r.resultado+'</span></div>';
         }).join('')}
@@ -13434,7 +13451,8 @@ async function rolarColheitaEvento(){
   const rolagens = [];
   for(let i=0;i<qtd;i++){
     const resultado = Math.floor(Math.random()*lados)+1;
-    rolagens.push({resultado, item: _itemDoResultado(ev, resultado)});
+    const itemObj = _itemObjDoResultado(ev, resultado);
+    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null});
   }
   const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
   const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
@@ -13449,12 +13467,9 @@ async function rolarColheitaEvento(){
         </div>
         <span class="rol-entry-hora">${hora} · ${data}</span>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
-        ${personagem} rolou <strong>${qtd}d${lados}</strong>: [${rolagens.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${soma}</strong>
-      </div>
       <div class="loot-items-grid">
         ${rolagens.map(function(r){
-          if(r.item) return _lootCardHtml(r.item, String(r.resultado));
+          if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
           return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
         }).join('')}
       </div>
@@ -13514,12 +13529,9 @@ function renderHistoricoEvento(){
           </div>
           <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
         </div>
-        <div style="font-size:12px;color:var(--muted);padding:0 14px 10px">
-          ${e.personagem} rolou <strong>${qtd}d${max}</strong> para <strong>${e.motivo||'—'}</strong>: [${lote.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${e.resultado}</strong>
-        </div>
         <div class="loot-items-grid" style="padding:0 14px 10px">
           ${lote.map(function(r){
-            if(r.item) return _lootCardHtml(r.item, String(r.resultado));
+            if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
             return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
           }).join('')}
         </div>
