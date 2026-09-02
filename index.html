@@ -12700,12 +12700,32 @@ async function salvarEdicaoEvento(){
   payload.desc_meses  = _descMeses['edit-ev'] || [];
 
   try{
-    const patchRes = await dbPatch('eventos',`id=eq.${id}`,payload);
-    // dbPatch/sb() nunca lança erro: em falha (RLS, rede, etc.) ele só loga no console
-    // e devolve []. Sem checar o retorno aqui, o modal mostrava "sucesso" mesmo sem
-    // nada ter sido gravado no banco. Tratamos array vazio/ausente como falha real.
-    if(!Array.isArray(patchRes) || patchRes.length===0){
-      errEl.textContent = 'Erro ao salvar: o servidor não confirmou a alteração (verifique o console e as policies RLS da tabela "eventos").';
+    // dbPatch/sb() nunca lança erro: em falha ela só loga no console e devolve [].
+    // Aqui fazemos o PATCH manualmente pra capturar a mensagem REAL do Postgrest
+    // (coluna inexistente, tipo errado, constraint, RLS, etc.) e mostrar pro usuário
+    // em vez de um "sucesso" falso ou um erro genérico sem causa.
+    const patchResRaw = await fetch(`${SUPA_URL}/rest/v1/eventos?id=eq.${id}`, {
+      method:'PATCH',
+      headers:{
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(payload)
+    });
+    const patchText = await patchResRaw.text();
+    let patchJson = null;
+    try{ patchJson = patchText ? JSON.parse(patchText) : null; }catch(e){}
+    if(!patchResRaw.ok){
+      const msg = patchJson?.message || patchJson?.hint || patchJson?.details || `HTTP ${patchResRaw.status}`;
+      console.error('[salvarEdicaoEvento] erro Supabase:', patchResRaw.status, patchJson || patchText);
+      errEl.textContent = 'Erro ao salvar: ' + msg;
+      errEl.style.display='block';
+      return;
+    }
+    if(!Array.isArray(patchJson) || patchJson.length===0){
+      errEl.textContent = 'Erro ao salvar: o servidor confirmou HTTP 200 mas não retornou a linha atualizada (nenhuma linha correspondeu ao id — verifique se o evento ainda existe).';
       errEl.style.display='block';
       return;
     }
