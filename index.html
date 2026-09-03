@@ -8835,7 +8835,14 @@ function _renderPoolItensInline(prefix, idx){
   if(!cont) return;
   const lista = p.itens || [];
   if(!lista.length){ cont.innerHTML = '<span style="font-size:12px;color:var(--muted)">Nenhum item.</span>'; return; }
-  cont.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px">'
+  const temLegado = lista.some(function(it){ return typeof it === 'string' && !_lootIsGroupHeader(it); });
+  const avisoLegado = temLegado
+    ? `<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;background:#fff3cd;border:1px solid #e6c46a;border-radius:7px;padding:6px 10px;margin-bottom:6px">
+        <span style="font-size:11px;color:#7a5b00">⚠️ Itens em <b>formato legado</b> (sem sabor/raridade) — por isso a raridade não aparece no card do resultado.</span>
+        <button onclick="_poolConverterTodosLegado('${prefix}',${idx})" style="font-size:11px;font-weight:700;background:var(--brand);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap">🔄 Converter todos p/ novo formato</button>
+      </div>`
+    : '';
+  cont.innerHTML = avisoLegado + '<div style="display:flex;flex-direction:column;gap:4px">'
     + lista.map(function(item, i){
       // formato legado: string pura, sem sabor/raridade/números
       if(typeof item === 'string'){
@@ -8846,17 +8853,49 @@ function _renderPoolItensInline(prefix, idx){
         </div>`;
       }
       const s = _saborInfo(item.sabor);
-      const rLabel = item.raridade==='bonus' ? 'Bônus' : (RARIDADES.find(r=>r.id===item.raridade)?.label || '—');
+      const raridadeAtual = _raridadeNorm(item.raridade) || 'basica';
       const nums = (item.numeros||[]).join(', ') || '—';
+      const saborSelect = `<select onchange="_poolItemSetCampo('${prefix}',${idx},${i},'sabor',this.value)" style="font-size:11px;font-weight:700;border:1px solid var(--border);border-radius:5px;padding:2px 4px;background:#fff;flex-shrink:0">
+          ${SABORES.map(so=>`<option value="${so.id}"${so.id===item.sabor?' selected':''}>${so.label}</option>`).join('')}
+        </select>`;
+      const raridadeSelect = `<select onchange="_poolItemSetCampo('${prefix}',${idx},${i},'raridade',this.value)" style="font-size:10px;border:1px solid var(--border);border-radius:5px;padding:2px 4px;background:#fff;flex-shrink:0">
+          ${RARIDADES.map(r=>`<option value="${r.id}"${r.id===raridadeAtual?' selected':''}>${r.label}</option>`).join('')}
+          <option value="bonus"${raridadeAtual==='bonus'?' selected':''}>Bônus</option>
+        </select>`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:${s?s.bgBasica+'55':'var(--surface2)'};border:1px solid var(--border)">
-        <span style="font-size:11px;font-weight:700;color:${s?s.cor:'var(--text)'};flex-shrink:0">${s?s.label:'—'}</span>
+        ${saborSelect}
         <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.nome}">${item.nome}</span>
-        <span style="font-size:10px;color:var(--muted);flex-shrink:0">${rLabel}</span>
+        ${raridadeSelect}
         <span style="font-size:10px;font-weight:700;color:var(--brand);flex-shrink:0">(${nums})</span>
         <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1;flex-shrink:0" title="Remover">×</button>
       </div>`;
     }).join('') + '</div>';
 }
+// Converte TODOS os itens legado (string) de uma pool pro formato novo de uma
+// só vez, preservando o número do dado que cada um já respondia (importante:
+// converter só ALGUNS deixaria os outros strings inacessíveis, porque a busca
+// de item por resultado muda de "por índice" pra "por lista de números" assim
+// que qualquer item da pool vira objeto — ver _itemObjDoResultado).
+function _poolConverterTodosLegado(prefix, idx){
+  const p = _pools[prefix][idx];
+  if(!p || !Array.isArray(p.itens)) return;
+  if(!confirm('Converter todos os itens desta pool para o novo formato?\n\nOs números do dado que cada item já responde serão mantidos (o card de resultado continua sorteando o mesmo item pro mesmo número). Depois você poderá escolher sabor e raridade de cada um.')) return;
+  let n = 0;
+  p.itens = p.itens.map(function(it){
+    if(typeof it !== 'string' || _lootIsGroupHeader(it)) return it; // cabeçalho ou já convertido: mantém
+    n++;
+    return { nome: it, sabor:'apimentado', raridade:'basica', numeros:[n] };
+  });
+  _renderPoolItensInline(prefix, idx);
+}
+// Atualiza sabor/raridade de um item já no formato novo, sem re-renderizar a
+// lista inteira (evita perder o foco/scroll enquanto o admin ajusta vários).
+function _poolItemSetCampo(prefix, idx, itemIdx, campo, valor){
+  const p = _pools[prefix][idx];
+  if(!p || !p.itens || typeof p.itens[itemIdx] !== 'object' || !p.itens[itemIdx]) return;
+  p.itens[itemIdx][campo] = valor;
+}
+
 
 function _poolSetAba(prefix, idx){ _poolAba[prefix] = idx; _poolHtml(prefix); }
 function _poolToggleAtiva(prefix, idx, val){ if(_pools[prefix][idx]) _pools[prefix][idx].ativa = val; _poolHtml(prefix); }
