@@ -998,7 +998,20 @@ body{padding-left:0!important}
 </style>
 </head>
 <body>
+<!-- Tela de acesso restrito — mostrada no lugar do mapa para quem não estiver
+     logado como admin (sessão validada contra admin_list no Supabase).
+     O mapa em si (initMapa) nem chega a ser carregado nesse caso. -->
+<div id="mapa-acesso-negado" style="display:none;position:fixed;inset:0;z-index:99999;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:28px">
+  <div style="font-size:44px">🔒</div>
+  <div style="font-family:var(--font-title);font-size:19px;color:var(--brand)">Acesso restrito</div>
+  <div style="font-size:13px;color:var(--muted);max-width:340px;line-height:1.6">
+    O mapa da região Nendo é uma área exclusiva para administradores.<br>
+    Faça login como admin no site principal para acessá-lo.
+  </div>
+</div>
+
 <div class="page active" id="page-mapa">
+
   <!-- Botões flutuantes do admin — some por padrão, aparece só se a sessão de
        admin do index for detectada. Ficam por cima do mapa nas duas abas. -->
   <div id="adm-float-tabs" style="display:none">
@@ -1433,6 +1446,7 @@ async function dbRpc(fn, args={}){
 
 // Sessão de admin — controlada pelo login desta página (ver adm_auth.js)
 let admLogado = null;
+let _mapaAcessoNegado = false; // true assim que se confirma que o visitante não é admin
 
 // Stub — no site principal isso carrega config de bônus de shiny pro rolador;
 // aqui não é usado (a lista de Pokémon por bioma dentro do popup do mapa fica
@@ -1672,7 +1686,10 @@ let _mapaModoEdicao = false;
 let _mapaPinDragging = null;  // {pin, loc, startMouseX, startMouseY, startX, startY}
 
 // ── Inicialização ──────────────────────────────────────────
+// Trava de segurança: se o acesso já foi negado (visitante não-admin),
+// initMapa nunca roda, não importa quem tente chamá-la.
 async function initMapa() {
+  if (_mapaAcessoNegado) return;
   const loading = document.getElementById('mapaLoading');
   const bar     = document.getElementById('mapaLoadingBar');
   if (loading) loading.style.display = 'flex';
@@ -3184,7 +3201,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Observar quando page-mapa ficar visível
   const observer = new MutationObserver(() => {
     const pg = document.getElementById('page-mapa');
-    if (pg && pg.classList.contains('active') && !_mapaIniciado) {
+    if (pg && pg.classList.contains('active') && !_mapaIniciado && !_mapaAcessoNegado) {
       _mapaIniciado = true;
       initMapa();
     }
@@ -3268,15 +3285,23 @@ function mostrarPainelAdm(){
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 1. Verifica se já existe sessão de admin válida (feita no index) ANTES
-  //    de montar o mapa, pra já nascer com os botões de edição corretos
-  //    (initMapa checa `admLogado` internamente).
+  // 1. Verifica se existe sessão de admin válida (feita no index) ANTES de
+  //    decidir se o mapa sequer deve ser montado.
   const ok = await restaurarSessaoMapaAdm();
-  // 2. O mapa carrega sempre, pra qualquer visitante.
+
+  // 2. Visitante não-admin: bloqueia o mapa por completo. O mapa nem chega
+  //    a ser carregado (nem imagem, nem pins, nem dados do Supabase) —
+  //    só a tela de acesso restrito é exibida.
+  if (!ok) {
+    _mapaAcessoNegado = true;
+    document.getElementById('page-mapa').style.display = 'none';
+    document.getElementById('mapa-acesso-negado').style.display = 'flex';
+    return;
+  }
+
+  // 3. Admin confirmado: carrega o mapa normalmente e revela os controles.
   await initMapa();
-  // 3. Só revela a barra/painel do admin se a sessão do index for válida.
-  //    Visitante comum (ou admin que não logou no site) nunca vê nada disso.
-  if(ok) mostrarPainelAdm();
+  mostrarPainelAdm();
 });
 
 </script>
