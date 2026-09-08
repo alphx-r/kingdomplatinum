@@ -1302,6 +1302,10 @@ function buildItemDetailHtml(it, slug) {
       </div>
       <div style="flex:1">
         <div class="field-row" style="margin-bottom:10px">
+          <div class="field-lbl pt">Nome</div>
+          <input class="mv-meta-input field-pt filled" id="it-name-${slug}" type="text" value="${String(it.name || '').replace(/"/g, '&quot;')}" style="width:100%">
+        </div>
+        <div class="field-row" style="margin-bottom:10px">
           <div class="field-lbl pt">Categoria</div>
           <select class="mv-meta-input field-pt filled" id="it-category-${slug}" style="width:100%">${categoryOptionsHtml(it.category || '')}</select>
         </div>
@@ -1404,6 +1408,7 @@ function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn) {
 
 async function saveItem(name) {
   const slug = toSlugBase(name) || name;
+  const newName = document.getElementById(`it-name-${slug}`)?.value.trim() || name;
   const category = document.getElementById(`it-category-${slug}`)?.value.trim() || null;
   const item_desc = document.getElementById(`it-description-${slug}`)?.value.trim() || null;
   const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
@@ -1411,22 +1416,43 @@ async function saveItem(name) {
   const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
   const priceRaw = document.getElementById(`it-price-${slug}`)?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  if (!newName) { toast('Nome é obrigatório.', 'err'); return; }
+  // "name" é a chave do item no banco (upsert por merge-duplicates nessa
+  // coluna) — renomear não é um simples UPDATE de campo, então quando o
+  // nome muda: insere a linha com o nome novo e só então apaga a linha do
+  // nome antigo, evitando perder o item se o passo do meio falhar.
+  const renaming = newName !== name;
+  if (renaming && S.it.dbMap[newName]) { toast(`Já existe um item chamado "${newName}".`, 'err'); return; }
   try {
     const existing = S.it.dbMap[name] || { name };
     const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn);
-    const row = { ...existing, name, category, item_desc, flags, price, updated_at: new Date().toISOString() };
+    const row = { ...existing, name: newName, category, item_desc, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
-    S.it.dbMap[name] = row;
+    if (renaming) {
+      await sbDeleteByName('items', name);
+      delete S.it.dbMap[name];
+    }
+    S.it.dbMap[newName] = row;
     const idx = S.it.all.findIndex(i => i.name === name);
-    if (idx >= 0) S.it.all[idx] = row;
-    // Reconstrói a lista (o item pode ter mudado de categoria/grupo, e os
-    // badges do card precisam refletir os novos flags) — o painel de edição
-    // reabre sozinho no mesmo item, já que S.it.openSlug continua setado.
+    if (idx >= 0) S.it.all[idx] = row; else S.it.all.push(row);
+    if (renaming) S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // O slug do card/painel é derivado do nome, então depois de renomear o
+    // painel precisa reabrir sob o slug/nome novos — senão o re-render do
+    // applyItFilter() abaixo não acha mais "S.it.openSlug" e fecha o painel.
+    if (renaming && S.it.openSlug === slug) {
+      S.it.openSlug = toSlugBase(newName) || newName;
+      S.it.openSlugName = newName;
+    }
+    // Reconstrói a lista (o item pode ter mudado de nome/categoria/grupo, e
+    // os badges do card precisam refletir os novos flags) — o painel de
+    // edição reabre sozinho no mesmo item, já que S.it.openSlug foi ajustado.
     applyItFilter();
-    const ind = document.getElementById('it-ind-' + slug);
-    if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     populateItemCategoryFilter();
-    toast('💾 Item salvo!', 'ok');
+    if (!renaming) {
+      const ind = document.getElementById('it-ind-' + slug);
+      if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
+    }
+    toast(renaming ? `💾 Item renomeado para "${newName}"!` : '💾 Item salvo!', 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
 
