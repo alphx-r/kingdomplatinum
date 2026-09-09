@@ -841,7 +841,13 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 
     <!-- ABA: ENTRAR -->
     <div class="player-login-pane active" id="pl-pane-entrar">
-      <div class="player-login-sub" id="pl-sub">Entre com seu player para continuar</div>
+      <div class="player-login-sub" id="pl-sub">Use a mesma conta do Fichário</div>
+      <button class="player-login-btn" onclick="entrarComFichario()">Entrar com o Fichário</button>
+      <div style="display:flex;align-items:center;gap:10px;margin:18px 0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px">
+        <span style="height:1px;background:var(--border);flex:1"></span>
+        <span>Acesso antigo</span>
+        <span style="height:1px;background:var(--border);flex:1"></span>
+      </div>
       <div class="field">
         <label>Player</label>
         <input type="text" id="pl-player" placeholder="Ex: joaosilva" autocomplete="username"
@@ -907,6 +913,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <button class="nav-link" onclick="goTo('dados',this)"><span class="nav-ico">📋</span><span class="nav-label">Dados</span></button>
     <button class="nav-link" onclick="goTo('rolagens',this)"><span class="nav-ico">🎯</span><span class="nav-label">Rolls</span></button>
     <a class="nav-link" href="https://kpfichas.vercel.app" target="_blank" rel="noopener"><span class="nav-ico">📁</span><span class="nav-label">Fichário</span></a>
+    <a class="nav-link" href="https://kpfichas.vercel.app/integrar-rolagens"><span class="nav-ico">🔗</span><span class="nav-label">Conectar Fichário</span></a>
     <a class="nav-link" href="/datadex"><span class="nav-ico">📖</span><span class="nav-label">Datadex</span></a>
     <button class="nav-link" onclick="abrirPokegram()"><span class="nav-ico">📷</span><span class="nav-label">Pokégram</span></button>
     <a class="nav-link" href="weathercast.html" style="display:none"><span class="nav-ico">☁️</span><span class="nav-label">WeatherCast</span></a>
@@ -2228,7 +2235,7 @@ function calcSyncSelects(){
     <div class="ctrl-group"><label>Bioma</label><select id="bioma" onchange="atualizarHoneyStatus()"></select></div>
     <div class="ctrl-group">
       <label>Personagem</label>
-      <select id="personagem" required onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
+      <select id="personagem" required onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim());atualizarHoneyStatus()">
         <option value="">— Selecione o personagem —</option>
       </select>
     </div>
@@ -4803,6 +4810,8 @@ const PK = (() => {
 const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const SUPA_HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
+const FICHAS_API_URL = 'https://p01--kingdom-platinum--y7pyslnljzqn.code.run/api';
+const FICHAS_SESSION_KEY = 'kp_fichas_session';
 
 // ⚠️ Troque pela URL real onde o Pokégram está publicado.
 const POKEGRAM_URL = 'http://pokegramrpg.vercel.app/';
@@ -5056,6 +5065,26 @@ async function iniciarSessaoPlayer(){
   const path = location.pathname.replace(/^\//, '');
   if(path === 'adm') return;
 
+  // O Fichário é a identidade principal. O acesso antigo continua disponível
+  // para as contas que ainda não concluíram a conexão.
+  const ficharioRestaurado = await restaurarSessaoFichario();
+  if(ficharioRestaurado){
+    renderPersonagensDatalist();
+    mostrarBadgePlayer();
+    fecharLoginOverlay();
+    const ultimoPersonagem = localStorage.getItem('ultimo_personagem')||'';
+    const meus = personagens.filter(p=>p._fichario);
+    const escolhido = meus.find(p=>p.nome===ultimoPersonagem) || (meus.length===1 ? meus[0] : null);
+    if(escolhido){
+      ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el && !el.value) el.value=escolhido.nome;
+      });
+    }
+    atualizarHoneyStatus();
+    return;
+  }
+
   // Carrega players se necessário
   if(!players.length){
     const p = await dbGet('players','select=id,nome');
@@ -5068,6 +5097,7 @@ async function iniciarSessaoPlayer(){
       const p = await dbGet('personagens');
       personagens = p||[];
     }
+    await restaurarSessaoFichario();
     renderPersonagensDatalist();
     mostrarBadgePlayer();
     // Restaura último personagem para o player logado
@@ -5540,6 +5570,143 @@ function garantirSenhaAdmSessao(){
 // PLAYER LOGIN
 // ══════════════════════════════════════
 let playerLogado = null; // {nome, id}
+let fichasAccessToken = null;
+let fichasIntegradas = [];
+
+function entrarComFichario(){
+  window.location.href = 'https://kpfichas.vercel.app/integrar-rolagens';
+}
+
+async function fichasApi(path, options={}){
+  const headers = {'Content-Type':'application/json', ...(options.headers||{})};
+  if(fichasAccessToken) headers.Authorization = `Bearer ${fichasAccessToken}`;
+  const response = await fetch(`${FICHAS_API_URL}${path}`, {...options, headers});
+  const text = await response.text();
+  let body = null;
+  try{ body = text ? JSON.parse(text) : null; }catch(e){ body = null; }
+  if(!response.ok){
+    const error = new Error(body?.message || `Falha na integração com o Fichário (${response.status}).`);
+    error.status = response.status;
+    error.code = body?.code;
+    throw error;
+  }
+  return body;
+}
+
+async function restaurarSessaoFichario(){
+  try{
+    const callbackUrl = new URL(window.location.href);
+    const code = callbackUrl.searchParams.get('kp_fichas_code');
+    if(code){
+      fichasAccessToken = null;
+      const session = await fichasApi('/integracoes/rolagens/sessoes', {
+        method:'POST',
+        body:JSON.stringify({codigo:code})
+      });
+      localStorage.setItem(FICHAS_SESSION_KEY, JSON.stringify({
+        accessToken:session.accessToken,
+        expiresAt:Date.now() + ((session.expiresIn||3600) * 1000),
+        idUsuario:session.idUsuario,
+        username:session.username,
+        nome:session.nome
+      }));
+      callbackUrl.searchParams.delete('kp_fichas_code');
+      history.replaceState({}, '', callbackUrl.pathname + callbackUrl.search + callbackUrl.hash);
+    }
+    const raw = localStorage.getItem(FICHAS_SESSION_KEY);
+    if(!raw) return false;
+    const sessao = JSON.parse(raw);
+    if(!sessao?.accessToken || (sessao.expiresAt && sessao.expiresAt <= Date.now())){
+      localStorage.removeItem(FICHAS_SESSION_KEY);
+      return false;
+    }
+    fichasAccessToken = sessao.accessToken;
+    if(!sessao.username || !sessao.idUsuario){
+      localStorage.removeItem(FICHAS_SESSION_KEY);
+      fichasAccessToken = null;
+      return false;
+    }
+    playerLogado = {
+      nome:sessao.username,
+      id:`fichario-${sessao.idUsuario}`,
+      nomeExibicao:sessao.nome || sessao.username,
+      origem:'fichario'
+    };
+    localStorage.setItem('player_session', JSON.stringify(playerLogado));
+    await carregarFichasIntegradas();
+    return true;
+  }catch(e){
+    console.warn('[fichario] sessão inválida', e);
+    fichasAccessToken = null;
+    fichasIntegradas = [];
+    localStorage.removeItem(FICHAS_SESSION_KEY);
+    return false;
+  }
+}
+
+async function carregarFichasIntegradas(){
+  fichasIntegradas = await fichasApi('/integracoes/rolagens/fichas') || [];
+  personagens = personagens.filter(p=>!p._fichario);
+  const username = playerLogado?.nome || '';
+  fichasIntegradas.forEach(ficha=>{
+    const existente = personagens.find(p=>normalizarNome(p.nome)===normalizarNome(ficha.nome));
+    if(existente){
+      existente.ficha_id = ficha.id;
+      existente.quantidade_honey = ficha.quantidadeHoney || 0;
+      if(ficha.ranking != null) existente.ranking = ficha.ranking;
+      return;
+    }
+    personagens.push({
+      id:`ficha-${ficha.id}`,
+      nome:ficha.nome,
+      player:username,
+      ranking:ficha.ranking||0,
+      ficha_id:ficha.id,
+      quantidade_honey:ficha.quantidadeHoney||0,
+      _fichario:true
+    });
+  });
+}
+
+function fichaIntegradaDoPersonagem(nome){
+  return fichasIntegradas.find(f=>normalizarNome(f.nome)===normalizarNome(nome)) || null;
+}
+
+let _consumindoHoney = false;
+async function consumirHoneyDaFicha(nomePersonagem){
+  if(_consumindoHoney) return false;
+  const ficha = fichaIntegradaDoPersonagem(nomePersonagem);
+  if(!ficha){
+    alert('Este personagem não está vinculado a uma ficha da sua conta no Fichário.');
+    return false;
+  }
+  if((ficha.quantidadeHoney||0) < 1){
+    alert(`${ficha.nome} não possui Honey no inventário.`);
+    return false;
+  }
+  _consumindoHoney = true;
+  try{
+    const result = await fichasApi('/integracoes/rolagens/honey', {
+      method:'POST',
+      body:JSON.stringify({idFicha:ficha.id, idOperacao:crypto.randomUUID()})
+    });
+    ficha.quantidadeHoney = result.quantidadeRestante;
+    atualizarHoneyStatus();
+    return true;
+  }catch(e){
+    if(e.status===401){
+      localStorage.removeItem(FICHAS_SESSION_KEY);
+      fichasAccessToken = null;
+      alert('Sua sessão do Fichário expirou. Entre novamente antes de usar o Honey.');
+      document.getElementById('player-login-overlay').style.display='flex';
+    }else{
+      alert(e.message || 'Não foi possível confirmar o Honey no Fichário.');
+    }
+    return false;
+  }finally{
+    _consumindoHoney = false;
+  }
+}
 
 // Normaliza para comparação estrita: remove acentos e espaços, lowercase
 // O nome do player DEVE ser digitado sem espaços e sem acentos (ex: joaosilva)
@@ -5630,6 +5797,7 @@ async function fazerLoginPlayer(){
     const p = await dbGet('personagens');
     personagens = p||[];
   }
+  await restaurarSessaoFichario();
   renderPersonagensDatalist();
   mostrarBadgePlayer();
   fecharLoginOverlay();
@@ -5767,6 +5935,10 @@ async function fazerLogoutPlayer(){
   playerLogado = null;
   _loginPlayerCache = null;
   localStorage.removeItem('player_session');
+  localStorage.removeItem(FICHAS_SESSION_KEY);
+  fichasAccessToken = null;
+  fichasIntegradas = [];
+  personagens = personagens.filter(p=>!p._fichario);
   mostrarBadgePlayer();
   renderPersonagensDatalist();
   ['personagem','dice-personagem','evento-personagem','evento-dice-personagem'].forEach(id=>{
@@ -10257,14 +10429,25 @@ function atualizarHoneyStatus(){
   const checkbox = document.getElementById('bonus-honey');
   if(!status) return;
   const ativo = getHoneyAtivo(bioma);
+  const ficha = fichaIntegradaDoPersonagem(document.getElementById('personagem')?.value);
+  const quantidade = ficha?.quantidadeHoney || 0;
+  if(checkbox){
+    checkbox.disabled = !ficha || quantidade < 1;
+    checkbox.title = ficha
+      ? `${quantidade} Honey no inventário de ${ficha.nome}`
+      : 'Conecte o Fichário e selecione uma ficha';
+  }
   if(ativo){
     const restante = formatarTempoRestante(ativo.expiraEm - Date.now());
     status.style.display = 'flex';
-    status.innerHTML = `<span>Honey ativo em <strong>${bioma}</strong> (válido para todos os jogadores) — +2 encontros automáticos por mais ${restante}.</span>`;
+    status.innerHTML = `<span>Honey ativo em <strong>${bioma}</strong> (válido para todos os jogadores) — +2 encontros automáticos por mais ${restante}. Sua ficha possui <strong>${quantidade}</strong>.</span>`;
     if(checkbox) checkbox.checked = false; // já está ativo, não precisa marcar de novo
+  } else if(ficha) {
+    status.style.display = 'flex';
+    status.innerHTML = `<span><strong>${ficha.nome}</strong> possui ${quantidade} Honey no inventário.</span>`;
   } else {
-    status.style.display = 'none';
-    status.innerHTML = '';
+    status.style.display = 'flex';
+    status.innerHTML = '<span>Conecte sua conta do Fichário para usar Honey nas rolagens.</span>';
   }
 }
 
@@ -10373,6 +10556,7 @@ async function rolarEncontro(){
   // Se o Honey foi marcado nesta rolagem, ativa/renova o bônus de +2 encontros
   // nesse bioma por 24h (vale para qualquer rolagem no bioma, mesmo sem marcar de novo)
   if(honeyMarcadoAgora){
+    if(!await consumirHoneyDaFicha(personagem)) return;
     await ativarHoneyBioma(bioma);
     if(honeyCheckbox) honeyCheckbox.checked=false;
   }
