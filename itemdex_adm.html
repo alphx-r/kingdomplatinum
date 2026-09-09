@@ -713,6 +713,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             <input type="checkbox" id="nit-flag-consumivel" style="margin:0" onchange="toggleConsumivelPrefix('nit-description', this.checked)"> Consumível <span style="font-weight:400;color:var(--muted)">(insere "CONSUMÍVEL" no início da descrição)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-evento" style="margin:0" onchange="toggleEventoPrefix('nit-description', this.checked)"> Evento <span style="font-weight:400;color:var(--muted)">(insere "EVENTO" no início da descrição)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleItemPriceField('nit-price-wrap', this.checked)"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
@@ -725,7 +728,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <div style="margin-bottom:12px">
           <div class="field-lbl pt" style="margin-bottom:4px">Descrição</div>
-          <textarea class="field-pt" id="nit-description" rows="4" placeholder="Efeito / descrição do item…" style="width:100%" oninput="syncConsumivelCheckboxFromDesc('nit-description','nit-flag-consumivel')"></textarea>
+          <textarea class="field-pt" id="nit-description" rows="4" placeholder="Efeito / descrição do item…" style="width:100%" oninput="syncConsumivelCheckboxFromDesc('nit-description','nit-flag-consumivel');syncEventoCheckboxFromDesc('nit-description','nit-flag-evento')"></textarea>
         </div>
         <div class="modal-foot" style="padding:0;margin-top:8px">
           <button class="btn btn-outline" onclick="closeNewItemForm()">Cancelar</button>
@@ -1230,6 +1233,7 @@ function renderItemCard(it, i) {
     : `<span style="font-size:22px">🎒</span>`;
   const flagsHtml = [
     it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONS.</span>' : '',
+    it.flags?.evento?.enabled ? '<span class="badge" style="background:var(--purple);color:#fff;font-weight:800" title="Evento">EVENTO</span>' : '',
     it.flags?.pokemart?.enabled ? `<span title="PokéMart${it.price != null ? ' — ₽ ' + it.price : ''}">🛒</span>` : '',
     it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : '',
   ].filter(Boolean).join('');
@@ -1314,6 +1318,9 @@ function buildItemDetailHtml(it, slug) {
             <input type="checkbox" id="it-flag-consumivel-${slug}" style="margin:0" ${it.flags?.consumivel?.enabled ? 'checked' : ''} onchange="toggleConsumivelPrefix('it-description-${slug}', this.checked)"> Consumível
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="it-flag-evento-${slug}" style="margin:0" ${it.flags?.evento?.enabled ? 'checked' : ''} onchange="toggleEventoPrefix('it-description-${slug}', this.checked)"> Evento
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-price-wrap-${slug}', this.checked)"> PokéMart
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
@@ -1326,7 +1333,7 @@ function buildItemDetailHtml(it, slug) {
         </div>
         <div class="field-row">
           <div class="field-lbl pt">📄 Descrição</div>
-          <textarea class="field-pt it-desc-field${it.item_desc ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this);syncConsumivelCheckboxFromDesc('it-description-${slug}','it-flag-consumivel-${slug}')">${it.item_desc || ''}</textarea>
+          <textarea class="field-pt it-desc-field${it.item_desc ? ' filled' : ''}" id="it-description-${slug}" rows="3" placeholder="Efeito / descrição do item…" oninput="markFilled(this);syncConsumivelCheckboxFromDesc('it-description-${slug}','it-flag-consumivel-${slug}');syncEventoCheckboxFromDesc('it-description-${slug}','it-flag-evento-${slug}')">${it.item_desc || ''}</textarea>
         </div>
       </div>
     </div>
@@ -1388,6 +1395,43 @@ function syncConsumivelCheckboxFromDesc(textareaId, checkboxId) {
   cb.checked = descStartsWithConsumivel(ta.value);
 }
 
+// Mesmo esquema do "Consumível", mas pro prefixo "EVENTO" — usado em itens
+// que só existem via evento (ex: Strange Ball, Glass Ball) e não são
+// consumíveis normais do jogo.
+const EVENTO_PREFIX = 'EVENTO';
+
+function descStartsWithEvento(text) {
+  return String(text || '').trim().toUpperCase().startsWith(EVENTO_PREFIX);
+}
+
+function toggleEventoPrefix(textareaId, checked) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  const PREFIX = EVENTO_PREFIX;
+  const PREFIX_FULL = 'EVENTO.';
+  const cur = ta.value;
+  if (checked) {
+    if (!descStartsWithEvento(cur)) {
+      ta.value = cur ? `${PREFIX_FULL} ${cur}` : PREFIX_FULL;
+    }
+  } else {
+    const trimmed = cur.replace(/^\s*/, '');
+    if (descStartsWithEvento(trimmed)) {
+      let rest = trimmed.slice(PREFIX.length);
+      rest = rest.replace(/^\.?[\s—-]*/, '');
+      ta.value = rest;
+    }
+  }
+  markFilled(ta);
+}
+
+function syncEventoCheckboxFromDesc(textareaId, checkboxId) {
+  const ta = document.getElementById(textareaId);
+  const cb = document.getElementById(checkboxId);
+  if (!ta || !cb) return;
+  cb.checked = descStartsWithEvento(ta.value);
+}
+
 // Mostra/esconde o campo de preço ao lado do checkbox "PokéMart" (tanto no
 // formulário de item novo quanto no card de edição de um item já existente).
 function toggleItemPriceField(wrapId, checked) {
@@ -1396,13 +1440,14 @@ function toggleItemPriceField(wrapId, checked) {
   wrap.style.display = checked ? 'inline-flex' : 'none';
 }
 
-function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn) {
+function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
     ...f,
     pokemart: { ...(f.pokemart || {}), enabled: !!pokemartOn },
     pickup: { ...(f.pickup || {}), enabled: !!pickupOn },
     consumivel: { ...(f.consumivel || {}), enabled: !!consumivelOn },
+    evento: { ...(f.evento || {}), enabled: !!eventoOn },
   };
 }
 
@@ -1414,6 +1459,7 @@ async function saveItem(name) {
   const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
   const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
   const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
+  const eventoOn = !!document.getElementById(`it-flag-evento-${slug}`)?.checked;
   const priceRaw = document.getElementById(`it-price-${slug}`)?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
   if (!newName) { toast('Nome é obrigatório.', 'err'); return; }
@@ -1425,7 +1471,7 @@ async function saveItem(name) {
   if (renaming && S.it.dbMap[newName]) { toast(`Já existe um item chamado "${newName}".`, 'err'); return; }
   try {
     const existing = S.it.dbMap[name] || { name };
-    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn);
+    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn);
     const row = { ...existing, name: newName, category, item_desc, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     if (renaming) {
@@ -1471,7 +1517,7 @@ async function deleteItem(name) {
 
 function openNewItem() {
   ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
-  ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   toggleItemPriceField('nit-price-wrap', false);
   const prev = document.getElementById('nit-icon-preview');
   const ph = document.getElementById('nit-icon-placeholder');
@@ -1770,6 +1816,7 @@ async function saveNewItem() {
   const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
   const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
+  const eventoOn = !!document.getElementById('nit-flag-evento')?.checked;
   const priceRaw = document.getElementById('nit-price')?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
@@ -1781,7 +1828,7 @@ async function saveNewItem() {
       const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
       sprite = await uploadImgStorage(iconB64, 'pokemons', `items/${uploadSlug}.png`) + '?t=' + Date.now();
     }
-    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn);
+    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
