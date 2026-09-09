@@ -10424,11 +10424,9 @@ function formatarTempoRestante(ms){
 }
 
 function atualizarHoneyStatus(){
-  const bioma = document.getElementById('bioma')?.value;
   const status = document.getElementById('honey-status');
   const checkbox = document.getElementById('bonus-honey');
   if(!status) return;
-  const ativo = getHoneyAtivo(bioma);
   const ficha = fichaIntegradaDoPersonagem(document.getElementById('personagem')?.value);
   const quantidade = ficha?.quantidadeHoney || 0;
   if(checkbox){
@@ -10437,14 +10435,9 @@ function atualizarHoneyStatus(){
       ? `${quantidade} Honey no inventário de ${ficha.nome}`
       : 'Conecte o Fichário e selecione uma ficha';
   }
-  if(ativo){
-    const restante = formatarTempoRestante(ativo.expiraEm - Date.now());
+  if(ficha) {
     status.style.display = 'flex';
-    status.innerHTML = `<span>Honey ativo em <strong>${bioma}</strong> (válido para todos os jogadores) — +2 encontros automáticos por mais ${restante}. Sua ficha possui <strong>${quantidade}</strong>.</span>`;
-    if(checkbox) checkbox.checked = false; // já está ativo, não precisa marcar de novo
-  } else if(ficha) {
-    status.style.display = 'flex';
-    status.innerHTML = `<span><strong>${ficha.nome}</strong> possui ${quantidade} Honey no inventário.</span>`;
+    status.innerHTML = `<span><strong>${ficha.nome}</strong> possui ${quantidade} Honey. Cada rolagem marcada consome 1 Honey e adiciona +2 encontros.</span>`;
   } else {
     status.style.display = 'flex';
     status.innerHTML = '<span>Conecte sua conta do Fichário para usar Honey nas rolagens.</span>';
@@ -10503,30 +10496,8 @@ async function rolarEncontro(){
   if(!_honeyStateCarregado) await carregarHoneyState();
   const honeyCheckbox=document.getElementById('bonus-honey');
   const honeyMarcadoAgora=!!honeyCheckbox?.checked;
-  const honeyEstadoAtual=getHoneyAtivo(bioma); // estado ANTES desta rolagem (antes de eventual renovação)
-  const honeyAtivoNestaRolagem=honeyMarcadoAgora||!!honeyEstadoAtual;
-  // O bônus passivo de +2 encontros do Honey (quando o personagem rola sem
-  // marcar a caixinha, só aproveitando o Honey já ativo no bioma) só vale
-  // uma vez por personagem dentro da janela de 24h ativa. Já marcar a
-  // caixinha de novo é usar outro Honey de verdade, então sempre garante o
-  // bônus (ver honeyBonusAplicavel abaixo).
-  const honeyJanelaInicio=honeyEstadoAtual?honeyEstadoAtual.inicioEm:(honeyMarcadoAgora?Date.now():null);
-  const honeyKeyPersonagem=normKey(personagem);
-  const honeyKeyBioma=(bioma||'').toLowerCase().trim();
-  const honeyJaUsadoNestaJanela=honeyAtivoNestaRolagem&&honeyJanelaInicio!=null&&historico.some(e=>{
-    if(!e.honey) return false;
-    if(normKey(e.personagem)!==honeyKeyPersonagem) return false;
-    if((e.bioma||'').toLowerCase().trim()!==honeyKeyBioma) return false;
-    const t=e.criado_em?new Date(e.criado_em).getTime():null;
-    return t!=null&&t>=honeyJanelaInicio;
-  });
-  // Marcar a caixinha de Honey nesta rolagem = usar um Honey de verdade agora,
-  // então SEMPRE garante o bônus (mesmo que o personagem já tenha ganhado o
-  // bônus antes nesta mesma janela — usar de novo conta de novo). Já a
-  // aplicação passiva/automática (rolar sem marcar, aproveitando o Honey que
-  // já está ativo no bioma por causa de outro uso) só vale uma vez por
-  // personagem, na primeira rolagem dele dentro da janela.
-  const honeyBonusAplicavel=honeyMarcadoAgora||(!!honeyEstadoAtual&&!honeyJaUsadoNestaJanela);
+  const honeyAtivoNestaRolagem=honeyMarcadoAgora;
+  const honeyBonusAplicavel=honeyMarcadoAgora;
   const honeyBonusEncontros=honeyBonusAplicavel?2:0;
   const nEncontrarRaw=parseInt(document.getElementById('n-encontrar').value);
   const nEncontrarBase=Number.isFinite(nEncontrarRaw)?Math.max(0,nEncontrarRaw):3;
@@ -10553,11 +10524,9 @@ async function rolarEncontro(){
     }
   }
 
-  // Se o Honey foi marcado nesta rolagem, ativa/renova o bônus de +2 encontros
-  // nesse bioma por 24h (vale para qualquer rolagem no bioma, mesmo sem marcar de novo)
+  // Toda rolagem que recebe +2 consome exatamente um Honey da ficha escolhida.
   if(honeyMarcadoAgora){
     if(!await consumirHoneyDaFicha(personagem)) return;
-    await ativarHoneyBioma(bioma);
     if(honeyCheckbox) honeyCheckbox.checked=false;
   }
   atualizarHoneyStatus();
@@ -10676,12 +10645,7 @@ async function rolarEncontro(){
   if(honeyBonusAplicavel){
     const banner=document.createElement('div');
     banner.style.cssText='background:linear-gradient(135deg,#fff8e1,#ffecb3);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
-    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> ${nEncontrarBase} + 2 (Honey) = <strong>${total}</strong> Pokémon (bônus válido apenas nesta primeira rolagem do personagem no bioma, por 24h a partir da primeira marcação)</span>`;
-    section.appendChild(banner);
-  } else if(honeyAtivoNestaRolagem){
-    const banner=document.createElement('div');
-    banner.style.cssText='background:linear-gradient(135deg,#fff8e1,#ffecb3);border:1.5px solid #f0c040;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#7a5010;font-family:var(--font-body);display:flex;align-items:center;gap:8px';
-    banner.innerHTML=`<span><strong>Honey ativo em ${bioma}:</strong> ${personagem} já recebeu o bônus de +2 nesta janela de 24h — esta rolagem segue com ${nEncontrarBase} Pokémon.</span>`;
+    banner.innerHTML=`<span><strong>Honey usado por ${personagem}:</strong> ${nEncontrarBase} + 2 (Honey) = <strong>${total}</strong> Pokémon. 1 Honey foi removido da ficha.</span>`;
     section.appendChild(banner);
   }
   const grid=document.createElement('div');
