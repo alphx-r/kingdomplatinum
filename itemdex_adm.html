@@ -1059,6 +1059,44 @@ async function uploadImgStorage(b64, bucket, path) {
 ══════════════════════════════════════════ */
 const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks'];
 
+// Remove o prefixo de tamanho do nome pra achar o "item base" (ex: "Big
+// Nugget" e "Small Nugget" -> "nugget").
+function stripSizePrefix(name) {
+  return (name || '').trim().replace(/^(small|big)\s+/i, '').toLowerCase();
+}
+
+// Só faz sentido diferenciar visualmente um "Big X" ou "Small X" quando existe
+// de fato outra variante de tamanho do mesmo item cadastrada (ex: Nugget /
+// Small Nugget / Big Nugget). Itens isolados como "Big Root" ou "Small
+// Bouquet" — sem um "Root" ou "Bouquet" normal cadastrado — não têm com o que
+// comparar, então ficam no tamanho padrão.
+function computeSizeFamilies(items) {
+  const groups = {};
+  (items || []).forEach(it => {
+    const base = stripSizePrefix(it.name);
+    const full = (it.name || '').trim().toLowerCase();
+    (groups[base] = groups[base] || new Set()).add(full);
+  });
+  return new Set(Object.keys(groups).filter(base => groups[base].size > 1));
+}
+
+// Os ícones do card da lista ficam numa caixa de tamanho fixo (.it-card-icon,
+// 38x38), então itens de uma mesma família de tamanho saem todos do mesmo
+// tamanho visual. Aplica uma escala sutil pra diferenciar — só quando a
+// família de tamanho existir de verdade nos dados (ver computeSizeFamilies).
+function itemIconScale(name) {
+  const n = (name || '').trim().toLowerCase();
+  const families = S.it.sizeFamilies || (S.it.sizeFamilies = computeSizeFamilies(S.it.all));
+  if (!families.has(stripSizePrefix(name))) return 1;
+  if (/^small\b/.test(n)) return 0.72;
+  if (/^big\b/.test(n)) return 1.3;
+  return 1;
+}
+function itemIconSizeStyle(name, base) {
+  const size = Math.round((base || 30) * itemIconScale(name));
+  return `width:${size}px;height:${size}px`;
+}
+
 // Monta as <option> do select de categoria. Se o item já tiver uma categoria
 // "legada" que não está na lista fixa, ela entra como opção extra pra não
 // perder o dado — mas some assim que o usuário trocar pra uma categoria oficial.
@@ -1147,7 +1185,7 @@ async function tryAutoFetchOneSprite(it) {
     // inteira (isso fecharia qualquer card que o usuário tenha aberto).
     const domSlug = toSlugBase(it.name) || it.name;
     const headIconSpan = document.querySelector(`#it-card-${domSlug} .it-card-icon`);
-    if (headIconSpan) headIconSpan.innerHTML = `<img src="${sprite}" alt="">`;
+    if (headIconSpan) headIconSpan.innerHTML = `<img src="${sprite}" alt="" style="${itemIconSizeStyle(it.name, 30)}">`;
     const prev = document.getElementById(`it-icon-preview-${domSlug}`);
     const ph = document.getElementById(`it-icon-placeholder-${domSlug}`);
     if (prev) { prev.src = sprite; prev.style.display = ''; }
@@ -1219,6 +1257,7 @@ function itCatSortKey(cat) {
 function renderItemsList() {
   const con = document.getElementById('it-list');
   const items = S.it.filtered;
+  S.it.sizeFamilies = computeSizeFamilies(S.it.all);
   document.getElementById('it-total').textContent = S.it.all.length;
   document.getElementById('it-cats').textContent = new Set(S.it.all.map(i => i.category).filter(Boolean)).size;
   if (!items.length) {
@@ -1255,7 +1294,7 @@ function renderItemsList() {
 function renderItemCard(it, i) {
   const slug = toSlugBase(it.name) || ('item-' + i);
   const iconHtml = it.sprite
-    ? `<img src="${it.sprite}" alt="">`
+    ? `<img src="${it.sprite}" alt="" style="${itemIconSizeStyle(it.name, 30)}">`
     : `<span style="font-size:22px">🎒</span>`;
   const flagsHtml = [
     it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONS.</span>' : '',
@@ -1864,7 +1903,7 @@ async function uploadItemIconFile(name, slugInput, file, done) {
       if (prev) { prev.src = sprite; prev.style.display = ''; }
       if (ph) ph.style.display = 'none';
       const cardIcon = document.querySelector(`#it-card-${domSlug} .it-card-icon`);
-      if (cardIcon) cardIcon.innerHTML = `<img src="${sprite}" alt="">`;
+      if (cardIcon) cardIcon.innerHTML = `<img src="${sprite}" alt="" style="${itemIconSizeStyle(name, 30)}">`;
       toast('🖼️ Ícone do item enviado!', 'ok');
     } catch (e) { toast('Erro ao enviar ícone: ' + e.message, 'err'); }
     if (done) done();
