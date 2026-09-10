@@ -723,11 +723,15 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleItemPriceField('nit-price-wrap', this.checked)"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="nit-flag-pickup" style="margin:0"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
+            <input type="checkbox" id="nit-flag-pickup" style="margin:0" onchange="toggleItemPriceField('nit-pickup-wrap', this.checked)"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
           </label>
           <div id="nit-price-wrap" style="display:none;align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="nit-price" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px">
+          </div>
+          <div id="nit-pickup-wrap" style="display:none;align-items:center;gap:6px">
+            <span style="font-size:12px;font-weight:700;color:var(--muted)">🔍 Números (1d100)</span>
+            <input class="mv-meta-input" id="nit-pickup-numeros" type="text" placeholder="ex: 12,45,78" style="width:160px" title="Números do d100 que resultam neste item, separados por vírgula">
           </div>
         </div>
         <div style="margin-bottom:12px">
@@ -1328,11 +1332,15 @@ function buildItemDetailHtml(it, slug) {
             <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-price-wrap-${slug}', this.checked)"> PokéMart
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''}> Pickup
+            <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-pickup-wrap-${slug}', this.checked)"> Pickup
           </label>
           <div id="it-price-wrap-${slug}" style="display:${it.flags?.pokemart?.enabled ? 'inline-flex' : 'none'};align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="it-price-${slug}" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px" value="${it.price != null ? it.price : ''}">
+          </div>
+          <div id="it-pickup-wrap-${slug}" style="display:${it.flags?.pickup?.enabled ? 'inline-flex' : 'none'};align-items:center;gap:6px">
+            <span style="font-size:12px;font-weight:700;color:var(--muted)">🔍 Números (1d100)</span>
+            <input class="mv-meta-input" id="it-pickup-numeros-${slug}" type="text" placeholder="ex: 12,45,78" style="width:160px" title="Números do d100 que resultam neste item, separados por vírgula" value="${(it.flags?.pickup?.numeros || []).join(', ')}">
           </div>
         </div>
         <div class="field-row">
@@ -1444,15 +1452,43 @@ function toggleItemPriceField(wrapId, checked) {
   wrap.style.display = checked ? 'inline-flex' : 'none';
 }
 
-function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn) {
+function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
     ...f,
     pokemart: { ...(f.pokemart || {}), enabled: !!pokemartOn },
-    pickup: { ...(f.pickup || {}), enabled: !!pickupOn },
+    pickup: { ...(f.pickup || {}), enabled: !!pickupOn, numeros: pickupOn ? pickupNumeros : [] },
     consumivel: { ...(f.consumivel || {}), enabled: !!consumivelOn },
     evento: { ...(f.evento || {}), enabled: !!eventoOn },
   };
+}
+
+// Converte "12, 45,78" em [12,45,78] — só números inteiros de 1 a 100,
+// sem repetição, ordenados. Usado pra tabela de Pickup (cada número do
+// d100 sorteado devolve o item que "possui" aquele número).
+function parsePickupNumeros(str) {
+  const nums = String(str || '')
+    .split(',')
+    .map(s => parseInt(s.trim(), 10))
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= 100);
+  return [...new Set(nums)].sort((a, b) => a - b);
+}
+
+// Verifica se algum dos números já está em uso por OUTRO item com Pickup
+// ativo (cada número do d100 deve pertencer a um item só). Devolve um
+// array de avisos ("42 → Poção", "77 → Super Poção") pra confirmar com o
+// usuário antes de salvar — não bloqueia, porque pode ser uma correção
+// intencional (ex.: redistribuindo números entre dois itens).
+function pickupConflitos(numeros, nomeAtual) {
+  if (!numeros.length) return [];
+  const avisos = [];
+  for (const it of S.it.all) {
+    if (it.name === nomeAtual) continue;
+    const outros = it.flags?.pickup?.enabled ? (it.flags.pickup.numeros || []) : [];
+    const bateu = outros.filter(n => numeros.includes(n));
+    if (bateu.length) avisos.push(`${bateu.join(', ')} → já usado por "${it.name}"`);
+  }
+  return avisos;
 }
 
 async function saveItem(name) {
@@ -1466,7 +1502,13 @@ async function saveItem(name) {
   const eventoOn = !!document.getElementById(`it-flag-evento-${slug}`)?.checked;
   const priceRaw = document.getElementById(`it-price-${slug}`)?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  const pickupNumeros = pickupOn ? parsePickupNumeros(document.getElementById(`it-pickup-numeros-${slug}`)?.value) : [];
   if (!newName) { toast('Nome é obrigatório.', 'err'); return; }
+  if (pickupOn && !pickupNumeros.length) { toast('Marque ao menos um número (1 a 100) pra este item aparecer no Pickup.', 'err'); return; }
+  if (pickupOn) {
+    const conflitos = pickupConflitos(pickupNumeros, name);
+    if (conflitos.length && !confirm(`Alguns números já pertencem a outro item:\n\n${conflitos.join('\n')}\n\nSalvar mesmo assim? (o número vai passar a valer pra este item também, o que pode gerar sorteios ambíguos)`)) return;
+  }
   // "name" é a chave do item no banco (upsert por merge-duplicates nessa
   // coluna) — renomear não é um simples UPDATE de campo, então quando o
   // nome muda: insere a linha com o nome novo e só então apaga a linha do
@@ -1475,7 +1517,7 @@ async function saveItem(name) {
   if (renaming && S.it.dbMap[newName]) { toast(`Já existe um item chamado "${newName}".`, 'err'); return; }
   try {
     const existing = S.it.dbMap[name] || { name };
-    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn);
+    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros);
     const row = { ...existing, name: newName, category, item_desc, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     if (renaming) {
@@ -1520,9 +1562,10 @@ async function deleteItem(name) {
 }
 
 function openNewItem() {
-  ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
+  ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price','nit-pickup-numeros'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   toggleItemPriceField('nit-price-wrap', false);
+  toggleItemPriceField('nit-pickup-wrap', false);
   const prev = document.getElementById('nit-icon-preview');
   const ph = document.getElementById('nit-icon-placeholder');
   if (prev) { prev.src = ''; prev.style.display = 'none'; prev.dataset.b64 = ''; }
@@ -1823,8 +1866,14 @@ async function saveNewItem() {
   const eventoOn = !!document.getElementById('nit-flag-evento')?.checked;
   const priceRaw = document.getElementById('nit-price')?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  const pickupNumeros = pickupOn ? parsePickupNumeros(document.getElementById('nit-pickup-numeros')?.value) : [];
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   if (S.it.dbMap[name]) { toast('Já existe um item com esse nome.', 'err'); return; }
+  if (pickupOn && !pickupNumeros.length) { toast('Marque ao menos um número (1 a 100) pra este item aparecer no Pickup.', 'err'); return; }
+  if (pickupOn) {
+    const conflitos = pickupConflitos(pickupNumeros, name);
+    if (conflitos.length && !confirm(`Alguns números já pertencem a outro item:\n\n${conflitos.join('\n')}\n\nSalvar mesmo assim? (o número vai passar a valer pra este item também, o que pode gerar sorteios ambíguos)`)) return;
+  }
   try {
     let sprite = null;
     const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
@@ -1832,7 +1881,7 @@ async function saveNewItem() {
       const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
       sprite = await uploadImgStorage(iconB64, 'pokemons', `items/${uploadSlug}.png`) + '?t=' + Date.now();
     }
-    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn);
+    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
