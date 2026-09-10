@@ -700,14 +700,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
               <div class="field-lbl pt" style="margin-bottom:4px">Categoria</div>
               <select class="mv-meta-input" id="nit-category" style="width:100%">
                 <option value="">Sem categoria</option>
-                <option value="PokéBall">PokéBall</option>
-                <option value="Trainer Items">Trainer Items</option>
-                <option value="Treasure Items">Treasure Items</option>
-                <option value="Alpha Items">Alpha Items</option>
-                <option value="Evolutionary Items">Evolutionary Items</option>
-                <option value="Hold Items">Hold Items</option>
-                <option value="Berry">Berry</option>
-                <option value="Snacks">Snacks</option>
               </select>
             </div>
           </div>
@@ -752,6 +744,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <input class="sinput" id="it-search" placeholder="Buscar item…" oninput="filterIt()">
         </div>
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
+        <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
@@ -1174,6 +1167,31 @@ function populateItemCategoryFilter() {
   const cur = sel.value;
   sel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   sel.value = cur;
+  // Select do formulário de novo item também precisa refletir categorias
+  // recém-criadas via addNewCategory() — reconstrói preservando a seleção atual.
+  const nitSel = document.getElementById('nit-category');
+  if (nitSel) {
+    const curNit = nitSel.value;
+    nitSel.innerHTML = categoryOptionsHtml('');
+    if (curNit && [...nitSel.options].some(o => o.value === curNit)) nitSel.value = curNit;
+  }
+}
+
+// Cria uma categoria nova "avulsa": ela entra na lista em memória (ITEM_CATEGORIES)
+// e passa a aparecer em todos os seletores de categoria imediatamente. Como não
+// existe uma tabela própria de categorias no Supabase, ela só fica salva de
+// verdade quando algum item for criado/editado usando essa categoria — até lá,
+// some se a página for recarregada sem nenhum item usá-la (igual já acontece
+// hoje com categorias "legado").
+function addNewCategory() {
+  const raw = prompt('Nome da nova categoria de itens:');
+  if (raw == null) return;
+  const name = raw.trim();
+  if (!name) { toast('Nome da categoria não pode ser vazio.', 'err'); return; }
+  if (ITEM_CATEGORIES.some(c => c.toLowerCase() === name.toLowerCase())) { toast('Essa categoria já existe.', 'err'); return; }
+  ITEM_CATEGORIES.push(name);
+  populateItemCategoryFilter();
+  toast(`Categoria "${name}" criada! Crie ou edite um item com ela pra ficar salva permanentemente.`, 'ok');
 }
 
 function filterIt() { applyItFilter(); }
