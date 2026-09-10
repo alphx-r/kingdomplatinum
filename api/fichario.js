@@ -7,12 +7,12 @@ const ALLOWED_ENDPOINTS = new Set([
 ]);
 
 export default async function handler(req, res) {
-  const rawPath = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
-  if (!ALLOWED_ENDPOINTS.has(rawPath)) {
+  const endpoint = String(req.query.endpoint || '');
+  if (!ALLOWED_ENDPOINTS.has(endpoint)) {
     return res.status(404).json({ message: 'Endpoint de integração não encontrado.' });
   }
 
-  const allowedMethods = rawPath === 'fichas' ? ['GET'] : ['POST'];
+  const allowedMethods = endpoint === 'fichas' ? ['GET'] : ['POST'];
   if (!allowedMethods.includes(req.method)) {
     res.setHeader('Allow', allowedMethods.join(', '));
     return res.status(405).json({ message: 'Método não permitido.' });
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
 
   try {
     const upstream = await fetch(
-      `https://kpfichas.vercel.app/api/integracoes/rolagens/${rawPath}`,
+      `https://kpfichas.vercel.app/api/integracoes/rolagens/${endpoint}`,
       {
         method: req.method,
         headers,
