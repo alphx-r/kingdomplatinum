@@ -5658,6 +5658,7 @@ async function carregarFichasIntegradas(){
     if(existente){
       existente.ficha_id = ficha.id;
       existente.quantidade_honey = ficha.quantidadeHoney || 0;
+      existente.quantidade_shiny_charm = ficha.quantidadeShinyCharm || 0;
       if(ficha.ranking != null) existente.ranking = ficha.ranking;
       return;
     }
@@ -5668,6 +5669,7 @@ async function carregarFichasIntegradas(){
       ranking:ficha.ranking||0,
       ficha_id:ficha.id,
       quantidade_honey:ficha.quantidadeHoney||0,
+      quantidade_shiny_charm:ficha.quantidadeShinyCharm||0,
       _fichario:true
     });
   });
@@ -5711,6 +5713,94 @@ async function consumirHoneyDaFicha(nomePersonagem){
   }finally{
     _consumindoHoney = false;
   }
+}
+
+let _consumindoShinyCharm = false;
+async function consumirShinyCharmDaFicha(nomePersonagem){
+  if(_consumindoShinyCharm) return false;
+  const ficha = fichaIntegradaDoPersonagem(nomePersonagem);
+  if(!ficha){
+    alert('Este personagem não está vinculado a uma ficha da sua conta no Fichário.');
+    return false;
+  }
+  if((ficha.quantidadeShinyCharm||0) < 1){
+    alert(`${ficha.nome} não possui Shiny Charm no inventário.`);
+    return false;
+  }
+  _consumindoShinyCharm = true;
+  try{
+    const result = await fichasApi('/integracoes/rolagens/shiny-charm', {
+      method:'POST',
+      body:JSON.stringify({idFicha:ficha.id, idOperacao:crypto.randomUUID()})
+    });
+    ficha.quantidadeShinyCharm = result.quantidadeRestante;
+    atualizarHoneyStatus();
+    return true;
+  }catch(e){
+    if(e.status===401){
+      localStorage.removeItem(FICHAS_SESSION_KEY);
+      fichasAccessToken = null;
+      alert('Sua sessão do Fichário expirou. Entre novamente antes de usar o Shiny Charm.');
+      document.getElementById('player-login-overlay').style.display='flex';
+    }else{
+      alert(e.message || 'Não foi possível consumir o Shiny Charm da ficha.');
+    }
+    return false;
+  }finally{
+    _consumindoShinyCharm = false;
+  }
+}
+
+let _consumindoBonusRolagem = false;
+async function consumirBonusDaFicha(nomePersonagem, usarHoney, usarShinyCharm){
+  if(_consumindoBonusRolagem) return false;
+  const ficha = fichaIntegradaDoPersonagem(nomePersonagem);
+  if(!ficha){
+    alert('Este personagem não está vinculado a uma ficha da sua conta no Fichário.');
+    return false;
+  }
+  if(usarHoney && (ficha.quantidadeHoney||0) < 1){
+    alert(`${ficha.nome} não possui Honey no inventário.`);
+    return false;
+  }
+  if(usarShinyCharm && (ficha.quantidadeShinyCharm||0) < 1){
+    alert(`${ficha.nome} não possui Shiny Charm no inventário.`);
+    return false;
+  }
+
+  _consumindoBonusRolagem = true;
+  try{
+    const result = await fichasApi('/integracoes/rolagens/bonus', {
+      method:'POST',
+      body:JSON.stringify({
+        idFicha:ficha.id,
+        idOperacao:crypto.randomUUID(),
+        usarHoney:!!usarHoney,
+        usarShinyCharm:!!usarShinyCharm
+      })
+    });
+    ficha.quantidadeHoney = result.quantidadeHoneyRestante;
+    ficha.quantidadeShinyCharm = result.quantidadeShinyCharmRestante;
+    return true;
+  }catch(e){
+    if(e.status===401){
+      localStorage.removeItem(FICHAS_SESSION_KEY);
+      fichasAccessToken = null;
+      alert('Sua sessão do Fichário expirou. Entre novamente antes de usar bônus de itens.');
+      document.getElementById('player-login-overlay').style.display='flex';
+    }else{
+      alert(e.message || 'Não foi possível consumir os itens de bônus da ficha.');
+    }
+    return false;
+  }finally{
+    _consumindoBonusRolagem = false;
+  }
+}
+
+function finalizarBonusConsumido(honeyCheckbox, shinyCharmCheckbox, usouHoney, usouShinyCharm){
+  if(usouHoney && honeyCheckbox) honeyCheckbox.checked=false;
+  if(usouShinyCharm && shinyCharmCheckbox) shinyCharmCheckbox.checked=false;
+  atualizarHoneyStatus();
 }
 
 // Normaliza para comparação estrita: remove acentos e espaços, lowercase
@@ -9938,6 +10028,14 @@ function renderShinyBonusCheckboxes(){
       <input type="checkbox" id="${b.id}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-mid)"/>
       ${b.label}
     </label>`).join('');
+  atualizarHoneyStatus();
+}
+
+function getShinyCharmCheckbox(){
+  const config = SHINY_BONUS_CONFIG.find(b=>
+    b.id==='bonus-shiny-charm' || normalizarNome(b.label)==='shinycharm'
+  );
+  return config ? document.getElementById(config.id) : null;
 }
 function fmtHabilidade(h){
   if(!h) return '—';
@@ -10453,6 +10551,7 @@ function formatarTempoRestante(ms){
 function atualizarHoneyStatus(){
   const status = document.getElementById('honey-status');
   const checkbox = document.getElementById('bonus-honey');
+  const shinyCharmCheckbox = getShinyCharmCheckbox();
   if(!status) return;
   const ficha = fichaIntegradaDoPersonagem(document.getElementById('personagem')?.value);
   const quantidade = ficha?.quantidadeHoney || 0;
@@ -10462,12 +10561,23 @@ function atualizarHoneyStatus(){
       ? `${quantidade} Honey no inventário de ${ficha.nome}`
       : 'Conecte o Fichário e selecione uma ficha';
   }
+  if(shinyCharmCheckbox){
+    const quantidadeShinyCharm = ficha?.quantidadeShinyCharm || 0;
+    shinyCharmCheckbox.disabled = !ficha || quantidadeShinyCharm < 1;
+    if(shinyCharmCheckbox.disabled) shinyCharmCheckbox.checked = false;
+    shinyCharmCheckbox.title = ficha
+      ? (quantidadeShinyCharm > 0
+        ? `${quantidadeShinyCharm} Shiny Charm no inventário de ${ficha.nome}`
+        : `${ficha.nome} não possui Shiny Charm`)
+      : 'Conecte o Fichário e selecione uma ficha';
+  }
   if(ficha) {
     status.style.display = 'flex';
-    status.innerHTML = `<span><strong>${ficha.nome}</strong> possui ${quantidade} Honey. Cada rolagem marcada consome 1 Honey e adiciona +2 encontros.</span>`;
+    const quantidadeShinyCharm = ficha.quantidadeShinyCharm || 0;
+    status.innerHTML = `<span><strong>${ficha.nome}</strong>: ${quantidade} Honey e ${quantidadeShinyCharm} Shiny Charm. Cada bônus marcado consome 1 unidade.</span>`;
   } else {
     status.style.display = 'flex';
-    status.innerHTML = '<span>Conecte sua conta do Fichário para usar Honey nas rolagens.</span>';
+    status.innerHTML = '<span>Conecte sua conta do Fichário para usar Honey e Shiny Charm nas rolagens.</span>';
   }
 }
 
@@ -10523,6 +10633,8 @@ async function rolarEncontro(){
   if(!_honeyStateCarregado) await carregarHoneyState();
   const honeyCheckbox=document.getElementById('bonus-honey');
   const honeyMarcadoAgora=!!honeyCheckbox?.checked;
+  const shinyCharmCheckbox=getShinyCharmCheckbox();
+  const shinyCharmMarcadoAgora=!!shinyCharmCheckbox?.checked;
   const honeyAtivoNestaRolagem=honeyMarcadoAgora;
   const honeyBonusAplicavel=honeyMarcadoAgora;
   const honeyBonusEncontros=honeyBonusAplicavel?2:0;
@@ -10551,12 +10663,9 @@ async function rolarEncontro(){
     }
   }
 
-  // Toda rolagem que recebe +2 consome exatamente um Honey da ficha escolhida.
-  if(honeyMarcadoAgora){
-    if(!await consumirHoneyDaFicha(personagem)) return;
-    if(honeyCheckbox) honeyCheckbox.checked=false;
-  }
-  atualizarHoneyStatus();
+  // Valida e consome todos os itens antes de sortear; a operação é atômica no Fichário.
+  if((honeyMarcadoAgora || shinyCharmMarcadoAgora)
+      && !await consumirBonusDaFicha(personagem, honeyMarcadoAgora, shinyCharmMarcadoAgora)) return;
 
   // Monta os pools por raridade para este bioma (aplica filtro de estação
   // e de estágio de evolução conforme o ranking do personagem)
@@ -10648,6 +10757,9 @@ async function rolarEncontro(){
   if(bonusAtivos.length){
     pokes.forEach(pk=>{ pk.bonusShiny=bonusAtivos.map(b=>b.label); });
   }
+  finalizarBonusConsumido(
+    honeyCheckbox, shinyCharmCheckbox, honeyMarcadoAgora, shinyCharmMarcadoAgora
+  );
 
   const section=document.getElementById('results-section');
   section.innerHTML='';
@@ -13430,6 +13542,11 @@ async function rolarEncontroEvento(){
     }
   }
 
+  const shinyCharmCheckbox=getShinyCharmCheckbox();
+  const shinyCharmMarcadoAgora=!!shinyCharmCheckbox?.checked;
+  if(shinyCharmMarcadoAgora
+      && !await consumirBonusDaFicha(personagem, false, true)) return;
+
   // ── pool custom: usa pokémon configurados pelo admin ──
   if(ev.pool_modo==='custom' && _poolBiomasEvento.length){
     const biomaAtivo = eventoPoolAtivaBioma || _poolBiomasEvento[0]?.nome;
@@ -13463,6 +13580,7 @@ async function rolarEncontroEvento(){
         });
       }
     }
+    finalizarBonusConsumido(null, shinyCharmCheckbox, false, shinyCharmMarcadoAgora);
     const section=document.getElementById('evento-results');
     section.innerHTML='';
     const grid=document.createElement('div');
@@ -13498,6 +13616,7 @@ async function rolarEncontroEvento(){
     const pk=pickFromPoolCascade(pools,usedIds,rarity,bioma);
     pokes.push(pk);
   }
+  finalizarBonusConsumido(null, shinyCharmCheckbox, false, shinyCharmMarcadoAgora);
   const section=document.getElementById('evento-results');
   section.innerHTML='';
   const grid=document.createElement('div');
