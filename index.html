@@ -5577,6 +5577,7 @@ function garantirSenhaAdmSessao(){
 let playerLogado = null; // {nome, id}
 let fichasAccessToken = null;
 let fichasIntegradas = [];
+let ficharioErro = '';
 
 function entrarComFichario(){
   window.location.href = 'https://kpfichas.vercel.app/integrar-rolagens';
@@ -5642,11 +5643,13 @@ async function restaurarSessaoFichario(){
     };
     localStorage.setItem('player_session', JSON.stringify(playerLogado));
     await carregarFichasIntegradas();
+    ficharioErro = '';
     const loginSub = document.getElementById('pl-sub');
     if(loginSub) loginSub.textContent = 'Use a mesma conta do Fichário';
     return true;
   }catch(e){
     console.warn('[fichario] não foi possível concluir a conexão', e);
+    ficharioErro = e?.message || 'Não foi possível carregar suas fichas. Tente conectar novamente.';
     fichasAccessToken = null;
     fichasIntegradas = [];
     if(e?.status === 401 || e?.status === 403 || (!sessaoRecebida && e?.status === 400)){
@@ -5654,8 +5657,9 @@ async function restaurarSessaoFichario(){
     }
     const loginSub = document.getElementById('pl-sub');
     if(loginSub){
-      loginSub.textContent = e?.message || 'Não foi possível carregar suas fichas. Tente conectar novamente.';
+      loginSub.textContent = ficharioErro;
     }
+    if(typeof atualizarHoneyStatus === 'function') atualizarHoneyStatus();
     return false;
   }
 }
@@ -10590,9 +10594,11 @@ function atualizarHoneyStatus(){
     status.innerHTML = `<span><strong>${ficha.nome}</strong>: ${quantidade} Honey e ${quantidadeShinyCharm} Shiny Charm. Cada bônus marcado consome 1 unidade.</span>`;
   } else {
     status.style.display = 'flex';
-    status.innerHTML = fichasAccessToken
-      ? '<span>Fichário conectado. Selecione uma das suas fichas para usar Honey e Shiny Charm.</span>'
-      : '<span>Conecte sua conta do Fichário para usar Honey e Shiny Charm nas rolagens.</span>';
+    status.textContent = ficharioErro
+      ? `Falha ao conectar o Fichário: ${ficharioErro}`
+      : (fichasAccessToken
+        ? 'Fichário conectado. Selecione uma das suas fichas para usar Honey e Shiny Charm.'
+        : 'Conecte sua conta do Fichário para usar Honey e Shiny Charm nas rolagens.');
   }
 }
 
