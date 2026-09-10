@@ -2307,23 +2307,8 @@ function calcSyncSelects(){
       </div>
     </div>
 
-    <!-- Pickup -->
-    <div style="margin-bottom:14px">
-      <label style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--text);cursor:pointer;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2)">
-        <input type="checkbox" id="dice-pickup-mode" onchange="togglePickupMode()" style="width:18px;height:18px;cursor:pointer;accent-color:var(--brand-mid);margin:0"/>
-        🔍 Rolagem de Pickup <span style="font-weight:400;color:var(--muted)">(sorteia o item que o Pokémon encontrou, em 1d100)</span>
-      </label>
-    </div>
-    <div id="dice-pickup-wrap" style="display:none;margin-bottom:14px">
-      <div class="ctrl-group">
-        <label>Pokémon com Pickup</label>
-        <input type="text" id="dice-pickup-pokemon" list="dice-pickup-pokemon-list" placeholder="Nome do Pokémon..."/>
-        <datalist id="dice-pickup-pokemon-list"></datalist>
-      </div>
-    </div>
-
     <!-- Controles -->
-    <div class="dice-controls" style="grid-template-columns:1.8fr 1fr 1.8fr auto">
+    <div class="dice-controls" style="grid-template-columns:1.8fr 1fr 1.8fr auto auto">
       <div class="ctrl-group">
         <label>Personagem</label>
         <select id="dice-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
@@ -2336,8 +2321,13 @@ function calcSyncSelects(){
         <input type="number" id="dice-lados" value="100" min="2" max="10000" oninput="sincLadosBtns()"/>
       </div>
       <div class="ctrl-group" id="dice-motivo-group">
-        <label>Motivo</label>
+        <label id="dice-motivo-label">Motivo</label>
         <input type="text" id="dice-motivo" placeholder="Ex: Ataque, Fuga..." required/>
+        <input type="text" id="dice-pickup-pokemon" placeholder="Nome do Pokémon..." style="display:none"/>
+      </div>
+      <div class="ctrl-group" style="align-items:center" title="Sorteia o item que o Pokémon encontrou, em 1d100">
+        <label>Pickup</label>
+        <input type="checkbox" id="dice-pickup-mode" onchange="togglePickupMode()" style="width:20px;height:20px;cursor:pointer;accent-color:var(--brand-mid);margin-top:6px"/>
       </div>
       <div class="ctrl-group" style="align-items:center">
         <label>Juiz</label>
@@ -11352,13 +11342,18 @@ function toggleJuizMode(){
 // (que passa a ser gerado automaticamente como "Pickup de X") pelo campo de
 // Pokémon, e trava o dado em d100 — igual ao dado usado na tabela de Pickup
 // configurada no ItemDex ADM.
+// Liga/desliga o modo Pickup no rolador principal: substitui o campo
+// "Motivo" pelo campo de Pokémon (texto livre, sem sugestão/autocomplete —
+// só digitado mesmo), no mesmo espaço do formulário, e trava o dado em
+// d100 — igual ao dado usado na tabela de Pickup configurada no ItemDex ADM.
 function togglePickupMode(){
   const on=document.getElementById('dice-pickup-mode')?.checked;
-  const wrap=document.getElementById('dice-pickup-wrap');
-  if(wrap) wrap.style.display=on?'block':'none';
-  const motivoGroup=document.getElementById('dice-motivo-group');
-  if(motivoGroup) motivoGroup.style.display=on?'none':'';
-  const ladosGroup=document.getElementById('dice-lados-group');
+  const motivoInput=document.getElementById('dice-motivo');
+  const pickupInput=document.getElementById('dice-pickup-pokemon');
+  const label=document.getElementById('dice-motivo-label');
+  if(motivoInput) motivoInput.style.display=on?'none':'';
+  if(pickupInput) pickupInput.style.display=on?'':'none';
+  if(label) label.textContent=on?'Pokémon com Pickup':'Motivo';
   const ladosInput=document.getElementById('dice-lados');
   if(ladosInput){
     if(on){
@@ -11373,20 +11368,6 @@ function togglePickupMode(){
       sincLadosBtns();
     }
   }
-  if(ladosGroup) ladosGroup.style.opacity=on?'.6':'';
-  if(on) _popularPickupPokemonList();
-}
-
-// Popula o datalist de sugestão de Pokémon (nome vem do NationalDex, mas o
-// campo continua texto livre — permite digitar Pokémon fora do dex também)
-let _pickupPokemonListFilled=false;
-async function _popularPickupPokemonList(){
-  const dl=document.getElementById('dice-pickup-pokemon-list');
-  if(!dl||_pickupPokemonListFilled) return;
-  if(!pokemonDB.length) pokemonDB=await PK.load();
-  const nomes=[...new Set(getEncounterUnits(pokemonDB).map(p=>p.name||p.nome).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  dl.innerHTML=nomes.map(n=>`<option value="${String(n).replace(/"/g,'&quot;')}">`).join('');
-  _pickupPokemonListFilled=true;
 }
 
 async function rolarDado(){
@@ -11403,7 +11384,7 @@ async function rolarDado(){
     pickupPokemon=document.getElementById('dice-pickup-pokemon').value.trim();
     if(!pickupPokemon){alert('Informe o Pokémon que está usando Pickup!');document.getElementById('dice-pickup-pokemon').focus();return;}
     lados=100;
-    motivo='Pickup de '+pickupPokemon;
+    motivo='#Pickup'+pickupPokemon;
   }
 
   if(!lados||lados<2){alert('O dado precisa ter ao menos 2 lados.');return;}
@@ -11475,7 +11456,7 @@ function renderHistDados(){
     const btnDel=podeExcluirRolagem?`<button class="dice-hist-del" onclick="excluirRolagemDado('${e.id}')">Excluir</button>`:'';
     // Rolagens de Pickup guardam o item sorteado em `lote` (1 posição só) —
     // se for o caso, mostra o nome do item no lugar do número cru.
-    const pickupInfo=(Array.isArray(e.lote)&&e.lote.length===1&&String(e.motivo||'').startsWith('Pickup de '))?e.lote[0]:null;
+    const pickupInfo=(Array.isArray(e.lote)&&e.lote.length===1&&String(e.motivo||'').startsWith('#Pickup'))?e.lote[0]:null;
     const obteve=pickupInfo?(pickupInfo.item||'Nada'):e.resultado;
     return`<div class="dice-hist-entry" style="animation-delay:${i*0.04}s">
       <div class="dice-hist-msg">
