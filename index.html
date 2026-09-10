@@ -4815,7 +4815,7 @@ const PK = (() => {
 const SUPA_URL = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const SUPA_HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
-const FICHAS_API_URL = 'https://p01--kingdom-platinum--y7pyslnljzqn.code.run/api';
+const FICHAS_API_URL = 'https://kpfichas.vercel.app/api';
 const FICHAS_SESSION_KEY = 'kp_fichas_session';
 
 // ⚠️ Troque pela URL real onde o Pokégram está publicado.
@@ -5599,6 +5599,7 @@ async function fichasApi(path, options={}){
 }
 
 async function restaurarSessaoFichario(){
+  let sessaoRecebida = false;
   try{
     const callbackUrl = new URL(window.location.href);
     const code = callbackUrl.searchParams.get('kp_fichas_code');
@@ -5615,6 +5616,7 @@ async function restaurarSessaoFichario(){
         username:session.username,
         nome:session.nome
       }));
+      sessaoRecebida = true;
       callbackUrl.searchParams.delete('kp_fichas_code');
       history.replaceState({}, '', callbackUrl.pathname + callbackUrl.search + callbackUrl.hash);
     }
@@ -5639,12 +5641,20 @@ async function restaurarSessaoFichario(){
     };
     localStorage.setItem('player_session', JSON.stringify(playerLogado));
     await carregarFichasIntegradas();
+    const loginSub = document.getElementById('pl-sub');
+    if(loginSub) loginSub.textContent = 'Use a mesma conta do Fichário';
     return true;
   }catch(e){
-    console.warn('[fichario] sessão inválida', e);
+    console.warn('[fichario] não foi possível concluir a conexão', e);
     fichasAccessToken = null;
     fichasIntegradas = [];
-    localStorage.removeItem(FICHAS_SESSION_KEY);
+    if(e?.status === 401 || e?.status === 403 || (!sessaoRecebida && e?.status === 400)){
+      localStorage.removeItem(FICHAS_SESSION_KEY);
+    }
+    const loginSub = document.getElementById('pl-sub');
+    if(loginSub){
+      loginSub.textContent = e?.message || 'Não foi possível carregar suas fichas. Tente conectar novamente.';
+    }
     return false;
   }
 }
