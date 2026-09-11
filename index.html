@@ -5585,9 +5585,13 @@ function entrarComFichario(){
 
 async function fichasApi(path, options={}){
   const headers = {'Content-Type':'application/json', ...(options.headers||{})};
-  if(fichasAccessToken) headers.Authorization = `Bearer ${fichasAccessToken}`;
+  if(fichasAccessToken && fichasAccessToken !== 'cookie') headers.Authorization = `Bearer ${fichasAccessToken}`;
   const endpoint = path.replace(/^\/integracoes\/rolagens\//, '');
-  const response = await fetch(`${FICHAS_API_URL}?endpoint=${encodeURIComponent(endpoint)}`, {...options, headers});
+  const response = await fetch(`${FICHAS_API_URL}?endpoint=${encodeURIComponent(endpoint)}`, {
+    ...options,
+    headers,
+    credentials:'same-origin'
+  });
   const text = await response.text();
   let body = null;
   try{ body = text ? JSON.parse(text) : null; }catch(e){ body = null; }
@@ -5622,9 +5626,20 @@ async function restaurarSessaoFichario(){
       callbackUrl.searchParams.delete('kp_fichas_code');
       history.replaceState({}, '', callbackUrl.pathname + callbackUrl.search + callbackUrl.hash);
     }
-    const raw = localStorage.getItem(FICHAS_SESSION_KEY);
-    if(!raw) return false;
-    const sessao = JSON.parse(raw);
+    let raw = localStorage.getItem(FICHAS_SESSION_KEY);
+    let sessao = raw ? JSON.parse(raw) : null;
+    if(!sessao || sessao.accessToken === 'cookie'){
+      const estado = await fichasApi('/integracoes/rolagens/estado');
+      sessao = {
+        accessToken:'cookie',
+        expiresAt:estado.expiresAt,
+        idUsuario:estado.idUsuario,
+        username:estado.username,
+        nome:estado.nome,
+        fichas:estado.fichas || []
+      };
+      localStorage.setItem(FICHAS_SESSION_KEY, JSON.stringify(sessao));
+    }
     if(!sessao?.accessToken || (sessao.expiresAt && sessao.expiresAt <= Date.now())){
       localStorage.removeItem(FICHAS_SESSION_KEY);
       return false;
@@ -5642,7 +5657,7 @@ async function restaurarSessaoFichario(){
       origem:'fichario'
     };
     localStorage.setItem('player_session', JSON.stringify(playerLogado));
-    await carregarFichasIntegradas();
+    await carregarFichasIntegradas(sessao.fichas);
     ficharioErro = '';
     const loginSub = document.getElementById('pl-sub');
     if(loginSub) loginSub.textContent = 'Use a mesma conta do Fichário';
@@ -5664,8 +5679,10 @@ async function restaurarSessaoFichario(){
   }
 }
 
-async function carregarFichasIntegradas(){
-  fichasIntegradas = await fichasApi('/integracoes/rolagens/fichas') || [];
+async function carregarFichasIntegradas(fichasDaSessao){
+  fichasIntegradas = Array.isArray(fichasDaSessao)
+    ? fichasDaSessao
+    : (await fichasApi('/integracoes/rolagens/fichas') || []);
   personagens = personagens.filter(p=>!p._fichario);
   const username = playerLogado?.nome || '';
   fichasIntegradas.forEach(ficha=>{
@@ -6044,6 +6061,11 @@ function mostrarBadgePlayer(){
 }
 
 async function fazerLogoutPlayer(){
+  try{
+    await fichasApi('/integracoes/rolagens/desconectar', {method:'POST'});
+  }catch(e){
+    console.warn('[fichario] não foi possível encerrar a sessão remota', e);
+  }
   playerLogado = null;
   _loginPlayerCache = null;
   localStorage.removeItem('player_session');
