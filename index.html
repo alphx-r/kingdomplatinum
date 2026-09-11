@@ -5809,15 +5809,32 @@ async function consumirBonusDaFicha(nomePersonagem, usarHoney, usarShinyCharm){
 
   _consumindoBonusRolagem = true;
   try{
-    const result = await fichasApi('/integracoes/rolagens/bonus', {
-      method:'POST',
-      body:JSON.stringify({
-        idFicha:ficha.id,
-        idOperacao:crypto.randomUUID(),
-        usarHoney:!!usarHoney,
-        usarShinyCharm:!!usarShinyCharm
-      })
-    });
+    const idOperacao = crypto.randomUUID();
+    let result;
+    if(usarHoney && !usarShinyCharm){
+      const honey = await fichasApi('/integracoes/rolagens/honey', {
+        method:'POST',
+        body:JSON.stringify({idFicha:ficha.id, idOperacao})
+      });
+      result = {
+        quantidadeHoneyRestante:honey.quantidadeRestante,
+        quantidadeShinyCharmRestante:ficha.quantidadeShinyCharm || 0
+      };
+    }else if(usarShinyCharm && !usarHoney){
+      const shinyCharm = await fichasApi('/integracoes/rolagens/shiny-charm', {
+        method:'POST',
+        body:JSON.stringify({idFicha:ficha.id, idOperacao})
+      });
+      result = {
+        quantidadeHoneyRestante:ficha.quantidadeHoney || 0,
+        quantidadeShinyCharmRestante:shinyCharm.quantidadeRestante
+      };
+    }else{
+      result = await fichasApi('/integracoes/rolagens/bonus', {
+        method:'POST',
+        body:JSON.stringify({idFicha:ficha.id, idOperacao, usarHoney:true, usarShinyCharm:true})
+      });
+    }
     ficha.quantidadeHoney = result.quantidadeHoneyRestante;
     ficha.quantidadeShinyCharm = result.quantidadeShinyCharmRestante;
     return true;
