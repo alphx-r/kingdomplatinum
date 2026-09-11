@@ -109,7 +109,7 @@ export default async function handler(req, res) {
         return res.status(502).json({ message: 'O Fichário não retornou uma sessão válida.' });
       }
       res.setHeader('Set-Cookie', sessionCookie(session.accessToken, session.expiresIn || 3600));
-      return res.status(200).json({ ...session, accessToken: 'cookie' });
+      return res.status(200).json(session);
     }
 
     res.status(upstream.status);
