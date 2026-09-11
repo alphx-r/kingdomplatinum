@@ -3121,30 +3121,6 @@ function calcSyncSelects(){
             <div style="font-size:11px;color:var(--muted);margin-top:6px">"Resetar" apaga a senha do player — no próximo login ele poderá entrar com o mesmo nome de usuário e criar uma nova senha (igual ao primeiro acesso).</div>
             <div class="fb fb-ok" id="adm-senha-fb" style="margin-top:8px">✓ Senha salva!</div>
             <div class="fb fb-err" id="adm-senha-fb-err" style="margin-top:8px">—</div>
-
-            <!-- Forçar conexão com Fichário -->
-            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-              <div style="font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">🔗 Forçar Conexão com Fichário</div>
-              <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Vincula manualmente um player do KP a uma conta do Fichário. Depois de vinculado, a conexão entre os dois sites acontece sozinha nos próximos logins desse player — sem precisar do fluxo de autorização.</div>
-              <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-                <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
-                  <label>Player (KP)</label>
-                  <select id="adm-vinculo-player" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:14px;width:100%">
-                    <option value="">— Selecione —</option>
-                  </select>
-                </div>
-                <div class="field" style="flex:1;min-width:140px;margin-bottom:0">
-                  <label>Conta (Fichário)</label>
-                  <select id="adm-vinculo-ficha-user" style="padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:14px;width:100%">
-                    <option value="">— Carregando —</option>
-                  </select>
-                </div>
-                <button class="btn btn-primary btn-sm" onclick="admVincularFichario()" style="margin-bottom:1px">Vincular</button>
-              </div>
-              <div style="font-size:11px;color:var(--muted);margin-top:8px">Já vinculados: <span id="adm-vinculo-lista">—</span></div>
-              <div class="fb fb-ok" id="adm-vinculo-fb">✓ Conexão criada!</div>
-              <div class="fb fb-err" id="adm-vinculo-fb-err" style="margin-top:8px">—</div>
-            </div>
           </div>
           <div class="box">
             <div class="box-title">Personagens cadastrados</div>
@@ -6281,85 +6257,6 @@ function populateAdmSenhaSelect(){
     players.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
   if(selS) selS.innerHTML = opts;
   if(selR) selR.innerHTML = opts;
-  const selV = document.getElementById('adm-vinculo-player');
-  if(selV) selV.innerHTML = opts;
-  if(isSuperAdmin()) carregarAdmVinculoFichario();
-}
-
-// ══════════════════════════════════════
-// FORÇAR CONEXÃO COM FICHÁRIO (super ADM)
-// ══════════════════════════════════════
-// Contrato esperado do backend (/api/fichario), ainda a implementar:
-//   GET  /integracoes/rolagens/usuarios         -> [{id, username, nome}]
-//        Lista todas as contas cadastradas no Fichário, para o admin escolher.
-//   GET  /integracoes/rolagens/vinculos-admin    -> [{playerId, fichasUserId, fichasUsername}]
-//        Lista os vínculos já criados manualmente pelo admin.
-//   POST /integracoes/rolagens/vincular-admin    body:{playerId, fichasUserId}
-//        Cria o vínculo. A partir daí, restaurarSessaoFichario() no login do player
-//        deve conseguir obter o estado do Fichário sem depender do redirect OAuth
-//        (kp_fichas_code) — o backend reconhece o playerId como já autorizado.
-//   POST /integracoes/rolagens/desvincular-admin body:{playerId}
-//        Remove o vínculo forçado.
-// Todas as chamadas usam fichasApi(), que já envia Authorization/cookie de sessão do admin.
-
-let _fichasUsuariosCache = null;
-let _fichasVinculosCache = [];
-
-async function carregarAdmVinculoFichario(){
-  const selU = document.getElementById('adm-vinculo-ficha-user');
-  const listaEl = document.getElementById('adm-vinculo-lista');
-  if(!selU) return;
-  try{
-    if(!_fichasUsuariosCache){
-      _fichasUsuariosCache = await fichasApi('/integracoes/rolagens/usuarios') || [];
-    }
-    selU.innerHTML = '<option value="">— Selecione —</option>' +
-      _fichasUsuariosCache.map(u=>`<option value="${u.id}">${u.nome || u.username}</option>`).join('');
-  }catch(e){
-    console.warn('[fichario] não foi possível listar contas do Fichário', e);
-    selU.innerHTML = '<option value="">Indisponível — verifique o backend</option>';
-  }
-  try{
-    _fichasVinculosCache = await fichasApi('/integracoes/rolagens/vinculos-admin') || [];
-    if(listaEl){
-      listaEl.textContent = _fichasVinculosCache.length
-        ? _fichasVinculosCache.map(v=>{
-            const p = players.find(x=>String(x.id)===String(v.playerId));
-            return `${p?p.nome:v.playerId} ↔ ${v.fichasUsername||v.fichasUserId}`;
-          }).join(', ')
-        : 'nenhum ainda';
-    }
-  }catch(e){
-    console.warn('[fichario] não foi possível listar vínculos existentes', e);
-    if(listaEl) listaEl.textContent = 'indisponível';
-  }
-}
-
-async function admVincularFichario(){
-  if(!isSuperAdmin()){ alert('Apenas o super admin pode forçar conexões com o Fichário.'); return; }
-  const selP = document.getElementById('adm-vinculo-player');
-  const selU = document.getElementById('adm-vinculo-ficha-user');
-  const errEl = document.getElementById('adm-vinculo-fb-err');
-  document.getElementById('adm-vinculo-fb').style.display='none';
-  errEl.style.display='none';
-  const playerId = selP.value;
-  const fichasUserId = selU.value;
-  if(!playerId){ errEl.textContent='Selecione um player do KP.'; errEl.style.display='block'; return; }
-  if(!fichasUserId){ errEl.textContent='Selecione uma conta do Fichário.'; errEl.style.display='block'; return; }
-  const minhaSenha = garantirSenhaAdmSessao();
-  if(!minhaSenha) return;
-  try{
-    await fichasApi('/integracoes/rolagens/vincular-admin', {
-      method:'POST',
-      body:JSON.stringify({playerId, fichasUserId})
-    });
-  }catch(e){
-    errEl.textContent = e?.message || 'Não foi possível criar a conexão. Verifique se o endpoint já existe no backend.';
-    errEl.style.display='block';
-    return;
-  }
-  fb('adm-vinculo-fb');
-  await carregarAdmVinculoFichario();
 }
 
 async function restaurarSessaoAdm(){
