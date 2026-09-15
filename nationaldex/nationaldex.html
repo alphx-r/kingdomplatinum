@@ -1162,6 +1162,22 @@ async function loadRpgData(){
     _rpgPokemon = all;
     _pkDbMap = {};
     all.filter(p=>/^\d+$/.test(String(p.id))).forEach(p=>{ _pkDbMap[String(p.id)]=p; });
+    // O filtro approved/sprite do PK.load() (or=(approved.eq.true,sprite.not.is.null))
+    // existe pra esconder formas/fakemon em rascunho da grade pública — mas
+    // isso também deixa de fora atualizações de NOME de Pokémon oficiais que
+    // ainda não têm approved/sprite setado, fazendo a grade cair pro nome cru
+    // da PokeAPI (sem acento etc) enquanto a ficha — que busca por id sem
+    // esse filtro (fetchFullPokemon) — mostra o nome certo. Complementa aqui
+    // com um payload enxuto (só id+name, sem o filtro) pra sempre bater o
+    // nome exibido na grade/lista com o nome cadastrado no Supabase.
+    try{
+      const nameRows = await sbFetchAllPages(`${SUPA_URL}/rest/v1/pokemons?select=id,name`, SH_ADM);
+      nameRows.filter(p=>/^\d+$/.test(String(p.id))).forEach(p=>{
+        const key=String(p.id);
+        if(_pkDbMap[key]) _pkDbMap[key].name=p.name;
+        else _pkDbMap[key]={name:p.name};
+      });
+    }catch(e){}
   }catch{}
 }
 
