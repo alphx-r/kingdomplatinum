@@ -112,6 +112,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .pk-card.approved::before,.pk-card.approved::after{border-color:var(--green)}
 .pk-card.approved:hover{box-shadow:0 4px 14px rgba(37,99,168,.13),0 0 14px -1px rgba(0,200,150,.6)}
 .pk-card-sprite{width:64px;height:64px;object-fit:contain;image-rendering:pixelated}
+.pk-card-pub-dot{position:absolute;top:6px;left:6px;font-size:11px;line-height:1;opacity:.9;filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+.pk-card-pub-dot.off{opacity:.55}
 .pk-card-num{font-family:var(--font-title);font-size:9px;color:var(--muted);letter-spacing:.3px}
 .pk-card-name{font-family:var(--font-title);font-size:11px;color:var(--brand);text-align:center;letter-spacing:.2px;line-height:1.3}
 .pk-card-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;letter-spacing:.2px;text-transform:uppercase}
@@ -653,7 +655,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <button onclick="openTypeIconModal()" title="Upload dos SVGs dos tipos homebrew (Scent, Light) pro Supabase Storage — o set de ícones do GitHub só tem os 18 tipos oficiais">🎨 Ícones de tipo customizados</button>
           <hr>
           <div class="adm-more-group-lbl">Manutenção / migração</div>
-          <button onclick="markAllPokemonPending()" title="Desmarca o checkbox 'Aprovado' de todos os Pokémon — não afeta se está publicado">⚠️ Marcar todos como pendente</button>
+          <button onclick="markAllPokemonPending()" title="Desmarca o checkbox 'Revisado' de todos os Pokémon — não afeta se está publicado (campo approved)">⚠️ Marcar todos como pendente</button>
           <button onclick="runSpriteNormalization()" title="Padroniza o zoom dos sprites normal/shiny">🧼 Normalizar sprites</button>
           <button onclick="fixSpriteAlphaHalo()" title="Baixa cada sprite já hospedado no Storage, endurece o alpha da borda (remove a transparência intermediária que causa o halo cinza) e re-sobe no mesmo lugar — não recorta nem reposiciona nada">🩹 Corrigir halo de transparência</button>
           <button onclick="migrateFromOldSupabase()" title="Importar do banco antigo">⬇️ Banco antigo</button>
@@ -701,9 +703,11 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div class="stats-bar">
       <div class="stat-item"><span class="stat-val" id="pk-total">—</span><span class="stat-lbl">Total</span></div>
       <div class="sdiv"></div>
-      <div class="stat-item"><span class="stat-val g" id="pk-appr">0</span><span class="stat-lbl">Aprovados</span></div>
+      <div class="stat-item"><span class="stat-val g" id="pk-appr">0</span><span class="stat-lbl">Revisados</span></div>
       <div class="sdiv"></div>
       <div class="stat-item"><span class="stat-val o" id="pk-pend">0</span><span class="stat-lbl">Pendentes</span></div>
+      <div class="sdiv"></div>
+      <div class="stat-item" title="Campo approved=true — o que a NationalDex realmente usa pra decidir se mostra o Pokémon. Pode ser diferente de 'Revisados' (campo revisado, marcação interna)."><span class="stat-val" id="pk-pub" style="color:#1e90c8">0</span><span class="stat-lbl">Publicados</span></div>
       <div class="prog-wrap">
         <div class="prog-lbl"><span>Progresso</span><span id="pk-pct">0%</span></div>
         <div class="prog-bar"><div class="prog-fill" id="pk-bar" style="width:0%"></div></div>
@@ -730,7 +734,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </div>
       <button class="fbtn on" id="pk-f-all" onclick="setPkFilter('all')">Todos</button>
       <button class="fbtn" id="pk-f-pend" onclick="setPkFilter('pend')">Pendentes</button>
-      <button class="fbtn" id="pk-f-appr" onclick="setPkFilter('appr')">Aprovados</button>
+      <button class="fbtn" id="pk-f-appr" onclick="setPkFilter('appr')">Revisados</button>
     </div>
     <div id="pk-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando Pokémon…</div></div></div>
     </div>
@@ -1072,7 +1076,7 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <div class="epk-card" style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;color:var(--text)">
           <input type="checkbox" id="epk-revisado" style="width:18px;height:18px;cursor:pointer" onchange="handleEpkRevisadoChange()">
-          Aprovado
+          Revisado <span style="font-weight:400;font-size:11px;color:var(--muted)">(marcação interna — não publica na NationalDex; use "✓ Publicar" pra isso)</span>
         </label>
       </div>
 
@@ -1862,9 +1866,14 @@ function renderPkList() {
   // então basta filtrar aqui uma vez só. Somar de novo um "apprRpg" separado
   // contava em dobro cada Pokémon RPG aprovado.
   const appr = Object.values(S.pk.dbMap).filter(d => d.revisado).length;
+  // Contagem SEPARADA do campo `approved` real — é esse (não `revisado`) que
+  // a NationalDex usa pra filtrar quem aparece publicamente.
+  const pub = Object.values(S.pk.dbMap).filter(d => d.approved).length;
   document.getElementById('pk-total').textContent = total;
   document.getElementById('pk-appr').textContent = appr;
   document.getElementById('pk-pend').textContent = total - appr;
+  const pkPubEl = document.getElementById('pk-pub');
+  if (pkPubEl) pkPubEl.textContent = pub;
   const pct = total ? Math.round(appr / total * 100) : 0;
   document.getElementById('pk-pct').textContent = pct + '%';
   document.getElementById('pk-bar').style.width = pct + '%';
@@ -1923,8 +1932,14 @@ function renderPkList() {
     }).join('');
     const badgeCls = appr ? 'badge-appr' : hasPt ? 'badge-pt' : 'badge-pend';
     const badgeTxt = appr ? '✓' : hasPt ? '…' : '○';
+    // Indicador SEPARADO do campo `approved` real (o que a NationalDex de fato
+    // usa pra decidir se mostra o Pokémon) — não confundir com `revisado`
+    // (badge ✓/…/○ acima), que é só uma marcação interna de revisão.
+    const publicado = !!db.approved;
+    const pubDot = `<span class="pk-card-pub-dot ${publicado?'on':'off'}" title="${publicado?'Publicado (approved=true) — visível na NationalDex':'Não publicado — approved=false, NÃO aparece na NationalDex mesmo se revisado'}">${publicado?'🌐':'🚫'}</span>`;
     return `<div class="pk-card${appr?' approved':' pending'}${hasAlt?' has-alt':''}" onclick="openEditPokemon('${pk.id}')" style="animation-delay:${Math.min(i*0.008,0.3)}s">
       <span style="position:absolute;top:6px;right:6px" class="pk-card-badge ${badgeCls}">${badgeTxt}</span>
+      ${pubDot}
       ${spriteUrl ? `<img class="pk-card-sprite" src="${spriteUrl}" alt="${pk.name}" onerror="this.style.opacity='.15'">` : `<div class="pk-card-sprite" style="display:flex;align-items:center;justify-content:center;font-size:28px;opacity:.3">?</div>`}
       <span class="pk-card-num">${numLabel}</span>
       <span class="pk-card-name">${cap(pk.name)}</span>
@@ -5184,7 +5199,7 @@ function nrpgSyncSlug() {
   slugEl.value = buildAutoSlug(nome, id);
 }
 
-// Ao marcar/desmarcar "Aprovado" no modal, salva imediatamente (como rascunho,
+// Ao marcar/desmarcar "Revisado" no modal, salva imediatamente (como rascunho,
 // já que publicar continua sendo uma ação separada pelo botão "✓ Publicar") e
 // fecha o modal automaticamente — savePkModal() já cuida do closeModal().
 function handleEpkRevisadoChange() {
@@ -5393,19 +5408,24 @@ async function deletePkModal() {
 function updatePkStats() {
   const total = S.pk.all.length;
   const appr = Object.values(S.pk.dbMap).filter(d => d.revisado).length;
+  // Contagem SEPARADA do campo `approved` real — é esse (não `revisado`) que
+  // a NationalDex usa pra filtrar quem aparece publicamente.
+  const pub = Object.values(S.pk.dbMap).filter(d => d.approved).length;
   const pct = total ? Math.round(appr / total * 100) : 0;
   document.getElementById('pk-total').textContent = total;
   document.getElementById('pk-appr').textContent = appr;
   document.getElementById('pk-pend').textContent = total - appr;
+  const pkPubEl2 = document.getElementById('pk-pub');
+  if (pkPubEl2) pkPubEl2.textContent = pub;
   document.getElementById('pk-pct').textContent = pct + '%';
   document.getElementById('pk-bar').style.width = pct + '%';
   document.getElementById('badge-pokemon').textContent = `${appr}/${total}`;
 }
 
-// Zera o checkbox "Aprovado" (campo `revisado`) de TODOS os Pokémon de uma vez —
+// Zera o checkbox "Revisado" (campo `revisado`) de TODOS os Pokémon de uma vez —
 // não mexe em `approved`/publicação, que é um fluxo separado (ver savePkModal).
 async function markAllPokemonPending() {
-  if (!confirm('Marcar TODOS os Pokémon como pendente? Isso desmarca o checkbox "Aprovado" de cada um (não afeta o que já está publicado).')) return;
+  if (!confirm('Marcar TODOS os Pokémon como pendente? Isso desmarca o checkbox "Revisado" de cada um (não afeta o que já está publicado — campo approved).')) return;
   try {
     await sbPatchAll('pokemons', { revisado: false });
     S.pk.all.forEach(p => { p.revisado = false; });
