@@ -1171,11 +1171,11 @@ async function loadRpgData(){
     // com um payload enxuto (só id+name, sem o filtro) pra sempre bater o
     // nome exibido na grade/lista com o nome cadastrado no Supabase.
     try{
-      const nameRows = await sbFetchAllPages(`${SUPA_URL}/rest/v1/pokemons?select=id,name`, SH_ADM);
+      const nameRows = await sbFetchAllPages(`${SUPA_URL}/rest/v1/pokemons?select=id,name,tipo1,tipo2`, SH_ADM);
       nameRows.filter(p=>/^\d+$/.test(String(p.id))).forEach(p=>{
         const key=String(p.id);
-        if(_pkDbMap[key]) _pkDbMap[key].name=p.name;
-        else _pkDbMap[key]={name:p.name};
+        if(_pkDbMap[key]){ _pkDbMap[key].name=p.name; _pkDbMap[key].tipo1=p.tipo1; _pkDbMap[key].tipo2=p.tipo2; }
+        else _pkDbMap[key]={name:p.name,tipo1:p.tipo1,tipo2:p.tipo2};
       });
     }catch(e){}
   }catch{}
@@ -1640,6 +1640,16 @@ function listRow(p,i){
   </div>`;
 }
 
+// Tipos cadastrados no admin (Supabase) têm prioridade sobre a PokéAPI —
+// é o mesmo dado que a ficha (renderRpgDetail) usa. Sem isso a grade/lista
+// mostrava o tipo original da PokéAPI e divergia da ficha editada no admin.
+function seedDbTypes(ids){
+  ids.forEach(id=>{
+    const r=_pkDbMap[String(id)];
+    if(r&&r.tipo1) typeCache[id]=[r.tipo1,r.tipo2].filter(Boolean);
+  });
+}
+
 function batchTypes(ids){
   const batches=[];for(let i=0;i<ids.length;i+=15)batches.push(ids.slice(i,i+15));
   batches.forEach((b,bi)=>setTimeout(()=>b.forEach(async id=>{
@@ -1647,7 +1657,7 @@ function batchTypes(ids){
     try{
       const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
       const d=await r.json();
-      typeCache[id]=d.types.map(t=>t.type.name);
+      typeCache[id]=d.types.map(t=>t.type.name);seedDbTypes([id]);
       const el=document.getElementById(`pt-${id}`);
       if(el)el.innerHTML=typeCache[id].map(t=>pill(t)).join('');
     }catch{}
@@ -1735,6 +1745,7 @@ async function applyFilters(){
     return nm&&gm;
   });
 
+  seedDbTypes(byRegion.map(p=>p.id));
   const missingTypes=byRegion.filter(p=>!typeCache[p.id]).map(p=>p.id);
 
   if(!tp){
@@ -1763,7 +1774,7 @@ function batchTypesAndRefilter(ids){
   batches.forEach((b,bi)=>setTimeout(()=>{
     Promise.all(b.map(async id=>{
       if(typeCache[id])return;
-      try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);const d=await r.json();typeCache[id]=d.types.map(t=>t.type.name);}catch{}
+      try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);const d=await r.json();typeCache[id]=d.types.map(t=>t.type.name);seedDbTypes([id]);}catch{}
     })).then(()=>{
       pending--;
       if(pending===0) applyFilters(); // reaplica quando todos os lotes terminarem
