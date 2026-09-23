@@ -64,13 +64,14 @@ export default async function middleware(request) {
   const img = poke?.sprite || artworkFallback(poke?.id);
   const tipos = [poke?.tipo1, poke?.tipo2].filter(Boolean).join(' / ');
   const desc = poke ? `Tipo: ${tipos || '—'} · Kingdom Platinum` : 'Kingdom Platinum — NationalDex';
+  const titulo = `${nome} | NationalDEX — KP`;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>${nome} — NationalDex</title>
-<meta property="og:title" content="${nome} — NationalDex">
+<title>${titulo}</title>
+<meta property="og:title" content="${titulo}">
 <meta property="og:description" content="${desc}">
 <meta property="og:image" content="${img}">
 <meta property="og:type" content="website">
