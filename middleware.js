@@ -64,7 +64,7 @@ export default async function middleware(request) {
   const img = poke?.sprite || artworkFallback(poke?.id);
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
   const tipos = [poke?.tipo1, poke?.tipo2].filter(Boolean).map(cap).join('/');
-  const desc = poke ? `${tipos ? tipos + '-type' : '—'} · Kingdom Platinum` : 'Kingdom Platinum — NationalDex';
+  const desc = poke ? (tipos ? `${tipos}-type` : 'NationalDex') : 'NationalDex';
   const titulo = `${nome} — NationalDex | KP`;
 
   const html = `<!DOCTYPE html>
