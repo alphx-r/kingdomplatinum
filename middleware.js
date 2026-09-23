@@ -64,7 +64,7 @@ export default async function middleware(request) {
   const img = poke?.sprite || artworkFallback(poke?.id);
   const tipos = [poke?.tipo1, poke?.tipo2].filter(Boolean).join(' / ');
   const desc = poke ? `Tipo: ${tipos || '—'} · Kingdom Platinum` : 'Kingdom Platinum — NationalDex';
-  const titulo = `${nome} | NationalDEX — KP`;
+  const titulo = `${nome} — NationalDex | KP`;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
