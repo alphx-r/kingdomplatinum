@@ -218,6 +218,10 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .dice-header h2{font-family:var(--font-title);font-size:22px;color:var(--brand);margin-bottom:6px}
 .dice-header p{font-size:14px;color:var(--muted)}
 .dice-controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+@media(max-width:640px){
+  #dice-controls-main{grid-template-columns:1fr 1fr!important;gap:10px!important}
+  #dice-controls-main #dice-motivo-group{grid-column:1/-1}
+}
 .dice-result-box{background:var(--surface);border:2px solid var(--border);border-radius:var(--r);padding:24px 20px;text-align:center;margin-bottom:20px;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:border-color .3s}
 .dice-result-box.rolled{border-color:var(--brand-mid);animation:fadeUp .3s both}
 .dice-result-num{font-family:var(--font-title);font-size:52px;font-weight:700;color:var(--brand);line-height:1}
@@ -2308,7 +2312,7 @@ function calcSyncSelects(){
     </div>
 
     <!-- Controles -->
-    <div class="dice-controls" style="grid-template-columns:1.8fr 1fr 1.8fr auto auto">
+    <div class="dice-controls" id="dice-controls-main" style="grid-template-columns:1.8fr 1fr 1.8fr auto auto">
       <div class="ctrl-group">
         <label>Personagem</label>
         <select id="dice-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
@@ -2327,12 +2331,12 @@ function calcSyncSelects(){
       </div>
       <div class="ctrl-group" style="align-items:center" title="Sorteia o item que o Pokémon encontrou, em 1d100 — Frisk, Pickup, Ball Fetch ou Compound Eyes">
         <label>Habilidade</label>
-        <select id="dice-pickup-hab" onchange="togglePickupMode()" style="padding:9px 8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:13px;cursor:pointer">
+        <select id="dice-pickup-hab" onchange="togglePickupMode()" style="padding:9px 8px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);font-size:13px;cursor:pointer">
           <option value="">—</option>
-          <option value="Frisk">Frisk</option>
-          <option value="Pickup">Pickup</option>
           <option value="Ball Fetch">Ball Fetch</option>
           <option value="Compound Eyes">Compound Eyes</option>
+          <option value="Frisk">Frisk</option>
+          <option value="Pickup">Pickup</option>
         </select>
       </div>
       <div class="ctrl-group" style="align-items:center">
@@ -11567,6 +11571,7 @@ function toggleJuizMode(){
 // Pickup, Ball Fetch e Compound Eyes (mesma tabela pras 4, só muda o rótulo).
 function togglePickupMode(){
   const habilidade=document.getElementById('dice-pickup-hab')?.value||'';
+  localStorage.setItem('ultima_habilidade_pickup',habilidade);
   const on=!!habilidade;
   const motivoInput=document.getElementById('dice-motivo');
   const pickupInput=document.getElementById('dice-pickup-pokemon');
@@ -11589,6 +11594,17 @@ function togglePickupMode(){
     }
   }
 }
+
+// Restaura a última habilidade escolhida (Frisk/Pickup/Ball Fetch/Compound
+// Eyes) do localStorage assim que a página carrega, sincronizando o campo
+// de texto/label/d100 com togglePickupMode().
+document.addEventListener('DOMContentLoaded',()=>{
+  const habSel=document.getElementById('dice-pickup-hab');
+  if(!habSel) return;
+  const salva=localStorage.getItem('ultima_habilidade_pickup')||'';
+  if(salva && Array.prototype.some.call(habSel.options,o=>o.value===salva)) habSel.value=salva;
+  togglePickupMode();
+});
 
 async function rolarDado(){
   const isJuiz=document.getElementById('dice-juiz')?.checked;
