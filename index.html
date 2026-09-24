@@ -9524,10 +9524,35 @@ function _pickupTabelaBuild(){
   }
   return map;
 }
+// Números do d100 que, no Pickup, sempre sorteiam uma Gem elemental (1d20
+// extra, em ordem alfabética) em vez do item fixo configurado no ItemDex ADM.
+const PICKUP_NUMEROS_GEM=[20,70];
+
+// Lista as Gems elementais (itens cujo nome segue o padrão "<Tipo> Gem",
+// ex: "Fire Gem") em ordem alfabética. Só entram itens que batem exatamente
+// nesse padrão — outros itens que só contenham "gem" no nome não contam.
+function _gemsElementaisOrdenadas(){
+  if(!_itemDexByName) return [];
+  const gems=[];
+  _itemDexByName.forEach(function(it){
+    if(it && it.name && /^[A-Za-zÀ-ÿ]+ Gem$/.test(it.name.trim())) gems.push(it.name);
+  });
+  return gems.sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+
 // Devolve o nome do item correspondente a um resultado de 1d100 na tabela de
 // Pickup, ou null se aquele número não estiver configurado em nenhum item.
+// Nos números 20 e 70, ignora a tabela do ItemDex ADM e sorteia 1d20 entre
+// as Gems elementais (1-20, em ordem alfabética) — só o resultado principal
+// do d100 fica visível na rolagem; o 1d20 interno não é exibido.
 async function _itemDoPickup(resultado){
   await _loadItemDex();
+  if(PICKUP_NUMEROS_GEM.includes(resultado)){
+    const gems=_gemsElementaisOrdenadas();
+    if(!gems.length) return null;
+    const subRolagem=Math.floor(Math.random()*gems.length)+1;
+    return gems[subRolagem-1];
+  }
   return _pickupTabelaBuild().get(resultado) || null;
 }
 
