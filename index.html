@@ -2325,9 +2325,15 @@ function calcSyncSelects(){
         <input type="text" id="dice-motivo" placeholder="Ex: Ataque, Fuga..." required/>
         <input type="text" id="dice-pickup-pokemon" placeholder="Nome do Pokémon..." style="display:none"/>
       </div>
-      <div class="ctrl-group" style="align-items:center" title="Sorteia o item que o Pokémon encontrou, em 1d100">
-        <label>Pickup</label>
-        <input type="checkbox" id="dice-pickup-mode" onchange="togglePickupMode()" style="width:20px;height:20px;cursor:pointer;accent-color:var(--brand-mid);margin-top:6px"/>
+      <div class="ctrl-group" style="align-items:center" title="Sorteia o item que o Pokémon encontrou, em 1d100 — Frisk, Pickup, Ball Fetch ou Compound Eyes">
+        <label>Habilidade</label>
+        <select id="dice-pickup-hab" onchange="togglePickupMode()" style="padding:9px 8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:13px;cursor:pointer">
+          <option value="">—</option>
+          <option value="Frisk">Frisk</option>
+          <option value="Pickup">Pickup</option>
+          <option value="Ball Fetch">Ball Fetch</option>
+          <option value="Compound Eyes">Compound Eyes</option>
+        </select>
       </div>
       <div class="ctrl-group" style="align-items:center">
         <label>Juiz</label>
@@ -9524,6 +9530,19 @@ function _pickupTabelaBuild(){
   }
   return map;
 }
+// Converte o motivo interno de uma rolagem de item (formato
+// "#Pickup[Habilidade]NomeDoPokemon") no texto exibido pro usuário, ex:
+// "Frisk de Meowth". Rolagens antigas, salvas como "#PickupNomeDoPokemon"
+// (sem habilidade marcada, só existiam pro Pickup), viram "Pickup de Nome".
+// Motivos que não são desse formato voltam sem alteração.
+function _pickupMotivoDisplay(motivo){
+  const str=String(motivo||'');
+  if(!str.startsWith('#Pickup')) return motivo;
+  const comHab=str.match(/^#Pickup\[(.+?)\](.*)$/);
+  if(comHab) return `${comHab[1]} de ${comHab[2]}`;
+  return `Pickup de ${str.slice('#Pickup'.length)}`;
+}
+
 // Números do d100 que, no Pickup, sempre sorteiam uma Gem elemental (1d20
 // extra, em ordem alfabética) em vez do item fixo configurado no ItemDex ADM.
 const PICKUP_NUMEROS_GEM=[20,70];
@@ -11095,7 +11114,7 @@ function renderRolagens(){
         <div style="display:flex;align-items:center;gap:16px;padding:4px 0">
           <div style="font-family:var(--font-title);font-size:38px;font-weight:700;color:var(--brand);line-height:1;min-width:52px;text-align:center">${res}</div>
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px"><strong>${e.personagem||g.canon}</strong> rolou <strong>1d${max}</strong> para <strong>${e.motivo||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
+            <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px"><strong>${e.personagem||g.canon}</strong> rolou <strong>1d${max}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
             <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
               <div style="height:6px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .4s"></div>
             </div>
@@ -11540,22 +11559,21 @@ function toggleJuizMode(){
   }
 }
 
-// Liga/desliga o modo Pickup no rolador principal: troca o campo "Motivo"
-// (que passa a ser gerado automaticamente como "Pickup de X") pelo campo de
-// Pokémon, e trava o dado em d100 — igual ao dado usado na tabela de Pickup
-// configurada no ItemDex ADM.
-// Liga/desliga o modo Pickup no rolador principal: substitui o campo
-// "Motivo" pelo campo de Pokémon (texto livre, sem sugestão/autocomplete —
-// só digitado mesmo), no mesmo espaço do formulário, e trava o dado em
-// d100 — igual ao dado usado na tabela de Pickup configurada no ItemDex ADM.
+// Liga/desliga o modo "habilidade de item" no rolador principal: substitui o
+// campo "Motivo" pelo campo de Pokémon (texto livre, sem sugestão/autocomplete
+// — só digitado mesmo), no mesmo espaço do formulário, e trava o dado em d100
+// — igual ao dado usado na tabela de item configurada no ItemDex ADM. Usado
+// pelas 4 habilidades que sorteiam item por esse mesmo mecanismo: Frisk,
+// Pickup, Ball Fetch e Compound Eyes (mesma tabela pras 4, só muda o rótulo).
 function togglePickupMode(){
-  const on=document.getElementById('dice-pickup-mode')?.checked;
+  const habilidade=document.getElementById('dice-pickup-hab')?.value||'';
+  const on=!!habilidade;
   const motivoInput=document.getElementById('dice-motivo');
   const pickupInput=document.getElementById('dice-pickup-pokemon');
   const label=document.getElementById('dice-motivo-label');
   if(motivoInput) motivoInput.style.display=on?'none':'';
   if(pickupInput) pickupInput.style.display=on?'':'none';
-  if(label) label.textContent=on?'Pokémon com Pickup':'Motivo';
+  if(label) label.textContent=on?`Pokémon com ${habilidade}`:'Motivo';
   const ladosInput=document.getElementById('dice-lados');
   if(ladosInput){
     if(on){
@@ -11574,7 +11592,8 @@ function togglePickupMode(){
 
 async function rolarDado(){
   const isJuiz=document.getElementById('dice-juiz')?.checked;
-  const isPickup=document.getElementById('dice-pickup-mode')?.checked;
+  const habilidadePickup=document.getElementById('dice-pickup-hab')?.value||'';
+  const isPickup=!!habilidadePickup;
   let personagem=isJuiz?'Juiz de Batalha':document.getElementById('dice-personagem').value.trim();
   let lados=parseInt(document.getElementById('dice-lados').value);
   let motivo=document.getElementById('dice-motivo').value.trim();
@@ -11584,9 +11603,13 @@ async function rolarDado(){
   let pickupPokemon='';
   if(isPickup){
     pickupPokemon=document.getElementById('dice-pickup-pokemon').value.trim();
-    if(!pickupPokemon){alert('Informe o Pokémon que está usando Pickup!');document.getElementById('dice-pickup-pokemon').focus();return;}
+    if(!pickupPokemon){alert(`Informe o Pokémon que está usando ${habilidadePickup}!`);document.getElementById('dice-pickup-pokemon').focus();return;}
     lados=100;
-    motivo='#Pickup'+pickupPokemon;
+    // Mantém o prefixo "#Pickup" pra não quebrar a detecção de rolagens
+    // antigas (startsWith('#Pickup') no histórico); a habilidade real fica
+    // marcada entre colchetes e some do texto só quando exibida (ver
+    // _pickupMotivoDisplay).
+    motivo='#Pickup['+habilidadePickup+']'+pickupPokemon;
   }
 
   if(!lados||lados<2){alert('O dado precisa ter ao menos 2 lados.');return;}
@@ -11662,7 +11685,7 @@ function renderHistDados(){
     const obteve=pickupInfo?(pickupInfo.item||'Nada'):e.resultado;
     return`<div class="dice-hist-entry" style="animation-delay:${i*0.04}s">
       <div class="dice-hist-msg">
-        [${e.data} ${e.hora}] <strong>${e.personagem}</strong> rolou <strong>1d${e.lados}</strong> para <strong>${e.motivo}</strong> e obteve: <strong>${obteve}</strong>
+        [${e.data} ${e.hora}] <strong>${e.personagem}</strong> rolou <strong>1d${e.lados}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)}</strong> e obteve: <strong>${obteve}</strong>
       </div>
       <div class="dice-hist-num" style="display:none">${e.resultado}</div>
       ${btnDel}
@@ -14062,7 +14085,7 @@ function renderHistoricoEvento(){
         <div style="display:flex;align-items:center;gap:16px;padding:8px 14px">
           <div style="font-family:var(--font-title);font-size:36px;font-weight:700;color:var(--brand);line-height:1;min-width:48px;text-align:center">${res}</div>
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">${e.personagem} rolou <strong>1d${max}</strong> para <strong>${e.motivo||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
+            <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">${e.personagem} rolou <strong>1d${max}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
             <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
               <div style="height:6px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .4s"></div>
             </div>
