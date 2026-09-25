@@ -4781,21 +4781,44 @@ async function dxFetchAllPages(url, headers, pageSize = 1000) {
   return all;
 }
 
+// Fallback estático: cópia completa da tabela "pokemons" publicada no repositório
+// do GitHub. Existe justamente para as rolagens não pararem quando o Supabase
+// do DataDex cair — mesmo padrão do ITEMDEX_ITEMS_JSON_FALLBACK.
+const POKEMON_JSON_FALLBACK = 'https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/pokemon.json';
+
 const PK = (() => {
   let _data   = [];   // array de objetos pokémon
   let _loaded = false;
+  let _fonte  = null; // 'supabase' | 'json' — de onde os dados atuais vieram
 
   async function load() {
     if (_loaded) return _data; // já carregou — retorna cache
     try {
       _data = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/pokemons?select=*`, DATADEX_SH);
+      if (!Array.isArray(_data) || !_data.length) throw new Error('Supabase retornou vazio');
       _loaded = true;
+      _fonte = 'supabase';
     } catch (e) {
-      console.error('[PK.load]', e);
-      _data = [];
+      console.error('[PK.load] Supabase falhou, usando fallback pokemon.json do GitHub:', e);
+      try {
+        const res = await fetch(POKEMON_JSON_FALLBACK, {cache:'no-store'});
+        if (!res.ok) throw new Error('pokemon.json HTTP '+res.status);
+        _data = await res.json();
+        if (!Array.isArray(_data)) _data = [];
+        _loaded = _data.length > 0;
+        _fonte = 'json';
+        if (_loaded) console.warn('[PK.load] rolando com pokemon.json (fallback) —', _data.length, 'Pokémon carregados.');
+      } catch (e2) {
+        console.error('[PK.load] fallback pokemon.json também falhou:', e2);
+        _data = [];
+        _loaded = false;
+        _fonte = null;
+      }
     }
     return _data;
   }
+
+  function fonte() { return _fonte; }
 
   async function save() {
     const r = await fetch(`${DATADEX_SUPA_URL}/rest/v1/pokemons`, {
@@ -4816,7 +4839,7 @@ const PK = (() => {
   function remove(id)       { _data = _data.filter(p => String(p.id) !== String(id)); }
   function setAll(arr)      { _data = arr; }
 
-  return { load, save, get, getAll, set, remove, setAll };
+  return { load, save, get, getAll, set, remove, setAll, fonte };
 })();
 
 // ══════════════════════════════════════
@@ -10876,6 +10899,13 @@ async function rolarEncontro(){
 
   const section=document.getElementById('results-section');
   section.innerHTML='';
+
+  if(PK.fonte()==='json'){
+    const bannerFallback=document.createElement('div');
+    bannerFallback.style.cssText='background:#fde8e8;border:1.5px solid #f0c0c0;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:var(--red);font-family:var(--font-body)';
+    bannerFallback.innerHTML='⚠️ Supabase indisponível no momento — esta rolagem usou o backup (pokemon.json do GitHub). Sprites/dados podem estar levemente desatualizados.';
+    section.appendChild(bannerFallback);
+  }
 
   if(motivoExtras&&total>10){
     const banner=document.createElement('div');
