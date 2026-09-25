@@ -809,7 +809,7 @@ function buildDmgTakenHtml(types){
 }
 
 // Monta a lista de habilidades (mesmo estilo usado nas fichas), buscando a
-// descrição PT direto da tabela "abilities" do Supabase.
+// descrição PT via getAbility() (abilities.json, com fallback Supabase).
 async function buildAbilitiesHtmlSimple(entries){
   if(!entries||!entries.length) return `<div style="font-size:11px;color:var(--muted)">—</div>`;
   const regularEntries=entries.filter(h=>!h.ha);
@@ -1105,17 +1105,38 @@ async function fetchFullPokemon(id){
   }catch(e){ return _pkDbMap[key]; }
 }
 
-// Descrições PT das habilidades — tabela "abilities" do banco novo
-// (mesma usada pelo admin), em vez do cache antigo em localStorage.
+// Descrições PT das habilidades — fonte oficial: abilities.json
+// (mesmo arquivo usado pelo AbilityDex). Supabase só como fallback.
+// Guarda a Promise em andamento (não só o resultado) para evitar que
+// chamadas paralelas (Promise.all nas fichas) disparem fetches duplicados.
 let _abilitiesCache=null;
+let _abilitiesLoading=null;
 async function loadAbilities(){
   if(_abilitiesCache) return _abilitiesCache;
-  try{
-    const rows=await sbSelect('abilities');
-    _abilitiesCache={};
-    rows.forEach(row=>{ _abilitiesCache[row.name]=row; });
-  }catch{ _abilitiesCache={}; }
-  return _abilitiesCache;
+  if(_abilitiesLoading) return _abilitiesLoading;
+  _abilitiesLoading=(async()=>{
+    try{
+      const res=await fetch('/datadex/abilitydex/abilities.json',{cache:'no-store'});
+      if(!res.ok) throw new Error('abilities.json não encontrado');
+      const rows=await res.json();
+      const map={};
+      rows.forEach(row=>{ map[row.name]=row; });
+      _abilitiesCache=map;
+      return map;
+    }catch(jsonErr){
+      console.warn('abilities.json falhou, tentando fallback via Supabase…', jsonErr);
+    }
+    try{
+      const rows=await sbSelect('abilities');
+      const map={};
+      rows.forEach(row=>{ map[row.name]=row; });
+      _abilitiesCache=map;
+    }catch{ _abilitiesCache={}; }
+    return _abilitiesCache;
+  })();
+  const result=await _abilitiesLoading;
+  _abilitiesLoading=null;
+  return result;
 }
 async function getAbility(name){
   const k=name.toLowerCase().replace(/ /g,'-');
@@ -1123,17 +1144,36 @@ async function getAbility(name){
   return m[k]?.ab_desc||null;
 }
 
-// Dados dos moves — tabela "moves" do banco novo (mesma do admin). Fonte
-// única: nenhum dos fluxos (RPG ou oficial) consulta a PokéAPI para moves.
+// Dados dos moves — fonte oficial: moves.json (mesmo arquivo usado pelo
+// MoveDex). Supabase só como fallback.
 let _movesCache=null;
+let _movesLoading=null;
 async function loadMoves(){
   if(_movesCache) return _movesCache;
-  try{
-    const rows=await sbSelect('moves');
-    _movesCache={};
-    rows.forEach(row=>{ _movesCache[row.name]=row; });
-  }catch{ _movesCache={}; }
-  return _movesCache;
+  if(_movesLoading) return _movesLoading;
+  _movesLoading=(async()=>{
+    try{
+      const res=await fetch('/datadex/movedex/moves.json',{cache:'no-store'});
+      if(!res.ok) throw new Error('moves.json não encontrado');
+      const rows=await res.json();
+      const map={};
+      rows.forEach(row=>{ map[row.name]=row; });
+      _movesCache=map;
+      return map;
+    }catch(jsonErr){
+      console.warn('moves.json falhou, tentando fallback via Supabase…', jsonErr);
+    }
+    try{
+      const rows=await sbSelect('moves');
+      const map={};
+      rows.forEach(row=>{ map[row.name]=row; });
+      _movesCache=map;
+    }catch{ _movesCache={}; }
+    return _movesCache;
+  })();
+  const result=await _movesLoading;
+  _movesLoading=null;
+  return result;
 }
 
 /* ═══════════════════════════════════════
@@ -2091,10 +2131,10 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
         p.habilidade2?{name:p.habilidade2,ha:false}:null,
         p.habilidade_oculta?{name:p.habilidade_oculta,ha:true}:null
       ].filter(Boolean);
-  // Descrição das habilidades: vem exclusivamente da tabela "abilities" do
-  // Supabase (mesma fonte usada pelo admin) — sem consulta à PokéAPI, para
-  // que a tradução PT sempre prevaleça, inclusive quando a habilidade
-  // também existe oficialmente (ex: "Blaze" num fakemon).
+  // Descrição das habilidades: vem do abilities.json (com fallback Supabase,
+  // ver getAbility/loadAbilities) — sem consulta à PokéAPI, para que a
+  // tradução PT sempre prevaleça, inclusive quando a habilidade também
+  // existe oficialmente (ex: "Blaze" num fakemon).
   const regularEntries=habEntries.filter(h=>!h.ha);
   const abHtml=await Promise.all(habEntries.map(async(h)=>{
     let desc='';
