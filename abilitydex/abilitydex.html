@@ -171,24 +171,6 @@ tbody td{padding:12px 14px;font-size:13px;color:var(--ink);vertical-align:top}
 </div>
 
 <script>
-const SUPA_URL='https://vnccljhhexlsthjaaorr.supabase.co';
-const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
-const SH={apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY};
-
-async function sbFetchAllPages(url,headers,pageSize=1000){
-  let all=[],from=0;
-  while(true){
-    const sep=url.includes('?')?'&':'?';
-    const res=await fetch(`${url}${sep}limit=${pageSize}&offset=${from}`,{headers});
-    if(!res.ok) break;
-    const chunk=await res.json();
-    all=all.concat(chunk);
-    if(chunk.length<pageSize) break;
-    from+=pageSize;
-  }
-  return all;
-}
-
 let ALL=[], sortCol='name', sortDir=1;
 
 // Mesmo esquema do prefixo "CONSUMÍVEL." no ItemDex: sempre que a descrição
@@ -237,11 +219,41 @@ function sortBy(col){
   render();
 }
 
+// Fallback: só usado se abilities.json (fonte oficial) falhar ao carregar.
+// Preencha com a URL e a anon key públicas do seu projeto Supabase.
+const SUPABASE_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
+const SUPABASE_ANON_KEY = 'COLE_AQUI_SUA_ANON_KEY';
+
+async function loadFromJson(){
+  const res=await fetch('./abilities.json',{cache:'no-store'});
+  if(!res.ok) throw new Error('abilities.json não encontrado');
+  return await res.json();
+}
+
+async function loadFromSupabase(){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/abilities?select=name,ab_desc&order=name.asc`,{
+    headers:{
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    }
+  });
+  if(!res.ok) throw new Error(`Supabase respondeu ${res.status}`);
+  return await res.json();
+}
+
 async function init(){
   try{
-    ALL=await sbFetchAllPages(`${SUPA_URL}/rest/v1/abilities?select=*`,SH);
-  }catch(e){
-    ALL=[];
+    ALL = await loadFromJson();
+  }catch(jsonErr){
+    console.warn('abilities.json falhou, tentando fallback via Supabase…', jsonErr);
+    try{
+      ALL = await loadFromSupabase();
+    }catch(supabaseErr){
+      ALL=[];
+      document.getElementById('hero-sub').textContent='Erro ao carregar habilidades';
+      document.getElementById('tbody').innerHTML='<tr><td colspan="2"><div class="empty-msg">Não foi possível carregar as habilidades (JSON e Supabase indisponíveis).</div></td></tr>';
+      return;
+    }
   }
   document.getElementById('hero-sub').textContent=`${ALL.length} habilidades catalogadas`;
   render();
