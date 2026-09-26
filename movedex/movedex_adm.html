@@ -651,6 +651,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
       <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e sobe pro Supabase (sem sobrescrever traduções já feitas)" style="margin-left:auto">📥 Importar da PokeAPI</button>
+      <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Gera o moves.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar moves.json</button>
       <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
     <div id="mv-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando movimentos…</div></div></div>
@@ -1186,6 +1187,49 @@ async function importMovesFromPokeapi() {
   } finally {
     hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '📥 Importar da PokeAPI'; }
+  }
+}
+
+// Gera o moves.json (mesmo formato usado pelo fallback do MoveDex e do
+// NationalDex) e manda pra rota serverless /api/commit-moves, que commita
+// direto em movedex/moves.json no repo alphx-r/kingdomplatinum. O token do
+// GitHub nunca passa pelo cliente — fica só como env var (GITHUB_TOKEN) na
+// Vercel, lido pela function em /api/commit-moves.js.
+async function backupMovesNow() {
+  const btn = document.getElementById('mv-backup-btn');
+  const origLabel = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
+  try {
+    const data = S.mv.all.map(m => {
+      const db = S.mv.dbMap[m.name] || {};
+      return {
+        name: m.name,
+        descricao: db.descricao || '',
+        type: db.type || m.type || null,
+        type2: db.type2 ?? m.type2 ?? null,
+        damage_class: db.damage_class || m.damage_class || null,
+        power: db.power ?? m.power ?? null,
+        accuracy: db.accuracy ?? m.accuracy ?? null,
+        approved: !!db.approved,
+        contest_style: db.contest_style || m.contest_style || null,
+        is_tm: !!db.is_tm,
+        tm_number: db.tm_number ?? null,
+        updated_at: db.updated_at || null,
+      };
+    });
+    const res = await fetch('/api/commit-moves', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moves: data }),
+    });
+    let result = {};
+    try { result = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+    toast(`✅ moves.json commitado no GitHub (${data.length} moves).`, 'ok');
+  } catch (e) {
+    toast('Erro ao commitar moves.json: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
 }
 
