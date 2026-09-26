@@ -286,33 +286,33 @@ function populateCatFilter(){
   sel.innerHTML='<option value="">Todas categorias</option>'+cats.map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
-// Fallback estático: items.json na raiz do repo alphx-r/kingdomplatinum
-// (mesmo padrão do pokemon.json). Só é usado se o Supabase falhar ou não
-// retornar nada — ele é atualizado manualmente via o botão "Atualizar
-// items.json" no painel admin, então pode ficar levemente desatualizado.
-const ITEMS_JSON_FALLBACK='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/items.json';
+// Fonte oficial: items.json em /datadex/itemdex/items.json (mesmo
+// padrão do abilities.json e moves.json). Supabase só como fallback,
+// já que o egress do projeto pode estourar a cota gratuita.
+const ITEMS_JSON_URL='/datadex/itemdex/items.json';
 
-async function loadItemsFallback(){
-  const res=await fetch(ITEMS_JSON_FALLBACK,{cache:'no-store'});
-  if(!res.ok) throw new Error('fallback fetch failed: '+res.status);
+async function loadItemsJson(){
+  const res=await fetch(ITEMS_JSON_URL,{cache:'no-store'});
+  if(!res.ok) throw new Error('items.json não encontrado: '+res.status);
   return await res.json();
 }
 
 async function init(){
   let usedFallback=false;
   try{
-    ALL=await sbFetchAllPages(`${SUPA_URL}/rest/v1/items?select=*`,SH);
-    if(!ALL.length) throw new Error('empty supabase result');
-  }catch(e){
+    ALL=await loadItemsJson();
+    if(!ALL.length) throw new Error('empty items.json result');
+  }catch(jsonErr){
+    console.warn('items.json falhou, tentando fallback via Supabase…', jsonErr);
     try{
-      ALL=await loadItemsFallback();
+      ALL=await sbFetchAllPages(`${SUPA_URL}/rest/v1/items?select=*`,SH);
       usedFallback=true;
     }catch(e2){
       ALL=[];
     }
   }
   document.getElementById('hero-sub').textContent = usedFallback
-    ? `${ALL.length} itens catalogados (fonte: backup)`
+    ? `${ALL.length} itens catalogados (fonte: Supabase)`
     : `${ALL.length} itens catalogados`;
   SIZE_FAMILIES=computeSizeFamilies(ALL);
   populateCatFilter();
