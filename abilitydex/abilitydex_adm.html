@@ -196,6 +196,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="side-toolbar">
         <button class="btn btn-primary btn-sm btn-block" onclick="openNewAbility()">＋ Nova Ability</button>
         <button class="btn btn-outline btn-sm btn-block" onclick="importAbilitiesFromPokeapi()" title="Busca todas as habilidades na PokeAPI e sobe pro Supabase (sem sobrescrever traduções já feitas)">📥 Importar da PokeAPI</button>
+        <button class="btn btn-outline btn-sm btn-block" id="ab-backup-btn" onclick="backupAbilitiesNow()" title="Gera o abilities.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar abilities.json</button>
         <div class="sinput-wrap">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input class="sinput" id="ab-search" placeholder="Buscar habilidade…" oninput="filterAb()">
@@ -607,6 +608,36 @@ async function importAbilitiesFromPokeapi() {
   } finally {
     hideProgress();
     if (btn) { btn.disabled = false; btn.textContent = '📥 Importar da PokeAPI'; }
+  }
+}
+
+// Gera o abilities.json (mesmo formato usado pelo fallback do AbilityDex e
+// do NationalDex) e manda pra rota serverless /api/commit-abilities, que
+// commita direto em abilitydex/abilities.json no repo alphx-r/kingdomplatinum.
+// O token do GitHub nunca passa pelo cliente — fica só como env var
+// (GITHUB_TOKEN) na Vercel, lido pela function em /api/commit-abilities.js.
+async function backupAbilitiesNow() {
+  const btn = document.getElementById('ab-backup-btn');
+  const origLabel = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
+  try {
+    const data = S.ab.all.map(a => {
+      const db = S.ab.dbMap[a.name] || {};
+      return { name: a.name, ab_desc: db.ab_desc || '' };
+    });
+    const res = await fetch('/api/commit-abilities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ abilities: data }),
+    });
+    let result = {};
+    try { result = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+    toast(`✅ abilities.json commitado no GitHub (${data.length} habilidades).`, 'ok');
+  } catch (e) {
+    toast('Erro ao commitar abilities.json: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
 }
 
