@@ -921,7 +921,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
     <div class="nav-drop-wrap" id="nav-drop-wrap">
       <button class="nav-drop-btn" id="nav-drop-btn" onclick="toggleNavDrop(event)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg></span><span class="nav-label">Mais</span><span class="nav-drop-arrow">▾</span></button>
       <div class="nav-drop-menu" id="nav-drop-menu">
-        <button class="nav-drop-item" id="nav-drop-item-eventos-hub" onclick="goTo('eventos-hub',null);closeNavDrop()"><span class="nav-label">Eventos</span></button>
+        <button class="nav-drop-item" id="nav-drop-item-eventos-hub" onclick="goTo('eventos-hub',null);closeNavDrop()"><span class="nav-label">Calendário</span></button>
         <button class="nav-drop-item" onclick="goTo('ganhos',null);closeNavDrop()"><span class="nav-label">Ganhos</span></button>
         <button class="nav-drop-item" onclick="goTo('nature',null);closeNavDrop()"><span class="nav-label">Natures</span></button>
         <button class="nav-drop-item" onclick="goTo('batalhas',null);closeNavDrop()"><span class="nav-label">Batalhas</span></button>
@@ -1268,12 +1268,28 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 <!-- BOTÃO EDITAR -->
 <button class="page-edit-btn" id="page-edit-btn" onclick="toggleEditMode()" title="Editar página">✎</button>
 
-<!-- EVENTOS HUB -->
+<!-- EVENTOS HUB / CALENDÁRIO -->
 <div class="page" id="page-eventos-hub" style="max-width:900px;margin:0 auto;padding:28px 16px 48px">
-  <div class="roller-header" style="margin-bottom:32px">
-    <h2>Eventos</h2>
+  <div class="roller-header" style="margin-bottom:24px">
+    <h2>Calendário</h2>
     <p>Eventos ativos do RPG — clique em um card para acessar</p>
   </div>
+
+  <!-- CALENDÁRIO DO MÊS -->
+  <div id="cal-evt-box" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:18px 20px 22px;margin-bottom:28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <button class="btn btn-sm" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text)" onclick="calEvtMudarMes(-1)">← </button>
+      <div id="cal-evt-titulo" style="font-family:var(--font-title);font-size:16px;font-weight:700;color:var(--brand);letter-spacing:.4px"></div>
+      <button class="btn btn-sm" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text)" onclick="calEvtMudarMes(1)"> →</button>
+    </div>
+    <div id="cal-evt-semana" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px"></div>
+    <div id="cal-evt-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+    <div id="cal-evt-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"></div>
+  </div>
+
+  <!-- DETALHE DO DIA SELECIONADO -->
+  <div id="cal-evt-dia-detalhe" style="display:none;margin-bottom:24px"></div>
+
   <div id="eventos-hub-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px"></div>
 </div>
 
@@ -3967,6 +3983,14 @@ function calcSyncSelects(){
                 <label>Emoji / ícone</label>
                 <input type="text" id="ev-emoji" placeholder="🎪" style="width:80px"/>
               </div>
+              <div class="field">
+                <label>Data início <span style="font-size:10px;color:var(--muted);font-weight:400">(calendário)</span></label>
+                <input type="date" id="ev-data-inicio"/>
+              </div>
+              <div class="field">
+                <label>Data fim <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional — vazio = evento de 1 dia)</span></label>
+                <input type="date" id="ev-data-fim"/>
+              </div>
 
             </div>
             <div class="field">
@@ -4564,6 +4588,14 @@ function calcSyncSelects(){
       <div class="field">
         <label>Emoji / ícone</label>
         <input type="text" id="edit-ev-emoji" style="width:80px"/>
+      </div>
+      <div class="field">
+        <label>Data início <span style="font-size:10px;color:var(--muted);font-weight:400">(calendário)</span></label>
+        <input type="date" id="edit-ev-data-inicio"/>
+      </div>
+      <div class="field">
+        <label>Data fim <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional)</span></label>
+        <input type="date" id="edit-ev-data-fim"/>
       </div>
 
     </div>
@@ -6336,7 +6368,7 @@ const MANUTENCAO_ABAS_DISPONIVEIS = [
   {key:'fichario',     label:'Fichário'},
   {key:'rolagens',     label:'Rolls'},
   {key:'npcs',         label:'NPCs'},
-  {key:'eventos-hub',  label:'Eventos'},
+  {key:'eventos-hub',  label:'Calendário'},
   {key:'ganhos',       label:'Ganhos'},
   {key:'nature',       label:'Natures'},
   {key:'batalhas',     label:'Batalhas'},
@@ -13081,7 +13113,139 @@ function slugify(str){
 // ══════════════════════════════════════
 // EVENTOS HUB (página pública de eventos)
 // ══════════════════════════════════════
+// ── CALENDÁRIO DE EVENTOS ──
+let _calEvtRef = new Date(); // mês/ano atualmente exibido no calendário
+_calEvtRef.setDate(1);
+let _calEvtDiaSel = null; // 'YYYY-MM-DD' do dia selecionado, ou null
+
+function _calEvtParseData(str){
+  // 'YYYY-MM-DD' -> Date local (evita bug de fuso do new Date('YYYY-MM-DD'))
+  if(!str) return null;
+  const [y,m,d] = str.split('-').map(Number);
+  if(!y||!m||!d) return null;
+  return new Date(y, m-1, d);
+}
+function _calEvtFmtISO(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _calEvtEventosNoDia(iso){
+  return eventos.filter(ev=>{
+    if(!ev.ativo || !ev.data_inicio) return false;
+    const ini = ev.data_inicio;
+    const fim = ev.data_fim || ev.data_inicio;
+    return iso>=ini && iso<=fim;
+  });
+}
+function calEvtMudarMes(delta){
+  _calEvtRef.setMonth(_calEvtRef.getMonth()+delta);
+  _calEvtDiaSel = null;
+  const det = document.getElementById('cal-evt-dia-detalhe');
+  if(det){ det.style.display='none'; det.innerHTML=''; }
+  renderCalEvt();
+}
+function calEvtSelecionarDia(iso){
+  _calEvtDiaSel = (_calEvtDiaSel===iso) ? null : iso;
+  renderCalEvt();
+}
+function renderCalEvt(){
+  const titulo = document.getElementById('cal-evt-titulo');
+  const semana = document.getElementById('cal-evt-semana');
+  const grid   = document.getElementById('cal-evt-grid');
+  const legenda= document.getElementById('cal-evt-legenda');
+  const detWrap= document.getElementById('cal-evt-dia-detalhe');
+  if(!titulo || !grid) return;
+
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DIAS  = ['D','S','T','Q','Q','S','S'];
+  const ano = _calEvtRef.getFullYear(), mes = _calEvtRef.getMonth();
+  titulo.textContent = MESES[mes]+' '+ano;
+
+  semana.innerHTML = DIAS.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px 0">${d}</div>`).join('');
+
+  const hoje = new Date(); const hojeISO = _calEvtFmtISO(hoje);
+  const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
+  const totalDias = new Date(ano, mes+1, 0).getDate();
+
+  const ativos = eventos.filter(e=>e.ativo && e.data_inicio);
+  const coresUsadas = {};
+
+  let cels = '';
+  for(let i=0;i<primeiroDiaSemana;i++) cels += '<div></div>';
+  for(let dia=1; dia<=totalDias; dia++){
+    const d = new Date(ano, mes, dia);
+    const iso = _calEvtFmtISO(d);
+    const evsDia = _calEvtEventosNoDia(iso);
+    const isHoje = iso===hojeISO;
+    const isSel  = iso===_calEvtDiaSel;
+    evsDia.forEach(ev=>{ coresUsadas[ev.nome] = ev.cor || 'var(--brand-mid)'; });
+
+    const dots = evsDia.slice(0,3).map(ev=>`<span style="width:5px;height:5px;border-radius:50%;background:${ev.cor||'var(--brand-mid)'};display:inline-block"></span>`).join('');
+
+    cels += `<button onclick="calEvtSelecionarDia('${iso}')" style="
+      aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+      border-radius:8px;border:1.5px solid ${isSel?'var(--brand-mid)':isHoje?'var(--accent)':'transparent'};
+      background:${isSel?'var(--brand-light)':evsDia.length?'var(--surface2)':'transparent'};
+      cursor:${evsDia.length?'pointer':'default'};font-family:var(--font-body);
+      color:${isHoje?'var(--brand-mid)':'var(--text)'};font-weight:${isHoje?800:600};font-size:12px;
+      transition:all .15s;padding:2px">
+      <span>${dia}</span>
+      <span style="display:flex;gap:2px;height:5px">${dots}</span>
+    </button>`;
+  }
+  grid.innerHTML = cels;
+
+  // legenda com eventos ativos que aparecem neste mês
+  const nomesNoMes = new Set();
+  for(let dia=1; dia<=totalDias; dia++){
+    const iso = _calEvtFmtISO(new Date(ano, mes, dia));
+    _calEvtEventosNoDia(iso).forEach(ev=>nomesNoMes.add(ev.nome));
+  }
+  if(nomesNoMes.size){
+    legenda.innerHTML = [...nomesNoMes].map(nome=>{
+      const cor = coresUsadas[nome]||'var(--brand-mid)';
+      return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text)">
+        <span style="width:9px;height:9px;border-radius:50%;background:${cor};display:inline-block"></span>${nome}
+      </div>`;
+    }).join('');
+  } else {
+    legenda.innerHTML = `<div style="font-size:12px;color:var(--muted)">Nenhum evento marcado neste mês.</div>`;
+  }
+
+  // detalhe do dia selecionado
+  if(_calEvtDiaSel && detWrap){
+    const evsDia = _calEvtEventosNoDia(_calEvtDiaSel);
+    if(evsDia.length){
+      const dObj = _calEvtParseData(_calEvtDiaSel);
+      const dataFmt = dObj.toLocaleDateString('pt-BR', {day:'2-digit', month:'long', year:'numeric'});
+      detWrap.style.display='block';
+      detWrap.innerHTML = `<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:16px 18px">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">📅 ${dataFmt}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${evsDia.map(ev=>{
+            const href = ev.slug ? `/evento/${ev.slug}` : null;
+            return `<div ${href?`onclick="window.location.href='${href}'" style="cursor:pointer"`:''} style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--surface2);${href?'':''}">
+              <div style="width:30px;height:30px;border-radius:50%;background:${ev.cor||'var(--brand)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${ev.emoji||'🎪'}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text)">${ev.nome}</div>
+                ${ev.descricao?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${ev.descricao}</div>`:''}
+              </div>
+              ${href?`<span style="font-size:12px;color:${ev.cor||'var(--brand-mid)'}">→</span>`:''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    } else {
+      detWrap.style.display='none';
+      detWrap.innerHTML='';
+    }
+  } else if(detWrap){
+    detWrap.style.display='none';
+    detWrap.innerHTML='';
+  }
+}
+
 function renderEventosHub(){
+  renderCalEvt();
   const grid = document.getElementById('eventos-hub-grid');
   if(!grid) return;
 
@@ -13172,6 +13336,9 @@ async function criarEvento(){
   const adicionais = parseInt(document.getElementById('ev-adicionais').value)||0;
   const cor     = document.getElementById('ev-cor').value;
   const emoji   = document.getElementById('ev-emoji').value.trim() || '🎪';
+  const dataInicio = document.getElementById('ev-data-inicio').value || null;
+  const dataFimRaw  = document.getElementById('ev-data-fim').value || null;
+  const dataFim  = dataFimRaw || dataInicio;
   const descricao = document.getElementById('ev-desc').value.trim();
   const lockBioma     = document.getElementById('ev-lock-bioma').checked;
   const lockAdicionais= document.getElementById('ev-lock-adicionais').checked;
@@ -13188,7 +13355,7 @@ async function criarEvento(){
   if(!slug){ errEl.textContent='Preencha o slug da URL.'; errEl.style.display='block'; return; }
   if(eventos.find(e=>e.slug===slug)){ errEl.textContent='Já existe um evento com este slug.'; errEl.style.display='block'; return; }
 
-  const payload = {nome, slug, cor, emoji, descricao, ativo:true, tipo};
+  const payload = {nome, slug, cor, emoji, descricao, ativo:true, tipo, data_inicio:dataInicio, data_fim:dataFim};
 
   // campos de encontro (tipo encontro ou ambos)
   if(tipo==='encontro' || tipo==='ambos'){
@@ -13225,6 +13392,8 @@ async function criarEvento(){
   document.getElementById('ev-desc').value='';
   document.getElementById('ev-adicionais').value='0';
   document.getElementById('ev-emoji').value='';
+  document.getElementById('ev-data-inicio').value='';
+  document.getElementById('ev-data-fim').value='';
   _poolBiomasEvento = [];
   _pools['ev'] = [];
   _poolAba['ev'] = 0;
@@ -13340,6 +13509,8 @@ function abrirEditarEvento(id){
   document.getElementById('edit-ev-slug').value  = ev.slug||'';
   document.getElementById('edit-ev-cor').value   = ev.cor||'#1a3a5c';
   document.getElementById('edit-ev-emoji').value = ev.emoji||'';
+  document.getElementById('edit-ev-data-inicio').value = ev.data_inicio||'';
+  document.getElementById('edit-ev-data-fim').value    = ev.data_fim||'';
   document.getElementById('edit-ev-desc').value  = ev.descricao||'';
 
   // tipo
@@ -13398,6 +13569,9 @@ async function salvarEdicaoEvento(){
   const slug    = document.getElementById('edit-ev-slug').value.trim();
   const cor     = document.getElementById('edit-ev-cor').value;
   const emoji   = document.getElementById('edit-ev-emoji').value.trim()||'🎪';
+  const dataInicio = document.getElementById('edit-ev-data-inicio').value || null;
+  const dataFimRaw  = document.getElementById('edit-ev-data-fim').value || null;
+  const dataFim  = dataFimRaw || dataInicio;
   const descricao = document.getElementById('edit-ev-desc').value.trim();
   const errEl   = document.getElementById('edit-ev-fb-err');
   errEl.style.display='none';
@@ -13407,7 +13581,7 @@ async function salvarEdicaoEvento(){
   const conflict = eventos.find(e=>e.slug===slug && e.id!==id);
   if(conflict){ errEl.textContent='Outro evento já usa este slug.'; errEl.style.display='block'; return; }
 
-  const payload = {nome, slug, cor, emoji, descricao, tipo};
+  const payload = {nome, slug, cor, emoji, descricao, tipo, data_inicio:dataInicio, data_fim:dataFim};
   if(tipo==='encontro' || tipo==='ambos'){
     payload.bioma            = document.getElementById('edit-ev-bioma').value;
     payload.adicionais       = parseInt(document.getElementById('edit-ev-adicionais').value)||0;
