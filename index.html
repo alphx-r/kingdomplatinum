@@ -4111,6 +4111,48 @@ function calcSyncSelects(){
               <div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Carregando...</div>
             </div>
           </div>
+
+          <!-- ── EVENTOS DO CALENDÁRIO (sem página / sem rolagem) ── -->
+          <div class="sec-title" style="margin-top:36px;padding-top:24px;border-top:1.5px solid var(--border)">📅 Eventos do Calendário</div>
+          <div class="sec-sub">Marcações simples no calendário — sem página própria e sem rolador. Aparecem só nos dias marcados; ao clicar, mostra nome e descrição.</div>
+          <div class="box">
+            <div class="box-title">✨ Novo Evento do Calendário</div>
+            <div class="g2">
+              <div class="field">
+                <label>Nome</label>
+                <input type="text" id="evc-nome" placeholder="Ex: Aniversário do Reino"/>
+              </div>
+              <div class="field">
+                <label>Cor</label>
+                <input type="color" id="evc-cor" value="#1a3a5c"/>
+              </div>
+              <div class="field">
+                <label>Emoji / ícone</label>
+                <input type="text" id="evc-emoji" placeholder="🎉" style="width:80px"/>
+              </div>
+              <div class="field">
+                <label>Data início</label>
+                <input type="date" id="evc-data-inicio"/>
+              </div>
+              <div class="field">
+                <label>Data fim <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional — vazio = 1 dia)</span></label>
+                <input type="date" id="evc-data-fim"/>
+              </div>
+            </div>
+            <div class="field">
+              <label>Descrição <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional)</span></label>
+              <textarea id="evc-desc" rows="2" placeholder="Descrição curta do evento..."></textarea>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="criarEventoCalendario()">+ Criar Evento do Calendário</button>
+            <div class="fb fb-ok" id="evc-fb-ok">✓ Evento criado!</div>
+            <div class="fb fb-err" id="evc-fb-err">—</div>
+          </div>
+          <div class="box">
+            <div class="box-title">📋 Eventos do Calendário Cadastrados</div>
+            <div id="evc-lista" style="display:flex;flex-direction:column;gap:8px">
+              <div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Carregando...</div>
+            </div>
+          </div>
         </div>
 
 
@@ -5583,7 +5625,7 @@ function admTab(sec,el){
   }
   if(sec==='eventos'){
     syncEventoBiomaSelect();
-    carregarEventos().then(renderEventosLista);
+    carregarEventos().then(()=>{ renderEventosLista(); renderEvcLista(); });
   }
   if(sec==='manutencao'){ carregarManutencaoAdm(); }
 }
@@ -13253,13 +13295,13 @@ function renderEventosHub(){
   const grid = document.getElementById('eventos-hub-grid');
   if(!grid) return;
 
-  const ativos = eventos.filter(ev => ev.ativo);
+  const ativos = eventos.filter(ev => ev.ativo && ev.slug);
 
   if(!ativos.length){
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px 24px;color:var(--muted)">
       <div style="font-size:40px;margin-bottom:12px">🎪</div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Nenhum evento ativo no momento</div>
-      <div style="font-size:13px">Fique de olho! Os eventos aparecerão aqui quando estiverem ativos.</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Nenhum evento com página no momento</div>
+      <div style="font-size:13px">Confira o calendário acima para outras marcações.</div>
     </div>`;
     return;
   }
@@ -13422,17 +13464,104 @@ async function deletarEvento(id, nome){
   renderEventosLista();
 }
 
+// ── EVENTOS DO CALENDÁRIO (sem página / sem rolagem) ──
+async function criarEventoCalendario(){
+  const nome   = document.getElementById('evc-nome').value.trim();
+  const cor    = document.getElementById('evc-cor').value;
+  const emoji  = document.getElementById('evc-emoji').value.trim() || '🎉';
+  const dataInicio = document.getElementById('evc-data-inicio').value || null;
+  const dataFimRaw  = document.getElementById('evc-data-fim').value || null;
+  const dataFim  = dataFimRaw || dataInicio;
+  const descricao = document.getElementById('evc-desc').value.trim();
+  const errEl  = document.getElementById('evc-fb-err');
+  errEl.style.display='none';
+  document.getElementById('evc-fb-ok').style.display='none';
+
+  if(!nome){ errEl.textContent='Preencha o nome do evento.'; errEl.style.display='block'; return; }
+  if(!dataInicio){ errEl.textContent='Preencha a data de início.'; errEl.style.display='block'; return; }
+
+  const payload = {nome, cor, emoji, descricao, ativo:true, data_inicio:dataInicio, data_fim:dataFim, slug:null, tipo:null};
+
+  try{
+    const res = await dbPost('eventos', payload);
+    if(res && res[0]){ eventos.unshift(res[0]); fb('evc-fb-ok'); renderEvcLista(); renderCalEvt(); }
+    else { errEl.textContent='Erro ao salvar (verifique tabela eventos no Supabase).'; errEl.style.display='block'; }
+  } catch(e){ errEl.textContent='Erro: '+e.message; errEl.style.display='block'; }
+
+  document.getElementById('evc-nome').value='';
+  document.getElementById('evc-emoji').value='';
+  document.getElementById('evc-desc').value='';
+  document.getElementById('evc-data-inicio').value='';
+  document.getElementById('evc-data-fim').value='';
+}
+
+async function toggleEventoCalendarioAtivo(id, ativo){
+  await dbPatch('eventos',`id=eq.${id}`,{ativo:!ativo});
+  const ev = eventos.find(e=>e.id===id);
+  if(ev) ev.ativo = !ativo;
+  renderEvcLista();
+  renderCalEvt();
+}
+
+async function deletarEventoCalendario(id, nome){
+  if(!confirm(`Excluir o evento "${nome}"? Esta ação não pode ser desfeita.`)) return;
+  await dbDel('eventos',`id=eq.${id}`);
+  eventos = eventos.filter(e=>e.id!==id);
+  renderEvcLista();
+  renderCalEvt();
+}
+
+function _evcFmtPeriodo(ev){
+  if(!ev.data_inicio) return '—';
+  const ini = _calEvtParseData(ev.data_inicio);
+  const iniFmt = ini.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  if(!ev.data_fim || ev.data_fim===ev.data_inicio) return iniFmt;
+  const fim = _calEvtParseData(ev.data_fim);
+  const fimFmt = fim.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  return `${iniFmt} → ${fimFmt}`;
+}
+
+function renderEvcLista(){
+  const el = document.getElementById('evc-lista');
+  if(!el) return;
+  const lista = eventos.filter(e=>!e.slug);
+  if(!lista.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Nenhum evento do calendário criado ainda.</div>';
+    return;
+  }
+  el.style.display='grid';
+  el.style.gridTemplateColumns='repeat(auto-fill,minmax(220px,1fr))';
+  el.style.gap='8px';
+  el.innerHTML = lista.map(ev=>{
+    return `<div style="background:var(--surface);border:1.5px solid ${ev.ativo?'var(--brand-mid)':'var(--border)'};border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:border-color .2s">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:30px;height:30px;border-radius:50%;background:${ev.cor||'var(--brand)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${ev.emoji||'🎉'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--font-title);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.nome}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${_evcFmtPeriodo(ev)}</div>
+        </div>
+        <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:6px;flex-shrink:0;${ev.ativo?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${ev.ativo?'●':'○'}</span>
+      </div>
+      <div style="display:flex;gap:3px;border-top:1px solid var(--border);padding-top:6px">
+        <button class="btn btn-sm" style="flex:1;font-size:10px;padding:3px 0;background:${ev.ativo?'#fdf3dc':'#e8f5e8'};color:${ev.ativo?'#7a5010':'#1a6a1a'};border:1px solid ${ev.ativo?'#e8d080':'#8bc88b'}" onclick="toggleEventoCalendarioAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'Pausar':'Ativar'}</button>
+        <button class="btn btn-sm" style="font-size:10px;padding:3px 6px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="deletarEventoCalendario('${ev.id}','${ev.nome}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function renderEventosLista(){
   const el = document.getElementById('ev-lista');
   if(!el) return;
-  if(!eventos.length){
+  const lista = eventos.filter(e=>!!e.slug);
+  if(!lista.length){
     el.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Nenhum evento criado ainda.</div>';
     return;
   }
   el.style.display='grid';
   el.style.gridTemplateColumns='repeat(auto-fill,minmax(220px,1fr))';
   el.style.gap='8px';
-  el.innerHTML = eventos.map(ev=>{
+  el.innerHTML = lista.map(ev=>{
     const isd = ev.tipo==='dados';
     const tipoTag = ev.tipo==='ambos'
       ? '<span style="font-size:9px;background:#fff0e8;color:#a05010;border-radius:4px;padding:1px 5px;font-weight:700">⚡🎲 Ambos</span>'
