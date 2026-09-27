@@ -27,14 +27,9 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 .nav{display:flex;flex-direction:column;align-items:stretch;padding:0;width:var(--sidenav-w);height:100vh;height:100dvh;background:var(--brand);position:fixed;top:0;left:0;z-index:9000;overflow:hidden;transition:width .25s ease;box-shadow:2px 0 12px rgba(0,0,0,.15)}
 .nav.expanded{width:var(--sidenav-w-open);box-shadow:4px 0 24px rgba(0,0,0,.3)}
 .nav-top{display:flex;align-items:center;gap:10px;padding:0 14px;height:58px;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.1)}
-.nav-hamburger{position:relative;display:flex;justify-content:center;align-items:center;width:36px;height:36px;min-width:36px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.25);border-radius:8px;cursor:pointer;padding:0;flex-shrink:0}
-.nav-hamburger span{position:absolute;left:50%;top:50%;display:block;width:16px;height:2px;background:#fff;border-radius:2px;transition:all .25s}
-.nav-hamburger span:nth-child(1){transform:translate(-50%,calc(-50% - 6px))}
-.nav-hamburger span:nth-child(2){transform:translate(-50%,-50%)}
-.nav-hamburger span:nth-child(3){transform:translate(-50%,calc(-50% + 6px))}
-.nav-hamburger.open span:nth-child(1){transform:translate(-50%,-50%) rotate(45deg)}
-.nav-hamburger.open span:nth-child(2){opacity:0}
-.nav-hamburger.open span:nth-child(3){transform:translate(-50%,-50%) rotate(-45deg)}
+.nav-hamburger{position:relative;display:flex;justify-content:center;align-items:center;width:36px;height:36px;min-width:36px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.25);border-radius:8px;cursor:pointer;padding:0;flex-shrink:0;color:#fff;transition:background .2s,border-color .2s,color .2s}
+.nav-hamburger svg{width:18px;height:18px;display:block}
+.nav-hamburger.is-admin{background:rgba(255,196,20,.2);border-color:rgba(255,196,20,.55);color:#ffc414}
 .nav-logo{font-family:var(--font-title);font-size:15px;font-weight:700;color:#fff;letter-spacing:1px;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none}
 .nav.expanded .nav-logo{opacity:1;transition:opacity .3s ease .1s}
 .nav-logo span{color:var(--accent)}
@@ -722,6 +717,8 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   width:100%;overflow:hidden;white-space:nowrap;
 }
 #nav-player-name{overflow:hidden;text-overflow:ellipsis;opacity:0;width:0;transition:opacity .15s}
+.nav-player-ico{width:14px;height:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-player-ico svg{width:14px;height:14px;display:block}
 .nav.expanded #nav-player-name{opacity:1;width:auto;flex:1;transition:opacity .25s ease .08s}
 #nav-player-badge .player-logout-btn{
   background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;
@@ -907,9 +904,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 
 <nav class="nav" id="main-nav">
   <div class="nav-top">
-    <button class="nav-hamburger" id="nav-hamburger" onclick="toggleSidenav()" aria-label="Menu">
-      <span></span><span></span><span></span>
-    </button>
+    <button class="nav-hamburger" id="nav-hamburger" onclick="toggleSidenav()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
     <div class="nav-logo"><img src="https://kpfichas.vercel.app/favicon.png?v=5" style="height:26px;object-fit:contain;" alt="Kingdom Platinum"></div>
   </div>
   <div class="nav-links">
@@ -936,6 +931,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   <div class="nav-bottom">
     <button class="nav-login" id="btn-adm" onclick="goToAdm()" style="display:none"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 19 4M16 4h4v4M19 4l-4 4"/></svg></span><span class="nav-label">Admin</span></button>
     <div id="nav-player-badge">
+      <span id="nav-player-ico" class="nav-player-ico"></span>
       <span id="nav-player-name" onclick="goToAdm()" title="Acesso administrativo" style="cursor:pointer">—</span>
       <button class="player-logout-btn" onclick="fazerLogoutPlayer()" title="Sair">✕</button>
     </div>
@@ -5023,6 +5019,7 @@ const loaded = {roller:false, ficha:false, bioma:false, dados:false, adm:false, 
 async function init(){
   // Restaura sessão admin antes de qualquer checagem de manutenção
   await restaurarSessaoAdm().catch(()=>{});
+  renderHamburgerIcon();
 
   loading(true);
   try{
@@ -5580,6 +5577,7 @@ async function fazerLogin(){
   admLogado={email:loggedEmail};
   _admSenhaSessao = senha;
   localStorage.setItem('adm_session', JSON.stringify(admLogado));
+  renderHamburgerIcon();
   showEditBtnIfAdm();
   renderPersonagensDatalist();
   // admins fica só com dados públicos (sem senha) — usado pra permissões/telas
@@ -5595,6 +5593,7 @@ async function fazerLogout(){
   admLogado=null;
   _admSenhaSessao = null;
   localStorage.removeItem('adm_session');
+  renderHamburgerIcon();
   showEditBtnIfAdm();
   renderPersonagensDatalist();
   document.getElementById('adm-login-wrap').style.display='block';
@@ -6113,10 +6112,12 @@ async function abrirPokegram(){
 
 function mostrarBadgePlayer(){
   const badge = document.getElementById('nav-player-badge');
+  const icoEl = document.getElementById('nav-player-ico');
   const nomeEl = document.getElementById('nav-player-name');
   if(!badge||!nomeEl) return;
   if(playerLogado){
-    nomeEl.textContent = (playerLogado.origem === 'fichario' ? '📁 ' : '🎮 ') + playerLogado.nome;
+    icoEl.innerHTML = NAV_ICO_GAMEPAD;
+    nomeEl.textContent = playerLogado.nome;
     badge.style.display='flex';
   } else {
     badge.style.display='none';
@@ -13004,6 +13005,22 @@ async function deletarNpc(){
 // ══════════════════════════════════════
 // ── Sidenav (recolhida = só ícones, expandida = ícones + labels, sempre sobrepõe o conteúdo) ──
 function isMobileNav(){ return window.innerWidth<=768; }
+
+// ── Ícone do botão de controle do sidebar (vetor): hamburguer/fechar, ou a
+//    chavezinha no lugar do hamburguer sempre que houver um admin conectado ──
+const NAV_ICO_MENU  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>';
+const NAV_ICO_GAMEPAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>';
+const NAV_ICO_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+const NAV_ICO_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2 11.4 11.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>';
+function renderHamburgerIcon(){
+  const btn=document.getElementById('nav-hamburger');
+  if(!btn) return;
+  const isAdmin = typeof admLogado!=='undefined' ? !!admLogado : !!localStorage.getItem('adm_session');
+  btn.classList.toggle('is-admin', isAdmin);
+  const isOpen = document.getElementById('main-nav')?.classList.contains('expanded');
+  btn.innerHTML = isAdmin ? NAV_ICO_KEY : (isOpen ? NAV_ICO_CLOSE : NAV_ICO_MENU);
+}
+
 function toggleSidenav(){
   const nav=document.getElementById('main-nav');
   nav.classList.contains('expanded') ? closeSidenav() : openSidenav();
@@ -13016,6 +13033,7 @@ function openSidenav(){
   btn.classList.add('open');
   document.body.classList.add('nav-expanded');
   overlay.classList.add('open');
+  renderHamburgerIcon();
 }
 function closeSidenav(){
   const nav=document.getElementById('main-nav');
@@ -13027,6 +13045,7 @@ function closeSidenav(){
   overlay.classList.remove('open');
   document.getElementById('nav-drop-menu')?.classList.remove('open');
   document.getElementById('nav-drop-btn')?.classList.remove('open');
+  renderHamburgerIcon();
 }
 function closeSidenavMobile(){ closeSidenav(); }
 // Recolhe a sidenav automaticamente ao clicar em um link (sempre sobrepõe, então sempre recolhe)
