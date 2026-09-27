@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Recycling Machine — Kingdom Platinum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+/* =========================================================================
+   RECYCLING MACHINE — mockup funcional standalone
+   -------------------------------------------------------------------------
+   Roda 100% no navegador (localStorage), sem gravar nada no Supabase ainda.
+   Pontos marcados com "TODO(integração)" são onde, quando o inventário real
+   do jogador existir, isso deve trocar por chamadas ao backend do KP (mesmo
+   padrão de SUPA_URL/SUPA_KEY usado no index.html principal). Os sprites já
+   são reais: primeiro tenta o items.json do repo, com fallback no Supabase
+   do ItemDex — mesma fonte que o resto do KP usa.
+   ========================================================================= */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#1a3a5c;--brand-mid:#2563a8;
+  --accent:#e8a020;--accent-light:#fdf3dc;
+  --neon:#3ddc6a;--neon-dim:#1f7a3e;
+  --body-light:#eef0f3;--body-mid:#d3d8de;--body-shadow:#aab0b8;
+  --face-dark:#22252b;--face-darker:#101216;
+  --bg-top:#0e2038;--bg-bottom:#2a4a70;
+  --surface:#fff;--surface2:#f0f3f8;
+  --border:#dde3ee;--border2:#c8d0e0;
+  --text:#1a1f2e;--muted:#6b7a99;
+  --red:#c0392b;--green:#1a7a1a;
+  --r:10px;--font-title:'Cinzel',serif;--font-body:'Nunito',sans-serif;
+}
+html,body{min-height:100%}
+body{
+  font-family:var(--font-body);color:var(--text);
+  background:
+    radial-gradient(ellipse 900px 500px at 50% 0%, rgba(255,255,255,.06), transparent 60%),
+    linear-gradient(180deg,var(--bg-top),var(--bg-bottom) 60%,#1c3350);
+  min-height:100vh;
+  padding:36px 16px 60px;
+  display:flex;flex-direction:column;align-items:center;gap:30px;
+}
+
+.floor-tag{
+  font-family:var(--font-title);font-size:11px;letter-spacing:3px;
+  color:rgba(255,255,255,.55);text-transform:uppercase;text-align:center;
+}
+.floor-tag b{color:var(--accent)}
+
+/* ---------- machine cabinet ---------- */
+.machine-wrap{width:100%;max-width:400px;position:relative}
+.machine{
+  border-radius:26px;overflow:hidden;
+  background:linear-gradient(150deg,var(--body-light),var(--body-mid) 60%,var(--body-shadow));
+  box-shadow:0 34px 60px -20px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.5);
+  position:relative;
+}
+.machine-header{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:14px 14px 4px 16px;
+}
+.machine-title{
+  text-align:left;
+  font-family:var(--font-title);font-weight:700;color:var(--brand);
+  font-size:14px;letter-spacing:1.2px;
+}
+.machine-title small{display:block;font-size:9.5px;color:var(--muted);letter-spacing:1.6px;font-weight:700;margin-top:2px;text-transform:uppercase}
+
+.recipe-btn-round{
+  flex-shrink:0;width:34px;height:34px;border-radius:50%;border:none;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,#3a4048,#20242a);color:#eef2f6;
+  cursor:pointer;box-shadow:0 3px 0 #101216, 0 6px 10px rgba(0,0,0,.3);
+  transition:transform .08s, box-shadow .08s;
+}
+.recipe-btn-round svg{width:16px;height:16px}
+.recipe-btn-round:hover{color:var(--accent)}
+.recipe-btn-round:active{transform:translateY(2px);box-shadow:0 1px 0 #101216, 0 2px 6px rgba(0,0,0,.3)}
+
+.face-dark{
+  margin:12px 12px 0;border-radius:18px 18px 10px 10px;
+  background:linear-gradient(155deg,var(--face-dark),var(--face-darker));
+  padding:22px 18px 34px;position:relative;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -30px 40px -20px rgba(0,0,0,.5);
+}
+.face-dark::after{
+  content:"";position:absolute;top:14px;right:16px;width:9px;height:9px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#8a8f96,#3a3d42);
+  box-shadow:0 0 0 2px rgba(255,255,255,.08);
+}
+
+.face-row{display:flex;align-items:flex-start;gap:16px}
+
+.port-col{display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0;padding-top:6px}
+.port{
+  width:88px;height:88px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 38% 32%,#3a3f46,#0a0b0d 70%);
+  box-shadow:0 0 0 5px var(--face-darker), 0 0 16px 3px rgba(61,220,106,.55), inset 0 4px 10px rgba(0,0,0,.7);
+  transition:box-shadow .18s;
+}
+.port::before{
+  content:"";position:absolute;inset:-3px;border-radius:50%;
+  border:2.5px solid var(--neon);opacity:.85;
+  box-shadow:0 0 10px 2px rgba(61,220,106,.5);
+}
+.port::after{
+  content:"";position:absolute;inset:16px;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,#1b1d21 0deg 14deg,#0a0b0d 14deg 28deg);
+  opacity:.8;
+}
+.port.pulse{animation:portPulse .5s ease}
+.port-item-anim{
+  position:absolute;top:50%;left:50%;z-index:5;pointer-events:none;
+  transform:translate(-50%,-50%) scale(1.15);opacity:1;
+  filter:drop-shadow(0 0 6px rgba(61,220,106,.85));
+  animation:portItemSuck .42s ease-in forwards;
+}
+@keyframes portItemSuck{
+  0%{transform:translate(-50%,-50%) scale(1.2);opacity:1}
+  55%{transform:translate(-50%,-50%) scale(.9);opacity:1}
+  100%{transform:translate(-50%,-50%) scale(.1);opacity:0}
+}
+@keyframes portPulse{
+  0%{box-shadow:0 0 0 5px var(--face-darker), 0 0 16px 3px rgba(61,220,106,.5), inset 0 4px 10px rgba(0,0,0,.7)}
+  40%{box-shadow:0 0 0 5px var(--face-darker), 0 0 30px 10px rgba(61,220,106,.9), inset 0 4px 10px rgba(0,0,0,.7)}
+  100%{box-shadow:0 0 0 5px var(--face-darker), 0 0 16px 3px rgba(61,220,106,.5), inset 0 4px 10px rgba(0,0,0,.7)}
+}
+.port-label{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px;text-align:center}
+
+.screen-frame{
+  flex:1;background:#dfe3e8;border-radius:11px;padding:6px;
+  box-shadow:0 3px 10px rgba(0,0,0,.35);
+}
+.screen-green{
+  background:linear-gradient(160deg,#3fbf5f,#2e9e44);
+  border-radius:7px 7px 0 0;padding:12px 12px 10px;color:#fff;
+}
+.screen-green .st{font-size:11.5px;font-weight:800;letter-spacing:.3px;margin-bottom:8px}
+.screen-row{display:flex;align-items:center;justify-content:center;gap:8px;min-height:34px}
+.screen-row .qty{font-family:var(--font-title);font-weight:900;font-size:20px}
+.screen-chips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:2px}
+.screen-chip{
+  background:rgba(255,255,255,.18);border-radius:20px;padding:3px 8px;font-size:10.5px;font-weight:700;
+  display:flex;align-items:center;gap:4px;cursor:pointer;
+}
+.screen-chip:hover{background:rgba(255,255,255,.3)}
+.screen-white{
+  background:#fff;border-radius:0 0 7px 7px;padding:12px 12px 14px;text-align:center;
+  min-height:30px;display:flex;align-items:center;justify-content:center;
+}
+.screen-white span{font-size:12px;font-weight:700;color:var(--text);line-height:1.4}
+.screen-white.err span{color:var(--red)}
+.screen-white.ok span{color:var(--green)}
+
+.slot-area{margin-top:16px;display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;min-height:40px}
+.slot-bar{
+  width:64%;height:11px;border-radius:6px;
+  background:linear-gradient(180deg,#050607,#1a1c20);
+  box-shadow:inset 0 2px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.03);
+  position:relative;overflow:visible;
+}
+.slot-bar::after{content:"";position:absolute;left:8%;right:8%;top:3px;height:2px;background:var(--neon);opacity:.6;border-radius:2px}
+.ticket{
+  background:#fff;border-radius:8px;padding:9px 12px;display:flex;align-items:center;gap:9px;
+  box-shadow:0 8px 18px rgba(0,0,0,.35);animation:ticketOut .35s ease;
+  cursor:pointer;
+}
+.ticket .info b{display:block;font-size:12px;color:var(--text)}
+.ticket .info span{font-size:9.5px;color:var(--muted);font-weight:700}
+@keyframes ticketOut{from{transform:translateY(-14px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.face-light{
+  margin:0 12px 12px;padding:16px 18px 18px;border-radius:10px 10px 16px 16px;
+  background:linear-gradient(160deg,#f4f6f8,#d8dde3);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6);
+}
+.recycle-logo svg{width:44px;height:44px;display:block}
+.lever-btn{
+  font-family:var(--font-title);font-weight:700;font-size:13px;letter-spacing:1.2px;
+  color:#fff;background:linear-gradient(180deg,#3ddc6a,#1f7a3e);
+  border:none;border-radius:40px;padding:11px 22px;cursor:pointer;
+  box-shadow:0 5px 0 #14532b, 0 9px 16px rgba(0,0,0,.3);
+  transition:transform .08s, box-shadow .08s;
+}
+.lever-btn:active:not(:disabled){transform:translateY(4px);box-shadow:0 1px 0 #14532b, 0 3px 8px rgba(0,0,0,.3)}
+.lever-btn:disabled{filter:grayscale(.6) brightness(.85);cursor:not-allowed}
+
+.feet{display:flex;justify-content:space-between;padding:0 34px;margin-top:-4px}
+.feet span{width:16px;height:10px;border-radius:0 0 6px 6px;background:linear-gradient(180deg,#3a3d42,#1a1b1d)}
+
+/* ---------- botão "inventário" embutido no gabinete (mobile) ---------- */
+.recipe-btn{
+  display:flex;width:100%;margin-top:10px;padding:11px;border-radius:10px;
+  border:none;align-items:center;justify-content:center;gap:8px;
+  background:linear-gradient(180deg,#3a4048,#20242a);color:#eef2f6;
+  font-family:var(--font-body);font-weight:800;font-size:12.5px;letter-spacing:.4px;
+  cursor:pointer;box-shadow:0 4px 0 #101216, 0 8px 14px rgba(0,0,0,.35);
+  transition:transform .08s, box-shadow .08s;
+}
+.recipe-btn:active{transform:translateY(3px);box-shadow:0 1px 0 #101216, 0 3px 8px rgba(0,0,0,.3)}
+.recipe-btn-icon{width:16px;height:16px;flex-shrink:0}
+
+/* ---------- painel: card ao lado no desktop, movido p/ dentro do
+   gabinete (machine-inv-view) no mobile via JS ---------- */
+.panel{
+  width:100%;max-width:400px;background:var(--surface);border-radius:16px;
+  box-shadow:0 20px 40px -18px rgba(0,0,0,.4);overflow:hidden;
+}
+.panel-head{
+  padding:14px 16px;font-size:13px;font-weight:800;color:var(--brand);
+  border-bottom:1.5px solid var(--border);background:var(--surface2);
+}
+.panel-body{padding:16px}
+
+/* ---------- faixa horizontal de inventário, acima do botão RECICLAR ---------- */
+.inv-strip-section{margin:14px 12px 5px;padding:12px 12px 14px;border-radius:12px;background:var(--surface2)}
+.inv-strip-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.inv-strip-title{font-size:10px;font-weight:800;letter-spacing:1px;color:var(--muted)}
+.restock-mini{
+  width:22px;height:22px;border-radius:50%;border:1.5px solid var(--border2);background:var(--surface);
+  color:var(--muted);font-size:12px;cursor:pointer;line-height:1;
+}
+.restock-mini:hover{color:var(--brand);border-color:var(--brand-mid)}
+.inv-strip-row{display:flex;align-items:center;gap:6px}
+.inv-nav-btn{
+  flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border2);
+  background:var(--surface);color:var(--muted);font-size:15px;font-weight:800;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;line-height:1;
+}
+.inv-nav-btn:hover{color:var(--brand);border-color:var(--brand-mid)}
+.inv-strip{
+  flex:1;display:flex;gap:8px;overflow-x:auto;scroll-behavior:smooth;padding:8px 4px 2px;
+  scrollbar-width:none;
+}
+.inv-strip::-webkit-scrollbar{display:none}
+.inv-chip{
+  flex:0 0 auto;width:58px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+  padding:8px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  cursor:pointer;transition:border-color .15s;position:relative;
+}
+.inv-chip:hover{border-color:var(--brand-mid)}
+.inv-chip.disabled{opacity:.35;cursor:default}
+.inv-chip .name{font-size:8px;font-weight:700;text-align:center;color:var(--text);line-height:1.15}
+.inv-chip .qty{
+  position:absolute;top:-7px;right:-7px;background:var(--brand-mid);color:#fff;
+  font-size:9.5px;font-weight:800;border-radius:10px;padding:1px 6px;min-width:17px;text-align:center;
+  border:2px solid var(--surface);box-shadow:0 2px 4px rgba(0,0,0,.25);z-index:1;
+}
+.inv-empty{flex:1;text-align:center;color:var(--muted);font-size:11.5px;padding:10px 0}
+
+.recipe-list{display:flex;flex-direction:column;gap:8px;max-height:380px;overflow-y:auto;padding-right:2px}
+.recipe-card{
+  border:1.5px solid var(--border);border-radius:10px;padding:9px 11px;
+  display:flex;flex-direction:column;gap:5px;font-size:12.5px;
+}
+.recipe-top{display:flex;align-items:center;gap:9px}
+.recipe-card .rin{display:flex;gap:4px;align-items:center}
+.recipe-card .rin span{display:inline-flex;align-items:center;gap:2px;background:var(--surface2);border-radius:6px;padding:2px 5px;font-size:10.5px;font-weight:700;color:var(--muted)}
+.recipe-card .rarrow{color:var(--muted);font-size:13px}
+.recipe-card .rout{display:flex;align-items:center;gap:5px;font-weight:700;color:var(--brand)}
+.recipe-card.mystery{opacity:.55}
+.recipe-card.mystery .rout{color:var(--muted)}
+.recipe-flavor{font-size:10.5px;color:var(--muted);font-style:italic;line-height:1.4}
+.recipe-hint{font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5}
+
+.footnote{
+  max-width:400px;text-align:center;font-size:10.5px;color:rgba(255,255,255,.4);line-height:1.6;
+}
+
+.item-spr-fallback{display:inline-block;line-height:1}
+
+/* ---------- troca de tela dentro do gabinete (mobile) ---------- */
+.machine-inv-view{display:none}
+.inv-view-back{
+  width:100%;padding:10px;border:none;border-bottom:1px solid rgba(255,255,255,.08);
+  border-radius:8px 8px 0 0;
+  background:rgba(255,255,255,.04);color:rgba(223,230,238,.65);
+  font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.2px;
+  cursor:pointer;text-align:left;transition:background .15s,color .15s;
+}
+.inv-view-back:hover{background:rgba(255,255,255,.08);color:#dfe6ee}
+.inv-view-slot{background:var(--surface)}
+.inv-view-slot .panel{
+  box-shadow:none;border-radius:0 0 10px 10px;max-width:none;
+}
+
+/* ---------- desktop: máquina e painel lado a lado ---------- */
+.desktop-row{
+  display:flex;flex-direction:column;align-items:center;gap:24px;
+  width:100%;max-width:400px;
+}
+@media (min-width:768px){
+  .desktop-row{
+    flex-direction:row;align-items:flex-start;justify-content:center;
+    max-width:820px;gap:28px;
+  }
+  .desktop-row .machine-wrap{flex-shrink:0}
+  .desktop-row .panel{width:340px;flex-shrink:0;margin-top:0;align-self:stretch}
+}
+
+/* ---------- mobile: o botão troca a "cara" da máquina pela tela de inventário ---------- */
+@media (max-width:767px){
+  /* o painel de "receitas" só deve aparecer quando o jogador abre a tela
+     de receitas (dentro de .inv-view-slot). Na posição normal, como filho
+     direto de .desktop-row, ele fica escondido pra não aparecer embaixo
+     da máquina o tempo todo. */
+  .desktop-row > .panel{display:none}
+
+  /* o .panel normal (fora da machine-inv-view) só existe fisicamente pro
+     desktop; no mobile ele é movido via JS pra dentro de .inv-view-slot,
+     então essa regra abaixo só afeta como ele fica quando está lá dentro */
+  .panel{max-width:none}
+
+  .machine.showing-inv .machine-normal-view{display:none}
+  .machine.showing-inv .machine-inv-view{display:block}
+}
+</style>
+</head>
+<body>
+
+<div class="desktop-row">
+<div class="machine-wrap">
+  <div class="machine" id="machine">
+    <div class="machine-header">
+      <div class="machine-title">RECYCLING MACHINE<small>insira lixo, receba prêmios</small></div>
+      <button class="recipe-btn-round" id="btn-open-recipes" aria-label="Receitas" title="Receitas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="machine-normal-view" id="machine-normal-view">
+      <div class="face-dark">
+        <div class="face-row">
+          <div class="port-col">
+            <div class="port" id="port"></div>
+            <div class="port-label">insira aqui</div>
+          </div>
+
+          <div class="screen-frame">
+            <div class="screen-green">
+              <div class="st" id="screen-title">INSIRA O LIXO</div>
+              <div class="screen-row" id="screen-row">
+                <span class="qty">×0</span>
+              </div>
+              <div class="screen-chips" id="screen-chips"></div>
+            </div>
+            <div class="screen-white idle" id="screen-white"><span>selecione um item abaixo</span></div>
+          </div>
+        </div>
+
+        <div class="slot-area" id="slot-area">
+          <div class="slot-bar"></div>
+        </div>
+
+        <button class="recipe-btn" id="btn-open-recipes-legacy-removed" style="display:none"></button>
+      </div>
+
+      <div class="inv-strip-section">
+        <div class="inv-strip-head">
+          <span class="inv-strip-title">INVENTÁRIO</span>
+          <button class="restock-mini" id="btn-restock" title="repor lixo de exemplo (mockup)">↻</button>
+        </div>
+        <div class="inv-strip-row">
+          <button class="inv-nav-btn" id="inv-prev" aria-label="anterior">‹</button>
+          <div class="inv-strip" id="inv-strip"></div>
+          <button class="inv-nav-btn" id="inv-next" aria-label="próximo">›</button>
+        </div>
+      </div>
+
+      <div class="face-light">
+        <div class="recycle-logo">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g fill="#2e9e44">
+              <path d="M 10.33 28.18 A 22 22 0 0 1 32.84 8.01 L 38.07 5.69 L 32.38 21.01 A 13 13 0 0 0 19.20 29.74 Z"/>
+              <path d="M 46.14 15.15 A 22 22 0 0 1 52.35 44.72 L 51.75 50.41 L 41.33 37.83 A 13 13 0 0 0 40.36 22.04 Z"/>
+              <path d="M 39.52 52.67 A 22 22 0 0 1 10.81 43.27 L 6.18 39.89 L 22.29 37.16 A 13 13 0 0 0 36.45 44.22 Z"/>
+            </g>
+          </svg>
+        </div>
+        <button class="lever-btn" id="btn-reciclar" disabled>♻ RECICLAR</button>
+      </div>
+    </div>
+
+    <div class="machine-inv-view" id="machine-inv-view">
+      <button class="inv-view-back" id="btn-close-panel">← Voltar</button>
+      <div class="inv-view-slot" id="inv-view-slot"><!-- .panel é movido pra cá via JS no mobile --></div>
+    </div>
+  </div>
+  <div class="feet"><span></span><span></span></div>
+</div>
+
+<div class="panel" id="panel-el">
+  <div class="panel-head">Receitas conhecidas</div>
+  <div class="panel-body">
+    <div class="recipe-hint">17 receitas, cada uma pede 3 itens de lixo. As que ainda não foram descobertas aparecem como <b>???</b> — descubra jogando itens na máquina.</div>
+    <div class="recipe-list" id="recipe-list"></div>
+  </div>
+</div>
+</div><!-- /desktop-row -->
+
+<div class="footnote">
+  Mockup funcional (roda só no seu navegador, via localStorage) — feito pra prototipar receitas antes de conectar<br/>
+  no inventário real do Fichário/Supabase do Kingdom Platinum. Sprites vêm do ItemDex de verdade.
+</div>
+
+<script>
+/* =========================================================================
+   1) CATÁLOGO DE ITENS
+   ========================================================================= */
+
+// Itens de lixo que o jogador pode inserir na máquina.
+// TODO(integração): isso deve vir do inventário real do jogador (tabela de
+// itens do Fichário/Supabase, filtrando por uma flag tipo `flags.lixo`).
+const TRASH_ITEMS = [
+  { id:'bottlecap',     nome:'Bottle Cap' },
+  { id:'brokenbranch',  nome:'Broken Branch' },
+  { id:'crumpledpaper', nome:'Crumpled Paper' },
+  { id:'dryleaf',       nome:'Dry Leaf' },
+  { id:'emptycan',      nome:'Empty Can' },
+  { id:'foodscrap',     nome:'Food Scrap' },
+  { id:'lostbutton',    nome:'Lost Button' },
+  { id:'oldcloth',      nome:'Old Cloth' },
+  { id:'rippeddoll',    nome:'Ripped Doll' },
+];
+
+// Estoque inicial de exemplo. TODO(integração): substituir pela leitura do
+// inventário real do jogador logado.
+const STARTER_STOCK = { bottlecap:5, brokenbranch:5, crumpledpaper:5, dryleaf:5, emptycan:5, foodscrap:5, lostbutton:5, oldcloth:5, rippeddoll:5 };
+
+// Tipos elementais possíveis pra "Gem" — sorteado só na hora de reciclar.
+const POKEMON_TYPES = ['Normal','Fire','Water','Electric','Grass','Ice','Fighting','Poison','Ground','Flying','Psychic','Bug','Rock','Ghost','Dragon','Dark','Steel','Fairy'];
+
+// Receitas: cada uma pede uma combinação exata de 3 itens de lixo (por id +
+// qtd) e devolve um prêmio real do KP. A combinação de cada receita tenta
+// "fazer sentido" com o resultado — edite/expanda à vontade.
+// TODO(integração): mover isso pra uma tabela no Supabase (mesmo padrão do
+// ItemDex/loot table do index.html principal) quando a lista estiver pronta.
+const RECIPES = [
+  { id:'r-nugget',        inputs:{ emptycan:3 },                              output:{ nome:'Nugget' },
+    flavor:'três latas amassadas, derretidas até virarem uma pepita reluzente.' },
+  { id:'r-pokeball',      inputs:{ bottlecap:2, lostbutton:1 },               output:{ nome:'PokéBall' },
+    flavor:'tampinhas redondas + um botão perdido formam a base de uma Poké Bola.' },
+  { id:'r-antidote',      inputs:{ crumpledpaper:2, oldcloth:1 },             output:{ nome:'Antidote' },
+    flavor:'papel amassado filtra, pano coa — um antídoto improvisado.' },
+  { id:'r-potion',        inputs:{ oldcloth:2, emptycan:1 },                  output:{ nome:'Potion' },
+    flavor:'pano fervido dentro de uma lata vira uma poção básica.' },
+  { id:'r-superpotion',   inputs:{ oldcloth:3 },                              output:{ nome:'Super Potion' },
+    flavor:'o triplo de pano rende uma poção bem mais forte.' },
+  { id:'r-fullheal',      inputs:{ rippeddoll:2, oldcloth:1 },                output:{ nome:'Full Heal' },
+    flavor:'remendar um bichinho de pano cura tudo de uma vez.' },
+  { id:'r-ether',         inputs:{ bottlecap:2, brokenbranch:1 },             output:{ nome:'Ether' },
+    flavor:'metal e madeira formam um condutor improvisado de energia.' },
+  { id:'r-paralyzeheal',  inputs:{ bottlecap:1, emptycan:1, lostbutton:1 },   output:{ nome:'Paralyze Heal' },
+    flavor:'três pedaços de metal — um choquezinho que cura o choque.' },
+  { id:'r-oranberry',     inputs:{ foodscrap:2, dryleaf:1 },                  output:{ nome:'Oran Berry' },
+    flavor:'restos de comida com uma folha seca viram adubo... e nasce uma baga.' },
+  { id:'r-pechaberry',    inputs:{ dryleaf:2, foodscrap:1 },                  output:{ nome:'Pecha Berry' },
+    flavor:'a mesma composta, em outra proporção — nasce uma baga diferente.' },
+  { id:'r-leftovers',     inputs:{ foodscrap:3 },                             output:{ nome:'Leftovers' },
+    flavor:'sobras de comida... viram literalmente as Sobras.' },
+  { id:'r-honey',         inputs:{ dryleaf:2, brokenbranch:1 },               output:{ nome:'Honey' },
+    flavor:'galho e folhas secas — um pedacinho de colmeia aparece sozinho.' },
+  { id:'r-plasticbottle', inputs:{ bottlecap:3 },                             output:{ nome:'Plastic Bottle' },
+    flavor:'tampinhas o bastante pra moldar uma garrafa nova.' },
+  { id:'r-heartscale',    inputs:{ lostbutton:1, bottlecap:1, rippeddoll:1 }, output:{ nome:'Heart Scale' },
+    flavor:'três coisas perdidas e esquecidas voltam a brilhar como uma escama rara.' },
+  { id:'r-rarecandy',     inputs:{ oldcloth:1, rippeddoll:1, crumpledpaper:1 }, output:{ nome:'Rare Candy' },
+    flavor:'pano, bichinho de pano e papel — pedacinhos de memória viram um doce raro.' },
+  { id:'r-revive',        inputs:{ rippeddoll:2, dryleaf:1 },                 output:{ nome:'Revive' },
+    flavor:'um brinquedo rasgado e uma folha seca — duas coisas sem vida, revividas.' },
+  { id:'r-gem',           inputs:{ brokenbranch:1, emptycan:1, crumpledpaper:1 }, output:{ nome:'Gem', special:'gem' },
+    flavor:'três materiais bem diferentes se fundem numa gema elemental aleatória.' },
+];
+
+/* =========================================================================
+   2) SPRITES — ItemDex real (items.json primeiro, fallback no Supabase)
+   ========================================================================= */
+const ITEMDEX_SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
+const ITEMDEX_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
+const ITEMDEX_ITEMS_JSON_FALLBACK = 'https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/items.json';
+
+let _itemDexByName = null;
+let _itemDexLoadPromise = null;
+
+function _norm(nome){
+  return String(nome||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+// Carrega o ItemDex 1x: tenta o items.json do repo primeiro (conforme
+// pedido), com fallback no Supabase do ItemDex se o json falhar/vier vazio.
+async function _loadItemDex(){
+  if(_itemDexByName) return _itemDexByName;
+  if(_itemDexLoadPromise) return _itemDexLoadPromise;
+  _itemDexLoadPromise = (async () => {
+    let list = [];
+    try{
+      const res = await fetch(ITEMDEX_ITEMS_JSON_FALLBACK, {cache:'no-store'});
+      list = res.ok ? await res.json() : [];
+      if(!Array.isArray(list) || !list.length) throw new Error('items.json vazio');
+    }catch(e){
+      try{
+        const res2 = await fetch(`${ITEMDEX_SUPA_URL}/rest/v1/items?select=name,sprite,flags`, {
+          headers: { apikey: ITEMDEX_SUPA_KEY, Authorization: `Bearer ${ITEMDEX_SUPA_KEY}` }
+        });
+        list = res2.ok ? await res2.json() : [];
+      }catch(e2){ list = []; }
+    }
+    const map = new Map();
+    (list||[]).forEach(it => { if(it && it.name) map.set(_norm(it.name), it); });
+    _itemDexByName = map;
+    return map;
+  })();
+  return _itemDexLoadPromise;
+}
+
+function _itemSlug(nome){
+  return String(nome).trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+}
+// Chute imediato (PokeAPI) enquanto o ItemDex ainda não carregou.
+function _guessSpriteUrl(nome){
+  return 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/'+_itemSlug(nome)+'.png';
+}
+function itemImg(nome, size){
+  const attr = String(nome).replace(/"/g,'&quot;');
+  return `<img class="item-spr" data-item="${attr}" src="${_guessSpriteUrl(nome)}" `
+       + `style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle" onerror="_sprErr(this)"/>`;
+}
+function _sprErr(el){
+  el.onerror = null;
+  const size = parseInt(el.style.width)||18;
+  const span = document.createElement('span');
+  span.className = 'item-spr-fallback';
+  span.style.fontSize = Math.round(size*0.85)+'px';
+  span.textContent = '📦';
+  el.replaceWith(span);
+}
+// Depois que o ItemDex carrega, atualiza todas as <img> já desenhadas.
+async function _resolveSprites(){
+  const map = await _loadItemDex();
+  document.querySelectorAll('.item-spr[data-item]').forEach(img=>{
+    const it = map.get(_norm(img.dataset.item));
+    if(it && it.sprite) img.src = it.sprite;
+  });
+}
+
+/* =========================================================================
+   3) ESTADO (localStorage — só pra este mockup funcionar sem backend)
+   ========================================================================= */
+const LS_STOCK = 'kp_recycle_mock_stock';
+const LS_DISCOVERED = 'kp_recycle_mock_discovered';
+
+let stock = JSON.parse(localStorage.getItem(LS_STOCK) || 'null') || {...STARTER_STOCK};
+let discovered = JSON.parse(localStorage.getItem(LS_DISCOVERED) || '[]');
+let inserted = {};
+let pendingReward = null;
+const MAX_INSERT = 3; // toda receita pede exatamente 3 itens
+
+function saveState(){
+  localStorage.setItem(LS_STOCK, JSON.stringify(stock));
+  localStorage.setItem(LS_DISCOVERED, JSON.stringify(discovered));
+}
+
+/* =========================================================================
+   4) RENDER
+   ========================================================================= */
+function trashById(id){ return TRASH_ITEMS.find(t=>t.id===id); }
+function insertedCount(){ return Object.values(inserted).reduce((a,b)=>a+b,0); }
+function insertedIds(){ return Object.keys(inserted); }
+
+function renderInventory(){
+  const strip = document.getElementById('inv-strip');
+  strip.innerHTML = '';
+  const withStock = TRASH_ITEMS.filter(t => (stock[t.id]||0) > 0);
+  if(!withStock.length){
+    strip.innerHTML = '<div class="inv-empty">sem lixo no momento — use o botão ↻</div>';
+    return;
+  }
+  withStock.forEach(t=>{
+    const qty = stock[t.id]||0;
+    const full = insertedCount() >= MAX_INSERT;
+    const div = document.createElement('div');
+    div.className = 'inv-chip' + (full ? ' disabled' : '');
+    div.innerHTML = `${itemImg(t.nome,26)}<span class="name">${t.nome}</span><span class="qty">${qty}</span>`;
+    if(!full) div.onclick = () => insertItem(t.id);
+    strip.appendChild(div);
+  });
+}
+
+function renderScreen(){
+  const ids = insertedIds();
+  const total = insertedCount();
+  document.getElementById('screen-title').textContent = total ? 'PRONTO PRA RECICLAR' : 'INSIRA O LIXO';
+
+  const row = document.getElementById('screen-row');
+  const lastId = ids[ids.length-1];
+  row.innerHTML = lastId ? itemImg(trashById(lastId).nome, 30) : '';
+  row.innerHTML += `<span class="qty">×${total}</span>`;
+
+  const chips = document.getElementById('screen-chips');
+  chips.innerHTML = '';
+  ids.forEach(id=>{
+    const t = trashById(id);
+    const chip = document.createElement('div');
+    chip.className = 'screen-chip';
+    chip.innerHTML = `${itemImg(t.nome,14)} ${inserted[id]>1 ? '×'+inserted[id] : ''} ✕`;
+    chip.onclick = () => removeOne(id);
+    chips.appendChild(chip);
+  });
+
+  document.getElementById('btn-reciclar').disabled = total === 0;
+}
+
+function setStatus(msg, tone){
+  const el = document.getElementById('screen-white');
+  el.className = 'screen-white ' + (tone||'idle');
+  el.innerHTML = `<span>${msg}</span>`;
+}
+
+function renderSlotArea(){
+  const area = document.getElementById('slot-area');
+  area.innerHTML = '<div class="slot-bar"></div>';
+  if(pendingReward){
+    const ticket = document.createElement('div');
+    ticket.className = 'ticket';
+    ticket.innerHTML = `${itemImg(pendingReward.nome,26)}<div class="info"><b>${pendingReward.nome}</b><span>toque pra coletar</span></div>`;
+    ticket.onclick = collectReward;
+    area.appendChild(ticket);
+  }
+}
+
+function renderRecipeBook(){
+  const list = document.getElementById('recipe-list');
+  list.innerHTML = '';
+  RECIPES.forEach(r=>{
+    const known = discovered.includes(r.id);
+    const card = document.createElement('div');
+    card.className = 'recipe-card' + (known ? '' : ' mystery');
+    const inputsHtml = Object.entries(r.inputs).map(([id,qty])=>{
+      const t = trashById(id);
+      return `<span>${itemImg(t.nome,16)} ${t.nome}${qty>1?' ×'+qty:''}</span>`;
+    }).join('');
+    const outHtml = !known ? '??? · ???'
+      : (r.output.special==='gem' ? '💎 Gem (tipo aleatório)' : `${itemImg(r.output.nome,18)} ${r.output.nome}`);
+    card.innerHTML = `
+      <div class="recipe-top">
+        <div class="rin">${inputsHtml}</div>
+        <div class="rarrow">→</div>
+        <div class="rout">${outHtml}</div>
+      </div>
+      ${known ? `<div class="recipe-flavor">${r.flavor}</div>` : ''}
+    `;
+    list.appendChild(card);
+  });
+}
+
+function renderAll(){
+  renderInventory();
+  renderScreen();
+  renderSlotArea();
+  renderRecipeBook();
+  _resolveSprites();
+}
+
+/* =========================================================================
+   5) AÇÕES
+   ========================================================================= */
+function pulsePort(){
+  const port = document.getElementById('port');
+  port.classList.remove('pulse');
+  void port.offsetWidth;
+  port.classList.add('pulse');
+}
+
+let _portBusy = false;
+
+function playPortInsertAnim(nome, onDone){
+  const port = document.getElementById('port');
+  const wrap = document.createElement('div');
+  wrap.className = 'port-item-anim';
+  wrap.innerHTML = itemImg(nome, 40);
+  port.appendChild(wrap);
+  pulsePort();
+  setTimeout(() => {
+    wrap.remove();
+    onDone();
+  }, 380);
+}
+
+function insertItem(id){
+  if(_portBusy) return;
+  if(insertedCount() >= MAX_INSERT) return;
+  if((stock[id]||0) <= 0) return;
+  const t = trashById(id);
+  _portBusy = true;
+  playPortInsertAnim(t.nome, () => {
+    stock[id]--;
+    inserted[id] = (inserted[id]||0) + 1;
+    saveState();
+    setStatus('item inserido — insira mais ou recicle', 'idle');
+    renderAll();
+    _portBusy = false;
+  });
+}
+
+function removeOne(id){
+  if(!inserted[id]) return;
+  inserted[id]--;
+  if(inserted[id]<=0) delete inserted[id];
+  stock[id] = (stock[id]||0) + 1;
+  saveState();
+  setStatus('item devolvido ao seu lixo', 'idle');
+  renderAll();
+}
+
+function findMatchingRecipe(){
+  return RECIPES.find(r=>{
+    const ids = Object.keys(r.inputs);
+    const sameIds = ids.length === Object.keys(inserted).length;
+    if(!sameIds) return false;
+    return ids.every(id => (inserted[id]||0) === r.inputs[id]);
+  });
+}
+
+function reciclar(){
+  if(insertedCount()===0) return;
+  document.getElementById('btn-reciclar').disabled = true;
+  setStatus('processando...', 'idle');
+
+  setTimeout(()=>{
+    const recipe = findMatchingRecipe();
+    if(recipe){
+      if(!discovered.includes(recipe.id)) discovered.push(recipe.id);
+      let nomeFinal = recipe.output.nome;
+      if(recipe.output.special === 'gem'){
+        const tipo = POKEMON_TYPES[Math.floor(Math.random()*POKEMON_TYPES.length)];
+        nomeFinal = tipo + ' Gem';
+      }
+      pendingReward = { nome: nomeFinal };
+      setStatus(`✓ gerou: ${nomeFinal}`, 'ok');
+    } else {
+      pendingReward = null;
+      setStatus('✕ essa combinação não gera nada... ainda', 'err');
+    }
+    inserted = {};
+    saveState();
+    renderAll();
+  }, 550);
+}
+
+function collectReward(){
+  pendingReward = null;
+  renderSlotArea();
+  setStatus('prêmio coletado! insira mais lixo', 'idle');
+  // TODO(integração): aqui é onde o prêmio deveria ser gravado de verdade
+  // no inventário do jogador (Supabase), em vez de só sumir da bandeja.
+}
+
+function restock(){
+  stock = {...STARTER_STOCK};
+  saveState();
+  setStatus('lixo de exemplo reposto', 'idle');
+  renderAll();
+}
+
+/* =========================================================================
+   6) BOOT
+   ========================================================================= */
+document.getElementById('btn-reciclar').onclick = reciclar;
+document.getElementById('btn-restock').onclick = restock;
+
+document.getElementById('inv-prev').onclick = () => document.getElementById('inv-strip').scrollBy({left:-140, behavior:'smooth'});
+document.getElementById('inv-next').onclick = () => document.getElementById('inv-strip').scrollBy({left:140, behavior:'smooth'});
+
+// Botão embutido no gabinete (mobile): a "tela" da máquina muda de
+// conteúdo (não abre modal por cima) — a cara normal (porta/tela/
+// alavanca) some e o painel de receitas passa a ocupar aquele mesmo
+// espaço, com um botão "← Voltar" pra retornar.
+// No desktop isso nunca dispara: o botão fica escondido via CSS e o
+// painel já vive fixo ao lado da máquina o tempo todo.
+const machineEl = document.getElementById('machine');
+const invViewSlot = document.getElementById('inv-view-slot');
+const panelEl = document.getElementById('panel-el');
+const panelHomeParent = panelEl.parentElement; // .desktop-row, onde o painel mora no desktop
+const panelHomeNext = panelEl.nextSibling;      // referência pra reinserir na mesma posição
+
+document.getElementById('btn-open-recipes').onclick = () => {
+  invViewSlot.appendChild(panelEl);
+  machineEl.classList.add('showing-inv');
+  document.querySelector('.footnote').style.display = 'none';
+};
+document.getElementById('btn-close-panel').onclick = () => {
+  panelHomeParent.insertBefore(panelEl, panelHomeNext);
+  machineEl.classList.remove('showing-inv');
+  document.querySelector('.footnote').style.display = '';
+};
+
+renderAll();
+</script>
+</body>
+</html>
