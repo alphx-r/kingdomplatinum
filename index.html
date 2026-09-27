@@ -4155,6 +4155,10 @@ function calcSyncSelects(){
               <label>Descrição <span style="font-size:10px;color:var(--muted);font-weight:400">(opcional)</span></label>
               <textarea id="evc-desc" rows="2" placeholder="Descrição curta do evento..."></textarea>
             </div>
+            <div class="field">
+              <label>Tipos de Evento <span style="font-size:10px;color:var(--muted);font-weight:400">(selecione uma ou mais tags)</span></label>
+              <div id="evc-tags-picker" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+            </div>
             <button class="btn btn-primary btn-sm" onclick="criarEventoCalendario()">+ Criar Evento do Calendário</button>
             <div class="fb fb-ok" id="evc-fb-ok">✓ Evento criado!</div>
             <div class="fb fb-err" id="evc-fb-err">—</div>
@@ -13426,10 +13430,12 @@ function renderCalEvt(){
         <div style="display:flex;flex-direction:column;gap:8px">
           ${evsDia.map(ev=>{
             const href = ev.slug ? `/evento/${ev.slug}` : null;
+            const tagsHTML = (ev.tags&&ev.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${ev.tags.map(t=>{const c=TIPOS_EVENTO_CFG[t]; return c?`<span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;background:${c.cor}22;color:${c.cor}">${c.label}</span>`:'';}).join('')}</div>` : '';
             return `<div ${href?`onclick="window.location.href='${href}'" style="cursor:pointer"`:''} style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--surface2);${href?'':''}">
               <div style="flex:1;min-width:0">
                 <div style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text)">${ev.nome}</div>
                 ${ev.descricao?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${ev.descricao}</div>`:''}
+                ${tagsHTML}
               </div>
               ${href?`<span style="font-size:12px;color:var(--brand-mid)">→</span>`:''}
             </div>`;
@@ -13897,6 +13903,27 @@ async function deletarEvento(id, nome){
 }
 
 // ── EVENTOS DO CALENDÁRIO (sem página / sem rolagem) ──
+const TIPOS_EVENTO_CFG = {
+  narracao:    {label:'Narração', cor:'#5b3fae'},
+  programado:  {label:'Evento Programado', cor:'#2563a8'},
+  bonus:       {label:'Bônus', cor:'#e8a020'}
+};
+let _evcTagsSel = [];
+function evcToggleTag(tag){
+  const idx = _evcTagsSel.indexOf(tag);
+  if(idx>-1) _evcTagsSel.splice(idx,1); else _evcTagsSel.push(tag);
+  renderEvcTagsPicker();
+}
+function renderEvcTagsPicker(){
+  const el = document.getElementById('evc-tags-picker');
+  if(!el) return;
+  el.innerHTML = Object.entries(TIPOS_EVENTO_CFG).map(([key,cfg])=>{
+    const ativo = _evcTagsSel.includes(key);
+    return `<button type="button" onclick="evcToggleTag('${key}')" style="padding:6px 12px;border-radius:20px;border:1.5px solid ${cfg.cor};background:${ativo?cfg.cor:'transparent'};color:${ativo?'#fff':cfg.cor};font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">${cfg.label}</button>`;
+  }).join('');
+}
+document.addEventListener('DOMContentLoaded', renderEvcTagsPicker);
+
 async function criarEventoCalendario(){
   const nome   = document.getElementById('evc-nome').value.trim();
   const cor    = '#1a3a5c';
@@ -13912,7 +13939,7 @@ async function criarEventoCalendario(){
   if(!nome){ errEl.textContent='Preencha o nome do evento.'; errEl.style.display='block'; return; }
   if(!dataInicio){ errEl.textContent='Preencha a data de início.'; errEl.style.display='block'; return; }
 
-  const payload = {nome, cor, emoji, descricao, ativo:true, data_inicio:dataInicio, data_fim:dataFim, slug:null, tipo:null};
+  const payload = {nome, cor, emoji, descricao, ativo:true, data_inicio:dataInicio, data_fim:dataFim, slug:null, tipo:null, tags:[..._evcTagsSel]};
 
   try{
     const res = await dbPost('eventos', payload);
@@ -13924,6 +13951,8 @@ async function criarEventoCalendario(){
   document.getElementById('evc-desc').value='';
   document.getElementById('evc-data-inicio').value='';
   document.getElementById('evc-data-fim').value='';
+  _evcTagsSel = [];
+  renderEvcTagsPicker();
 }
 
 async function toggleEventoCalendarioAtivo(id, ativo){
@@ -13972,6 +14001,7 @@ function renderEvcLista(){
         </div>
         <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:6px;flex-shrink:0;${ev.ativo?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${ev.ativo?'●':'○'}</span>
       </div>
+      ${(ev.tags&&ev.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${ev.tags.map(t=>{const c=TIPOS_EVENTO_CFG[t]; return c?`<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:${c.cor}22;color:${c.cor}">${c.label}</span>`:'';}).join('')}</div>` : ''}
       <div style="display:flex;gap:3px;border-top:1px solid var(--border);padding-top:6px">
         <button class="btn btn-sm" style="flex:1;font-size:10px;padding:3px 0;background:${ev.ativo?'#fdf3dc':'#e8f5e8'};color:${ev.ativo?'#7a5010':'#1a6a1a'};border:1px solid ${ev.ativo?'#e8d080':'#8bc88b'}" onclick="toggleEventoCalendarioAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'Pausar':'Ativar'}</button>
         <button class="btn btn-sm" style="font-size:10px;padding:3px 6px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="deletarEventoCalendario('${ev.id}','${ev.nome}')">✕</button>
