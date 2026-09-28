@@ -9400,6 +9400,19 @@ const RARIDADES = [
   {id:'rara',        label:'Rara'}
 ];
 function _saborInfo(id){ return SABORES.find(s=>s.id===id) || null; }
+// Tipo da pool: 'itens' (nome simples, sorteado pelo nº do dado) ou 'berries' (sabor + raridade).
+// Pools antigas sem `tipo`: viram 'berries' só se já tiverem itens no formato de berry.
+function _poolTipo(p){
+  if(!p) return 'itens';
+  if(p.tipo==='berries' || p.tipo==='itens') return p.tipo;
+  return (p.itens||[]).some(function(it){ return it && typeof it==='object'; }) ? 'berries' : 'itens';
+}
+function _poolSetTipo(prefix, idx, tipo){
+  const p = _pools[prefix][idx];
+  if(!p || (p.itens||[]).length) return;
+  p.tipo = tipo;
+  _poolHtml(prefix);
+}
 
 function _poolHtml(prefix){
   const pools = _pools[prefix];
@@ -9445,8 +9458,21 @@ function _poolHtml(prefix){
         <input type="text" value="${p.obs||''}" placeholder="Ex: Válido em abril..." oninput="_poolSetObs('${prefix}',${abaIdx},this.value)" style="width:100%;padding:7px 10px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px"/>
       </div>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">Tipo da pool</label>
+      <select ${(p.itens||[]).length?'disabled title="Esvazie a pool para trocar o tipo"':''} onchange="_poolSetTipo('${prefix}',${abaIdx},this.value)" style="padding:5px 8px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px">
+        <option value="itens"${_poolTipo(p)==='itens'?' selected':''}>Itens (nome + nº do dado)</option>
+        <option value="berries"${_poolTipo(p)==='berries'?' selected':''}>Berries (sabor + raridade)</option>
+      </select>
+    </div>
     <div id="${prefix}-itens-lista-${abaIdx}" style="margin-bottom:10px"></div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:end;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
+    ${_poolTipo(p)==='itens' ? `<div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:end;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome do item</label>
+        <input type="text" id="${prefix}-item-nome-${abaIdx}" placeholder="Ex: Small Pearl" onkeydown="if(event.key==='Enter'){event.preventDefault();_poolAdicionarItens('${prefix}',${abaIdx})}" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="_poolAdicionarItens('${prefix}',${abaIdx})">+ Adicionar</button>
+    </div>` : `<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:end;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
       <div>
         <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome</label>
         <input type="text" id="${prefix}-item-nome-${abaIdx}" placeholder="Ex: Oran Berry" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
@@ -9469,7 +9495,7 @@ function _poolHtml(prefix){
         <input type="text" id="${prefix}-item-numeros-${abaIdx}" placeholder="Ex: 62,92" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
       </div>
       <button class="btn btn-sm btn-primary" onclick="_poolAdicionarItens('${prefix}',${abaIdx})">+ Adicionar</button>
-    </div>`;
+    </div>`}`;
 
   _renderPoolItensInline(prefix, abaIdx);
 }
@@ -9481,7 +9507,8 @@ function _renderPoolItensInline(prefix, idx){
   if(!cont) return;
   const lista = p.itens || [];
   if(!lista.length){ cont.innerHTML = '<span style="font-size:12px;color:var(--muted)">Nenhum item.</span>'; return; }
-  const temLegado = lista.some(function(it){ return typeof it === 'string' && !_lootIsGroupHeader(it); });
+  const ehBerry = _poolTipo(p) === 'berries';
+  const temLegado = ehBerry && lista.some(function(it){ return typeof it === 'string' && !_lootIsGroupHeader(it); });
   const avisoLegado = temLegado
     ? `<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;background:#fff3cd;border:1px solid #e6c46a;border-radius:7px;padding:6px 10px;margin-bottom:6px">
         <span style="font-size:11px;color:#7a5b00">⚠️ Itens em <b>formato legado</b> (sem sabor/raridade) — por isso a raridade não aparece no card do resultado.</span>
@@ -9494,7 +9521,7 @@ function _renderPoolItensInline(prefix, idx){
       if(typeof item === 'string'){
         return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
           <span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#4caf50;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${i+1}</span>
-          <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item}">${item} <em style="color:var(--muted);font-weight:400">(legado)</em></span>
+          <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item}">${item}${ehBerry?' <em style="color:var(--muted);font-weight:400">(legado)</em>':''}</span>
           <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1" title="Remover">×</button>
         </div>`;
       }
@@ -9565,9 +9592,19 @@ function _poolAdicionarItens(prefix, idx){
   const selRaridade = document.getElementById(`${prefix}-item-raridade-${idx}`);
   const inpNumeros = document.getElementById(`${prefix}-item-numeros-${idx}`);
   const nome = (inpNome?.value||'').trim();
+  if(_poolTipo(_pools[prefix][idx])==='itens'){
+    if(!nome){ alert('Preencha o nome do item.'); return; }
+    if(!_pools[prefix][idx].itens) _pools[prefix][idx].itens = [];
+    _pools[prefix][idx].tipo = 'itens';
+    _pools[prefix][idx].itens.push(nome);
+    if(inpNome){ inpNome.value=''; inpNome.focus(); }
+    _renderPoolItensInline(prefix, idx);
+    return;
+  }
   const numeros = (inpNumeros?.value||'').split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
   if(!nome || !numeros.length){ alert('Preencha o nome e ao menos um número (separados por vírgula).'); return; }
   if(!_pools[prefix][idx].itens) _pools[prefix][idx].itens = [];
+  _pools[prefix][idx].tipo = 'berries';
   _pools[prefix][idx].itens.push({
     nome,
     sabor: selSabor?.value || 'apimentado',
@@ -9589,12 +9626,12 @@ function _poolRemover(prefix, idx){
   _poolHtml(prefix);
 }
 function evAdicionarPool(){
-  _pools['ev'].push({titulo:'Pool '+(  _pools['ev'].length+1), obs:'', itens:[], ativa:false});
+  _pools['ev'].push({titulo:'Pool '+(  _pools['ev'].length+1), obs:'', tipo:'itens', itens:[], ativa:false});
   _poolAba['ev'] = _pools['ev'].length - 1;
   _poolHtml('ev');
 }
 function editEvAdicionarPool(){
-  _pools['edit-ev'].push({titulo:'Pool '+(_pools['edit-ev'].length+1), obs:'', itens:[], ativa:false});
+  _pools['edit-ev'].push({titulo:'Pool '+(_pools['edit-ev'].length+1), obs:'', tipo:'itens', itens:[], ativa:false});
   _poolAba['edit-ev'] = _pools['edit-ev'].length - 1;
   _poolHtml('edit-ev');
 }
@@ -14149,24 +14186,21 @@ function renderEvcLista(){
     el.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Nenhum evento do calendário criado ainda.</div>';
     return;
   }
-  el.style.display='grid';
-  el.style.gridTemplateColumns='repeat(auto-fill,minmax(220px,1fr))';
-  el.style.gap='8px';
+  el.style.display='flex';
+  el.style.flexDirection='column';
+  el.style.gridTemplateColumns='';
+  el.style.gap='6px';
+  const btn = 'font-size:12px;padding:4px 8px;line-height:1;background:var(--surface2);color:var(--text);border:1px solid var(--border)';
   el.innerHTML = lista.map(ev=>{
-    return `<div style="background:var(--surface);border:1.5px solid ${ev.ativo?'var(--brand-mid)':'var(--border)'};border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:border-color .2s">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="flex:1;min-width:0">
-          <div style="font-family:var(--font-title);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.nome}</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${_evcFmtPeriodo(ev)}</div>
-        </div>
-        <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:6px;flex-shrink:0;${ev.ativo?'background:#d1fae5;color:#065f46':'background:#fee2e2;color:#991b1b'}">${ev.ativo?'●':'○'}</span>
+    const tags = (ev.tags||[]).map(t=>{const c=TIPOS_EVENTO_CFG[t]; return c?`<span style="font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;background:${c.cor}22;color:${c.cor};margin-left:6px;white-space:nowrap">${c.label}</span>`:'';}).join('');
+    return `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1.5px solid ${ev.ativo?'var(--brand-mid)':'var(--border)'};border-radius:var(--r);padding:8px 10px;opacity:${ev.ativo?1:.6}">
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--font-title);font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.nome}${tags}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:1px">${_evcFmtPeriodo(ev)}</div>
       </div>
-      ${(ev.tags&&ev.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${ev.tags.map(t=>{const c=TIPOS_EVENTO_CFG[t]; return c?`<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:${c.cor}22;color:${c.cor}">${c.label}</span>`:'';}).join('')}</div>` : ''}
-      <div style="display:flex;gap:3px;border-top:1px solid var(--border);padding-top:6px">
-        <button class="btn btn-sm" style="flex:1;font-size:10px;padding:3px 0;background:${ev.ativo?'#fdf3dc':'#e8f5e8'};color:${ev.ativo?'#7a5010':'#1a6a1a'};border:1px solid ${ev.ativo?'#e8d080':'#8bc88b'}" onclick="toggleEventoCalendarioAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'Pausar':'Ativar'}</button>
-        <button class="btn btn-sm" title="Editar" style="font-size:10px;padding:3px 6px;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="abrirEditarEvc('${ev.id}')">✎</button>
-        <button class="btn btn-sm" style="font-size:10px;padding:3px 6px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="deletarEventoCalendario('${ev.id}','${ev.nome}')">✕</button>
-      </div>
+      <button class="btn btn-sm" title="${ev.ativo?'Pausar':'Ativar'}" style="${btn}" onclick="toggleEventoCalendarioAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'⏸':'▶'}</button>
+      <button class="btn btn-sm" title="Editar" style="${btn}" onclick="abrirEditarEvc('${ev.id}')">✎</button>
+      <button class="btn btn-sm" title="Excluir" style="${btn};background:#fde8e8;color:var(--red);border-color:#f0c0c0" onclick="deletarEventoCalendario('${ev.id}','${ev.nome}')">✕</button>
     </div>`;
   }).join('');
 }
@@ -14294,7 +14328,7 @@ function abrirEditarEvento(id){
   }
   // Carregar pools para qualquer tipo de evento
   if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
-    _pools['edit-ev'] = ev.pool_pools.map(p=>({titulo:p.titulo||'', obs:p.obs||'', itens:[...(p.itens||[])], ativa:!!p.ativa}));
+    _pools['edit-ev'] = ev.pool_pools.map(p=>({titulo:p.titulo||'', obs:p.obs||'', tipo:_poolTipo(p), itens:[...(p.itens||[])], ativa:!!p.ativa}));
   } else if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){
     _pools['edit-ev'] = [{titulo:ev.pool_titulo||'Pool de Itens', obs:ev.pool_obs||'', itens:[...ev.pool_itens], ativa:true}];
   } else {
