@@ -3040,9 +3040,6 @@ function calcSyncSelects(){
           <input type="number" id="evento-colheita-qtd" value="10" min="1" max="50"/>
         </div>
       </div>
-      <label id="evento-colheita-criador-wrap" style="display:none;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;margin:-6px 0 12px">
-        <input type="checkbox" id="evento-colheita-criador"/> Sou Criador (+1 rolagem bônus)
-      </label>
       <button class="roll-btn" id="evento-dado-roll-btn" onclick="rolarDadoEvento()">Rolar Dado</button>
     </div>
   </div>
@@ -9469,7 +9466,7 @@ function _poolHtml(prefix){
     ${_poolTipo(p)==='itens' ? `<div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:end;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
       <div>
         <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome do item</label>
-        <input type="text" id="${prefix}-item-nome-${abaIdx}" placeholder="Ex: Small Pearl" onkeydown="if(event.key==='Enter'){event.preventDefault();_poolAdicionarItens('${prefix}',${abaIdx})}" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
+        <input type="text" id="${prefix}-item-nome-${abaIdx}" placeholder="Nome do item — ou cole uma lista (1 por linha)" onpaste="_poolOnPaste(event,'${prefix}',${abaIdx})" onkeydown="if(event.key==='Enter'){event.preventDefault();_poolAdicionarItens('${prefix}',${abaIdx})}" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
       </div>
       <button class="btn btn-sm btn-primary" onclick="_poolAdicionarItens('${prefix}',${abaIdx})">+ Adicionar</button>
     </div>` : `<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:end;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
@@ -9614,6 +9611,28 @@ function _poolAdicionarItens(prefix, idx){
   if(inpNome) inpNome.value = '';
   if(inpNumeros) inpNumeros.value = '';
   _renderPoolItensInline(prefix, idx);
+}
+// Colar uma lista (1 item por linha) direto no campo de nome da pool de itens.
+// Aceita marcadores/numeração ("- ", "• ", "1. ", "1) ") e colunas de planilha; linhas "### Grupo" viram cabeçalho.
+function _poolOnPaste(e, prefix, idx){
+  const txt = ((e.clipboardData||window.clipboardData).getData('text')||'');
+  if(!/[\r\n]/.test(txt.trim())) return; // uma linha só: cola normalmente
+  e.preventDefault();
+  _poolColarLista(prefix, idx, txt);
+}
+function _poolColarLista(prefix, idx, txt){
+  const p = _pools[prefix][idx];
+  if(!p || _poolTipo(p)!=='itens') return;
+  const linhas = String(txt).split(/\r?\n/)
+    .map(l=>l.replace(/^\s*(?:[-*•▪◦·]+|\d+\s*[.)\-:]|\d+\t|\[\s*[xX ]?\s*\])\s*/,'').trim())
+    .filter(Boolean);
+  if(!linhas.length) return;
+  if(!p.itens) p.itens = [];
+  p.tipo = 'itens';
+  linhas.forEach(l=>p.itens.push(l));
+  _renderPoolItensInline(prefix, idx);
+  const inp = document.getElementById(`${prefix}-item-nome-${idx}`);
+  if(inp){ inp.value=''; inp.placeholder = linhas.length+' itens adicionados'; }
 }
 function _poolRemoverItem(prefix, idx, itemIdx){
   _pools[prefix][idx].itens.splice(itemIdx, 1);
@@ -13628,7 +13647,7 @@ function _descAteSegundoPonto(html){
       let corte = i+1;
       const resto = t.slice(corte).match(/^(\s*<\/[a-zA-Z][^>]*>)+/); // fecha tags coladas no ponto
       if(resto){ corte += resto[0].length; for(let k=0;k<(resto[0].match(/<\//g)||[]).length;k++) abertas.pop(); }
-      return t.slice(0, corte) + abertas.reverse().map(n=>'</'+n+'>').join('');
+      return t.slice(0, corte) + abertas.slice().reverse().map(n=>'</'+n+'>').join('');
     }
   }
   return t;
@@ -14652,15 +14671,13 @@ async function iniciarPaginaEvento(slug){
       renderEventoItensGrid(_ativaDisp ? (_ativaDisp.itens||[]) : (ev.pool_itens||[]));
       renderEventoDiceBtns();
       sincEventoDiceBtn();
-      // Quando existe pool de itens ativa, mostra qtd/criador e adapta o botão
+      // Quando existe pool de itens ativa, mostra a quantidade de rolagens e adapta o botão
       const qtdWrap = document.getElementById('evento-colheita-qtd-wrap');
-      const criadorWrap = document.getElementById('evento-colheita-criador-wrap');
       const rollBtn = document.getElementById('evento-dado-roll-btn');
       const poolParaColheita = _eventoPoolAtiva(ev);
       if(qtdWrap) qtdWrap.style.display = poolParaColheita ? '' : 'none';
-      if(criadorWrap) criadorWrap.style.display = poolParaColheita ? 'flex' : 'none';
       if(rollBtn){
-        rollBtn.textContent = poolParaColheita ? ('🍓 Rolar ' + (poolParaColheita.titulo || 'Itens')) : 'Rolar Dado';
+        rollBtn.textContent = poolParaColheita ? ('Rolar ' + (poolParaColheita.titulo || 'Itens')) : 'Rolar Dado';
         rollBtn.style.background = poolParaColheita ? '#2e7d32' : '';
       }
     }
@@ -14911,7 +14928,6 @@ async function rolarDadoEvento(){
   const ladosEl      = document.getElementById('evento-dice-lados');
   const motivoEl     = document.getElementById('evento-dice-motivo');
   const qtdEl        = document.getElementById('evento-colheita-qtd');
-  const criadorEl    = document.getElementById('evento-colheita-criador');
 
   const personagem = personagemEl?.value.trim() || '';
   const lados      = parseInt(ladosEl?.value) || 0;
@@ -14921,13 +14937,11 @@ async function rolarDadoEvento(){
   if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
   if(!motivo){ alert('Preencha o motivo da rolagem!'); motivoEl?.focus(); return; }
 
-  // Pool ativa -> permite rolar N dados de uma vez (ex.: colheita 10d100,
-  // 11d100 se marcar "Sou Criador"). Sem pool, continua sendo 1 rolagem só.
+  // Pool ativa -> permite rolar N dados de uma vez (ex.: 10d100). Sem pool, continua sendo 1 rolagem só.
   const poolAtiva = _eventoPoolAtiva(ev);
   let qtd = 1;
   if(poolAtiva){
     qtd = parseInt(qtdEl?.value) || 1;
-    if(criadorEl?.checked) qtd += 1;
   }
 
   const agora = new Date();
@@ -14947,7 +14961,7 @@ async function rolarDadoEvento(){
   // (grade de resultados), seja 1 rolagem ou várias, com ou sem pool.
   const section = document.getElementById('evento-results');
   if(section){
-    const rotulo = poolAtiva ? '🍓' : '🎲';
+    const rotulo = '🎲';
     const resumo = qtd === 1
       ? `${personagem} rolou <strong>1d${lados}</strong> para <strong>${motivo}</strong> e obteve: <strong style="color:var(--brand-mid)">${soma}</strong>`
       : `${personagem} rolou <strong>${qtd}d${lados}</strong> para <strong>${motivo}</strong>: [${rolagens.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${soma}</strong>`;
@@ -15030,12 +15044,10 @@ async function rolarColheitaEvento(){
   const personagemEl = document.getElementById('evento-dice-personagem');
   const ladosEl       = document.getElementById('evento-dice-lados');
   const qtdEl         = document.getElementById('evento-colheita-qtd');
-  const criadorEl     = document.getElementById('evento-colheita-criador');
 
   const personagem = personagemEl?.value.trim() || '';
   const lados       = parseInt(ladosEl?.value) || 100;
   let qtd           = parseInt(qtdEl?.value) || 10;
-  if(criadorEl?.checked) qtd += 1;
 
   if(!personagem){ alert('Selecione o personagem!'); personagemEl?.focus(); return; }
   if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
@@ -15059,7 +15071,7 @@ async function rolarColheitaEvento(){
     section.innerHTML = `<div class="rol-entry" style="animation:fadeUp .35s both">
       <div class="rol-entry-header">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🍓 Colheita · ${qtd}d${lados}</span>
+          <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🎲 Colheita · ${qtd}d${lados}</span>
           <span class="rol-entry-bioma">${ev.slug}</span>
         </div>
         <span class="rol-entry-hora">${hora} · ${data}</span>
@@ -15121,7 +15133,7 @@ function renderHistoricoEvento(){
         <div class="hist-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
-            <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🍓 ${qtd}d${max}</span>
+            <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🎲 ${qtd}d${max}</span>
             ${e.evento_slug?`<span class="rol-entry-bioma">${e.evento_slug}</span>`:''}
           </div>
           <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
