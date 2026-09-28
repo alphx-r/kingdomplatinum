@@ -3035,9 +3035,9 @@ function calcSyncSelects(){
           <label>Motivo</label>
           <input type="text" id="evento-dice-motivo" placeholder="Ex: Ataque, Fuga..."/>
         </div>
-        <div class="ctrl-group" id="evento-colheita-qtd-wrap" style="display:none;max-width:130px">
+        <div class="ctrl-group" id="evento-qtd-roll-wrap" style="display:none;max-width:130px">
           <label>Qtd. de rolagens</label>
-          <input type="number" id="evento-colheita-qtd" value="10" min="1" max="50"/>
+          <input type="number" id="evento-qtd-roll" placeholder="1" min="1" max="50"/>
         </div>
       </div>
       <button class="roll-btn" id="evento-dado-roll-btn" onclick="rolarDadoEvento()">Rolar Dado</button>
@@ -4130,6 +4130,26 @@ function calcSyncSelects(){
                   <input type="checkbox" id="ev-lock-motivo" style="cursor:pointer"/>
                   <label for="ev-lock-motivo" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar motivo</label>
                 </div>
+                <div style="border-top:1.5px solid var(--border);margin-top:12px;padding-top:12px">
+                  <div class="g2">
+                    <div class="field">
+                      <label>Quantidade de rolagens</label>
+                      <select id="ev-qtd-modo" onchange="evQtdModoToggle('ev')">
+                        <option value="nenhum" selected>Sem campo (1 rolagem)</option>
+                        <option value="fixo">Valor fixo (jogador não altera)</option>
+                        <option value="livre">Livre (jogador escolhe)</option>
+                      </select>
+                    </div>
+                    <div class="field" id="ev-qtd-valor-wrap" style="display:none">
+                      <label id="ev-qtd-valor-lbl">Qtd.</label>
+                      <input type="number" id="ev-qtd-valor" value="10" min="1" max="50"/>
+                    </div>
+                  </div>
+                  <div class="field" id="ev-qtd-max-wrap" style="display:none;max-width:200px">
+                    <label>Máximo permitido</label>
+                    <input type="number" id="ev-qtd-max" value="50" min="1" max="50"/>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- POOL DE ITENS -->
@@ -4857,6 +4877,26 @@ function calcSyncSelects(){
         <div style="display:flex;gap:4px;align-items:center">
           <input type="checkbox" id="edit-ev-lock-motivo" style="cursor:pointer"/>
           <label for="edit-ev-lock-motivo" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Travar motivo</label>
+        </div>
+        <div style="border-top:1.5px solid var(--border);margin-top:12px;padding-top:12px">
+          <div class="g2">
+            <div class="field">
+              <label>Quantidade de rolagens</label>
+              <select id="edit-ev-qtd-modo" onchange="evQtdModoToggle('edit-ev')">
+                <option value="nenhum">Sem campo (1 rolagem)</option>
+                <option value="fixo">Valor fixo (jogador não altera)</option>
+                <option value="livre">Livre (jogador escolhe)</option>
+              </select>
+            </div>
+            <div class="field" id="edit-ev-qtd-valor-wrap" style="display:none">
+              <label id="edit-ev-qtd-valor-lbl">Qtd.</label>
+              <input type="number" id="edit-ev-qtd-valor" value="10" min="1" max="50"/>
+            </div>
+          </div>
+          <div class="field" id="edit-ev-qtd-max-wrap" style="display:none;max-width:200px">
+            <label>Máximo permitido</label>
+            <input type="number" id="edit-ev-qtd-max" value="50" min="1" max="50"/>
+          </div>
         </div>
       </div>
       <!-- POOL DE ITENS (edição) -->
@@ -13658,7 +13698,18 @@ function renderEventosHub(){
   const grid = document.getElementById('eventos-hub-grid');
   if(!grid) return;
 
-  const ativos = eventos.filter(ev => ev.ativo && ev.slug);
+  // Só aparecem os eventos cujo período cruza o mês atual (interseção de [data_inicio, data_fim] com o mês).
+  // Evento sem data_inicio não tem mês definido -> continua aparecendo, para não sumir por engano.
+  const _hj = new Date();
+  const _mesIni = _hj.getFullYear()+'-'+String(_hj.getMonth()+1).padStart(2,'0')+'-01';
+  const _mesFim = _hj.getFullYear()+'-'+String(_hj.getMonth()+1).padStart(2,'0')+'-'+String(new Date(_hj.getFullYear(), _hj.getMonth()+1, 0).getDate()).padStart(2,'0');
+  const _noMesAtual = ev => {
+    if(!ev.data_inicio) return true;
+    const ini = ev.data_inicio;
+    const fim = ev.data_fim || ev.data_inicio;
+    return ini <= _mesFim && fim >= _mesIni;
+  };
+  const ativos = eventos.filter(ev => ev.ativo && ev.slug && _noMesAtual(ev));
 
   if(!ativos.length){
     grid.innerHTML = '';
@@ -14051,6 +14102,7 @@ async function criarEvento(){
     payload.dado_motivo = document.getElementById('ev-dado-motivo')?.value.trim()||'';
     payload.lock_dado   = document.getElementById('ev-lock-dado')?.checked||false;
     payload.lock_motivo = document.getElementById('ev-lock-motivo')?.checked||false;
+    Object.assign(payload, evQtdLerConfig('ev'));
   }
   // pool de itens salva para qualquer tipo de evento
   payload.pool_pools  = _pools['ev'] || [];
@@ -14070,6 +14122,7 @@ async function criarEvento(){
   document.getElementById('ev-slug').value='';
   document.getElementById('ev-desc').value='';
   document.getElementById('ev-adicionais').value='0';
+  evQtdPreencher('ev', {});
   document.getElementById('ev-data-inicio').value='';
   document.getElementById('ev-data-fim').value='';
   _poolBiomasEvento = [];
@@ -14386,6 +14439,7 @@ function abrirEditarEvento(id){
     document.getElementById('edit-ev-dado-motivo').value        = ev.dado_motivo||'';
     document.getElementById('edit-ev-lock-dado').checked        = !!ev.lock_dado;
     document.getElementById('edit-ev-lock-motivo').checked      = !!ev.lock_motivo;
+    evQtdPreencher('edit-ev', ev);
   }
   // Carregar pools para qualquer tipo de evento
   if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
@@ -14440,6 +14494,7 @@ async function salvarEdicaoEvento(){
     payload.dado_motivo      = document.getElementById('edit-ev-dado-motivo').value.trim();
     payload.lock_dado        = document.getElementById('edit-ev-lock-dado').checked;
     payload.lock_motivo      = document.getElementById('edit-ev-lock-motivo').checked;
+    Object.assign(payload, evQtdLerConfig('edit-ev'));
   }
   // pool de itens salva para qualquer tipo de evento
   payload.pool_pools = _pools['edit-ev'] || [];
@@ -14672,10 +14727,21 @@ async function iniciarPaginaEvento(slug){
       renderEventoDiceBtns();
       sincEventoDiceBtn();
       // Quando existe pool de itens ativa, mostra a quantidade de rolagens e adapta o botão
-      const qtdWrap = document.getElementById('evento-colheita-qtd-wrap');
+      const qtdWrap = document.getElementById('evento-qtd-roll-wrap');
       const rollBtn = document.getElementById('evento-dado-roll-btn');
       const poolParaColheita = _eventoPoolAtiva(ev);
-      if(qtdWrap) qtdWrap.style.display = poolParaColheita ? '' : 'none';
+      const _qcfg = _eventoQtdCfg(ev);
+      const qtdIn = document.getElementById('evento-qtd-roll');
+      if(qtdWrap) qtdWrap.style.display = _qcfg.mostrar ? '' : 'none';
+      if(qtdIn){
+        qtdIn.max = _qcfg.max;
+        qtdIn.value = _qcfg.valor;
+        qtdIn.readOnly = _qcfg.travado;
+        qtdWrap.style.opacity = _qcfg.travado ? '.6' : '';
+        qtdWrap.style.pointerEvents = _qcfg.travado ? 'none' : '';
+        const lbl = qtdWrap.querySelector('label');
+        if(lbl) lbl.innerHTML = 'Qtd. de rolagens' + (_qcfg.travado ? ' <span style="font-size:10px;color:var(--muted)">🔒 travado</span>' : '');
+      }
       if(rollBtn){
         rollBtn.textContent = poolParaColheita ? ('Rolar ' + (poolParaColheita.titulo || 'Itens')) : 'Rolar Dado';
         rollBtn.style.background = poolParaColheita ? '#2e7d32' : '';
@@ -14860,6 +14926,53 @@ function renderEventoDiceBtns(){
 // ── EVENTO: liga o resultado do dado ao item sorteado na pool ativa ──
 
 // Pool ativa do evento (mesmo critério usado no grid/modal de loot)
+// ── QUANTIDADE DE ROLAGENS (config por evento) ──
+// qtd_modo: 'nenhum' = 1 rolagem, sem campo | 'fixo' = valor travado | 'livre' = jogador escolhe até qtd_max
+// Eventos antigos (qtd_modo vazio) mantêm o comportamento legado: campo livre quando há pool ativa.
+const QTD_ROLL_MAX_ABS = 50;
+function evQtdModoToggle(prefix){
+  const modo   = document.getElementById(prefix+'-qtd-modo')?.value || 'nenhum';
+  const vWrap  = document.getElementById(prefix+'-qtd-valor-wrap');
+  const mWrap  = document.getElementById(prefix+'-qtd-max-wrap');
+  const vLbl   = document.getElementById(prefix+'-qtd-valor-lbl');
+  if(vWrap) vWrap.style.display = modo==='nenhum' ? 'none' : '';
+  if(mWrap) mWrap.style.display = modo==='livre'  ? ''     : 'none';
+  if(vLbl)  vLbl.textContent    = modo==='fixo'   ? 'Quantidade fixa' : 'Valor inicial (opcional)';
+}
+function evQtdLerConfig(prefix){
+  const modo = document.getElementById(prefix+'-qtd-modo')?.value || 'nenhum';
+  const clamp = v => Math.min(Math.max(parseInt(v)||1,1),QTD_ROLL_MAX_ABS);
+  const valor = clamp(document.getElementById(prefix+'-qtd-valor')?.value);
+  const max   = clamp(document.getElementById(prefix+'-qtd-max')?.value || QTD_ROLL_MAX_ABS);
+  return {
+    qtd_modo:  modo,
+    qtd_valor: modo==='nenhum' ? null : valor,
+    qtd_max:   modo==='livre'  ? Math.max(max, valor) : null
+  };
+}
+function evQtdPreencher(prefix, ev){
+  const modo = ev.qtd_modo || 'nenhum';
+  const set = (id,v)=>{ const el=document.getElementById(prefix+'-'+id); if(el) el.value=v; };
+  set('qtd-modo', modo);
+  set('qtd-valor', ev.qtd_valor || 10);
+  set('qtd-max',   ev.qtd_max   || QTD_ROLL_MAX_ABS);
+  evQtdModoToggle(prefix);
+}
+// Resolve como o campo deve se comportar para o jogador.
+function _eventoQtdCfg(ev){
+  const pool = _eventoPoolAtiva(ev);
+  if(!pool) return {mostrar:false, travado:false, valor:1, max:1};       // sem pool, sempre 1 rolagem
+  const modo = ev.qtd_modo;
+  if(modo==='nenhum') return {mostrar:false, travado:false, valor:1, max:1};
+  if(modo==='fixo'){
+    const v = Math.min(Math.max(parseInt(ev.qtd_valor)||1,1),QTD_ROLL_MAX_ABS);
+    return {mostrar:true, travado:true, valor:v, max:v};
+  }
+  // 'livre' ou legado (qtd_modo vazio)
+  const max = modo==='livre' ? Math.min(Math.max(parseInt(ev.qtd_max)||QTD_ROLL_MAX_ABS,1),QTD_ROLL_MAX_ABS) : QTD_ROLL_MAX_ABS;
+  const ini = modo==='livre' ? (parseInt(ev.qtd_valor)||'') : '';
+  return {mostrar:true, travado:false, valor:ini, max:max};
+}
 function _eventoPoolAtiva(ev){
   if(!ev) return null;
   if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
@@ -14927,7 +15040,7 @@ async function rolarDadoEvento(){
   const personagemEl = document.getElementById('evento-dice-personagem');
   const ladosEl      = document.getElementById('evento-dice-lados');
   const motivoEl     = document.getElementById('evento-dice-motivo');
-  const qtdEl        = document.getElementById('evento-colheita-qtd');
+  const qtdEl        = document.getElementById('evento-qtd-roll');
 
   const personagem = personagemEl?.value.trim() || '';
   const lados      = parseInt(ladosEl?.value) || 0;
@@ -14941,7 +15054,10 @@ async function rolarDadoEvento(){
   const poolAtiva = _eventoPoolAtiva(ev);
   let qtd = 1;
   if(poolAtiva){
-    qtd = parseInt(qtdEl?.value) || 1;
+    const _q = _eventoQtdCfg(ev);
+    if(!_q.mostrar)      qtd = 1;
+    else if(_q.travado)  qtd = _q.valor;                       // não confia no DOM: valor vem do evento
+    else                 qtd = Math.min(Math.max(parseInt(qtdEl?.value) || 1, 1), _q.max);
   }
 
   const agora = new Date();
@@ -15043,11 +15159,12 @@ async function rolarColheitaEvento(){
 
   const personagemEl = document.getElementById('evento-dice-personagem');
   const ladosEl       = document.getElementById('evento-dice-lados');
-  const qtdEl         = document.getElementById('evento-colheita-qtd');
+  const qtdEl         = document.getElementById('evento-qtd-roll');
 
   const personagem = personagemEl?.value.trim() || '';
   const lados       = parseInt(ladosEl?.value) || 100;
-  let qtd           = parseInt(qtdEl?.value) || 10;
+  const _qc         = _eventoQtdCfg(ev);
+  let qtd           = !_qc.mostrar ? 1 : (_qc.travado ? _qc.valor : Math.min(Math.max(parseInt(qtdEl?.value) || 1, 1), _qc.max));
 
   if(!personagem){ alert('Selecione o personagem!'); personagemEl?.focus(); return; }
   if(!lados || lados < 2){ alert('O dado precisa ter ao menos 2 lados.'); return; }
