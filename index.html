@@ -13440,7 +13440,9 @@ function _gcalLink(ev){
   const d = new Date(fim+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+1);
   const fimExcl = d.toISOString().slice(0,10);
   const detalhes = [ev.descricao||'', ev.slug ? location.origin+'/evento/'+ev.slug : ''].filter(Boolean).join('\n\n');
-  const q = new URLSearchParams({action:'TEMPLATE', text:ev.nome, dates:compacto(ini)+'/'+compacto(fimExcl)});
+  const flags = (ev.tags||[]).map(t=>TIPOS_EVENTO_CFG[t]&&TIPOS_EVENTO_CFG[t].label).filter(Boolean).join(' / ').toUpperCase();
+  const titulo = (flags ? flags+': ' : '') + ev.nome + ' | KP';
+  const q = new URLSearchParams({action:'TEMPLATE', text:titulo, dates:compacto(ini)+'/'+compacto(fimExcl)});
   if(detalhes) q.set('details', detalhes);
   return 'https://calendar.google.com/calendar/render?'+q.toString();
 }
@@ -13455,11 +13457,11 @@ function abrirModalDiaCalendario(iso){
   body.innerHTML = evsDia.map(ev=>{
     const href = ev.slug ? `/evento/${ev.slug}` : null;
     const tagsHTML = (ev.tags&&ev.tags.length) ? `${ev.tags.map(t=>{const c=TIPOS_EVENTO_CFG[t]; return c?`<span style="display:inline-block;margin-right:6px;vertical-align:middle;font-family:var(--font-body);text-transform:uppercase;font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:10px;background:${c.cor}22;color:${c.cor}">${c.label}</span>`:'';}).join('')}` : '';
+    const gcalBtn = `<a href="${_gcalLink(ev).replace(/"/g,'&quot;')}" target="_blank" rel="noopener" onmouseover="this.style.color='var(--brand-mid)';this.style.borderColor='var(--brand-mid)'" onmouseout="this.style.color='';this.style.borderColor=''" onclick="event.stopPropagation()" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda" style="display:inline-flex;align-items:center;vertical-align:middle;gap:4px;margin-left:6px;font-family:var(--font-body);font-size:11px;font-weight:700;line-height:1;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:10px;padding:3px 8px;background:transparent">+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></a>`;
     return `<div ${href?`onclick="window.location.href='${href}'"`:''} style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);${href?'cursor:pointer':''}">
       <div style="flex:1;min-width:0">
-        <div style="line-height:1.6">${tagsHTML}<span style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text)">${ev.nome}</span></div>
-        ${ev.descricao?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${ev.descricao}</div>`:''}
-        <a href="${_gcalLink(ev).replace(/"/g,'&quot;')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;margin-top:6px;font-family:var(--font-body);font-size:10px;font-weight:600;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:10px;padding:2px 8px;background:transparent">+ Google Agenda</a>
+        <div style="line-height:1.6">${tagsHTML}<span style="font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--text)">${ev.nome}</span>${ev.descricao?'':gcalBtn}</div>
+        ${ev.descricao?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${ev.descricao}${gcalBtn}</div>`:''}
       </div>
       ${href?`<span style="font-size:12px;color:var(--brand-mid)">→</span>`:''}
     </div>`;
