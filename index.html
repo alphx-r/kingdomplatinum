@@ -495,7 +495,7 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
   .nav-bottom{border-top:none;padding:0;flex:0 0 auto;display:flex;align-items:center;margin-left:auto}
   .nav-login{width:auto;padding:6px 12px;font-size:11px}
   .nav-login .nav-label{opacity:1!important;width:auto!important}
-  #nav-player-badge,.nav.expanded #nav-player-badge{width:auto!important;min-width:0!important;gap:2px!important;padding:11px 5px!important}
+  #nav-player-badge,.nav.expanded #nav-player-badge{width:auto!important;min-width:0!important;flex-shrink:0;gap:2px!important;padding:11px 5px!important}
   #nav-player-name{opacity:1!important;width:auto!important;font-size:14px;letter-spacing:.2px}
   #nav-player-badge .player-logout-btn,.nav.expanded #nav-player-badge .player-logout-btn{opacity:1!important;width:auto!important;pointer-events:auto!important;padding:0!important;font-size:16px}
   .nav.expanded #nav-player-name{flex:none}
@@ -737,14 +737,14 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 #nav-player-name{overflow:hidden;text-overflow:ellipsis;opacity:0;width:0;transition:opacity .15s}
 .nav-player-ico{width:14px;height:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .nav-player-ico svg{width:14px;height:14px;display:block}
-.nav.expanded #nav-player-badge{gap:2px;padding:8px 5px;width:fit-content}
-.nav.expanded #nav-player-name{opacity:1;width:auto;flex:none;transition:opacity .25s ease .08s}
+.nav.expanded #nav-player-badge{gap:6px;padding:8px 10px;width:100%}
+.nav.expanded #nav-player-name{opacity:1;width:auto;flex:1;transition:opacity .25s ease .08s}
 #nav-player-badge .player-logout-btn{
   background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;
   font-size:13px;padding:0 0 0 6px;line-height:1;transition:color .15s,opacity .15s;flex-shrink:0;
   opacity:0;width:0;overflow:hidden;pointer-events:none;
 }
-.nav.expanded #nav-player-badge .player-logout-btn{opacity:1;width:auto;padding:0;pointer-events:auto;transition:opacity .2s ease .08s}
+.nav.expanded #nav-player-badge .player-logout-btn{opacity:1;width:auto;padding:0 0 0 6px;pointer-events:auto;transition:opacity .2s ease .08s}
 #nav-player-badge .player-logout-btn:hover{color:#fff}
 /* ESTACAO FAB */
 #estacao-fab{
@@ -4882,6 +4882,27 @@ function calcSyncSelects(){
   </div>
 </div>
 
+
+<div class="modal-overlay" id="modal-editar-evc-overlay" onclick="fecharEditarEvc()" style="display:none">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:480px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="fecharEditarEvc()">✕</button>
+    <div style="font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:16px">Editar Evento do Calendário</div>
+    <input type="hidden" id="edit-evc-id"/>
+    <div class="g2">
+      <div class="field"><label>Nome</label><input type="text" id="edit-evc-nome"/></div>
+      <div class="field"><label>Data início</label><input type="date" id="edit-evc-data-inicio"/></div>
+      <div class="field"><label>Data fim <span style="font-size:10px;color:var(--muted);font-weight:400">(vazio = 1 dia)</span></label><input type="date" id="edit-evc-data-fim"/></div>
+    </div>
+    <div class="field"><label>Descrição</label><textarea id="edit-evc-desc" rows="3"></textarea></div>
+    <div class="field"><label>Tipos de Evento</label><div id="edit-evc-tags-picker" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-sm" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text)" onclick="fecharEditarEvc()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="salvarEdicaoEvc()">Salvar</button>
+    </div>
+    <div class="fb fb-ok" id="edit-evc-fb-ok" style="margin-top:8px">✓ Evento atualizado!</div>
+    <div class="fb fb-err" id="edit-evc-fb-err" style="margin-top:8px">—</div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="modal-pool-overlay" onclick="fecharModalPool()" style="display:none">
   <div class="modal-box" onclick="event.stopPropagation()" style="max-width:680px;max-height:92vh;overflow-y:auto">
@@ -14009,6 +14030,70 @@ async function criarEventoCalendario(){
   renderEvcTagsPicker();
 }
 
+
+let _evcEditTags = [];
+function renderEvcEditTags(){
+  const el = document.getElementById('edit-evc-tags-picker');
+  if(!el) return;
+  el.innerHTML = Object.entries(TIPOS_EVENTO_CFG).map(([key,cfg])=>{
+    const ativo = _evcEditTags.includes(key);
+    return `<button type="button" onclick="evcEditToggleTag('${key}')" style="padding:6px 12px;border-radius:20px;border:1.5px solid ${cfg.cor};background:${ativo?cfg.cor:'transparent'};color:${ativo?'#fff':cfg.cor};font-size:12px;font-weight:700;cursor:pointer;transition:all .15s">${cfg.label}</button>`;
+  }).join('');
+}
+function evcEditToggleTag(tag){
+  const i = _evcEditTags.indexOf(tag);
+  if(i>-1) _evcEditTags.splice(i,1); else _evcEditTags.push(tag);
+  renderEvcEditTags();
+}
+function abrirEditarEvc(id){
+  const ev = eventos.find(e=>String(e.id)===String(id));
+  if(!ev) return;
+  document.getElementById('edit-evc-id').value = ev.id;
+  document.getElementById('edit-evc-nome').value = ev.nome||'';
+  document.getElementById('edit-evc-data-inicio').value = ev.data_inicio||'';
+  document.getElementById('edit-evc-data-fim').value = (ev.data_fim && ev.data_fim!==ev.data_inicio) ? ev.data_fim : '';
+  document.getElementById('edit-evc-desc').value = ev.descricao||'';
+  _evcEditTags = Array.isArray(ev.tags) ? [...ev.tags] : [];
+  renderEvcEditTags();
+  document.getElementById('edit-evc-fb-ok').style.display='none';
+  document.getElementById('edit-evc-fb-err').style.display='none';
+  document.getElementById('modal-editar-evc-overlay').style.display='flex';
+}
+function fecharEditarEvc(){
+  document.getElementById('modal-editar-evc-overlay').style.display='none';
+}
+async function salvarEdicaoEvc(){
+  const id = document.getElementById('edit-evc-id').value;
+  const nome = document.getElementById('edit-evc-nome').value.trim();
+  const dataInicio = document.getElementById('edit-evc-data-inicio').value || null;
+  const dataFim = document.getElementById('edit-evc-data-fim').value || dataInicio;
+  const descricao = document.getElementById('edit-evc-desc').value.trim();
+  const errEl = document.getElementById('edit-evc-fb-err');
+  errEl.style.display='none';
+  document.getElementById('edit-evc-fb-ok').style.display='none';
+  if(!nome){ errEl.textContent='Preencha o nome do evento.'; errEl.style.display='block'; return; }
+  if(!dataInicio){ errEl.textContent='Preencha a data de início.'; errEl.style.display='block'; return; }
+  const payload = {nome, descricao, data_inicio:dataInicio, data_fim:dataFim, tags:[..._evcEditTags]};
+  try{
+    // PATCH manual para mostrar a mensagem real do Supabase em caso de erro
+    const r = await fetch(`${SUPA_URL}/rest/v1/eventos?id=eq.${id}`, {
+      method:'PATCH',
+      headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+      body: JSON.stringify(payload)
+    });
+    const txt = await r.text();
+    let j = null; try{ j = txt ? JSON.parse(txt) : null; }catch(e){}
+    if(!r.ok){ errEl.textContent='Erro ao salvar: '+(j?.message||j?.hint||`HTTP ${r.status}`); errEl.style.display='block'; return; }
+    if(!Array.isArray(j) || !j.length){ errEl.textContent='Erro ao salvar: nenhuma linha foi atualizada (sem permissão ou evento inexistente).'; errEl.style.display='block'; return; }
+    const ev = eventos.find(e=>String(e.id)===String(id));
+    if(ev) Object.assign(ev, j[0]);
+    fb('edit-evc-fb-ok');
+    renderEvcLista();
+    renderCalEvt();
+    setTimeout(fecharEditarEvc, 700);
+  } catch(e){ errEl.textContent='Erro: '+e.message; errEl.style.display='block'; }
+}
+
 async function toggleEventoCalendarioAtivo(id, ativo){
   await dbPatch('eventos',`id=eq.${id}`,{ativo:!ativo});
   const ev = eventos.find(e=>e.id===id);
@@ -14058,6 +14143,7 @@ function renderEvcLista(){
       ${(ev.tags&&ev.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${ev.tags.map(t=>{const c=TIPOS_EVENTO_CFG[t]; return c?`<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:${c.cor}22;color:${c.cor}">${c.label}</span>`:'';}).join('')}</div>` : ''}
       <div style="display:flex;gap:3px;border-top:1px solid var(--border);padding-top:6px">
         <button class="btn btn-sm" style="flex:1;font-size:10px;padding:3px 0;background:${ev.ativo?'#fdf3dc':'#e8f5e8'};color:${ev.ativo?'#7a5010':'#1a6a1a'};border:1px solid ${ev.ativo?'#e8d080':'#8bc88b'}" onclick="toggleEventoCalendarioAtivo('${ev.id}',${ev.ativo})">${ev.ativo?'Pausar':'Ativar'}</button>
+        <button class="btn btn-sm" title="Editar" style="font-size:10px;padding:3px 6px;background:var(--surface2);color:var(--text);border:1px solid var(--border)" onclick="abrirEditarEvc('${ev.id}')">✎</button>
         <button class="btn btn-sm" style="font-size:10px;padding:3px 6px;background:#fde8e8;color:var(--red);border:1px solid #f0c0c0" onclick="deletarEventoCalendario('${ev.id}','${ev.nome}')">✕</button>
       </div>
     </div>`;
