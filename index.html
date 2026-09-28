@@ -13600,6 +13600,40 @@ function renderCalEvt(){
   }
 }
 
+// Corta a descrição (que pode ter HTML) no 2º ponto final, ignorando pontos dentro de tags,
+// reticências e números decimais. Fecha as tags que ficarem abertas.
+function _descAteSegundoPonto(html){
+  const t = String(html||'');
+  const abertas = [];
+  let pontos = 0;
+  for(let i=0; i<t.length; i++){
+    const ch = t[i];
+    if(ch==='<'){
+      const fim = t.indexOf('>', i);
+      if(fim===-1) break;
+      const tag = t.slice(i+1, fim);
+      const m = tag.match(/^\/?\s*([a-zA-Z][a-zA-Z0-9]*)/);
+      if(m){
+        const nome = m[1].toLowerCase();
+        if(tag[0]==='/'){ const k = abertas.lastIndexOf(nome); if(k>-1) abertas.splice(k,1); }
+        else if(!/\/\s*$/.test(tag) && !['br','hr','img','input'].includes(nome)) abertas.push(nome);
+      }
+      i = fim; continue;
+    }
+    if(ch!=='.') continue;
+    if(t[i+1]==='.' || t[i-1]==='.') continue;                    // reticências
+    if(/\d/.test(t[i-1]||'') && /\d/.test(t[i+1]||'')) continue;   // 1.5
+    pontos++;
+    if(pontos===2){
+      let corte = i+1;
+      const resto = t.slice(corte).match(/^(\s*<\/[a-zA-Z][^>]*>)+/); // fecha tags coladas no ponto
+      if(resto){ corte += resto[0].length; for(let k=0;k<(resto[0].match(/<\//g)||[]).length;k++) abertas.pop(); }
+      return t.slice(0, corte) + abertas.reverse().map(n=>'</'+n+'>').join('');
+    }
+  }
+  return t;
+}
+
 function renderEventosHub(){
   renderCalEvt();
   const grid = document.getElementById('eventos-hub-grid');
@@ -13613,12 +13647,6 @@ function renderEventosHub(){
   }
 
   grid.innerHTML = ativos.map(ev => {
-    const tipoLabel = ev.tipo==='ambos'
-      ? 'Pokémon & Dados'
-      : ev.tipo==='dados'
-        ? 'Rolagem de Dados'
-        : 'Encontro Pokémon';
-
     const slug = ev.slug || '';
     const temPagina = !!slug;
     const href = temPagina ? `/evento/${slug}` : null;
@@ -13630,11 +13658,10 @@ function renderEventosHub(){
 
     return `<div style="${cardStyle}" ${clickAttr} onmouseenter="if(${temPagina})this.style.transform='translateY(-3px)',this.style.boxShadow='0 8px 28px rgba(0,0,0,.18)'" onmouseleave="this.style.transform='',this.style.boxShadow=''">
       <div style="${topStyle}">
-        <div style="font-family:var(--font-title);font-size:16px;font-weight:700;color:${titleColor};line-height:1.2;margin-bottom:4px;word-break:break-word">${ev.nome}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.75);font-weight:600">${tipoLabel}</div>
+        <div style="font-family:var(--font-title);font-size:16px;font-weight:700;color:${titleColor};line-height:1.2;word-break:break-word">${ev.nome}</div>
       </div>
       <div style="padding:14px 18px;flex:1;display:flex;flex-direction:column;gap:10px">
-        ${ev.descricao ? `<div style="font-size:13px;color:var(--text);line-height:1.65">${ev.descricao}</div>` : ''}
+        ${ev.descricao ? `<div style="font-size:13px;color:var(--text);line-height:1.65">${_descAteSegundoPonto(ev.descricao)}</div>` : ''}
         ${ev.bioma && ev.tipo!=='dados' ? `<div style="font-size:12px;color:var(--muted)">${ev.bioma}</div>` : ''}
         <div style="margin-top:auto;padding-top:8px">
           ${temPagina
