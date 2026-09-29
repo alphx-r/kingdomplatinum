@@ -112,7 +112,7 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);colo
 .poke-slot-gender{font-size:11px;font-weight:400;margin-left:3px;opacity:.85}
 .poke-slot-sobre{font-size:10px;color:var(--text);line-height:1.25;font-family:var(--font-body);padding:3px 7px;border-bottom:1px solid var(--bg)}
 .poke-slot-sobre strong{display:block;font-size:8.5px;font-weight:800;color:var(--cor-poke,#1a1a1a);text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
-.poke-slot-info{font-size:10.5px;color:var(--text);line-height:calc(1.25em + 1px);font-family:var(--font-body);padding:3px 7px;flex:1}
+.poke-slot-info{font-size:10.5px;color:var(--text);line-height:calc(1.25em + 2px);font-family:var(--font-body);padding:3px 7px;flex:1}
 .poke-slot-info strong{font-weight:800;color:var(--cor-poke,#1a1a1a)}
 .poke-slot-moveset-list{margin:1px 0 0;padding-left:11px}
 .poke-slot-stats-bar{display:grid;grid-template-columns:repeat(3,1fr);border-top:1.5px solid var(--border);background:var(--surface2)}
@@ -1035,6 +1035,29 @@ function sanitizeRichHtml(html){
   walk(tmp);
   return tmp.innerHTML;
 }
+// Cada parágrafo (linha separada por <br> ou bloco) vira um bloco próprio, para o recuo da 1ª linha valer em todos
+function paragrafosHtml(html){
+  if(!html) return '';
+  const box=document.createElement('div');
+  box.innerHTML=html;
+  const segs=[];
+  function walk(nodes){
+    let cur=[];
+    const fecha=(sempre)=>{
+      const h=cur.map(n=>n.nodeType===1?n.outerHTML:(n.textContent||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('');
+      if(h.trim()||sempre) segs.push(h.trim()?h:'');
+      cur=[];
+    };
+    nodes.forEach(n=>{
+      if(n.nodeType===1&&n.tagName==='BR'){fecha(true);}
+      else if(n.nodeType===1&&(n.tagName==='DIV'||n.tagName==='P')){fecha(false);walk(Array.from(n.childNodes));}
+      else cur.push(n);
+    });
+    fecha(false);
+  }
+  walk(Array.from(box.childNodes));
+  return segs.map(h=>h?`<div class="bio-p">${h}</div>`:'<div class="bio-p"><br></div>').join('');
+}
 function legacyTextToHtml(raw){
   if(!raw) return '';
   const pareceHtml=/<\/?(b|i|a|br|strong|em|div|p)[ >]/i.test(raw);
@@ -1157,10 +1180,10 @@ function renderFicha(){
     renderTime();
     renderPokeEspecial();
     renderRel();
-    if(n.biografia){document.getElementById('f-bio-txt').innerHTML=legacyTextToHtml(n.biografia);}
+    if(n.biografia){document.getElementById('f-bio-txt').innerHTML=paragrafosHtml(legacyTextToHtml(n.biografia));}
     else{document.getElementById('f-bio-txt').textContent='Nenhuma biografia registrada.';}
     document.getElementById('f-bio-input').innerHTML=legacyTextToHtml(n.biografia||'');
-    if(n.anotacoes){document.getElementById('f-anot-txt').innerHTML=legacyTextToHtml(n.anotacoes);}
+    if(n.anotacoes){document.getElementById('f-anot-txt').innerHTML=paragrafosHtml(legacyTextToHtml(n.anotacoes));}
     else{document.getElementById('f-anot-txt').textContent='Nenhuma anotação registrada.';}
     document.getElementById('f-anot-input').innerHTML=legacyTextToHtml(n.anotacoes||'');
 
