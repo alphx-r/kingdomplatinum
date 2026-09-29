@@ -859,6 +859,11 @@ body.ed-paper.edit-mode [data-editing="1"]{background:#fff;max-width:816px!impor
 .ed-pagebreak{border-top:2px dashed var(--border2);margin:26px 0;height:0;position:relative}
 body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--surface);padding:0 8px;font-size:10px;color:var(--muted)}
 @media print{.ed-pagebreak{break-after:page;border:0;margin:0}}
+/* documento: parágrafos livres antes/depois/entre blocos */
+body.edit-mode p[data-ed-tail]{min-height:1.75em;margin:10px 0;border-radius:4px;color:var(--text);font-size:14px;line-height:1.75}
+body.edit-mode p[data-ed-tail]:hover{background:rgba(37,99,168,.07)}
+body.edit-mode .ganhos-example-body{display:block!important}
+body.edit-mode .ganhos-example-header{cursor:text}
 </style>
 </head>
 <body>
@@ -981,18 +986,13 @@ body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolut
 <div class="nav-overlay" id="nav-overlay" onclick="closeSidenavMobile()"></div>
 <!-- EDITOR TOOLBAR -->
 <div class="editor-toolbar" id="editor-toolbar">
-  <div class="ed-tb-row">
-
-    <!-- ── Formatação básica ── -->
-    <button class="ed-btn" id="ed-bold"   onmousedown="event.preventDefault();edCmd('bold')"          title="Negrito (Ctrl+B)"><b>B</b></button>
-    <button class="ed-btn" id="ed-ital"   onmousedown="event.preventDefault();edCmd('italic')"        title="Itálico (Ctrl+I)"><i>I</i></button>
-    <button class="ed-btn" id="ed-under"  onmousedown="event.preventDefault();edCmd('underline')"     title="Sublinhado (Ctrl+U)"><u>U</u></button>
-    <button class="ed-btn" id="ed-strike" onmousedown="event.preventDefault();edCmd('strikeThrough')" title="Riscado"><s>S</s></button>
-
+  <!-- ═══ LINHA 1 — texto e parágrafo ═══ -->
+  <div class="ed-tb-row" id="ed-tb-row1">
+    <button class="ed-btn" title="Desfazer (Ctrl+Z)" onmousedown="event.preventDefault();edUndo()">↩</button>
+    <button class="ed-btn" title="Refazer (Ctrl+Y)" onmousedown="event.preventDefault();edRedo()">↪</button>
     <div class="ed-tb-sep"></div>
 
-    <!-- ── Bloco dropdown ── -->
-    <div class="ed-dropdown" id="edd-bloco">
+        <div class="ed-dropdown" id="edd-bloco">
       <button class="ed-dropdown-btn" onmousedown="event.preventDefault();edToggleDropdown('edd-bloco')" title="Tipo de bloco">
         Bloco <span class="ed-dd-arrow">▾</span>
       </button>
@@ -1009,57 +1009,38 @@ body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolut
       </div>
     </div>
 
+    <select class="ed-select" id="ed-font" style="max-width:118px" title="Fonte" onchange="edSetFont(this.value)"><option value=""></option><option value="Nunito" style="font-family:'Nunito'">Nunito</option><option value="Cinzel" style="font-family:'Cinzel'">Cinzel</option><option value="Georgia" style="font-family:'Georgia'">Georgia</option><option value="Times New Roman" style="font-family:'Times New Roman'">Times New Roman</option><option value="Arial" style="font-family:'Arial'">Arial</option><option value="Verdana" style="font-family:'Verdana'">Verdana</option><option value="Trebuchet MS" style="font-family:'Trebuchet MS'">Trebuchet MS</option><option value="Courier New" style="font-family:'Courier New'">Courier New</option><option value="Lora" style="font-family:'Lora'">Lora</option><option value="Playfair Display" style="font-family:'Playfair Display'">Playfair Display</option><option value="Merriweather" style="font-family:'Merriweather'">Merriweather</option><option value="Caveat" style="font-family:'Caveat'">Caveat</option></select>
+    <button class="ed-btn" title="Diminuir fonte" onmousedown="event.preventDefault();edSizeStep(-1)">−</button>
+    <input id="ed-size" class="ed-num" type="number" min="6" max="120" value="12" title="Tamanho (pt)" onchange="edSetSize(this.value)">
+    <button class="ed-btn" title="Aumentar fonte" onmousedown="event.preventDefault();edSizeStep(1)">+</button>
     <div class="ed-tb-sep"></div>
 
-    <!-- ── Alinhamento ── -->
-    <button class="ed-btn" id="ed-jl" onmousedown="event.preventDefault();edCmd('justifyLeft')"   title="Esquerda">⫷</button>
-    <button class="ed-btn" id="ed-jc" onmousedown="event.preventDefault();edCmd('justifyCenter')" title="Centro">≡</button>
-    <button class="ed-btn" id="ed-jr" onmousedown="event.preventDefault();edCmd('justifyRight')"  title="Direita">⫸</button>
-
+    <button class="ed-btn" id="ed-bold"   onmousedown="event.preventDefault();edCmd('bold')"          title="Negrito (Ctrl+B)"><b>B</b></button>
+    <button class="ed-btn" id="ed-ital"   onmousedown="event.preventDefault();edCmd('italic')"        title="Itálico (Ctrl+I)"><i>I</i></button>
+    <button class="ed-btn" id="ed-under"  onmousedown="event.preventDefault();edCmd('underline')"     title="Sublinhado (Ctrl+U)"><u>U</u></button>
+    <button class="ed-btn" id="ed-strike" onmousedown="event.preventDefault();edCmd('strikeThrough')" title="Riscado"><s>S</s></button>
+    <label title="Cor do texto" style="display:flex;align-items:center;gap:2px;font-size:11px;cursor:pointer;color:var(--muted);font-weight:700;flex-shrink:0">A <input type="color" class="ed-color" id="ed-fgcolor" value="#000000" onchange="edColor('foreColor',this.value)" title="Cor do texto"/></label>
+    <label title="Cor de fundo" style="display:flex;align-items:center;gap:2px;font-size:11px;cursor:pointer;color:var(--muted);font-weight:700;flex-shrink:0">▨ <input type="color" class="ed-color" id="ed-bgcolor" value="#ffff00" onchange="edColor('hiliteColor',this.value)" title="Fundo do texto"/></label>
+    <button class="ed-btn" onmousedown="event.preventDefault();edRemoveFormat();edPushUndo()" title="Limpar formatação (Ctrl+\)">✕</button>
     <div class="ed-tb-sep"></div>
 
-    <!-- ── Lista ── -->
+    <button class="ed-btn" id="ed-jl" onmousedown="event.preventDefault();edCmd('justifyLeft')"   title="Esquerda (Ctrl+Shift+L)">⫷</button>
+    <button class="ed-btn" id="ed-jc" onmousedown="event.preventDefault();edCmd('justifyCenter')" title="Centro (Ctrl+Shift+E)">≡</button>
+    <button class="ed-btn" id="ed-jr" onmousedown="event.preventDefault();edCmd('justifyRight')"  title="Direita (Ctrl+Shift+R)">⫸</button>
+    <button class="ed-btn" id="ed-jf" onmousedown="event.preventDefault();edCmd('justifyFull')"   title="Justificado (Ctrl+Shift+J)">▤</button>
+    <div class="ed-tb-sep"></div>
+
     <button class="ed-btn" onmousedown="event.preventDefault();edCmd('insertUnorderedList')" title="Lista com marcadores">• —</button>
     <button class="ed-btn" onmousedown="event.preventDefault();edCmd('insertOrderedList')"   title="Lista numerada">1.</button>
-
-    <div class="ed-tb-sep"></div>
-
-    <!-- ── Fonte dropdown ── -->
-    <div class="ed-dropdown" id="edd-fonte">
-      <button class="ed-dropdown-btn" onmousedown="event.preventDefault();edToggleDropdown('edd-fonte')" title="Fonte e tamanho">
-        Fonte <span class="ed-dd-arrow">▾</span>
-      </button>
-      <div class="ed-dropdown-menu" id="edd-fonte-menu">
-        <div class="ed-dd-label">Tamanho</div>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontSize','2');edCloseDropdowns()"><span class="ed-dd-icon" style="font-size:10px">A</span> Pequeno</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontSize','3');edCloseDropdowns()"><span class="ed-dd-icon" style="font-size:13px">A</span> Normal</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontSize','4');edCloseDropdowns()"><span class="ed-dd-icon" style="font-size:16px">A</span> Médio</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontSize','5');edCloseDropdowns()"><span class="ed-dd-icon" style="font-size:19px">A</span> Grande</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontSize','6');edCloseDropdowns()"><span class="ed-dd-icon" style="font-size:22px">A</span> Extra grande</button>
-        <div class="ed-dd-sep"></div>
-        <div class="ed-dd-label">Família</div>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontName','Nunito');edCloseDropdowns()"><span class="ed-dd-icon" style="font-family:Nunito">N</span> Nunito</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontName','Cinzel');edCloseDropdowns()"><span class="ed-dd-icon" style="font-family:Cinzel">C</span> Cinzel</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontName','Georgia');edCloseDropdowns()"><span class="ed-dd-icon" style="font-family:Georgia">G</span> Georgia</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('fontName','Courier New');edCloseDropdowns()"><span class="ed-dd-icon" style="font-family:monospace">M</span> Mono</button>
-      </div>
-    </div>
-
-    <div class="ed-tb-sep"></div>
-
-    <!-- ── Cores inline ── -->
-    <label title="Cor do texto" style="display:flex;align-items:center;gap:2px;font-size:11px;cursor:pointer;color:var(--muted);font-weight:700;flex-shrink:0">
-      A <input type="color" class="ed-color" id="ed-fgcolor" value="#000000" onchange="edCmd('foreColor',this.value)" title="Cor do texto"/>
-    </label>
-    <label title="Cor de fundo" style="display:flex;align-items:center;gap:2px;font-size:11px;cursor:pointer;color:var(--muted);font-weight:700;flex-shrink:0">
-      ▨ <input type="color" class="ed-color" id="ed-bgcolor" value="#ffff00" onchange="edCmd('hiliteColor',this.value)" title="Fundo do texto"/>
-    </label>
-    <button class="ed-btn" onmousedown="event.preventDefault();edRemoveFormat()" title="Limpar formatação">✕</button>
-
-    <div class="ed-tb-sep"></div>
-
-    <!-- ── Inserir dropdown ── -->
-    <div class="ed-dropdown" id="edd-inserir">
+    <button class="ed-btn" title="Lista de tarefas (Ctrl+Shift+9)" onmousedown="event.preventDefault();edChecklist()">☑</button>
+    <button class="ed-btn" title="Diminuir recuo" onmousedown="event.preventDefault();edCmd('outdent')">⇤</button>
+    <button class="ed-btn" title="Aumentar recuo" onmousedown="event.preventDefault();edCmd('indent')">⇥</button>
+    <div class="ed-dropdown" id="edd-espaco"><button class="ed-dropdown-btn" title="Espaçamento" onmousedown="event.preventDefault();edToggleDropdown('edd-espaco')">↕ <span class="ed-dd-arrow">▾</span></button><div class="ed-dropdown-menu" id="edd-espaco-menu"><div class="ed-dd-label">Entre linhas</div><button class="ed-dd-item" onmousedown="event.preventDefault();edLine(1);edCloseDropdowns()">1</button><button class="ed-dd-item" onmousedown="event.preventDefault();edLine(1.15);edCloseDropdowns()">1.15</button><button class="ed-dd-item" onmousedown="event.preventDefault();edLine(1.5);edCloseDropdowns()">1.5</button><button class="ed-dd-item" onmousedown="event.preventDefault();edLine(2);edCloseDropdowns()">2</button><button class="ed-dd-item" onmousedown="event.preventDefault();edLine(2.5);edCloseDropdowns()">2.5</button><div class="ed-dd-sep"></div><div class="ed-dd-label">Após o parágrafo</div><button class="ed-dd-item" onmousedown="event.preventDefault();edSpace(0);edCloseDropdowns()">0px</button><button class="ed-dd-item" onmousedown="event.preventDefault();edSpace(8);edCloseDropdowns()">8px</button><button class="ed-dd-item" onmousedown="event.preventDefault();edSpace(16);edCloseDropdowns()">16px</button><button class="ed-dd-item" onmousedown="event.preventDefault();edSpace(24);edCloseDropdowns()">24px</button></div></div>
+    <div class="ed-dropdown" id="edd-estilos"><button class="ed-dropdown-btn" title="Estilos personalizados" onmousedown="event.preventDefault();edRenderStyles();edToggleDropdown('edd-estilos')">Estilos <span class="ed-dd-arrow">▾</span></button><div class="ed-dropdown-menu" id="edd-estilos-menu"></div></div>
+  </div>
+  <!-- ═══ LINHA 2 — inserir, ferramentas e ações ═══ -->
+  <div class="ed-tb-row" id="ed-tb-row2">
+        <div class="ed-dropdown" id="edd-inserir">
       <button class="ed-dropdown-btn" onmousedown="event.preventDefault();edToggleDropdown('edd-inserir')" title="Inserir elementos">
         Inserir <span class="ed-dd-arrow">▾</span>
       </button>
@@ -1072,13 +1053,17 @@ body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolut
       </div>
     </div>
 
-    <!-- ── Blocos dropdown ── -->
-    <div class="ed-dropdown" id="edd-blocos">
+        <div class="ed-dropdown" id="edd-blocos">
       <button class="ed-dropdown-btn" onmousedown="event.preventDefault();edToggleDropdown('edd-blocos')" title="Inserir bloco especial">
         + Bloco <span class="ed-dd-arrow">▾</span>
       </button>
       <div class="ed-dropdown-menu" id="edd-blocos-menu">
+        <div class="ed-dd-label">Cards</div>
+        <button class="ed-dd-item" onmousedown="event.preventDefault();edInsertBlock('titlecard');edCloseDropdowns()"><span class="ed-dd-icon">▤</span> Card com título</button>
+        <button class="ed-dd-item" onmousedown="event.preventDefault();edInsertBlock('titlecardnote');edCloseDropdowns()"><span class="ed-dd-icon">▤⚠</span> Card com título + aviso</button>
+        <div class="ed-dd-sep"></div>
         <div class="ed-dd-label">Avisos</div>
+        <button class="ed-dd-item" onmousedown="event.preventDefault();edInsertBlock('notebox');edCloseDropdowns()"><span class="ed-dd-icon">⚠️</span> Caixa de aviso (nota)</button>
         <button class="ed-dd-item" onmousedown="event.preventDefault();edInsertBlock('callout');edCloseDropdowns()"><span class="ed-dd-icon">ℹ</span> Info</button>
         <button class="ed-dd-item" onmousedown="event.preventDefault();edInsertBlock('warning');edCloseDropdowns()"><span class="ed-dd-icon">⚠</span> Aviso</button>
         <button class="ed-dd-item" onmousedown="event.preventDefault();edInsertBlock('danger');edCloseDropdowns()"><span class="ed-dd-icon">✕</span> Erro</button>
@@ -1098,16 +1083,13 @@ body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolut
       </div>
     </div>
 
+    <button class="ed-btn" title="Quebra de página" onmousedown="event.preventDefault();edPageBreak()">⤓</button>
+    <button class="ed-btn" title="Localizar e substituir (Ctrl+F)" onmousedown="event.preventDefault();edFindOpen()">🔍</button>
     <div class="ed-tb-sep"></div>
 
-    <!-- ── Desfazer/Refazer ── -->
-    <button class="ed-btn" onmousedown="event.preventDefault();edUndo()" title="Desfazer (Ctrl+Z)">↩</button>
-    <button class="ed-btn" onmousedown="event.preventDefault();edRedo()" title="Refazer (Ctrl+Y)">↪</button>
-
-    <div class="ed-tb-sep"></div>
-
-    <!-- ── Mais dropdown (draft/preview/fullscreen) ── -->
-    <div class="ed-dropdown" id="edd-mais">
+    <button class="ed-btn" id="ed-paper-btn" title="Modo papel (folha branca)" onmousedown="event.preventDefault();edPaper()">📄 Papel</button>
+    <select class="ed-select" id="ed-zoom" title="Zoom" onchange="edZoom(this.value)"><option value="75">75%</option><option value="100" selected>100%</option><option value="125">125%</option><option value="150">150%</option></select>
+        <div class="ed-dropdown" id="edd-mais">
       <button class="ed-dropdown-btn" onmousedown="event.preventDefault();edToggleDropdown('edd-mais')" title="Mais opções">
         ··· <span class="ed-dd-arrow">▾</span>
       </button>
@@ -1124,21 +1106,15 @@ body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolut
         <div class="ed-dd-label">Mais formatação</div>
         <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('superscript');edCloseDropdowns()"><span class="ed-dd-icon">x²</span> Sobrescrito</button>
         <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('subscript');edCloseDropdowns()"><span class="ed-dd-icon">x₂</span> Subscrito</button>
-        <button class="ed-dd-item" id="ed-jf" onmousedown="event.preventDefault();edCmd('justifyFull');edCloseDropdowns()"><span class="ed-dd-icon">▤</span> Justificado</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('indent');edCloseDropdowns()"><span class="ed-dd-icon">→</span> Recuar</button>
-        <button class="ed-dd-item" onmousedown="event.preventDefault();edCmd('outdent');edCloseDropdowns()"><span class="ed-dd-icon">←</span> Desfazer recuo</button>
       </div>
     </div>
 
-    <!-- ── Wordcount ── -->
     <span class="ed-wordcount" id="ed-wordcount" style="margin-left:auto">0 palavras</span>
-
-    <!-- ── Ações principais (sempre visíveis) ── -->
+    <span class="ed-wordcount" id="ed-status">Pronto</span>
     <div class="ed-tb-sep"></div>
     <button class="ed-btn" id="ed-save-btn" style="background:var(--brand);color:#fff;border:1px solid var(--brand);font-weight:700;padding:4px 14px" onmousedown="event.preventDefault();salvarPaginaEditada()" title="Salvar (Ctrl+S)">Salvar</button>
     <button class="ed-btn" style="background:#fde8e8;color:var(--red);border:1px solid #f5c6c6;font-weight:700;padding:4px 14px" onmousedown="event.preventDefault();resetarPaginaParaPadrao()" title="Apaga o conteúdo salvo no banco e volta ao HTML padrão do arquivo">↺ Resetar para padrão</button>
     <button class="ed-btn" onmousedown="event.preventDefault();sairModoEdicao()" title="Sair sem salvar (Esc)" style="color:var(--muted)">✕</button>
-
   </div>
 </div>
 <!-- BOX CONTEXT TOOLBAR -->
@@ -1147,6 +1123,9 @@ body.edit-mode .ed-pagebreak::after{content:"quebra de página";position:absolut
   <div class="ed-sep"></div>
   <button class="ed-btn" onmousedown="event.preventDefault();edBoxMove(-1)" title="Mover para cima">↑</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edBoxMove(1)"  title="Mover para baixo">↓</button>
+  <div class="ed-sep"></div>
+  <button class="ed-btn" onmousedown="event.preventDefault();edBoxParagraph('before')" title="Inserir parágrafo antes do bloco (Ctrl+Shift+Enter)">¶↑</button>
+  <button class="ed-btn" onmousedown="event.preventDefault();edBoxParagraph('after')"  title="Inserir parágrafo depois do bloco (Ctrl+Enter)">¶↓</button>
   <div class="ed-sep"></div>
   <button class="ed-btn" onmousedown="event.preventDefault();edBoxAddSpace('before')" title="Espaço antes">⬆ sp</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edBoxAddSpace('after')"  title="Espaço depois">⬇ sp</button>
@@ -7889,92 +7868,7 @@ function toggleEditMode(){
   document.body.classList.contains('edit-mode') ? sairModoEdicao() : entrarModoEdicao();
 }
 
-function entrarModoEdicao(){
-  const pageEl = edGetPageEl(currentPage);
-  if(!pageEl) return;
-  editPageKey = pageEl.dataset.pageKey;
-  _edDraftKey = 'ed_draft_' + editPageKey;
-  if(!editOriginalHTML[editPageKey]) editOriginalHTML[editPageKey] = pageEl.innerHTML;
-  pageEl.setAttribute('contenteditable','true');
-  pageEl.setAttribute('data-editing','1');
-  document.body.classList.add('edit-mode');
-  document.getElementById('editor-toolbar').classList.add('visible');
-  document.getElementById('page-edit-btn').classList.add('active');
-  document.getElementById('page-edit-btn').title = 'Sair da edição';
-  pageEl.focus();
-  // Add drag handles to top-level blocks
-  edAddDragHandles(pageEl);
-  // Enter = parágrafo, Shift+Enter = <br>
-  pageEl._edKeyHandler = function(e){
-    if(e.key === 'Enter'){
-      e.preventDefault();
-      if(e.shiftKey){
-        document.execCommand('insertHTML', false, '<br>');
-      } else {
-        document.execCommand('insertParagraph', false, null);
-      }
-    }
-    // Ctrl+B/I/U/S/Z/Y/S
-    if(e.ctrlKey || e.metaKey){
-      if(e.key==='b'){e.preventDefault();edCmd('bold');}
-      else if(e.key==='i'){e.preventDefault();edCmd('italic');}
-      else if(e.key==='u'){e.preventDefault();edCmd('underline');}
-      else if(e.key==='s'){e.preventDefault();salvarPaginaEditada();}
-      else if(e.key==='z'&&!e.shiftKey){e.preventDefault();document.execCommand('undo');}
-      else if(e.key==='y'||( e.key==='z'&&e.shiftKey)){e.preventDefault();document.execCommand('redo');}
-    }
-  };
-  pageEl.addEventListener('keydown', pageEl._edKeyHandler);
-  pageEl.addEventListener('keyup', e=>{
-    edUpdateToolbar();
-    edScheduleUndo();
-  });
-  pageEl.addEventListener('mouseup', edUpdateToolbar);
-  // Push initial snapshot
-  _edUndoStack.length = 0; _edRedoStack.length = 0;
-  edPushUndo();
-  edRewireTableClicks(pageEl);
-  pageEl.addEventListener('input', edOnInput);
-  pageEl.addEventListener('click', edOnClick);
-  // Image click
-  pageEl.addEventListener('click', edImgClickHandler);
-  // Word count
-  edUpdateWordCount();
-  // Check if draft exists
-  const draft = localStorage.getItem(_edDraftKey);
-  if(draft){
-    const draftDate = localStorage.getItem(_edDraftKey+'_date');
-    const btn = document.getElementById('ed-draft-btn');
-    if(btn) btn.title = 'Salvar rascunho (existe rascunho de '+draftDate+')';
-  }
-}
-
-function sairModoEdicao(){
-  const pageEl = document.querySelector('[data-editing="1"]');
-  if(pageEl){
-    // Remove drag handles before saving/exiting
-    pageEl.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
-    pageEl.removeAttribute('contenteditable');
-    pageEl.removeAttribute('data-editing');
-    pageEl.removeEventListener('keyup', edUpdateToolbar);
-    pageEl.removeEventListener('mouseup', edUpdateToolbar);
-    pageEl.removeEventListener('input', edOnInput);
-    pageEl.removeEventListener('click', edOnClick);
-    pageEl.removeEventListener('click', edImgClickHandler);
-    if(pageEl._edKeyHandler){ pageEl.removeEventListener('keydown', pageEl._edKeyHandler); delete pageEl._edKeyHandler; }
-  }
-  document.body.classList.remove('edit-mode');
-  document.getElementById('editor-toolbar').classList.remove('visible');
-  document.getElementById('page-edit-btn').classList.remove('active');
-  edShowTableCtx(null);
-  edShowBoxCtx(null);
-  edShowImgCtx(null);
-  document.getElementById('page-edit-btn').title = 'Editar página';
-  editPageKey = null;
-  _edDraftKey = null;
-  // Exit fullscreen if active
-  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-}
+// entrarModoEdicao / sairModoEdicao / edUndo / edRedo: definidos no bloco "EDITOR" (final do arquivo)
 
 function edCmd(cmd, val){
   document.execCommand(cmd, false, val !== undefined ? val : null);
@@ -8128,7 +8022,7 @@ function edAddDragHandles(page){
   if(!page) return;
   page.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
   Array.from(page.children).forEach(child=>{
-    if(child.classList.contains('ed-drag-handle')) return;
+    if(child.classList.contains('ed-drag-handle') || child.hasAttribute('data-ed-tail')) return;
     const handle = document.createElement('span');
     handle.className = 'ed-drag-handle';
     handle.setAttribute('contenteditable','false');
@@ -8186,25 +8080,6 @@ function edPushUndo(){
 function edScheduleUndo(){
   clearTimeout(_edUndoTimer);
   _edUndoTimer = setTimeout(edPushUndo, 600);
-}
-function edUndo(){
-  if(_edUndoStack.length < 2) return;
-  const page = document.querySelector('[data-editing="1"]');
-  if(!page) return;
-  _edRedoStack.push(_edUndoStack.pop());      // current → redo
-  page.innerHTML = _edUndoStack[_edUndoStack.length-1];
-  edAddDragHandles(page);
-  edRewireTableClicks(page);
-}
-function edRedo(){
-  if(!_edRedoStack.length) return;
-  const page = document.querySelector('[data-editing="1"]');
-  if(!page) return;
-  const snap = _edRedoStack.pop();
-  _edUndoStack.push(snap);
-  page.innerHTML = snap;
-  edAddDragHandles(page);
-  edRewireTableClicks(page);
 }
 // Wire Shift+click on all table cells inside the editable page
 function edRewireTableClicks(page){
@@ -8698,6 +8573,9 @@ const ED_BLOCKS = {
   warning: { html: '<div class="ed-inserted-warning"><strong>⚠ Atenção</strong> — Edite este bloco de aviso.</div>' },
   danger:  { html: '<div class="ed-inserted-danger"><strong>✕ Erro</strong> — Edite este bloco de erro ou perigo.</div>' },
   success: { html: '<div class="ed-inserted-success"><strong>✓ Sucesso</strong> — Edite este bloco de sucesso.</div>' },
+  titlecard:     { top:true, html: "<div class=\"ganhos-bloco\" style=\"background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-sizing:border-box;display:block;margin-bottom:24px\"><div class=\"ganhos-card-header\"><div class=\"ganhos-card-header-title\">Título do Card</div></div><div class=\"ganhos-card-body\"><p style=\"font-size:13px;color:var(--text);line-height:1.75;margin:0 0 12px\">Escreva o texto do card aqui.</p></div></div>" },
+  titlecardnote: { top:true, html: "<div class=\"ganhos-bloco\" style=\"background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-sizing:border-box;display:block;margin-bottom:24px\"><div class=\"ganhos-card-header\"><div class=\"ganhos-card-header-title\">Título do Card</div></div><div class=\"ganhos-card-body\"><p style=\"font-size:13px;color:var(--text);line-height:1.75;margin:0 0 12px\">Escreva o texto do card aqui.</p><div class=\"ed-note-box\" style=\"display:flex;align-items:flex-start;gap:10px;background:#fffbea;border:1.5px solid #e8d080;border-radius:8px;padding:10px 14px;max-width:920px;margin:0 auto\"><span style=\"font-size:12px;color:#7a5010;line-height:1.6\">⚠️ <strong>Atenção:</strong> edite este aviso.</span></div></div></div>" },
+  notebox:       { html: "<div class=\"ed-note-box\" style=\"display:flex;align-items:flex-start;gap:10px;background:#fffbea;border:1.5px solid #e8d080;border-radius:8px;padding:10px 14px;max-width:920px;margin:0 auto\"><span style=\"font-size:12px;color:#7a5010;line-height:1.6\">⚠️ <strong>Atenção:</strong> edite este aviso.</span></div>" },
   quote:   { html: '<div class="ed-inserted-quote">"Edite esta citação aqui. Escreva algo memorável."<br><small style="color:var(--muted);font-style:normal;font-size:12px">— Autor</small></div>' },
   code:    { html: '<div class="ed-inserted-code" contenteditable="true" spellcheck="false">// Insira seu código aqui\nconsole.log("Hello World");</div>' },
   card:    { html: '<div class="ed-inserted-card"><strong style="font-family:var(--font-title);font-size:15px;color:var(--brand)">Título do Card</strong><p style="margin-top:8px;font-size:13px;color:var(--text);line-height:1.7">Conteúdo do card. Edite aqui.</p></div>' },
@@ -8709,9 +8587,30 @@ const ED_BLOCKS = {
 };
 function edInsertBlock(type){
   const block = ED_BLOCKS[type]; if(!block) return;
-  document.execCommand('insertHTML', false, block.html);
   const page = document.querySelector('[data-editing="1"]');
+  if(block.top && page){
+    // card completo: entra depois do bloco em que o cursor está (ou no lugar do parágrafo livre vazio)
+    const sel = window.getSelection();
+    let n = sel && sel.anchorNode;
+    while(n && n.parentNode !== page) n = n.parentNode;
+    const tpl = document.createElement('template'); tpl.innerHTML = block.html;
+    const novo = tpl.content.firstElementChild;
+    if(n && n.nodeType===1 && n.hasAttribute('data-ed-tail') && !(n.textContent||'').trim()) n.replaceWith(novo);
+    else if(n && n.nodeType===1) n.after(novo);
+    else page.appendChild(novo);
+    edAddDragHandles(page);
+    if(window.edEnsureTails) edEnsureTails(page);
+    // cursor no título do card novo
+    const alvo = novo.querySelector('.ganhos-card-header-title') || novo;
+    const r = document.createRange(); r.selectNodeContents(alvo);
+    sel.removeAllRanges(); sel.addRange(r);
+    edPushUndo(); edScheduleUndo();
+    novo.scrollIntoView && novo.scrollIntoView({block:'nearest'});
+    return;
+  }
+  document.execCommand('insertHTML', false, block.html);
   if(page) edAddDragHandles(page);
+  edPushUndo();
 }
 
 // ── Fullscreen ────────────────────────────────────────────────────
@@ -8748,6 +8647,7 @@ function edPreview(){
     el.classList.remove('ed-box-highlight','ed-img-selected');
     if(el.classList.contains('ed-drag-handle')) el.remove();
   });
+  clone.querySelectorAll('[data-ed-tail]').forEach(el=>el.remove());
   const pageHTML = clone.innerHTML;
   // Get all styles from the main document
   const styleEls = Array.from(document.querySelectorAll('style'));
@@ -8878,7 +8778,7 @@ function edSaveDraft(silent=false){
   const pageEl = document.querySelector('[data-editing="1"]');
   if(!pageEl) return;
   const clone = pageEl.cloneNode(true);
-  clone.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
+  clone.querySelectorAll('.ed-drag-handle,[data-ed-tail]').forEach(h=>h.remove());
   localStorage.setItem(_edDraftKey, clone.innerHTML);
   const now = new Date().toLocaleTimeString('pt-BR');
   localStorage.setItem(_edDraftKey+'_date', now);
@@ -8900,6 +8800,7 @@ function edLoadDraft(){
   if(!pageEl) return;
   pageEl.innerHTML = draft;
   edAddDragHandles(pageEl);
+  if(window.edEnsureTails) edEnsureTails(pageEl);
   edUpdateWordCount();
 }
 function edRestoreOriginal(){
@@ -8909,6 +8810,7 @@ function edRestoreOriginal(){
   if(!pageEl) return;
   pageEl.innerHTML = editOriginalHTML[editPageKey] || '';
   edAddDragHandles(pageEl);
+  if(window.edEnsureTails) edEnsureTails(pageEl);
   edUpdateWordCount();
 }
 
@@ -8944,6 +8846,7 @@ async function salvarPaginaEditada(){
     el.classList.remove('ed-box-highlight','ed-img-selected');
     if(el.classList.contains('ed-drag-handle')) el.remove();
   });
+  clone.querySelectorAll('[data-ed-tail]').forEach(el=>el.remove());
   const html = clone.innerHTML;
   try {
     if(editPageKey.indexOf('trama:')===0){
@@ -9123,6 +9026,7 @@ async function carregarPaginaEditavel(page){
 
 // ── Ganhos accordion ─────────────────────────────────────────────
 function ganhosToggle(id){
+  if(document.body.classList.contains('edit-mode')) return; // na edição tudo fica aberto
   const card = document.getElementById(id);
   if(!card) return;
   card.classList.toggle('open');
@@ -16134,7 +16038,7 @@ init();
 
 </script>
 <script>
-/* ══ EDITOR v2 — estilo Google Docs (camada sobre o editor existente) ══ */
+/* ══ EDITOR — núcleo unificado (estilo Google Docs): atalhos, fonte/tamanho em pt, espaçamento, checklist, localizar, estilos, papel/zoom, colar limpo, rascunho ══ */
 (function(){
 'use strict';
 const D=document, W=window, $=id=>D.getElementById(id), ED=()=>D.querySelector('[data-editing="1"]');
@@ -16341,6 +16245,11 @@ function onPaste(e){
 /* ── atalhos ── */
 function keyH(e){
   const k=e.key.toLowerCase(), c=e.ctrlKey||e.metaKey;
+  if(e.key==='Enter'&&c){
+    e.preventDefault(); const b=topBlock();
+    if(b) W.edParagraphAt(b,e.shiftKey?'before':'after');
+    return;
+  }
   if(e.key==='Enter'){
     e.preventDefault();
     e.shiftKey?D.execCommand('insertHTML',false,'<br>'):D.execCommand('insertParagraph',false,null);
@@ -16386,32 +16295,142 @@ function keyH(e){
   else if(e.key==='\\'){e.preventDefault();edRemoveFormat();edPushUndo();markDirty();}
 }
 
-/* ── desfazer/refazer: usa só a pilha própria (corrige desfazer duplo) ── */
-const _u=W.edUndo, _r=W.edRedo;
-W.edUndo=function(){clearTimeout(_edUndoTimer);edPushUndo();_u();const p=ED();if(p)p.focus();markDirty();};
-W.edRedo=function(){_r();const p=ED();if(p)p.focus();markDirty();};
+/* ── comportamento de documento: parágrafos livres, clique no vazio, Ctrl+Enter ── */
+const isTail=n=>n&&n.nodeType===1&&n.hasAttribute('data-ed-tail');
+const hasContent=n=>(n.textContent||'').replace(/\u200b/g,'').trim().length>0||!!n.querySelector('img,table,video,iframe');
+function mkTail(){const t=D.createElement('p');t.setAttribute('data-ed-tail','');t.innerHTML='<br>';return t;}
+function caretIn(t){
+  const p=ED(); if(!p||!t) return;
+  p.focus();
+  const r=D.createRange(); r.setStart(t,t.querySelector('.ed-drag-handle')?1:0); r.collapse(true);
+  const s=getSelection(); s.removeAllRanges(); s.addRange(r); saved=r.cloneRange();
+  if(t.scrollIntoView) t.scrollIntoView({block:'nearest'});
+}
+/* garante um parágrafo livre no começo e no fim (onde dá para clicar e escrever) */
+function ensureTails(p){
+  p=p||ED(); if(!p) return;
+  p.querySelectorAll('[data-ed-tail]').forEach(t=>{if(hasContent(t)) t.removeAttribute('data-ed-tail');});
+  const kids=[...p.children];
+  if(!kids.length||!isTail(kids[kids.length-1])) p.appendChild(mkTail());
+  if(!kids.length||!isTail(kids[0])) p.insertBefore(mkTail(),p.firstChild);
+}
+W.edEnsureTails=ensureTails;
+/* clique no espaço vazio da página: abaixo do último bloco → escreve no fim; entre blocos → abre parágrafo ali */
+function onGapClick(e){
+  const p=ED(); if(!p||e.target!==p) return;
+  ensureTails(p);
+  const kids=[...p.children], y=e.clientY; let before=null;
+  for(const c of kids){if(c.getBoundingClientRect().top>y){before=c;break;}}
+  let t;
+  if(!before) t=kids[kids.length-1];
+  else{
+    const prev=before.previousElementSibling;
+    t=isTail(before)?before:(isTail(prev)?prev:null);
+    if(!t){t=mkTail();p.insertBefore(t,before);}
+  }
+  caretIn(t);
+}
+/* parágrafo novo antes/depois de um bloco de topo (Ctrl+Enter / Ctrl+Shift+Enter / botões ¶) */
+W.edParagraphAt=function(b,pos){
+  const p=ED(); if(!p||!b||b.parentNode!==p) return;
+  const n=D.createElement('p'); n.innerHTML='<br>';
+  pos==='before'?b.before(n):b.after(n);
+  edAddDragHandles(p); caretIn(n); edPushUndo(); markDirty();
+};
+W.edBoxParagraph=function(pos){W.edParagraphAt(_edBoxCtxEl,pos);};
+function topBlock(){
+  const p=ED(); let n=getSelection().anchorNode;
+  while(n&&n.parentNode!==p) n=n.parentNode;
+  return n&&n.nodeType===1?n:null;
+}
+
+/* ── desfazer/refazer (pilha própria; um único passo por Ctrl+Z) ── */
+W.edUndo=function(){
+  clearTimeout(_edUndoTimer); edPushUndo();
+  if(_edUndoStack.length<2) return;
+  const p=ED(); if(!p) return;
+  _edRedoStack.push(_edUndoStack.pop());
+  p.innerHTML=_edUndoStack[_edUndoStack.length-1];
+  edAddDragHandles(p); edRewireTableClicks(p); ensureTails(p);
+  p.focus(); markDirty();
+};
+W.edRedo=function(){
+  const p=ED(); if(!p||!_edRedoStack.length) return;
+  const snap=_edRedoStack.pop(); _edUndoStack.push(snap);
+  p.innerHTML=snap;
+  edAddDragHandles(p); edRewireTableClicks(p); ensureTails(p);
+  p.focus(); markDirty();
+};
+W.edColor=cssCmd;
 
 /* ── entrar/sair do modo de edição ── */
-const _in=W.entrarModoEdicao, _out=W.sairModoEdicao;
 W.entrarModoEdicao=function(){
-  _in(); const p=ED(); if(!p) return;
-  dirty=false; saved=null; initUI();
-  if(p._edKeyHandler) p.removeEventListener('keydown',p._edKeyHandler);
-  p._edKeyHandler=keyH; p.addEventListener('keydown',keyH);
-  p._edX={i:()=>{markDirty();fixFonts();edScheduleUndo();},p:onPaste};
-  p.addEventListener('input',p._edX.i); p.addEventListener('paste',p._edX.p);
+  const pageEl=edGetPageEl(currentPage); if(!pageEl) return;
+  editPageKey=pageEl.dataset.pageKey;
+  _edDraftKey='ed_draft_'+editPageKey;
+  if(!editOriginalHTML[editPageKey]) editOriginalHTML[editPageKey]=pageEl.innerHTML;
+  pageEl.setAttribute('contenteditable','true');
+  pageEl.setAttribute('data-editing','1');
+  D.body.classList.add('edit-mode');
+  $('editor-toolbar').classList.add('visible');
+  const eb=$('page-edit-btn'); eb.classList.add('active'); eb.title='Sair da edição';
+  pageEl.focus();
+  edAddDragHandles(pageEl);
+  ensureTails(pageEl);
+  dirty=false; saved=null;
+
+  pageEl._edKeyHandler=keyH;
+  pageEl._edKeyup=()=>{edUpdateToolbar();edScheduleUndo();};
+  pageEl._edInput=()=>{edOnInput();markDirty();fixFonts();ensureTails(pageEl);edScheduleUndo();};
+  pageEl.addEventListener('keydown',keyH);
+  pageEl.addEventListener('keyup',pageEl._edKeyup);
+  pageEl.addEventListener('mouseup',edUpdateToolbar);
+  pageEl.addEventListener('input',pageEl._edInput);
+  pageEl.addEventListener('paste',onPaste);
+  pageEl.addEventListener('click',edOnClick);
+  pageEl.addEventListener('click',edImgClickHandler);
+  pageEl.addEventListener('click',onGapClick);
+
+  _edUndoStack.length=0; _edRedoStack.length=0; edPushUndo();
+  edRewireTableClicks(pageEl);
+  edUpdateWordCount();
   $('ed-status').textContent='Pronto';
-  setTimeout(()=>{
-    const d=_edDraftKey&&localStorage.getItem(_edDraftKey); if(!d||!ED()) return;
-    const c=p.cloneNode(true); c.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
-    if(d!==c.innerHTML) edLoadDraft();
-  },80);
+
+  const draft=localStorage.getItem(_edDraftKey);
+  if(draft){
+    const btn=$('ed-draft-btn');
+    if(btn) btn.title='Salvar rascunho (existe rascunho de '+(localStorage.getItem(_edDraftKey+'_date')||'?')+')';
+    setTimeout(()=>{
+      if(!ED()) return;
+      const c=pageEl.cloneNode(true); c.querySelectorAll('.ed-drag-handle,[data-ed-tail]').forEach(h=>h.remove());
+      if(draft!==c.innerHTML) edLoadDraft();
+    },80);
+  }
 };
 W.sairModoEdicao=function(){
-  const p=ED();
-  if(p&&p._edX){p.removeEventListener('input',p._edX.i);p.removeEventListener('paste',p._edX.p);p._edX=null;}
+  const pageEl=ED();
+  if(pageEl){
+    pageEl.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
+    pageEl.querySelectorAll('[data-ed-tail]').forEach(h=>h.remove());
+    pageEl.removeAttribute('contenteditable');
+    pageEl.removeAttribute('data-editing');
+    pageEl.removeEventListener('keydown',keyH);
+    if(pageEl._edKeyup) pageEl.removeEventListener('keyup',pageEl._edKeyup);
+    if(pageEl._edInput) pageEl.removeEventListener('input',pageEl._edInput);
+    pageEl.removeEventListener('mouseup',edUpdateToolbar);
+    pageEl.removeEventListener('paste',onPaste);
+    pageEl.removeEventListener('click',edOnClick);
+    pageEl.removeEventListener('click',edImgClickHandler);
+    pageEl.removeEventListener('click',onGapClick);
+    delete pageEl._edKeyHandler; delete pageEl._edKeyup; delete pageEl._edInput;
+  }
   dirty=false; const f=$('ed-find'); if(f) f.classList.remove('on');
-  _out();
+  D.body.classList.remove('edit-mode');
+  $('editor-toolbar').classList.remove('visible');
+  const eb=$('page-edit-btn'); eb.classList.remove('active'); eb.title='Editar página';
+  edShowTableCtx(null); edShowBoxCtx(null); edShowImgCtx(null);
+  editPageKey=null; _edDraftKey=null;
+  if(D.fullscreenElement) D.exitFullscreen().catch(()=>{});
 };
 
 /* ── autosave + aviso ao fechar ── */
@@ -16430,29 +16449,6 @@ W.addEventListener('scroll',()=>{
   if(_edTableCtxCell) edShowTableCtx(_edTableCtxCell);
 },{passive:true});
 
-/* ── 2ª linha da barra de ferramentas ── */
-function initUI(){
-  const tb=$('editor-toolbar'); if(!tb||$('ed-tb-row2')) return;
-  const row=D.createElement('div'); row.className='ed-tb-row'; row.id='ed-tb-row2';
-  const B=(t,f,ti,id)=>`<button class="ed-btn"${id?` id="${id}"`:''} title="${ti}" onmousedown="event.preventDefault();${f}">${t}</button>`;
-  row.innerHTML=
-   `<select class="ed-select" id="ed-font" style="max-width:118px" title="Fonte" onchange="edSetFont(this.value)"><option value=""></option>${FONTS.map(f=>`<option value="${f}" style="font-family:'${f}'">${f}</option>`).join('')}</select>`+
-   '<div class="ed-tb-sep"></div>'+B('−','edSizeStep(-1)','Diminuir fonte')+
-   '<input id="ed-size" class="ed-num" type="number" min="6" max="120" value="12" title="Tamanho (pt)" onchange="edSetSize(this.value)">'+
-   B('+','edSizeStep(1)','Aumentar fonte')+'<div class="ed-tb-sep"></div>'+
-   `<div class="ed-dropdown" id="edd-espaco"><button class="ed-dropdown-btn" title="Espaçamento" onmousedown="event.preventDefault();edToggleDropdown('edd-espaco')">↕ <span class="ed-dd-arrow">▾</span></button><div class="ed-dropdown-menu" id="edd-espaco-menu"><div class="ed-dd-label">Entre linhas</div>${[1,1.15,1.5,2,2.5].map(v=>`<button class="ed-dd-item" onmousedown="event.preventDefault();edLine(${v});edCloseDropdowns()">${v}</button>`).join('')}<div class="ed-dd-sep"></div><div class="ed-dd-label">Após o parágrafo</div>${[0,8,16,24].map(v=>`<button class="ed-dd-item" onmousedown="event.preventDefault();edSpace(${v});edCloseDropdowns()">${v}px</button>`).join('')}</div></div>`+
-   B('⇤',"edCmd('outdent')",'Diminuir recuo')+B('⇥',"edCmd('indent')",'Aumentar recuo')+
-   B('☑','edChecklist()','Lista de tarefas (Ctrl+Shift+9)')+'<div class="ed-tb-sep"></div>'+
-   `<div class="ed-dropdown" id="edd-estilos"><button class="ed-dropdown-btn" title="Estilos personalizados" onmousedown="event.preventDefault();edRenderStyles();edToggleDropdown('edd-estilos')">Estilos <span class="ed-dd-arrow">▾</span></button><div class="ed-dropdown-menu" id="edd-estilos-menu"></div></div>`+
-   B('⤓','edPageBreak()','Quebra de página')+B('🔍','edFindOpen()','Localizar e substituir (Ctrl+F)')+
-   '<div class="ed-tb-sep"></div>'+B('📄 Papel','edPaper()','Modo papel (folha branca)','ed-paper-btn')+
-   '<select class="ed-select" id="ed-zoom" title="Zoom" onchange="edZoom(this.value)"><option value="75">75%</option><option value="100" selected>100%</option><option value="125">125%</option><option value="150">150%</option></select>'+
-   '<span class="ed-wordcount" id="ed-status" style="margin-left:auto">Pronto</span>';
-  tb.appendChild(row);
-  $('ed-fgcolor').onchange=function(){cssCmd('foreColor',this.value);};
-  $('ed-bgcolor').onchange=function(){cssCmd('hiliteColor',this.value);};
-}
-initUI();
 })();
 </script>
 
