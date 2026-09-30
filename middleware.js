@@ -14,6 +14,14 @@ const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
 const SUPA_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
 
+// NPCdex usa outro projeto Supabase (tabela npcs: slug, nome, foto)
+const NPC_SUPA_URL = 'https://fatdzivyqipmcbzaiftc.supabase.co';
+const NPC_SUPA_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
+
+const escHtml = (v) =>
+  String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 const FALLBACK_IMG =
   'https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png';
 
@@ -41,6 +49,43 @@ export default async function middleware(request) {
   if (!BOT_UA.test(ua)) return; // não é bot de preview → deixa a SPA seguir normalmente
 
   const url = new URL(request.url);
+  // ── /npcdex/:slug → "NOME — NPCdex | KP" ──
+  const mn = url.pathname.match(/^\/npcdex\/([^\/]+)\/?$/);
+  if (mn && mn[1] !== 'adm') {
+    const npcSlug = decodeURIComponent(mn[1]);
+    let npc = null;
+    try {
+      const r = await fetch(
+        `${NPC_SUPA_URL}/rest/v1/npcs?slug=eq.${encodeURIComponent(npcSlug)}&select=nome,foto,slogan&limit=1`,
+        { headers: { apikey: NPC_SUPA_KEY, Authorization: `Bearer ${NPC_SUPA_KEY}` } }
+      );
+      const rows = await r.json();
+      npc = Array.isArray(rows) ? rows[0] : null;
+    } catch (e) {
+      // Supabase indisponível → cai no título genérico abaixo
+    }
+    const tituloNpc = npc?.nome ? `${npc.nome} — NPCdex | KP` : 'NPCdex | KP';
+    const descNpc = (npc?.slogan || '').trim() || 'NPCdex';
+    const imgNpc = npc?.foto && /^https?:\/\//i.test(npc.foto) ? npc.foto : FALLBACK_IMG;
+    const htmlNpc = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>${escHtml(tituloNpc)}</title>
+<meta property="og:title" content="${escHtml(tituloNpc)}">
+<meta property="og:description" content="${escHtml(descNpc)}">
+<meta property="og:image" content="${escHtml(imgNpc)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${escHtml(url.toString())}">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body></body>
+</html>`;
+    return new Response(htmlNpc, {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    });
+  }
+
   const m = url.pathname.match(/\/nationaldex\/(.+)$/);
   if (!m) return; // não é uma rota de detalhe de Pokémon
 
