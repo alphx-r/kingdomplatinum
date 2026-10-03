@@ -751,6 +751,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
         <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
+        <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
@@ -1780,6 +1781,64 @@ async function backupItemsNow() {
     toast(`✅ items.json commitado no GitHub (${data.length} itens).`, 'ok');
   } catch (e) {
     toast('Erro ao commitar items.json: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
+}
+
+// ── rewards.json (lista de conquistas das fichas) ────────────────────────
+// Monta o rewards.json a partir das imagens de sprites/rewards no GitHub
+// (badges, ribbons, pins, randoms) e manda pra rota serverless
+// /api/commit-rewards, que commita em itemdex/rewards.json. O nome mostrado
+// vem do item de conquista de mesmo nome no ItemDex (se existir); senão, do
+// nome do arquivo ("cool-house-ribbon.png" → "Cool House Ribbon"). O token do
+// GitHub fica só na Vercel (GITHUB_TOKEN), igual ao items.json.
+const RW_CATS = { badges: 'badges', badge: 'badges', ribbons: 'ribbons', ribbon: 'ribbons', pins: 'pins', pin: 'pins', randoms: 'randoms', random: 'randoms' };
+function rewardsFromFiles(files, items) {
+  const out = { badges: [], ribbons: [], pins: [], randoms: [] };
+  const nomes = new Map();
+  (items || []).forEach(it => { if (conqTipoDe(it) && it.name) nomes.set(ghKey(it.name), it.name); });
+  const vistos = new Map(); // categoria|nome-normalizado -> arquivo (prefere .png)
+  let ignorados = 0;
+  for (const f of files) {
+    const cat = RW_CATS[ghKey(ghTop(f.dir))];
+    if (!cat) { ignorados++; continue; }
+    const k = cat + '|' + ghKey(ghStem(f.name));
+    const ant = vistos.get(k);
+    if (!ant || (!/\.png$/i.test(ant.name) && /\.png$/i.test(f.name))) vistos.set(k, f);
+  }
+  for (const [k, f] of vistos) {
+    const cat = k.split('|')[0], stem = ghStem(f.name);
+    const nome = nomes.get(ghKey(stem)) || stem.replace(/[-_]+/g, ' ').trim().replace(/(^|\s)(\p{L})/gu, (m, sp, c) => sp + c.toUpperCase());
+    out[cat].push({ nome, sprite: (f.dir ? f.dir.split('/').map(encodeURIComponent).join('/') + '/' : '') + encodeURIComponent(f.name) });
+  }
+  for (const c in out) out[c].sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR', { numeric: true }));
+  return { rewards: out, ignorados };
+}
+async function commitRewardsNow() {
+  const btn = document.getElementById('it-rewards-btn');
+  const origLabel = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
+  try {
+    const files = await listGithubRewardImages(true);
+    const { rewards, ignorados } = rewardsFromFiles(files, S.it.all);
+    const total = Object.values(rewards).reduce((n, a) => n + a.length, 0);
+    if (!total) throw new Error(`nenhuma imagem encontrada em ${GH_REWARDS_DIR}/badges, ribbons, pins ou randoms`);
+    let admin = null;
+    try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
+    const res = await fetch('/api/commit-rewards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rewards, admin }),
+    });
+    let result = {};
+    try { result = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+    const resumo = `${rewards.badges.length} badges · ${rewards.ribbons.length} ribbons · ${rewards.pins.length} pins · ${rewards.randoms.length} honorários`;
+    toast(result.unchanged ? `rewards.json já estava atualizado (${resumo}).` : `✅ rewards.json commitado no GitHub (${resumo}).`, 'ok');
+    if (ignorados) toast(`${ignorados} imagem(ns) fora das pastas badges/ribbons/pins/randoms foram ignoradas.`, '');
+  } catch (e) {
+    toast('Erro ao commitar rewards.json: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
