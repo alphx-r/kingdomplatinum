@@ -703,7 +703,7 @@ function pkSel(i,K='time'){const v=(K==='box'?pkSelB:pkSelI)===i?-1:i;if(K==='bo
 function mvAdd(i){const x=f.d.time[i];(x.moves=x.moves||[]).push({n:'',o:''});render()}
 function mvDel(i,j){f.d.time[i].moves.splice(j,1);render()}
 function slotUp(i,K='time'){const P=K==='box'?'b':'',x=f.d[K][i],n=document.getElementById('psn'+P+i),im=document.querySelector('#pse'+P+i+' img');n.textContent=x.nome||'Slot vazio';n.classList.toggle('v',!x.nome);im.dataset.n=x.nome||'';const dl=document.getElementById('dlab'+P+i);if(dl)dl.dataset.ab=x.nome||'';sprites();fillStats(i,K);if(BALLMV[x.ball])ensureMP(x.nome)}
-function img(k,max){const i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=()=>{if(!i.files[0])return;const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);f[k]=c.toDataURL('image/jpeg',.82);render()};im.src=fr.result};fr.readAsDataURL(i.files[0])};i.click()}
+function img(k,max){const i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=()=>{if(!i.files[0])return;const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);f[k]=c.toDataURL('image/jpeg',.82);if(k==='foto'){const t=document.createElement('canvas'),q=Math.min(1,200/Math.max(im.width,im.height));t.width=im.width*q;t.height=im.height*q;t.getContext('2d').drawImage(im,0,0,t.width,t.height);f.thumb=t.toDataURL('image/jpeg',.8)}render()};im.src=fr.result};fr.readAsDataURL(i.files[0])};i.click()}
 function toast(m){tst.textContent=m;tst.style.display='block';setTimeout(()=>tst.style.display='none',2200)}
 /* cores */
 function setColors(d,nav){const r=document.documentElement.style;if(nav)r.setProperty('--nav-bg',d.cor_pri||'#1a1a1a');else r.removeProperty('--nav-bg');r.setProperty('--pri',d.cor_pri||'#1a1a1a');r.setProperty('--sec',d.cor_sec||'#3a3a3a');r.setProperty('--tab',d.cor_pri||'#1a1a1a')}
@@ -776,13 +776,13 @@ function cancelar(){f.slug?route():go('/fichas')}
 function sair(){localStorage.removeItem(SK);ses=null;route()}
 async function salvar(){if(!f.nome?.trim()){drw=true;render();return alert('Informe o nome do personagem.')}
  let slug=f.slug||slugify(f.nome);if(!f.slug&&(!slug||RES.includes(slug)))slug=(slug||'ficha')+'-ficha';
- try{await rpc('ficha_salvar',{p_token:ses.token,p_slug:slug,p_nome:f.nome.trim(),p_foto:f.foto||null,p_banner:f.banner||null,p_d:f.d});LST=null;
+ try{aplicaSalvo(await salvarFicha({slug,nome:f.nome.trim(),foto:f.foto,banner:f.banner,thumb:f.thumb,player_id:f.player_id,d:f.d}));LST=null;
   if(!f.slug){go('/fichas/'+slug,true);toast('Ficha criada');return}ed=false;render();toast('Ficha salva')}catch(e){alert('Erro ao salvar: '+e.message)}}
 async function desativar(on){if(!confirm(on?'Desativar esta ficha? Ela sai da lista principal e vai para Fichas > Desativadas. Dá para reativar depois.':'Reativar esta ficha?'))return;
  const ant=f.d.desativada;if(on)f.d.desativada=true;else delete f.d.desativada;
- try{await rpc('ficha_salvar',{p_token:ses.token,p_slug:f.slug,p_nome:f.nome,p_foto:f.foto||null,p_banner:f.banner||null,p_d:f.d});LST=null;render();toast(on?'Ficha desativada':'Ficha reativada')}
+ try{aplicaSalvo(await salvarFicha({slug:f.slug,nome:f.nome,foto:f.foto,banner:f.banner,thumb:f.thumb,player_id:f.player_id,d:f.d}));LST=null;render();toast(on?'Ficha desativada':'Ficha reativada')}
  catch(e){if(ant)f.d.desativada=ant;else delete f.d.desativada;alert('Erro: '+e.message)}}
-async function excluir(){if(!confirm('Excluir esta ficha? Não dá para desfazer.'))return;try{await rpc('ficha_excluir',{p_token:ses.token,p_slug:f.slug});LST=null;go('/fichas')}catch(e){alert('Erro ao excluir: '+e.message)}}
+async function excluir(){if(!confirm('Excluir esta ficha? Não dá para desfazer.'))return;try{await apagarFicha(f.slug);LST=null;go('/fichas')}catch(e){alert('Erro ao excluir: '+e.message)}}
 const IU='https://ucbkodkjlbatttiuqjtv.supabase.co',IK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const irpc=async(n,b)=>{const r=await fetch(IU+'/rest/v1/rpc/'+n,{method:'POST',headers:{apikey:IK,Authorization:'Bearer '+IK,'Content-Type':'application/json'},body:JSON.stringify(b)});const t=await r.text();let j=null;try{j=JSON.parse(t)}catch{}if(!r.ok)throw new Error(j?.message||'HTTP '+r.status);return Array.isArray(j)?j[0]:j};
 const sanP=el=>{const v=el.value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();if(v!==el.value)el.value=v};
@@ -805,7 +805,12 @@ function go(u,rep){history[rep?'replaceState':'pushState'](null,'',u);route();sc
 document.addEventListener('click',e=>{const a=e.target.closest?.('a[data-r]');if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey)return;e.preventDefault();go(a.getAttribute('href'))});
 addEventListener('popstate',()=>route());
 function modo(m){document.body.classList.remove('ed');f=null;ed=false;drw=false;fab=true;ab.clear();so.clear();psA=0;setColors({});mostrarBadge()}
-async function carregaLista(){if(!LST)LST=await api('fichas?select=slug,nome,foto,classe:d->>classe,player:d->>player,desativada:d->>desativada,cor:d->>cor_pri,time:d->time,atualizado_em&order=nome.asc');return LST}
+async function carregaLista(){if(!LST){const r=await fetch('/api/fichas');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
+/* fichas agora vivem em JSON no GitHub; o servidor (Vercel) valida a sessão e faz o commit */
+async function salvarFicha(x){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);return j}
+async function apagarFicha(slug){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',token:ses.token,slug})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}
+async function lerFicha(slug){const r=await fetch('/api/ficha?slug='+encodeURIComponent(slug));if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+function aplicaSalvo(j){if(!j)return;f.foto=j.foto;f.banner=j.banner;f.thumb=j.thumb;f.atualizado_em=j.atualizado_em}
 function route(){const id=++rid,s=parse();const p=!s?vLista(id):s==='desativadas'?vLista(id,true):s==='adm'?vAdm(id):vFicha(s,id);Promise.resolve(p).finally(fim);return p}
 function fim(){document.getElementById('loading-overlay')?.remove()}
 setTimeout(fim,8000);
@@ -830,17 +835,17 @@ async function vAdm(id){modo('L');document.title='Fichário ADM | Kingdom Platin
  if(id===rid)drawA()}
 function drawA(){const q=qa.value.toLowerCase().trim(),l=LST.filter(x=>!q||(x.nome+' '+x.slug+' '+(x.player||'')).toLowerCase().includes(q)),nd=l.filter(off).length;cnt2.textContent=l.length+' ficha(s)'+(nd?' · '+nd+' desativada(s)':'');
  tb.innerHTML=l.map(x=>`<tr><td>${x.foto?`<img src="${x.foto}" alt="">`:'<div class="fph"></div>'}</td><td><b>${esc(x.nome)}</b>${off(x)?'<span class="pill">Desativada</span>':''}<div class="sg">/${esc(x.slug)}</div></td><td class="hide">${esc(x.player||'—')}</td><td class="hide">${new Date(x.atualizado_em).toLocaleDateString('pt-BR')}</td><td><div class="tacts"><a class="btn2 s" href="/fichas/${encodeURIComponent(x.slug)}" data-r>Abrir</a><button class="btn2 s" data-s="${esc(x.slug)}" data-n="${esc(x.nome)}" data-o="${off(x)?1:0}" onclick="admOff(this)">${off(x)?'Reativar':'Desativar'}</button><button class="btn2 s d" data-s="${esc(x.slug)}" data-n="${esc(x.nome)}" onclick="admDel(this)">Excluir</button></div></td></tr>`).join('')||'<tr><td colspan="5" class="mu2">Nenhuma ficha.</td></tr>'}
-async function admDel(b){const slug=b.dataset.s;if(!confirm('Excluir a ficha de '+b.dataset.n+'? Não dá para desfazer.'))return;try{await rpc('ficha_excluir',{p_token:ses.token,p_slug:slug});LST=LST.filter(x=>x.slug!==slug);drawA()}catch(e){alert('Erro ao excluir: '+e.message)}}
+async function admDel(b){const slug=b.dataset.s;if(!confirm('Excluir a ficha de '+b.dataset.n+'? Não dá para desfazer.'))return;try{await apagarFicha(slug);LST=LST.filter(x=>x.slug!==slug);drawA()}catch(e){alert('Erro ao excluir: '+e.message)}}
 async function admOff(b){const slug=b.dataset.s,on=b.dataset.o!=='1';if(!confirm((on?'Desativar':'Reativar')+' a ficha de '+b.dataset.n+'?'))return;
- try{const r=await api('fichas?slug=eq.'+encodeURIComponent(slug)),x=r[0];if(!x)throw new Error('Ficha não encontrada.');x.d=x.d||{};if(on)x.d.desativada=true;else delete x.d.desativada;
-  await rpc('ficha_salvar',{p_token:ses.token,p_slug:slug,p_nome:x.nome,p_foto:x.foto||null,p_banner:x.banner||null,p_d:x.d});
+ try{const r=await lerFicha(slug).then(x=>x?[x]:[]),x=r[0];if(!x)throw new Error('Ficha não encontrada.');x.d=x.d||{};if(on)x.d.desativada=true;else delete x.d.desativada;
+  await salvarFicha({slug,nome:x.nome,foto:x.foto,banner:x.banner,thumb:x.thumb,player_id:x.player_id,d:x.d});
   const it=LST.find(y=>y.slug===slug);if(it)it.desativada=on?'true':null;drawA();toast(on?'Ficha desativada':'Ficha reativada')}catch(e){alert('Erro: '+e.message)}}
 
 async function vFicha(slug,id){modo('F');document.title='Ficha | Kingdom Platinum';
  if(slug==='nova'){document.title='Nova ficha | Kingdom Platinum';if(!ses){render();lg.showModal();return}
   f={slug:'',player_id:ses.player_id,nome:'',d:{player:ses.nome,pv:'100',ranking:'1',reputacao:'0',dinheiro:'1.000',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;render();return}
  render();app.innerHTML='<div class="wrap"><div class="lt">Carregando ficha...</div></div>';
- try{const r=await api('fichas?slug=eq.'+encodeURIComponent(slug));if(id!==rid)return;
+ try{const r=await lerFicha(slug).then(x=>x?[x]:[]);if(id!==rid)return;
   if(!r.length){app.innerHTML='<div class="wrap"><div class="lt">Ficha não encontrada. <a href="/fichas" data-r>← Voltar ao fichário</a></div></div>';return}f=r[0]}
  catch(e){if(id===rid)app.innerHTML='<div class="wrap"><div class="lt" style="color:#c00">Erro: '+esc(e.message)+'</div></div>';return}
  f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});document.title=(f.nome||'Ficha')+' | Fichário';render();fixStats()}
