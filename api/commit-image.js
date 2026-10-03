@@ -19,7 +19,8 @@ const AUTH_SUPA_URL = process.env.AUTH_SUPA_URL || 'https://ucbkodkjlbatttiuqjtv
 const AUTH_SUPA_KEY = process.env.AUTH_SUPA_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 
 // Só deixa escrever imagens nestas pastas (nada de código nem outras áreas).
-const PATH_RE = /^sprites\/(items|rewards\/(badges|ribbons|pins|randoms))\/[a-z0-9][a-z0-9._-]*\.(png|webp|gif|jpg|jpeg)$/;
+// sprites/items/[<categoria>/]<arquivo>  ou  sprites/rewards/<badges|ribbons|pins|randoms>/<arquivo>
+const PATH_RE = /^sprites\/(items(\/[\p{L}\p{N}][\p{L}\p{N}._ -]*)?|rewards\/(badges|ribbons|pins|randoms))\/[a-z0-9][a-z0-9._-]*\.(png|webp|gif|jpg|jpeg)$/u;
 const MAX_B64 = 2_000_000; // ~1,5 MB de imagem
 
 async function adminValido(nome) {
@@ -51,7 +52,7 @@ module.exports = async function handler(req, res) {
   const { path, contentBase64, admin, message } = body || {};
 
   if (!path || !PATH_RE.test(path) || path.includes('..')) {
-    return res.status(400).json({ error: 'Caminho não permitido. Use sprites/items/ ou sprites/rewards/<badges|ribbons|pins|randoms>/ com nome em minúsculas.' });
+    return res.status(400).json({ error: 'Caminho não permitido. Use sprites/items/<categoria>/ ou sprites/rewards/<badges|ribbons|pins|randoms>/ com nome em minúsculas.' });
   }
   if (!contentBase64 || !/^[A-Za-z0-9+/=]+$/.test(contentBase64)) {
     return res.status(400).json({ error: 'Imagem inválida.' });
