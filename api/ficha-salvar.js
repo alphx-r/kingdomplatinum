@@ -54,11 +54,72 @@ function indexEntry(f) {
 const sortIdx = a => a.sort((x, y) => String(x.nome).localeCompare(String(y.nome), 'pt-BR'));
 const parseIdx = t => { try { const j = JSON.parse(t); return Array.isArray(j) ? j : []; } catch { return []; } };
 
+
+// ---- migração única (Supabase -> GitHub), chamada pelo navegador ----
+// Abra:  /api/ficha-salvar?migrar=1&chave=SUA_CHAVE   (repita até aparecer "restam": 0)
+// Precisa da variável MIGRAR_KEY na Vercel. Depois de migrar, apague essa variável.
+async function migrar(q, res) {
+  const KEY = process.env.MIGRAR_KEY;
+  if (!KEY || q.chave !== KEY) return res.status(403).json({ error: 'Chave inválida ou MIGRAR_KEY não configurada.' });
+  const lim = Math.max(1, Math.min(+q.n || 3, 6));
+  const sbGet = async p => {
+    const r = await fetch(SB_URL + '/rest/v1/' + p, { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } });
+    if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+    return r.json();
+  };
+  const todas = (await sbGet('fichas?select=slug&order=slug.asc')).map(x => x.slug);
+  const validas = todas.filter(sl => /^[a-z0-9][a-z0-9-]{0,59}$/.test(sl || ''));
+  const feitas = new Set(parseIdx(await readFile('data/index.json')).map(x => x.slug));
+  const pend = validas.filter(sl => !feitas.has(sl));
+  const lote = pend.slice(0, lim);
+  if (!lote.length) return res.json({ ok: true, restam: 0, total: todas.length, ignoradas: todas.length - validas.length, msg: 'Nada a migrar.' });
+
+  const rows = [];
+  for (const sl of lote) { const r = await sbGet('fichas?slug=eq.' + encodeURIComponent(sl)); if (r[0]) rows.push(r[0]); }
+  let sharp = null; try { sharp = require('sharp'); } catch {}
+
+  await commit(async parent => {
+    const ch = [];
+    const idx = parseIdx(await readFile('data/index.json', parent));
+    for (const x of rows) {
+      const slug = x.slug, urls = {}, d = x.d || {};
+      let fotoBuf = null;
+      for (const kind of ['foto', 'banner']) {
+        let p = null; try { p = parseImg(x[kind]); } catch {}
+        if (!p) urls[kind] = null;
+        else if (p.url) urls[kind] = p.url;
+        else {
+          const path = `img/fichas/${slug}/${kind}-${hash(p.buf)}.${p.ext}`;
+          ch.push({ path, content: p.buf }); urls[kind] = `${IMG_BASE}/${path}`;
+          if (kind === 'foto') fotoBuf = p.buf;
+        }
+      }
+      urls.thumb = null;
+      if (sharp && fotoBuf) {
+        try {
+          const tb = await sharp(fotoBuf).resize(200, 200, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
+          const path = `img/fichas/${slug}/thumb-${hash(tb)}.jpg`;
+          ch.push({ path, content: tb }); urls.thumb = `${IMG_BASE}/${path}`;
+        } catch {}
+      }
+      const ficha = { slug, nome: x.nome, player_id: x.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d, atualizado_em: x.atualizado_em || new Date().toISOString() };
+      ch.push({ path: `data/fichas/${slug}.json`, content: JSON.stringify(ficha) });
+      const i = idx.findIndex(e => e.slug === slug); if (i >= 0) idx.splice(i, 1);
+      idx.push(indexEntry(ficha));
+    }
+    ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
+    return ch;
+  }, 'ficha: migrar ' + lote.join(', '));
+
+  return res.json({ ok: true, migradas: rows.map(r => r.slug), restam: pend.length - rows.length, total: todas.length, miniaturas: !!sharp, msg: pend.length - rows.length > 0 ? 'Recarregue esta página para continuar.' : 'Pronto! Todas migradas.' });
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'GET') {
     try {
       const q = req.query || {};
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (q.migrar) { res.setHeader('Cache-Control', 'no-store'); return await migrar(q, res); }
       if (q.lista) {
         const t = await readFile('data/index.json');
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
