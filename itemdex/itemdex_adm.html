@@ -684,7 +684,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             </label>
             <div style="display:flex;gap:4px;margin-top:6px;align-items:center">
               <input class="mv-meta-input" id="nit-icon-slug" type="text" placeholder="slug do ícone" style="width:100px;font-size:11px;text-align:center" title="Opcional: nome do arquivo no storage/slug PokeAPI. Se vazio, usa o slug do nome do item.">
-              <button type="button" id="nit-icon-pokeapi-btn" class="btn btn-outline btn-sm" style="padding:4px 6px" onclick="fetchNewItemIconFromPokeapi()" title="Puxar ícone da PokeAPI usando este slug">🌐</button>
+              <button type="button" id="nit-icon-pokeapi-btn" class="btn btn-outline btn-sm" style="padding:4px 6px" onclick="fetchNewItemIconFromPokeapi()" title="Puxar ícone da PokeAPI usando este slug (conquistas: busca em sprites/rewards no GitHub)">🌐</button>
             </div>
             <div style="display:flex;gap:4px;margin-top:4px;align-items:center">
               <input class="mv-meta-input" id="nit-icon-url" type="text" placeholder="URL da imagem" style="width:100px;font-size:11px;text-align:center" title="Cole a URL de uma imagem pra usar como ícone">
@@ -1202,6 +1202,13 @@ async function tryAutoFetchOneSprite(it) {
 }
 
 function populateItemCategoryFilter() {
+  // Se já existe uma categoria "rewards" salva nos itens (com outra grafia, ex.:
+  // minúscula), ela passa a ser a oficial — evita duplicar "Rewards" e "rewards".
+  const rwDb = S.it.all.map(i => i.category).find(c => c && c.toLowerCase() === 'rewards');
+  if (rwDb && rwDb !== CAT_REWARDS) {
+    [ITEM_CATEGORIES, IT_CAT_ORDER].forEach(l => { const i = l.indexOf(CAT_REWARDS); if (i >= 0) l[i] = rwDb; });
+    CAT_REWARDS = rwDb;
+  }
   // Filtro do topo mostra tanto as categorias fixas quanto qualquer legado que
   // ainda esteja salvo em itens antigos.
   const dbCats = [...new Set(S.it.all.map(i => i.category).filter(Boolean))];
@@ -1368,7 +1375,7 @@ function buildItemDetailHtml(it, slug) {
         <div style="font-size:9.5px;color:var(--muted);margin:4px 0 8px;line-height:1.3">clique ou arraste</div>
         <div style="display:flex;gap:4px;align-items:center">
           <input class="mv-meta-input" id="it-icon-slug-${slug}" type="text" value="${toSlugBase(it.name) || ''}" placeholder="slug PokeAPI" style="flex:1;font-size:11px;padding:5px 6px" title="Slug do item na PokeAPI (ex: premier-ball)">
-          <button type="button" id="it-icon-pokeapi-btn-${slug}" class="btn btn-outline btn-xs" style="padding:5px 7px" onclick="fetchItemIconFromPokeapi('${jsEsc(it.name)}','${slug}')" title="Puxar ícone da PokeAPI a partir do slug">🌐</button>
+          <button type="button" id="it-icon-pokeapi-btn-${slug}" class="btn btn-outline btn-xs" style="padding:5px 7px" onclick="fetchItemIconFromPokeapi('${jsEsc(it.name)}','${slug}')" title="Puxar ícone da PokeAPI a partir do slug (conquistas: busca em sprites/rewards no GitHub)">🌐</button>
         </div>
         <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
           <input class="mv-meta-input" id="it-icon-url-${slug}" type="text" placeholder="URL da imagem" style="flex:1;font-size:11px;padding:5px 6px" title="Cole a URL de uma imagem pra usar como ícone">
@@ -1516,7 +1523,7 @@ function syncEventoCheckboxFromDesc(textareaId, checkboxId) {
 // Conquista e categoria "Rewards" andam juntas: marcar Conquista põe a
 // categoria em Rewards (desmarcar limpa, se ainda for Rewards) e escolher a
 // categoria Rewards marca Conquista (trocar pra outra desmarca).
-const CAT_REWARDS = 'Rewards';
+let CAT_REWARDS = 'Rewards';
 function toggleConquistaTipo(id, on) {
   const el = document.getElementById(id);
   if (el) el.style.display = on ? '' : 'none';
@@ -1727,7 +1734,7 @@ function openNewItem() {
   toggleItemPriceField('nit-pickup-wrap', false);
   const prev = document.getElementById('nit-icon-preview');
   const ph = document.getElementById('nit-icon-placeholder');
-  if (prev) { prev.src = ''; prev.style.display = 'none'; prev.dataset.b64 = ''; }
+  if (prev) { prev.src = ''; prev.style.display = 'none'; prev.dataset.b64 = ''; prev.dataset.ghSprite = ''; }
   if (ph) ph.style.display = 'flex';
   const form = document.getElementById('nit-inline-form');
   form.style.display = '';
@@ -1961,6 +1968,24 @@ async function fetchNewItemIconFromPokeapi() {
   if (!slug) { toast('Digite o nome do item ou o slug do ícone na PokeAPI (ex: premier-ball).', 'err'); return; }
   const origLabel = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  if (document.getElementById('nit-flag-conquista')?.checked) {
+    // conquista: usa a imagem que já está em sprites/rewards (no GitHub); ao salvar, só grava o caminho
+    try {
+      const tipo = document.getElementById('nit-conquista-tipo')?.value || 'insignia';
+      const sprite = await acharSpriteReward([slug, document.getElementById('nit-name')?.value.trim() || ''], tipo);
+      const prev = document.getElementById('nit-icon-preview');
+      const ph = document.getElementById('nit-icon-placeholder');
+      prev.src = sprite; prev.style.display = ''; prev.dataset.b64 = ''; prev.dataset.ghSprite = sprite;
+      ph.style.display = 'none';
+      if (slugInput && !slugInput.value.trim()) slugInput.value = slug;
+      toast('🖼️ Ícone puxado do GitHub (sprites/rewards)!', 'ok');
+    } catch (e) {
+      toast('Erro ao buscar no GitHub: ' + e.message, 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+    }
+    return;
+  }
   try {
     const res = await fetch(`https://pokeapi.co/api/v2/item/${slug}`);
     if (!res.ok) throw new Error(res.status === 404 ? `item "${slug}" não encontrado na PokeAPI` : `erro ${res.status}`);
@@ -2062,13 +2087,49 @@ async function fetchNewItemIconFromUrl() {
 // reaproveita o mesmo pipeline de upload usado pro clique/drag-and-drop —
 // baixa o PNG oficial e sobe pro nosso Supabase Storage (não depende do
 // PokeAPI/GitHub estarem no ar depois de salvo uma vez).
+// Itens de conquista não existem na PokeAPI: o ícone vem de sprites/rewards no
+// GitHub (pasta preferida pelo tipo). Devolve a URL do sprite ou lança erro.
+async function acharSpriteReward(chaves, tipo) {
+  const files = await listGithubRewardImages(true);
+  const ks = chaves.map(ghKey).filter(Boolean);
+  const lista = files.filter(f => ks.includes(ghKey(ghStem(f.name))));
+  if (!lista.length) throw new Error(`"${chaves[0]}" não encontrado em ${GH_REWARDS_DIR} no GitHub`);
+  return ghSpriteUrl(ghPick(lista, (GH_REWARD_DIRS[tipo] || []).map(ghKey)), GH_REWARDS_DIR);
+}
+
 async function fetchItemIconFromPokeapi(name, domSlug) {
   const btn = document.getElementById(`it-icon-pokeapi-btn-${domSlug}`);
   const slugInput = document.getElementById(`it-icon-slug-${domSlug}`);
   const slug = toSlugBase((slugInput?.value || '').trim());
-  if (!slug) { toast('Digite o slug do item na PokeAPI (ex: premier-ball).', 'err'); return; }
+  const cbConq = document.getElementById(`it-flag-conquista-${domSlug}`);
+  const conqTipo = cbConq ? (cbConq.checked ? (document.getElementById(`it-conquista-tipo-${domSlug}`)?.value || 'insignia') : null) : conqTipoDe(S.it.dbMap[name]);
+  if (!slug && !conqTipo) { toast('Digite o slug do item na PokeAPI (ex: premier-ball).', 'err'); return; }
   const origLabel = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Buscando…'; }
+  if (conqTipo) {
+    // conquista: pega a imagem que já está em sprites/rewards (não baixa nem commita nada)
+    try {
+      const sprite = await acharSpriteReward([slug, name], conqTipo);
+      const existing = S.it.dbMap[name] || { name };
+      const row = { ...existing, name, sprite, updated_at: new Date().toISOString() };
+      await sbUpsert('items', row);
+      S.it.dbMap[name] = row;
+      const idx = S.it.all.findIndex(i => i.name === name);
+      if (idx >= 0) S.it.all[idx] = row;
+      const prev = document.getElementById(`it-icon-preview-${domSlug}`);
+      const ph = document.getElementById(`it-icon-placeholder-${domSlug}`);
+      if (prev) { prev.src = sprite; prev.style.display = ''; }
+      if (ph) ph.style.display = 'none';
+      const cardIcon = document.querySelector(`#it-card-${domSlug} .it-card-icon`);
+      if (cardIcon) cardIcon.innerHTML = `<img src="${sprite}" alt="" style="${itemIconSizeStyle(name, 30)}">`;
+      toast('🖼️ Ícone puxado do GitHub (sprites/rewards)!', 'ok');
+    } catch (e) {
+      toast('Erro ao buscar no GitHub: ' + e.message, 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+    }
+    return;
+  }
   try {
     const res = await fetch(`https://pokeapi.co/api/v2/item/${slug}`);
     if (!res.ok) throw new Error(res.status === 404 ? `item "${slug}" não encontrado na PokeAPI` : `erro ${res.status}`);
@@ -2201,10 +2262,13 @@ async function saveNewItem() {
   }
   try {
     let sprite = null;
-    const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
+    const iconPrev = document.getElementById('nit-icon-preview');
+    const iconB64 = iconPrev?.dataset.b64;
     if (iconB64) {
       const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
       sprite = (await uploadItemImage(iconB64, uploadSlug, category, conquistaOn ? conquistaTipo : null)).sprite;
+    } else if (iconPrev?.dataset.ghSprite) {
+      sprite = iconPrev.dataset.ghSprite; // já existe em sprites/rewards: só grava o caminho
     }
     const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
