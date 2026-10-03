@@ -720,7 +720,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-conquista" style="margin:0" onchange="toggleConquistaTipo('nit-conquista-tipo', this.checked)"> Conquista <span style="font-weight:400;color:var(--muted)">(não aparece na lista de itens)</span>
           </label>
-          <select class="mv-meta-input" id="nit-conquista-tipo" style="display:none;max-width:150px"><option value="insignia">Insígnia</option><option value="ribbon">Ribbon</option><option value="pin">Pin</option><option value="premiacao">Premiação</option></select>
+          <select class="mv-meta-input" id="nit-conquista-tipo" style="display:none;max-width:150px"><option value="insignia">Insígnia</option><option value="ribbon">Ribbon</option><option value="pin">Pin</option><option value="premiacao">Honorários</option></select>
           <div id="nit-price-wrap" style="display:none;align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="nit-price" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px">
@@ -750,7 +750,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
         <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
-        <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê a pasta sprites/items do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
+        <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1151,7 +1151,7 @@ function blobToDataURL(blob) {
 // concorrência pra não disparar dezenas de requisições simultâneas contra
 // a PokeAPI de uma vez.
 async function autoFetchMissingItemSprites() {
-  const pending = S.it.all.filter(it => !it.sprite);
+  const pending = S.it.all.filter(it => !it.sprite && !conqTipoDe(it)); // conquistas não existem na PokeAPI: a imagem vem de sprites/rewards
   if (!pending.length) return;
   const CONCURRENCY = 4;
   let idx = 0;
@@ -1400,7 +1400,7 @@ function buildItemDetailHtml(it, slug) {
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="it-flag-conquista-${slug}" style="margin:0" ${it.flags?.conquista?.enabled ? 'checked' : ''} onchange="toggleConquistaTipo('it-conquista-tipo-${slug}', this.checked)"> Conquista
           </label>
-          <select class="mv-meta-input" id="it-conquista-tipo-${slug}" style="display:${it.flags?.conquista?.enabled ? '' : 'none'};max-width:150px">${[['insignia','Insígnia'],['ribbon','Ribbon'],['pin','Pin'],['premiacao','Premiação']].map(([v, t]) => `<option value="${v}"${(it.flags?.conquista?.tipo || 'insignia') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
+          <select class="mv-meta-input" id="it-conquista-tipo-${slug}" style="display:${it.flags?.conquista?.enabled ? '' : 'none'};max-width:150px">${[['insignia','Insígnia'],['ribbon','Ribbon'],['pin','Pin'],['premiacao','Honorários']].map(([v, t]) => `<option value="${v}"${(it.flags?.conquista?.tipo || 'insignia') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
           <div id="it-price-wrap-${slug}" style="display:${it.flags?.pokemart?.enabled ? 'inline-flex' : 'none'};align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="it-price-${slug}" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px" value="${it.price != null ? it.price : ''}">
@@ -1535,10 +1535,21 @@ async function pushImageToGithub(dataUrl, path) {
   return j;
 }
 
-// Descobre onde a imagem deve ir: se já existe um arquivo com esse nome em
-// alguma subpasta, sobrescreve ali; senão usa a subpasta da categoria
-// (a que já existir no GitHub com esse nome, ou o slug da categoria).
-async function ghItemTarget(slug, category) {
+// Descobre onde a imagem deve ir. Itens de conquista vão para
+// sprites/rewards/<pasta do tipo>/ (badges, ribbons, pins, randoms); os demais
+// para sprites/items/<categoria>/. Se já existir um arquivo com esse nome em
+// alguma subpasta, sobrescreve ali.
+async function ghItemTarget(slug, category, conqTipo) {
+  if (conqTipo) {
+    const dirs = GH_REWARD_DIRS[conqTipo] || GH_REWARD_DIRS.insignia;
+    let files = [];
+    try { files = await listGithubRewardImages(); } catch (e) {}
+    const sk = ghKey(slug), keys = dirs.map(ghKey);
+    const mesmos = files.filter(f => ghKey(ghStem(f.name)) === sk);
+    const hit = mesmos.find(f => keys.includes(ghKey(ghTop(f.dir)))) || mesmos[0];
+    const dir = hit ? hit.dir : dirs[0];
+    return `${GH_REWARDS_DIR}/${dir ? dir + '/' : ''}${slug}.png`;
+  }
   let files = [];
   try { files = await listGithubItemImages(); } catch (e) {}
   const ck = ghKey(category), sk = ghKey(slug);
@@ -1553,15 +1564,16 @@ async function ghItemTarget(slug, category) {
   return `${GH_ITEMS_DIR}/${dir ? dir + '/' : ''}${slug}.png`;
 }
 
-async function uploadItemImage(dataUrl, slug, category) {
-  const path = await ghItemTarget(slug, category);
+async function uploadItemImage(dataUrl, slug, category, conqTipo) {
+  const base = conqTipo ? GH_REWARDS_DIR : GH_ITEMS_DIR;
+  const path = await ghItemTarget(slug, category, conqTipo);
   try {
     const j = await pushImageToGithub(dataUrl, path);
-    if (GH_FILES) {
-      const rel = path.slice(GH_ITEMS_DIR.length + 1), k = rel.lastIndexOf('/');
+    if (GH_CACHE[base]) {
+      const rel = path.slice(base.length + 1), k = rel.lastIndexOf('/');
       const name = rel.slice(k + 1), dir = k >= 0 ? rel.slice(0, k) : '';
-      GH_FILES = GH_FILES.filter(f => !(f.name === name && f.dir === dir));
-      GH_FILES.push({ name, dir, sha: j.sha });
+      GH_CACHE[base] = GH_CACHE[base].filter(f => !(f.name === name && f.dir === dir));
+      GH_CACHE[base].push({ name, dir, sha: j.sha });
     }
     return { sprite: `/${path.split('/').map(encodeURIComponent).join('/')}?v=${String(j.sha || Date.now()).slice(0, 7)}`, github: true };
   } catch (e) {
@@ -1746,41 +1758,49 @@ async function backupItemsNow() {
   }
 }
 
-// ── Imagens no GitHub: sprites/items/<categoria>/<item>.png ──────────────
-// Lê a pasta sprites/items (incluindo as subpastas por categoria) pela API
-// pública do GitHub. A comparação nome-do-item <-> arquivo ignora acento,
-// maiúsculas, hífens e a pasta ("King's Rock" bate com king-s-rock.png e
-// kings-rock.png, em qualquer subpasta). Se o mesmo nome existir em mais de
-// uma pasta, vale a da categoria do item. O "?v=" é o início do sha do
+// ── Imagens no GitHub ────────────────────────────────────────────────────
+// Itens comuns:       sprites/items/<categoria>/<item>.png
+// Itens de conquista: sprites/rewards/<pasta>/<item>.png
+//   (insígnia → badges, ribbon → ribbons, pin → pins, honorários → randoms)
+// Lê as pastas (incluindo as subpastas) pela API pública do GitHub. A
+// comparação nome-do-item <-> arquivo ignora acento, maiúsculas, hífens e a
+// pasta ("King's Rock" bate com king-s-rock.png e kings-rock.png, em qualquer
+// subpasta). Se o mesmo nome existir em mais de uma pasta, vale a da
+// categoria (ou do tipo de conquista) do item. O "?v=" é o início do sha do
 // arquivo: se a imagem mudar no GitHub, o endereço muda e o navegador baixa
 // a nova.
 const GH_REPO = 'alphx-r/kingdomplatinum';
 const GH_BRANCH = 'main';
 const GH_ITEMS_DIR = 'sprites/items';
+const GH_REWARDS_DIR = 'sprites/rewards';
+// Pastas de sprites/rewards por tipo de conquista. A primeira é a usada ao
+// enviar uma imagem nova; as demais também são aceitas na busca.
+const GH_REWARD_DIRS = { insignia: ['badges', 'badge'], ribbon: ['ribbons', 'ribbon'], pin: ['pins', 'pin'], premiacao: ['randoms', 'random'] };
+const conqTipoDe = it => it?.flags?.conquista?.enabled ? (it.flags.conquista.tipo || 'insignia') : null;
 const GH_IMG_RE = /\.(png|webp|gif|jpe?g|svg|avif)$/i;
 const ghKey = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
 const ghStem = n => String(n || '').replace(/\.[^.]+$/, '');
 const ghTop = d => String(d || '').split('/')[0];
-let GH_FILES = null; // [{ name, dir, sha }] — dir é relativo a sprites/items ('' = raiz)
+const GH_CACHE = {}; // pasta base -> [{ name, dir, sha }] — dir é relativo à pasta base ('' = raiz)
 
-function ghErr(status) {
-  if (status === 404) return new Error(`a pasta ${GH_ITEMS_DIR} não foi encontrada no GitHub (ou o repositório é privado)`);
+function ghErr(status, base) {
+  if (status === 404) return new Error(`a pasta ${base} não foi encontrada no GitHub (ou o repositório é privado)`);
   if (status === 403) return new Error('limite de requisições do GitHub atingido — tente de novo em alguns minutos');
   return new Error('o GitHub respondeu HTTP ' + status);
 }
-async function ghGet(path) {
+async function ghGet(path, base) {
   const r = await fetch(`https://api.github.com/repos/${GH_REPO}/${path}`, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!r.ok) throw ghErr(r.status);
+  if (!r.ok) throw ghErr(r.status, base);
   return r.json();
 }
 
-async function listGithubItemImages(force) {
-  if (GH_FILES && !force) return GH_FILES;
+async function listGithubImages(base, force) {
+  if (GH_CACHE[base] && !force) return GH_CACHE[base];
   let raw = null;
   // 1) árvore recursiva da pasta (uma requisição só)
   try {
-    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/git/trees/${GH_BRANCH}:${GH_ITEMS_DIR}?recursive=1`, { headers: { Accept: 'application/vnd.github+json' } });
-    if (r.status === 403) throw ghErr(403);
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/git/trees/${GH_BRANCH}:${base}?recursive=1`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (r.status === 403) throw ghErr(403, base);
     if (r.ok) {
       const j = await r.json();
       if (Array.isArray(j.tree) && !j.truncated) raw = j.tree.filter(x => x.type === 'blob').map(x => ({ path: x.path, sha: x.sha }));
@@ -1788,29 +1808,31 @@ async function listGithubItemImages(force) {
   } catch (e) { if (/limite/.test(e.message)) throw e; }
   // 2) plano B: lê a raiz e cada subpasta
   if (!raw) {
-    const root = await ghGet(`contents/${GH_ITEMS_DIR}?ref=${GH_BRANCH}`);
+    const root = await ghGet(`contents/${base}?ref=${GH_BRANCH}`, base);
     raw = [];
     for (const x of root) {
       if (x.type === 'file') raw.push({ path: x.name, sha: x.sha });
       else if (x.type === 'dir') {
-        const sub = await ghGet(`contents/${GH_ITEMS_DIR}/${encodeURIComponent(x.name)}?ref=${GH_BRANCH}`);
+        const sub = await ghGet(`contents/${base}/${encodeURIComponent(x.name)}?ref=${GH_BRANCH}`, base);
         sub.filter(y => y.type === 'file').forEach(y => raw.push({ path: `${x.name}/${y.name}`, sha: y.sha }));
       }
     }
   }
-  GH_FILES = raw.filter(f => GH_IMG_RE.test(f.path)).map(f => {
+  GH_CACHE[base] = raw.filter(f => GH_IMG_RE.test(f.path)).map(f => {
     const i = f.path.lastIndexOf('/');
     return { name: f.path.slice(i + 1), dir: i >= 0 ? f.path.slice(0, i) : '', sha: f.sha };
   });
-  return GH_FILES;
+  return GH_CACHE[base];
 }
+const listGithubItemImages = force => listGithubImages(GH_ITEMS_DIR, force);
+const listGithubRewardImages = force => listGithubImages(GH_REWARDS_DIR, force);
 
-const ghSpriteUrl = f => `/${GH_ITEMS_DIR}/${f.dir ? f.dir.split('/').map(encodeURIComponent).join('/') + '/' : ''}${encodeURIComponent(f.name)}?v=${String(f.sha || '').slice(0, 7)}`;
+const ghSpriteUrl = (f, base = GH_ITEMS_DIR) => `/${base}/${f.dir ? f.dir.split('/').map(encodeURIComponent).join('/') + '/' : ''}${encodeURIComponent(f.name)}?v=${String(f.sha || '').slice(0, 7)}`;
 
-// Escolhe, entre os arquivos de mesmo nome, o da pasta da categoria (e prefere .png).
-function ghPick(list, category) {
-  const ck = ghKey(category);
-  const score = f => (ck && ghKey(ghTop(f.dir)) === ck ? 2 : 0) + (/\.png$/i.test(f.name) ? 1 : 0);
+// Escolhe, entre os arquivos de mesmo nome, o da pasta preferida (categoria do
+// item ou pasta do tipo de conquista) e prefere .png.
+function ghPick(list, prefKeys) {
+  const score = f => (prefKeys.includes(ghKey(ghTop(f.dir))) ? 2 : 0) + (/\.png$/i.test(f.name) ? 1 : 0);
   return list.slice().sort((a, b) => score(b) - score(a))[0];
 }
 
@@ -1819,37 +1841,49 @@ async function atualizarImagensGithub() {
   const orig = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lendo GitHub…'; }
   try {
-    const files = await listGithubItemImages(true);
-    if (!files.length) throw new Error(`nenhuma imagem encontrada em ${GH_ITEMS_DIR} (nem nas subpastas)`);
+    let itemFiles = [], rewFiles = [];
+    const avisos = [];
+    try { itemFiles = await listGithubItemImages(true); } catch (e) { avisos.push(e.message); }
+    try { rewFiles = await listGithubRewardImages(true); } catch (e) { avisos.push(e.message); }
+    const limite = avisos.find(a => /limite/.test(a));
+    if (limite) throw new Error(limite);
+    if (!itemFiles.length && !rewFiles.length) throw new Error(avisos[0] || `nenhuma imagem encontrada em ${GH_ITEMS_DIR} nem em ${GH_REWARDS_DIR} (nem nas subpastas)`);
 
-    const byKey = new Map();
-    files.forEach(f => {
-      const k = ghKey(ghStem(f.name));
-      if (!byKey.has(k)) byKey.set(k, []);
-      byKey.get(k).push(f);
-    });
+    const indexar = files => {
+      const m = new Map();
+      files.forEach(f => {
+        const k = ghKey(ghStem(f.name));
+        if (!m.has(k)) m.set(k, []);
+        m.get(k).push(f);
+      });
+      return m;
+    };
+    const byItems = indexar(itemFiles), byRew = indexar(rewFiles);
 
     const usados = new Set(), todo = [];
-    let iguais = 0, sem = 0;
+    let iguais = 0, sem = 0, semConq = 0, totalConq = 0;
     S.it.all.forEach(it => {
-      const lista = byKey.get(ghKey(it.name));
-      if (!lista) { sem++; return; }
-      const f = ghPick(lista, it.category);
+      const tipo = conqTipoDe(it);
+      if (tipo) totalConq++;
+      const lista = (tipo ? byRew : byItems).get(ghKey(it.name));
+      if (!lista) { sem++; if (tipo) semConq++; return; }
+      const pref = tipo ? (GH_REWARD_DIRS[tipo] || []).map(ghKey) : [ghKey(it.category)].filter(Boolean);
+      const f = ghPick(lista, pref);
       usados.add(f);
-      const sprite = ghSpriteUrl(f);
+      const sprite = ghSpriteUrl(f, tipo ? GH_REWARDS_DIR : GH_ITEMS_DIR);
       if (it.sprite === sprite) iguais++; else todo.push({ it, sprite });
     });
-    const orfas = files.filter(f => !usados.has(f));
-    const pastas = new Set(files.map(f => ghTop(f.dir)).filter(Boolean)).size;
+    const orfas = [...itemFiles, ...rewFiles].filter(f => !usados.has(f));
 
     if (!todo.length) {
       toast(`Nada a atualizar: ${iguais} item(ns) já usam a imagem do GitHub.`, 'ok');
       return;
     }
-    const msg = `Encontrei ${files.length} imagens em ${GH_ITEMS_DIR}${pastas ? ` (${pastas} subpasta(s))` : ''}.\n\n`
-      + `• ${todo.length} item(ns) vão trocar a imagem pela do GitHub\n`
+    const msg = `Encontrei ${itemFiles.length} imagens em ${GH_ITEMS_DIR} e ${rewFiles.length} em ${GH_REWARDS_DIR}.\n`
+      + (avisos.length ? `⚠️ ${avisos.join(' · ')}\n` : '')
+      + `\n• ${todo.length} item(ns) vão trocar a imagem pela do GitHub\n`
       + `• ${iguais} já estão atualizados\n`
-      + `• ${sem} item(ns) sem arquivo correspondente (ficam como estão)\n`
+      + `• ${sem} item(ns) sem arquivo correspondente (ficam como estão)${totalConq ? ` — ${semConq} deles são conquistas (procuradas só em ${GH_REWARDS_DIR})` : ''}\n`
       + (orfas.length ? `• ${orfas.length} arquivo(s) sem item com esse nome: ${orfas.slice(0, 8).map(f => f.name).join(', ')}${orfas.length > 8 ? '…' : ''}\n` : '')
       + `\nContinuar?`;
     if (!confirm(msg)) return;
@@ -2098,7 +2132,11 @@ async function uploadItemIconFile(name, slugInput, file, done) {
     try {
       const ext = 'png';
       const cat = document.getElementById(`it-category-${domSlug}`)?.value || S.it.dbMap[name]?.category || '';
-      const up = await uploadItemImage(out, uploadSlug, cat);
+      const cbConq = document.getElementById(`it-flag-conquista-${domSlug}`);
+      const conqTipo = cbConq
+        ? (cbConq.checked ? (document.getElementById(`it-conquista-tipo-${domSlug}`)?.value || 'insignia') : null)
+        : conqTipoDe(S.it.dbMap[name]);
+      const up = await uploadItemImage(out, uploadSlug, cat, conqTipo);
       const sprite = up.sprite;
       // no GitHub o arquivo só fica no ar depois do deploy da Vercel; até lá mostra a prévia local
       const shown = up.github ? out : sprite;
@@ -2148,7 +2186,7 @@ async function saveNewItem() {
     const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
     if (iconB64) {
       const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
-      sprite = (await uploadItemImage(iconB64, uploadSlug, category)).sprite;
+      sprite = (await uploadItemImage(iconB64, uploadSlug, category, conquistaOn ? conquistaTipo : null)).sprite;
     }
     const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
