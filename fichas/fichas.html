@@ -329,7 +329,7 @@ dialog#invm{width:min(520px,94vw)}.iml{max-height:55vh;overflow-y:auto;border:1p
 .ctabs button{flex:0 0 auto;background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:8px 14px;font:700 13px var(--fb);color:var(--mu);cursor:pointer;white-space:nowrap}.ctabs button:hover{color:var(--tx)}.ctabs button.on{color:var(--pri);border-bottom-color:var(--pri)}
 .cqn{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:9px;background:var(--s2);color:var(--mu);font:800 11px/18px var(--fb);text-align:center}.ctabs button.on .cqn{background:var(--pri);color:#fff}.cqn:empty{display:none}
 .ctp{display:none}.ctp.on{display:block}
-.cqg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.cqpg{max-height:320px;overflow-y:auto;padding:2px;margin-bottom:4px}
+.cqg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.cqpg{max-height:320px;overflow-y:auto;padding:2px;margin-bottom:4px}.cqgp[hidden]{display:none}.cqgh{color:var(--pri);font-size:11px;margin:14px 0 6px}.cqpg>.cqgp:first-child>.cqgh,.ctp>.cqgh:first-child{margin-top:2px}
 .cqt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px 8px;border:1.5px solid var(--bd);border-radius:8px;background:var(--sf);cursor:pointer;font-family:var(--fb);color:var(--tx);text-align:center;position:relative;transition:border-color .15s,transform .15s}.cqt[hidden]{display:none}.cqt:hover{border-color:var(--pri);transform:translateY(-1px)}
 .cqt b{font:700 11.5px/1.2 var(--fb);overflow-wrap:anywhere}.cqt small{font:600 10.5px var(--fb);color:var(--mu)}
 .cqt.sel{border-color:var(--pri);box-shadow:0 0 0 1.5px var(--pri) inset;background:var(--s2)}.cqt.sel::after{content:'✓';position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:var(--pri);color:#fff;font:800 11px/18px var(--fb);text-align:center}
@@ -523,9 +523,15 @@ CQA={insignias:['insignias','insignia','badges','badge'],ribbons:['ribbons','rib
 CQU=['/itemdex/rewards.json','/rewards.json','/sprites/rewards/rewards.json'];
 let tabC='insignias',CQP=null,CQC=null,CQR=false;
 /* catálogo com todas as opções; aceita lista [{nome,categoria,sprite}] ou objeto {badges:[...],ribbons:[...],...} */
+/* ribbons separados em grupos; "grupo" no JSON (opcional) ou inferido pelo nome/caminho do arquivo */
+const CQGR=['Contest Ribbon','House Ribbon','Type House Ribbon','Theme House Ribbon','Outros'];
+function cqGrp(x){const t=nrm(String((x&&x.grupo)||'')+' '+(x&&x.nome||'')+' '+String((x&&(x.sprite||x.img))||'').replace(/^.*\/ribbons?\//i,'')).replace(/[-_\/.]+/g,' ');
+ if(/\btheme\b/.test(t))return CQGR[3];if(/\btype\b/.test(t))return CQGR[2];if(/\bhouse\b/.test(t))return CQGR[1];
+ if(/\b(contest|cool|beautiful|beauty|cute|clever|smart|tough)\b/.test(t))return CQGR[0];return CQGR[4]}
+const cqGroups=(k,items)=>{if(k!=='ribbons')return[['',items]];const m=new Map(CQGR.map(g=>[g,[]]));items.forEach(it=>m.get(cqGrp(it[0]))?.push(it));return[...m].filter(([,a])=>a.length)};
 function cqNorm(d){if(!d||typeof d!=='object')return null;const o={insignias:[],ribbons:[],pins:[],premiacoes:[]};
  const kk=v=>{v=nk(nrm(v));return Object.keys(CQA).find(k=>CQA[k].includes(v))||''};
- const put=(k,x)=>{if(!k||!x)return;const t=typeof x==='string'?{nome:x}:x,n=String(t.nome||t.name||'').trim();if(!n)return;let u=String(t.sprite||t.image||t.img||t.icon||t.url||'').trim();if(u&&!/^(https?:|\/|data:)/i.test(u))u='/sprites/rewards/'+u;o[k].push({nome:n,sprite:u})};
+ const put=(k,x)=>{if(!k||!x)return;const t=typeof x==='string'?{nome:x}:x,n=String(t.nome||t.name||'').trim();if(!n)return;let u=String(t.sprite||t.image||t.img||t.icon||t.url||'').trim();if(u&&!/^(https?:|\/|data:)/i.test(u))u='/sprites/rewards/'+u;o[k].push({nome:n,sprite:u,grupo:String(t.grupo||t.group||'').trim()})};
  const cat=x=>kk(x.categoria||x.category||x.tipo||x.type||x.pasta||x.folder);
  const src=Array.isArray(d)?d:(d.items||d.itens||d.rewards||d);
  if(Array.isArray(src))src.forEach(x=>x&&typeof x==='object'&&put(cat(x),x));
@@ -550,15 +556,15 @@ function cqSelHtml(k){const a=f.d[k];if(!a.length)return'';
 function cqHtml(){if(!f?.d)return'';const d=cqData(),ks=Object.keys(CQN),list=ed?ks:ks.filter(k=>d[k].length);if(!list.length)return'';if(!list.includes(tabC))tabC=list[0];
  const nav=`<nav class="ctabs" role="tablist">${list.map(k=>`<button type="button" role="tab" class="${k===tabC?'on':''}" data-ck="${k}" onclick="setCTab('${k}')">${CQN[k]}<span class="cqn" id="cqn-${k}">${d[k].length||''}</span></button>`).join('')}</nav>`;
  const pan=k=>{if(!ed){const it=d[k].map((x,i)=>[x,i]).sort(([a],[b])=>(b.data||'').localeCompare(a.data||''));
-   return`<div class="cqg">${it.map(([x,i])=>`<button type="button" class="cqt" onclick="cqOpen('${k}',${i})" title="Ver detalhes">${cqImg(k,x)}<b>${esc(x.nome)}</b>${x.data?`<small>${cqDt(x.data)}</small>`:''}</button>`).join('')}</div>`}
+   return cqGroups(k,it).map(([g,a])=>`${g?`<div class="cqh cqgh">${g}</div>`:''}<div class="cqg">${a.map(([x,i])=>`<button type="button" class="cqt" onclick="cqOpen('${k}',${i})" title="Ver detalhes">${cqImg(k,x)}<b>${esc(x.nome)}</b>${x.data?`<small>${cqDt(x.data)}</small>`:''}</button>`).join('')}</div>`).join('')}
   const cat=CQC?.[k]||[],own=new Set(d[k].map(x=>nk(x.nome)));
-  const pick=!CQR?'':cat.length?`<input autocomplete="off" class="in" type="search" placeholder="Buscar ${CQN[k].toLowerCase()}..." oninput="cqFilt(this)" style="margin-bottom:8px"><div class="cqg cqpg">${cat.map((c,j)=>`<button type="button" class="cqt${own.has(nk(c.nome))?' sel':''}" data-ck="${k}" data-nk="${nk(c.nome)}" data-q="${esc(nrm(c.nome))}" onclick="cqTog('${k}',${j})" title="${esc(c.nome)}">${cqImg(k,{nome:c.nome,img:c.sprite})}<b>${esc(c.nome)}</b></button>`).join('')}</div>`:'';
+  const pick=!CQR?'':cat.length?`<input autocomplete="off" class="in" type="search" placeholder="Buscar ${CQN[k].toLowerCase()}..." oninput="cqFilt(this)" style="margin-bottom:8px"><div class="cqpg">${cqGroups(k,cat.map((c,j)=>[c,j])).map(([g,a])=>`<div class="cqgp">${g?`<div class="cqh cqgh">${g}</div>`:''}<div class="cqg">${a.map(([c,j])=>`<button type="button" class="cqt${own.has(nk(c.nome))?' sel':''}" data-ck="${k}" data-nk="${nk(c.nome)}" data-q="${esc(nrm(c.nome))}" onclick="cqTog('${k}',${j})" title="${esc(c.nome)}">${cqImg(k,{nome:c.nome,img:c.sprite})}<b>${esc(c.nome)}</b></button>`).join('')}</div></div>`).join('')}</div>`:'';
   return`<div class="cqp"><div class="cqh" style="margin-top:0">Opções disponíveis · clique para selecionar</div>${pick}<div class="cqx"><input autocomplete="off" class="in" id="cqx-${k}" placeholder="Outra opção: digite o nome" onkeydown="if(event.key==='Enter'){event.preventDefault();cqAdd('${k}')}"><button type="button" class="btn s" onclick="cqAdd('${k}')">+ Adicionar</button></div><div class="cqh">Selecionadas · data e relato</div><div class="cqs" id="cqs-${k}">${cqSelHtml(k)}</div></div>`};
  return nav+list.map(k=>`<div class="ctp${k===tabC?' on':''}" data-ck="${k}">${pan(k)}</div>`).join('')}
 function cqDraw(){const c=document.getElementById('cq');if(!c||!f)return;c.innerHTML=cqHtml();cqIcs(c)}
 function cqInit(){const c=document.getElementById('cq');if(!c)return;cqIcs(c);if(ed&&!CQR)CQL().then(()=>cqDraw())}
 function setCTab(k){tabC=k;document.querySelectorAll('.ctabs button').forEach(b=>b.classList.toggle('on',b.dataset.ck===k));document.querySelectorAll('.ctp').forEach(x=>x.classList.toggle('on',x.dataset.ck===k))}
-function cqFilt(i){const q=nrm(i.value);i.closest('.cqp').querySelectorAll('.cqt').forEach(t=>t.hidden=!!q&&!t.dataset.q.includes(q))}
+function cqFilt(i){const q=nrm(i.value),p=i.closest('.cqp');p.querySelectorAll('.cqt').forEach(t=>t.hidden=!!q&&!t.dataset.q.includes(q));p.querySelectorAll('.cqgp').forEach(g=>g.hidden=!g.querySelector('.cqt:not([hidden])'))}
 function cqSync(k){const own=new Set(f.d[k].map(x=>nk(x.nome)));document.querySelectorAll('.cqt[data-ck="'+k+'"]').forEach(t=>t.classList.toggle('sel',own.has(t.dataset.nk)));
  const s=document.getElementById('cqs-'+k);if(s){s.innerHTML=cqSelHtml(k);cqIcs(s)}const n=document.getElementById('cqn-'+k);if(n)n.textContent=f.d[k].length||''}
 function cqTog(k,j){const c=CQC?.[k]?.[j];if(!c)return;const a=f.d[k],n=nk(c.nome),i=a.findIndex(x=>nk(x.nome)===n);
