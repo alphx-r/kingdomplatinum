@@ -5,6 +5,10 @@
 // (ficha_salvar / ficha_excluir). Se o Supabase recusar, nada é gravado no GitHub.
 const crypto = require('crypto');
 const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
+// Uma função só (plano Hobby da Vercel: máx. 12 funções):
+//   GET  /api/ficha-salvar?lista=1      -> data/index.json
+//   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
+//   POST /api/ficha-salvar              -> salvar / excluir
 
 const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabase.co';
 const SB_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indob21ocHh6a2hzZGhzeGxjY3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzcxMzQsImV4cCI6MjEwNjU1MzEzNH0.bgHV3aR3PMSgN6ZvWtC3HICHZWC_xWLmKpY7sf2UFSQ';
@@ -51,6 +55,23 @@ const sortIdx = a => a.sort((x, y) => String(x.nome).localeCompare(String(y.nome
 const parseIdx = t => { try { const j = JSON.parse(t); return Array.isArray(j) ? j : []; } catch { return []; } };
 
 module.exports = async (req, res) => {
+  if (req.method === 'GET') {
+    try {
+      const q = req.query || {};
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (q.lista) {
+        const t = await readFile('data/index.json');
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
+        return res.status(200).send(t || '[]');
+      }
+      const sl = String(q.slug || '');
+      if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(sl)) return res.status(400).json({ error: 'Slug inválido.' });
+      const t = await readFile(`data/fichas/${sl}.json`);
+      if (t == null) { res.setHeader('Cache-Control', 's-maxage=5'); return res.status(404).json({ error: 'Ficha não encontrada.' }); }
+      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=10');
+      return res.status(200).send(t);
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
   try {
