@@ -698,7 +698,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             </div>
             <div>
               <div class="field-lbl pt" style="margin-bottom:4px">Categoria</div>
-              <select class="mv-meta-input" id="nit-category" style="width:100%">
+              <select class="mv-meta-input" id="nit-category" style="width:100%" onchange="syncConquistaFromCategory(this, 'nit-flag-conquista', 'nit-conquista-tipo')">
                 <option value="">Sem categoria</option>
               </select>
             </div>
@@ -1062,7 +1062,7 @@ async function uploadImgStorage(b64, bucket, path) {
 /* ══════════════════════════════════════════
    ██ ITEMS
 ══════════════════════════════════════════ */
-const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks'];
+const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks', 'Rewards'];
 
 // Remove o prefixo de tamanho do nome pra achar o "item base" (ex: "Big
 // Nugget" e "Small Nugget" -> "nugget").
@@ -1252,7 +1252,7 @@ function applyItFilter() {
 // Ordem fixa das categorias conhecidas (mesma do <select> de categoria);
 // "Sem categoria" sempre por último, categorias avulsas (customizadas) ficam
 // entre as fixas e "Sem categoria", em ordem alfabética.
-const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks'];
+const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks', 'Rewards'];
 function itCatSortKey(cat) {
   if (cat === 'Sem categoria') return [2, cat];
   const i = IT_CAT_ORDER.indexOf(cat);
@@ -1382,7 +1382,7 @@ function buildItemDetailHtml(it, slug) {
         </div>
         <div class="field-row" style="margin-bottom:10px">
           <div class="field-lbl pt">Categoria</div>
-          <select class="mv-meta-input field-pt filled" id="it-category-${slug}" style="width:100%">${categoryOptionsHtml(it.category || '')}</select>
+          <select class="mv-meta-input field-pt filled" id="it-category-${slug}" style="width:100%" onchange="syncConquistaFromCategory(this, 'it-flag-conquista-${slug}', 'it-conquista-tipo-${slug}')">${categoryOptionsHtml(it.category || '')}</select>
         </div>
         <div style="display:flex;gap:20px;margin-bottom:10px;flex-wrap:wrap">
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
@@ -1513,9 +1513,27 @@ function syncEventoCheckboxFromDesc(textareaId, checkboxId) {
 
 // Mostra/esconde o campo de preço ao lado do checkbox "PokéMart" (tanto no
 // formulário de item novo quanto no card de edição de um item já existente).
+// Conquista e categoria "Rewards" andam juntas: marcar Conquista põe a
+// categoria em Rewards (desmarcar limpa, se ainda for Rewards) e escolher a
+// categoria Rewards marca Conquista (trocar pra outra desmarca).
+const CAT_REWARDS = 'Rewards';
 function toggleConquistaTipo(id, on) {
   const el = document.getElementById(id);
   if (el) el.style.display = on ? '' : 'none';
+  const cat = document.getElementById(id === 'nit-conquista-tipo' ? 'nit-category' : id.replace('it-conquista-tipo-', 'it-category-'));
+  if (!cat) return;
+  if (on) {
+    if (![...cat.options].some(o => o.value === CAT_REWARDS)) cat.add(new Option(CAT_REWARDS, CAT_REWARDS));
+    cat.value = CAT_REWARDS;
+  } else if (cat.value === CAT_REWARDS) cat.value = '';
+}
+function syncConquistaFromCategory(sel, cbId, tipoId) {
+  const on = sel.value === CAT_REWARDS;
+  const cb = document.getElementById(cbId);
+  if (!cb || cb.checked === on) return;
+  cb.checked = on;
+  const t = document.getElementById(tipoId);
+  if (t) t.style.display = on ? '' : 'none';
 }
 
 // ── Envio de imagem direto pro GitHub (commit via /api/commit-image) ─────
