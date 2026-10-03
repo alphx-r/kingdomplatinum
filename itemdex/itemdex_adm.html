@@ -1535,11 +1535,35 @@ async function pushImageToGithub(dataUrl, path) {
   return j;
 }
 
-async function uploadItemImage(dataUrl, slug) {
-  const path = `sprites/items/${slug}.png`;
+// Descobre onde a imagem deve ir: se já existe um arquivo com esse nome em
+// alguma subpasta, sobrescreve ali; senão usa a subpasta da categoria
+// (a que já existir no GitHub com esse nome, ou o slug da categoria).
+async function ghItemTarget(slug, category) {
+  let files = [];
+  try { files = await listGithubItemImages(); } catch (e) {}
+  const ck = ghKey(category), sk = ghKey(slug);
+  const mesmos = files.filter(f => ghKey(ghStem(f.name)) === sk);
+  let dir;
+  const hit = mesmos.find(f => ck && ghKey(ghTop(f.dir)) === ck) || mesmos[0];
+  if (hit) dir = hit.dir;
+  else {
+    const existente = files.map(f => ghTop(f.dir)).find(d => d && ck && ghKey(d) === ck);
+    dir = existente || (category ? toSlugBase(category) : '');
+  }
+  return `${GH_ITEMS_DIR}/${dir ? dir + '/' : ''}${slug}.png`;
+}
+
+async function uploadItemImage(dataUrl, slug, category) {
+  const path = await ghItemTarget(slug, category);
   try {
     const j = await pushImageToGithub(dataUrl, path);
-    return { sprite: `/${path}?v=${String(j.sha || Date.now()).slice(0, 7)}`, github: true };
+    if (GH_FILES) {
+      const rel = path.slice(GH_ITEMS_DIR.length + 1), k = rel.lastIndexOf('/');
+      const name = rel.slice(k + 1), dir = k >= 0 ? rel.slice(0, k) : '';
+      GH_FILES = GH_FILES.filter(f => !(f.name === name && f.dir === dir));
+      GH_FILES.push({ name, dir, sha: j.sha });
+    }
+    return { sprite: `/${path.split('/').map(encodeURIComponent).join('/')}?v=${String(j.sha || Date.now()).slice(0, 7)}`, github: true };
   } catch (e) {
     console.warn('[uploadItemImage] GitHub falhou, usando Supabase:', e);
     const url = await uploadImgStorage(dataUrl, 'pokemons', `items/${slug}.png`) + '?t=' + Date.now();
@@ -1722,44 +1746,72 @@ async function backupItemsNow() {
   }
 }
 
-// ── Atualizar imagens a partir do GitHub ────────────────────────────────
-// Lê a pasta sprites/items do repositório (API pública do GitHub) e, pra cada
-// item cujo nome bate com um arquivo de lá, troca o "sprite" por esse arquivo
-// (caminho do próprio site, servido pela Vercel — sem passar pelo Supabase).
-// A comparação ignora acento, maiúsculas e hífens ("King's Rock" bate com
-// king-s-rock.png e kings-rock.png). O "?v=" é o início do sha do arquivo:
-// se a imagem mudar no GitHub, o endereço muda e o navegador baixa a nova.
+// ── Imagens no GitHub: sprites/items/<categoria>/<item>.png ──────────────
+// Lê a pasta sprites/items (incluindo as subpastas por categoria) pela API
+// pública do GitHub. A comparação nome-do-item <-> arquivo ignora acento,
+// maiúsculas, hífens e a pasta ("King's Rock" bate com king-s-rock.png e
+// kings-rock.png, em qualquer subpasta). Se o mesmo nome existir em mais de
+// uma pasta, vale a da categoria do item. O "?v=" é o início do sha do
+// arquivo: se a imagem mudar no GitHub, o endereço muda e o navegador baixa
+// a nova.
 const GH_REPO = 'alphx-r/kingdomplatinum';
 const GH_BRANCH = 'main';
 const GH_ITEMS_DIR = 'sprites/items';
 const GH_IMG_RE = /\.(png|webp|gif|jpe?g|svg|avif)$/i;
 const ghKey = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+const ghStem = n => String(n || '').replace(/\.[^.]+$/, '');
+const ghTop = d => String(d || '').split('/')[0];
+let GH_FILES = null; // [{ name, dir, sha }] — dir é relativo a sprites/items ('' = raiz)
 
-async function listGithubItemImages() {
-  const H = { Accept: 'application/vnd.github+json' };
-  const base = `https://api.github.com/repos/${GH_REPO}`;
-  const r = await fetch(`${base}/contents/${GH_ITEMS_DIR}?ref=${GH_BRANCH}`, { headers: H });
-  if (!r.ok) {
-    if (r.status === 404) throw new Error(`a pasta ${GH_ITEMS_DIR} não foi encontrada no GitHub (ou o repositório é privado)`);
-    if (r.status === 403) throw new Error('limite de requisições do GitHub atingido — tente de novo em alguns minutos');
-    throw new Error('o GitHub respondeu HTTP ' + r.status);
-  }
-  let list = await r.json();
-  if (!Array.isArray(list)) throw new Error('resposta inesperada do GitHub');
-  // A API de "contents" corta em 1000 arquivos por pasta; se bater nesse
-  // número, relê a pasta pela árvore do git.
-  if (list.length >= 1000) {
-    try {
-      const t = await fetch(`${base}/git/trees/${GH_BRANCH}:${GH_ITEMS_DIR}`, { headers: H });
-      if (t.ok) {
-        const j = await t.json();
-        if (Array.isArray(j.tree) && !j.truncated) {
-          list = j.tree.filter(x => x.type === 'blob').map(x => ({ name: x.path, sha: x.sha, type: 'file' }));
-        }
+function ghErr(status) {
+  if (status === 404) return new Error(`a pasta ${GH_ITEMS_DIR} não foi encontrada no GitHub (ou o repositório é privado)`);
+  if (status === 403) return new Error('limite de requisições do GitHub atingido — tente de novo em alguns minutos');
+  return new Error('o GitHub respondeu HTTP ' + status);
+}
+async function ghGet(path) {
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/${path}`, { headers: { Accept: 'application/vnd.github+json' } });
+  if (!r.ok) throw ghErr(r.status);
+  return r.json();
+}
+
+async function listGithubItemImages(force) {
+  if (GH_FILES && !force) return GH_FILES;
+  let raw = null;
+  // 1) árvore recursiva da pasta (uma requisição só)
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/git/trees/${GH_BRANCH}:${GH_ITEMS_DIR}?recursive=1`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (r.status === 403) throw ghErr(403);
+    if (r.ok) {
+      const j = await r.json();
+      if (Array.isArray(j.tree) && !j.truncated) raw = j.tree.filter(x => x.type === 'blob').map(x => ({ path: x.path, sha: x.sha }));
+    }
+  } catch (e) { if (/limite/.test(e.message)) throw e; }
+  // 2) plano B: lê a raiz e cada subpasta
+  if (!raw) {
+    const root = await ghGet(`contents/${GH_ITEMS_DIR}?ref=${GH_BRANCH}`);
+    raw = [];
+    for (const x of root) {
+      if (x.type === 'file') raw.push({ path: x.name, sha: x.sha });
+      else if (x.type === 'dir') {
+        const sub = await ghGet(`contents/${GH_ITEMS_DIR}/${encodeURIComponent(x.name)}?ref=${GH_BRANCH}`);
+        sub.filter(y => y.type === 'file').forEach(y => raw.push({ path: `${x.name}/${y.name}`, sha: y.sha }));
       }
-    } catch (e) {}
+    }
   }
-  return list.filter(f => f.type === 'file' && GH_IMG_RE.test(f.name));
+  GH_FILES = raw.filter(f => GH_IMG_RE.test(f.path)).map(f => {
+    const i = f.path.lastIndexOf('/');
+    return { name: f.path.slice(i + 1), dir: i >= 0 ? f.path.slice(0, i) : '', sha: f.sha };
+  });
+  return GH_FILES;
+}
+
+const ghSpriteUrl = f => `/${GH_ITEMS_DIR}/${f.dir ? f.dir.split('/').map(encodeURIComponent).join('/') + '/' : ''}${encodeURIComponent(f.name)}?v=${String(f.sha || '').slice(0, 7)}`;
+
+// Escolhe, entre os arquivos de mesmo nome, o da pasta da categoria (e prefere .png).
+function ghPick(list, category) {
+  const ck = ghKey(category);
+  const score = f => (ck && ghKey(ghTop(f.dir)) === ck ? 2 : 0) + (/\.png$/i.test(f.name) ? 1 : 0);
+  return list.slice().sort((a, b) => score(b) - score(a))[0];
 }
 
 async function atualizarImagensGithub() {
@@ -1767,32 +1819,34 @@ async function atualizarImagensGithub() {
   const orig = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lendo GitHub…'; }
   try {
-    const files = await listGithubItemImages();
-    if (!files.length) throw new Error(`nenhuma imagem encontrada em ${GH_ITEMS_DIR}`);
+    const files = await listGithubItemImages(true);
+    if (!files.length) throw new Error(`nenhuma imagem encontrada em ${GH_ITEMS_DIR} (nem nas subpastas)`);
 
-    const fileKey = f => ghKey(f.name.replace(/\.[^.]+$/, ''));
     const byKey = new Map();
     files.forEach(f => {
-      const k = fileKey(f), cur = byKey.get(k);
-      if (!cur || (/\.png$/i.test(f.name) && !/\.png$/i.test(cur.name))) byKey.set(k, f);
+      const k = ghKey(ghStem(f.name));
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(f);
     });
 
-    const used = new Set(), todo = [];
+    const usados = new Set(), todo = [];
     let iguais = 0, sem = 0;
     S.it.all.forEach(it => {
-      const k = ghKey(it.name), f = byKey.get(k);
-      if (!f) { sem++; return; }
-      used.add(k);
-      const sprite = `/${GH_ITEMS_DIR}/${encodeURIComponent(f.name)}?v=${String(f.sha || '').slice(0, 7)}`;
+      const lista = byKey.get(ghKey(it.name));
+      if (!lista) { sem++; return; }
+      const f = ghPick(lista, it.category);
+      usados.add(f);
+      const sprite = ghSpriteUrl(f);
       if (it.sprite === sprite) iguais++; else todo.push({ it, sprite });
     });
-    const orfas = files.filter(f => !used.has(fileKey(f)));
+    const orfas = files.filter(f => !usados.has(f));
+    const pastas = new Set(files.map(f => ghTop(f.dir)).filter(Boolean)).size;
 
     if (!todo.length) {
       toast(`Nada a atualizar: ${iguais} item(ns) já usam a imagem do GitHub.`, 'ok');
       return;
     }
-    const msg = `Encontrei ${files.length} imagens em ${GH_ITEMS_DIR}.\n\n`
+    const msg = `Encontrei ${files.length} imagens em ${GH_ITEMS_DIR}${pastas ? ` (${pastas} subpasta(s))` : ''}.\n\n`
       + `• ${todo.length} item(ns) vão trocar a imagem pela do GitHub\n`
       + `• ${iguais} já estão atualizados\n`
       + `• ${sem} item(ns) sem arquivo correspondente (ficam como estão)\n`
@@ -2043,7 +2097,8 @@ async function uploadItemIconFile(name, slugInput, file, done) {
     try { out = await trimAndFitSprite(out, 512); } catch (e) {}
     try {
       const ext = 'png';
-      const up = await uploadItemImage(out, uploadSlug);
+      const cat = document.getElementById(`it-category-${domSlug}`)?.value || S.it.dbMap[name]?.category || '';
+      const up = await uploadItemImage(out, uploadSlug, cat);
       const sprite = up.sprite;
       // no GitHub o arquivo só fica no ar depois do deploy da Vercel; até lá mostra a prévia local
       const shown = up.github ? out : sprite;
@@ -2093,7 +2148,7 @@ async function saveNewItem() {
     const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
     if (iconB64) {
       const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
-      sprite = (await uploadItemImage(iconB64, uploadSlug)).sprite;
+      sprite = (await uploadItemImage(iconB64, uploadSlug, category)).sprite;
     }
     const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
