@@ -1,7 +1,7 @@
 // /api/commit-items.js
 // Rota serverless (Vercel) chamada pelo botão "Commitar items.json" do
 // itemdex_adm.html. Recebe { items: [...] } no corpo, e commita esse
-// conteúdo como items.json na raiz do repo alphx-r/kingdomplatinum via
+// conteúdo como itemdex/items.json no repo alphx-r/kingdomplatinum via
 // GitHub Contents API.
 //
 // O GITHUB_TOKEN vive só aqui, como env var da Vercel — nunca chega no
@@ -11,7 +11,7 @@
 
 const OWNER = 'alphx-r';
 const REPO = 'kingdomplatinum';
-const FILE_PATH = 'items.json';
+const FILE_PATH = 'itemdex/items.json'; // <- alterado (antes: 'items.json')
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -36,8 +36,8 @@ export default async function handler(req, res) {
   };
 
   try {
-    // 1) Pega o sha do items.json atual (necessário pro GitHub aceitar o
-    //    update; se o arquivo ainda não existir, segue sem sha = cria novo).
+    // 1) Pega o sha do itemdex/items.json atual (necessário pro GitHub aceitar
+    //    o update; se o arquivo ainda não existir, segue sem sha = cria novo).
     let sha;
     const getRes = await fetch(
       `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`,
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
       sha = getData.sha;
     } else if (getRes.status !== 404) {
       const errText = await getRes.text();
-      return res.status(getRes.status).json({ error: `Erro ao ler items.json atual: ${errText}` });
+      return res.status(getRes.status).json({ error: `Erro ao ler ${FILE_PATH} atual: ${errText}` });
     }
 
     // 2) Commita o novo conteúdo (branch padrão do repo, sem forçar nome).
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
         method: 'PUT',
         headers: { ...ghHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `chore: atualiza items.json (${items.length} itens) via itemdex_adm`,
+          message: `chore: atualiza ${FILE_PATH} (${items.length} itens) via itemdex_adm`,
           content,
           sha, // omitido (undefined) se o arquivo não existia ainda
         }),
