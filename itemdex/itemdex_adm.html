@@ -717,6 +717,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pickup" style="margin:0" onchange="toggleItemPriceField('nit-pickup-wrap', this.checked)"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
           </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-conquista" style="margin:0" onchange="toggleConquistaTipo('nit-conquista-tipo', this.checked)"> Conquista <span style="font-weight:400;color:var(--muted)">(não aparece na lista de itens)</span>
+          </label>
+          <select class="mv-meta-input" id="nit-conquista-tipo" style="display:none;max-width:150px"><option value="insignia">Insígnia</option><option value="ribbon">Ribbon</option><option value="pin">Pin</option><option value="premiacao">Premiação</option></select>
           <div id="nit-price-wrap" style="display:none;align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="nit-price" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px">
@@ -746,6 +750,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
         <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
+        <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê a pasta sprites/items do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1299,6 +1304,7 @@ function renderItemCard(it, i) {
   const flagsHtml = [
     it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONS.</span>' : '',
     it.flags?.evento?.enabled ? '<span class="badge" style="background:var(--purple);color:#fff;font-weight:800" title="Evento">EVENTO</span>' : '',
+    it.flags?.conquista?.enabled ? '<span class="badge" style="background:#e8a020;color:#fff;font-weight:800" title="Conquista — não aparece na lista pública de itens">CONQ.</span>' : '',
     it.flags?.pokemart?.enabled ? `<span title="PokéMart${it.price != null ? ' — ₽ ' + it.price : ''}">🛒</span>` : '',
     it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : '',
   ].filter(Boolean).join('');
@@ -1391,6 +1397,10 @@ function buildItemDetailHtml(it, slug) {
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-pickup-wrap-${slug}', this.checked)"> Pickup
           </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="it-flag-conquista-${slug}" style="margin:0" ${it.flags?.conquista?.enabled ? 'checked' : ''} onchange="toggleConquistaTipo('it-conquista-tipo-${slug}', this.checked)"> Conquista
+          </label>
+          <select class="mv-meta-input" id="it-conquista-tipo-${slug}" style="display:${it.flags?.conquista?.enabled ? '' : 'none'};max-width:150px">${[['insignia','Insígnia'],['ribbon','Ribbon'],['pin','Pin'],['premiacao','Premiação']].map(([v, t]) => `<option value="${v}"${(it.flags?.conquista?.tipo || 'insignia') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
           <div id="it-price-wrap-${slug}" style="display:${it.flags?.pokemart?.enabled ? 'inline-flex' : 'none'};align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="it-price-${slug}" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px" value="${it.price != null ? it.price : ''}">
@@ -1503,16 +1513,51 @@ function syncEventoCheckboxFromDesc(textareaId, checkboxId) {
 
 // Mostra/esconde o campo de preço ao lado do checkbox "PokéMart" (tanto no
 // formulário de item novo quanto no card de edição de um item já existente).
+function toggleConquistaTipo(id, on) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = on ? '' : 'none';
+}
+
+// ── Envio de imagem direto pro GitHub (commit via /api/commit-image) ─────
+// O token do GitHub fica só na Vercel (env GITHUB_TOKEN); aqui só mandamos
+// a imagem. Se o commit falhar, cai no Supabase Storage pra não perder o ícone.
+async function pushImageToGithub(dataUrl, path) {
+  let admin = null;
+  try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
+  const res = await fetch('/api/commit-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, contentBase64: String(dataUrl).split(',')[1] || '', admin, message: `Atualiza ${path} (ItemDex ADM)` }),
+  });
+  let j = {};
+  try { j = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error(j.error || `Erro ${res.status} ao enviar pro GitHub`);
+  return j;
+}
+
+async function uploadItemImage(dataUrl, slug) {
+  const path = `sprites/items/${slug}.png`;
+  try {
+    const j = await pushImageToGithub(dataUrl, path);
+    return { sprite: `/${path}?v=${String(j.sha || Date.now()).slice(0, 7)}`, github: true };
+  } catch (e) {
+    console.warn('[uploadItemImage] GitHub falhou, usando Supabase:', e);
+    const url = await uploadImgStorage(dataUrl, 'pokemons', `items/${slug}.png`) + '?t=' + Date.now();
+    return { sprite: url, github: false, erro: e.message };
+  }
+}
+
 function toggleItemPriceField(wrapId, checked) {
   const wrap = document.getElementById(wrapId);
   if (!wrap) return;
   wrap.style.display = checked ? 'inline-flex' : 'none';
 }
 
-function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros) {
+function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
     ...f,
+    conquista: { ...(f.conquista || {}), enabled: !!conquistaOn, tipo: conquistaOn ? (conquistaTipo || 'insignia') : (f.conquista?.tipo || 'insignia') },
     pokemart: { ...(f.pokemart || {}), enabled: !!pokemartOn },
     pickup: { ...(f.pickup || {}), enabled: !!pickupOn, numeros: pickupOn ? pickupNumeros : [] },
     consumivel: { ...(f.consumivel || {}), enabled: !!consumivelOn },
@@ -1557,6 +1602,8 @@ async function saveItem(name) {
   const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
   const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
   const eventoOn = !!document.getElementById(`it-flag-evento-${slug}`)?.checked;
+  const conquistaOn = !!document.getElementById(`it-flag-conquista-${slug}`)?.checked;
+  const conquistaTipo = document.getElementById(`it-conquista-tipo-${slug}`)?.value || 'insignia';
   const priceRaw = document.getElementById(`it-price-${slug}`)?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
   const pickupNumeros = pickupOn ? parsePickupNumeros(document.getElementById(`it-pickup-numeros-${slug}`)?.value) : [];
@@ -1574,7 +1621,7 @@ async function saveItem(name) {
   if (renaming && S.it.dbMap[newName]) { toast(`Já existe um item chamado "${newName}".`, 'err'); return; }
   try {
     const existing = S.it.dbMap[name] || { name };
-    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros);
+    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
     const row = { ...existing, name: newName, category, item_desc, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     if (renaming) {
@@ -1620,7 +1667,8 @@ async function deleteItem(name) {
 
 function openNewItem() {
   ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price','nit-pickup-numeros'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
-  ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento','nit-flag-conquista'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  { const ct = document.getElementById('nit-conquista-tipo'); if (ct) { ct.style.display = 'none'; ct.value = 'insignia'; } }
   toggleItemPriceField('nit-price-wrap', false);
   toggleItemPriceField('nit-pickup-wrap', false);
   const prev = document.getElementById('nit-icon-preview');
@@ -1671,6 +1719,110 @@ async function backupItemsNow() {
     toast('Erro ao commitar items.json: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
+}
+
+// ── Atualizar imagens a partir do GitHub ────────────────────────────────
+// Lê a pasta sprites/items do repositório (API pública do GitHub) e, pra cada
+// item cujo nome bate com um arquivo de lá, troca o "sprite" por esse arquivo
+// (caminho do próprio site, servido pela Vercel — sem passar pelo Supabase).
+// A comparação ignora acento, maiúsculas e hífens ("King's Rock" bate com
+// king-s-rock.png e kings-rock.png). O "?v=" é o início do sha do arquivo:
+// se a imagem mudar no GitHub, o endereço muda e o navegador baixa a nova.
+const GH_REPO = 'alphx-r/kingdomplatinum';
+const GH_BRANCH = 'main';
+const GH_ITEMS_DIR = 'sprites/items';
+const GH_IMG_RE = /\.(png|webp|gif|jpe?g|svg|avif)$/i;
+const ghKey = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+
+async function listGithubItemImages() {
+  const H = { Accept: 'application/vnd.github+json' };
+  const base = `https://api.github.com/repos/${GH_REPO}`;
+  const r = await fetch(`${base}/contents/${GH_ITEMS_DIR}?ref=${GH_BRANCH}`, { headers: H });
+  if (!r.ok) {
+    if (r.status === 404) throw new Error(`a pasta ${GH_ITEMS_DIR} não foi encontrada no GitHub (ou o repositório é privado)`);
+    if (r.status === 403) throw new Error('limite de requisições do GitHub atingido — tente de novo em alguns minutos');
+    throw new Error('o GitHub respondeu HTTP ' + r.status);
+  }
+  let list = await r.json();
+  if (!Array.isArray(list)) throw new Error('resposta inesperada do GitHub');
+  // A API de "contents" corta em 1000 arquivos por pasta; se bater nesse
+  // número, relê a pasta pela árvore do git.
+  if (list.length >= 1000) {
+    try {
+      const t = await fetch(`${base}/git/trees/${GH_BRANCH}:${GH_ITEMS_DIR}`, { headers: H });
+      if (t.ok) {
+        const j = await t.json();
+        if (Array.isArray(j.tree) && !j.truncated) {
+          list = j.tree.filter(x => x.type === 'blob').map(x => ({ name: x.path, sha: x.sha, type: 'file' }));
+        }
+      }
+    } catch (e) {}
+  }
+  return list.filter(f => f.type === 'file' && GH_IMG_RE.test(f.name));
+}
+
+async function atualizarImagensGithub() {
+  const btn = document.getElementById('it-gh-btn');
+  const orig = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lendo GitHub…'; }
+  try {
+    const files = await listGithubItemImages();
+    if (!files.length) throw new Error(`nenhuma imagem encontrada em ${GH_ITEMS_DIR}`);
+
+    const fileKey = f => ghKey(f.name.replace(/\.[^.]+$/, ''));
+    const byKey = new Map();
+    files.forEach(f => {
+      const k = fileKey(f), cur = byKey.get(k);
+      if (!cur || (/\.png$/i.test(f.name) && !/\.png$/i.test(cur.name))) byKey.set(k, f);
+    });
+
+    const used = new Set(), todo = [];
+    let iguais = 0, sem = 0;
+    S.it.all.forEach(it => {
+      const k = ghKey(it.name), f = byKey.get(k);
+      if (!f) { sem++; return; }
+      used.add(k);
+      const sprite = `/${GH_ITEMS_DIR}/${encodeURIComponent(f.name)}?v=${String(f.sha || '').slice(0, 7)}`;
+      if (it.sprite === sprite) iguais++; else todo.push({ it, sprite });
+    });
+    const orfas = files.filter(f => !used.has(fileKey(f)));
+
+    if (!todo.length) {
+      toast(`Nada a atualizar: ${iguais} item(ns) já usam a imagem do GitHub.`, 'ok');
+      return;
+    }
+    const msg = `Encontrei ${files.length} imagens em ${GH_ITEMS_DIR}.\n\n`
+      + `• ${todo.length} item(ns) vão trocar a imagem pela do GitHub\n`
+      + `• ${iguais} já estão atualizados\n`
+      + `• ${sem} item(ns) sem arquivo correspondente (ficam como estão)\n`
+      + (orfas.length ? `• ${orfas.length} arquivo(s) sem item com esse nome: ${orfas.slice(0, 8).map(f => f.name).join(', ')}${orfas.length > 8 ? '…' : ''}\n` : '')
+      + `\nContinuar?`;
+    if (!confirm(msg)) return;
+
+    let feito = 0, falhas = 0, idx = 0;
+    const worker = async () => {
+      while (idx < todo.length) {
+        const { it, sprite } = todo[idx++];
+        try {
+          const existing = S.it.dbMap[it.name] || it;
+          const row = { ...existing, name: it.name, sprite, updated_at: new Date().toISOString() };
+          await sbUpsert('items', row);
+          S.it.dbMap[it.name] = row;
+          const i = S.it.all.findIndex(x => x.name === it.name);
+          if (i >= 0) S.it.all[i] = row;
+        } catch (e) { falhas++; }
+        feito++;
+        if (btn) btn.innerHTML = `⏳ ${feito}/${todo.length}`;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+    applyItFilter();
+    toast(`✅ ${todo.length - falhas} imagem(ns) atualizada(s)${falhas ? ` · ${falhas} falha(s)` : ''}. Use "Commitar items.json" para o ItemDex público usar as novas imagens.`, falhas ? 'err' : 'ok');
+  } catch (e) {
+    toast('Erro ao atualizar imagens: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }
 }
 
@@ -1891,7 +2043,10 @@ async function uploadItemIconFile(name, slugInput, file, done) {
     try { out = await trimAndFitSprite(out, 512); } catch (e) {}
     try {
       const ext = 'png';
-      const sprite = await uploadImgStorage(out, 'pokemons', `items/${uploadSlug}.${ext}`) + '?t=' + Date.now();
+      const up = await uploadItemImage(out, uploadSlug);
+      const sprite = up.sprite;
+      // no GitHub o arquivo só fica no ar depois do deploy da Vercel; até lá mostra a prévia local
+      const shown = up.github ? out : sprite;
       const existing = S.it.dbMap[name] || { name };
       const row = { ...existing, name, sprite, updated_at: new Date().toISOString() };
       await sbUpsert('items', row);
@@ -1900,11 +2055,11 @@ async function uploadItemIconFile(name, slugInput, file, done) {
       if (idx >= 0) S.it.all[idx] = row;
       const prev = document.getElementById(`it-icon-preview-${domSlug}`);
       const ph = document.getElementById(`it-icon-placeholder-${domSlug}`);
-      if (prev) { prev.src = sprite; prev.style.display = ''; }
+      if (prev) { prev.src = shown; prev.style.display = ''; }
       if (ph) ph.style.display = 'none';
       const cardIcon = document.querySelector(`#it-card-${domSlug} .it-card-icon`);
-      if (cardIcon) cardIcon.innerHTML = `<img src="${sprite}" alt="" style="${itemIconSizeStyle(name, 30)}">`;
-      toast('🖼️ Ícone do item enviado!', 'ok');
+      if (cardIcon) cardIcon.innerHTML = `<img src="${shown}" alt="" style="${itemIconSizeStyle(name, 30)}">`;
+      toast(up.github ? '🖼️ Ícone commitado no GitHub! Aparece no site depois do deploy da Vercel (≈1 min).' : `🖼️ Ícone salvo no Supabase (GitHub falhou: ${up.erro})`, up.github ? 'ok' : 'err');
     } catch (e) { toast('Erro ao enviar ícone: ' + e.message, 'err'); }
     if (done) done();
   };
@@ -1921,6 +2076,8 @@ async function saveNewItem() {
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
   const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
   const eventoOn = !!document.getElementById('nit-flag-evento')?.checked;
+  const conquistaOn = !!document.getElementById('nit-flag-conquista')?.checked;
+  const conquistaTipo = document.getElementById('nit-conquista-tipo')?.value || 'insignia';
   const priceRaw = document.getElementById('nit-price')?.value;
   const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
   const pickupNumeros = pickupOn ? parsePickupNumeros(document.getElementById('nit-pickup-numeros')?.value) : [];
@@ -1936,9 +2093,9 @@ async function saveNewItem() {
     const iconB64 = document.getElementById('nit-icon-preview')?.dataset.b64;
     if (iconB64) {
       const uploadSlug = toSlugBase(document.getElementById('nit-icon-slug')?.value.trim()) || toSlugBase(name);
-      sprite = await uploadImgStorage(iconB64, 'pokemons', `items/${uploadSlug}.png`) + '?t=' + Date.now();
+      sprite = (await uploadItemImage(iconB64, uploadSlug)).sprite;
     }
-    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros);
+    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
