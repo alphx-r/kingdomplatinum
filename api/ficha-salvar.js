@@ -5,10 +5,13 @@
 // (ficha_salvar / ficha_excluir). Se o Supabase recusar, nada é gravado no GitHub.
 const crypto = require('crypto');
 const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
+const { aplicar } = require('./_itens');
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
 //   GET  /api/ficha-salvar?lista=1      -> data/index.json
 //   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
 //   POST /api/ficha-salvar              -> salvar / excluir
+//   POST {action:'consumir',  token, slug, itens:[{nome,qtd}], op}          -> desconta itens do inventário (index: captura)
+//   POST {action:'adicionar', token, slug, itens:[{nome,qtd}], custo?, op}  -> soma itens (e debita `custo` do dinheiro) (loja)
 
 const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabase.co';
 const SB_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indob21ocHh6a2hzZGhzeGxjY3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzcxMzQsImV4cCI6MjEwNjU1MzEzNH0.bgHV3aR3PMSgN6ZvWtC3HICHZWC_xWLmKpY7sf2UFSQ';
@@ -129,7 +132,7 @@ module.exports = async (req, res) => {
       if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(sl)) return res.status(400).json({ error: 'Slug inválido.' });
       const t = await readFile(`data/fichas/${sl}.json`);
       if (t == null) { res.setHeader('Cache-Control', 's-maxage=5'); return res.status(404).json({ error: 'Ficha não encontrada.' }); }
-      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=10');
+      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=2');
       return res.status(200).send(t);
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
@@ -140,6 +143,37 @@ module.exports = async (req, res) => {
     const { action = 'save', token, slug } = b;
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
     if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
+
+    if (action === 'consumir' || action === 'adicionar') {
+      const itens = (Array.isArray(b.itens) ? b.itens : [])
+        .map(i => ({ nome: String(i?.nome || '').trim().slice(0, 80), qtd: Math.floor(Number(i?.qtd) || 0) }))
+        .filter(i => i.nome && i.qtd > 0 && i.qtd <= 999).slice(0, 20);
+      if (!itens.length) return res.status(400).json({ error: 'Nenhum item informado.' });
+      const custo = action === 'adicionar' ? Math.max(0, Math.floor(Number(b.custo) || 0)) : 0;
+      const op = String(b.op || '').slice(0, 64);
+      const caminho = `data/fichas/${slug}.json`;
+      const atual = await readFile(caminho);
+      if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
+      const f0 = JSON.parse(atual);
+      // o Supabase confere token/permissão (mesma regra de editar a ficha); aqui regrava os dados iguais, sem mudar nada
+      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: f0.d || {} });
+      let saida = null;
+      await commit(async parent => {
+        const t = await readFile(caminho, parent);
+        if (t == null) throw Object.assign(new Error('Ficha não encontrada.'), { status: 404 });
+        const f = JSON.parse(t);
+        const r = aplicar(f.d, action, itens, custo, op);
+        saida = { f, d: r.d, repetida: !!r.repetida, atualizado_em: f.atualizado_em };
+        if (r.repetida) return [];
+        f.d = r.d; f.atualizado_em = saida.atualizado_em = new Date().toISOString();
+        return [{ path: caminho, content: JSON.stringify(f) }];
+      }, `ficha: ${action === 'consumir' ? 'usar' : 'receber'} item (${slug})`);
+      if (!saida.repetida) {   // espelho no Supabase (se falhar, o GitHub continua sendo a fonte da verdade)
+        try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: saida.f.nome, p_foto: saida.f.foto ?? null, p_banner: saida.f.banner ?? null, p_d: saida.d }); }
+        catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }
+      }
+      return res.json({ ok: true, repetida: saida.repetida, inventario: saida.d.inventario || [], dinheiro: saida.d.dinheiro ?? null, atualizado_em: saida.atualizado_em });
+    }
 
     if (action === 'delete') {
       await sbRpc('ficha_excluir', { p_token: token, p_slug: slug });
@@ -157,6 +191,13 @@ module.exports = async (req, res) => {
     const nome = String(b.nome || '').trim();
     if (!nome) return res.status(400).json({ error: 'Nome obrigatório.' });
     if (!b.d || typeof b.d !== 'object') return res.status(400).json({ error: 'Dados inválidos.' });
+
+    // a ficha pode ter mudado em outro lugar (index gastou item, loja entregou item): não sobrescreve às cegas
+    if (b.base) {
+      const t0 = await readFile(`data/fichas/${slug}.json`);
+      const atualN = t0 ? JSON.parse(t0).atualizado_em : null;
+      if (atualN && atualN !== b.base) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
+    }
 
     const novas = {};   // kind -> {path, buf}
     const urls = {};
