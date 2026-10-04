@@ -17,6 +17,7 @@ const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabas
 const SB_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indob21ocHh6a2hzZGhzeGxjY3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzcxMzQsImV4cCI6MjEwNjU1MzEzNH0.bgHV3aR3PMSgN6ZvWtC3HICHZWC_xWLmKpY7sf2UFSQ';
 const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${REPO}/${BRANCH}`).replace(/\/$/, '');
 const MAX_IMG = 1.5 * 1024 * 1024;
+const LIM_ATIVAS = 2;   // máximo de fichas ativas por player
 
 async function sbRpc(nome, body) {
   const r = await fetch(SB_URL + '/rest/v1/rpc/' + nome, {
@@ -48,6 +49,7 @@ function indexEntry(f) {
     slug: f.slug, nome: f.nome,
     foto: f.thumb || f.foto || null,
     classe: d.classe || null, player: d.player || null,
+    player_id: f.player_id ?? null,
     desativada: d.desativada ? 'true' : null,
     cor: d.cor_pri || null,
     time: (Array.isArray(d.time) ? d.time : []).slice(0, 6).map(t => ({ nome: t?.nome || '', apelido: t?.apelido || '' })),
@@ -56,6 +58,14 @@ function indexEntry(f) {
 }
 const sortIdx = a => a.sort((x, y) => String(x.nome).localeCompare(String(y.nome), 'pt-BR'));
 const parseIdx = t => { try { const j = JSON.parse(t); return Array.isArray(j) ? j : []; } catch { return []; } };
+
+// quantas fichas ATIVAS o dono já tem (sem contar a ficha `slug`).
+// Compara por player_id; entradas antigas do índice (sem player_id) caem no nome do player.
+async function fichasAtivasDoDono(slug, pid, nomePlayer) {
+  const nome = String(nomePlayer || '').trim().toLowerCase();
+  return parseIdx(await readFile('data/index.json')).filter(e => e && e.slug !== slug && e.desativada !== 'true'
+    && (e.player_id != null ? String(e.player_id) === String(pid) : !!nome && String(e.player || '').trim().toLowerCase() === nome)).length;
+}
 
 
 // ---- migração única (Supabase -> GitHub), chamada pelo navegador ----
@@ -197,6 +207,17 @@ module.exports = async (req, res) => {
       const t0 = await readFile(`data/fichas/${slug}.json`);
       const atualN = t0 ? JSON.parse(t0).atualizado_em : null;
       if (atualN && atualN !== b.base) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
+    }
+
+    // limite: cada player só pode ter LIM_ATIVAS fichas ativas (vale para criar ficha nova e para reativar uma desativada)
+    if (!b.d.desativada) {
+      const t1 = await readFile(`data/fichas/${slug}.json`);
+      const ex = t1 ? JSON.parse(t1) : null;
+      if (!ex || ex.d?.desativada) {   // ficha nova ou sendo reativada (já ativa e só editando: não conta)
+        const pid = ex ? ex.player_id : b.player_id;   // numa ficha existente vale o dono gravado, não o que o navegador mandou
+        if (pid != null && await fichasAtivasDoDono(slug, pid, ex?.d?.player ?? b.d.player) >= LIM_ATIVAS)
+          return res.status(409).json({ error: `Limite atingido: cada player só pode ter ${LIM_ATIVAS} fichas ativas. Desative uma das fichas antigas para criar ou reativar outra.`, code: 'limite' });
+      }
     }
 
     const novas = {};   // kind -> {path, buf}
