@@ -412,6 +412,14 @@ dialog#kcr{width:min(440px,94vw);padding:14px 14px 12px;text-align:left}
 .inv-c{position:relative}.inv-c .vinc{position:absolute;top:5px;right:6px;margin:0;width:10px;height:10px;z-index:2}
 .pc-head .vinc{margin-left:8px;width:20px;height:20px}.pc-head .vinc svg{stroke:#f5c518}
 .vnm{display:none}.vnd{display:contents}@media(max-width:700px){.vnm{display:contents}.vnd{display:none}}
+
+#kcr.kcirc .cropper-view-box,#kcr.kcirc .cropper-face{border-radius:50%}
+.kcz{padding:14px 4px 2px}
+.kcz input{-webkit-appearance:none;appearance:none;width:100%;height:16px;background:none;margin:0;cursor:pointer}
+.kcz input::-webkit-slider-runnable-track{height:2px;background:#d4d4d4;border-radius:2px}
+.kcz input::-moz-range-track{height:2px;background:#d4d4d4;border-radius:2px}
+.kcz input::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#1a1a1a;border:0;margin-top:-7px}
+.kcz input::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#1a1a1a;border:0}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
@@ -474,6 +482,7 @@ dialog#kcr{width:min(440px,94vw);padding:14px 14px 12px;text-align:left}
 <dialog id="cqm" onclick="if(event.target===this)this.close()"><div id="cqmb"></div></dialog>
 <dialog id="kcr" onclose="kcrEnd()"><div class="kct"><span id="kcr-t">Recortar foto</span><span class="kcb"><button type="button" onclick="kcrRot(-90)" title="Girar -90°">↺</button><button type="button" onclick="kcrRot(90)" title="Girar +90°">↻</button><button type="button" onclick="kcrFlip()" title="Espelhar">⇄</button></span></div>
 <div class="kcw"><img id="kcr-img" alt=""></div>
+<div class="kcz"><input type="range" id="kcr-z" min="0" max="1000" value="0" step="1" oninput="kcrZoom(this.value)" aria-label="Zoom"></div>
 <div class="kca"><button type="button" onclick="kcr.close()">Cancelar</button><button type="button" class="kcu" onclick="kcrOk()">Usar</button></div></dialog>
 <dialog id="rlm" onclick="if(event.target===this)this.close()"><div id="rlmb"></div></dialog>
 <dialog id="cm"><div class="mtl">Personalizar cores</div>
@@ -701,12 +710,13 @@ function relOpen(i){const r=f?.d?.relacionados?.[i];if(!r)return;if(!r.nome){if(
  rlmb.innerHTML=`<div class="rlh"><span class="rav">${foto?`<img src="${esc(foto)}" alt="">`:esc((r.nome||'?')[0])}</span><div><div class="rln">${esc(r.nome)}</div><div class="rlk">${esc(r.tipo)||'Relacionamento'}</div></div></div>${cx||'<div class="rlt" style="text-align:center;opacity:.6;margin:14px 0">Nenhuma informação adicionada ainda.</div>'}<div class="mb" style="justify-content:space-between;align-items:center;flex-wrap:wrap">${go||'<span></span>'}<button type="button" class="btn s" onclick="rlm.close()">Fechar</button></div>`;
  rlm.showModal()}
 /* crop (Cropper.js, igual ao do index/PokéGram): ar = proporção, w×h = tamanho final */
-let KCI=null,KCG=null,KCX=false;
-function cropOpen(file,ar,w,h,cb,t){const fr=new FileReader();fr.onload=()=>{KCG={w,h,cb};KCX=false;document.getElementById('kcr-t').textContent=t||'Recortar foto';
+let KCI=null,KCG=null,KCX=false,KCZ=1;
+function cropOpen(file,ar,w,h,cb,t,circ){const fr=new FileReader();fr.onload=()=>{KCG={w,h,cb};KCX=false;KCZ=1;document.getElementById('kcr-z').value=0;kcr.classList.toggle('kcirc',!!circ);document.getElementById('kcr-t').textContent=t||'Recortar foto';
  const im=document.getElementById('kcr-img');if(KCI){KCI.destroy();KCI=null}
- im.onload=()=>{KCI=new Cropper(im,{aspectRatio:ar,viewMode:2,dragMode:'move',autoCropArea:1,background:false,responsive:true,checkOrientation:false,guides:false,center:false,highlight:false,cropBoxMovable:false,cropBoxResizable:false,toggleDragModeOnDblclick:false,zoomOnWheel:true})};
+ im.onload=()=>{KCI=new Cropper(im,{aspectRatio:ar,viewMode:2,dragMode:'move',autoCropArea:1,background:false,responsive:true,checkOrientation:false,guides:false,center:false,highlight:false,cropBoxMovable:false,cropBoxResizable:false,toggleDragModeOnDblclick:false,zoomOnWheel:true,zoom:e=>{KCZ=Math.min(4,Math.max(1,KCZ*e.detail.ratio/e.detail.oldRatio));document.getElementById('kcr-z').value=(KCZ-1)/3*1000}})};
  im.onerror=()=>alert('Erro ao carregar a imagem.');im.src='';kcr.showModal();im.src=fr.result};fr.readAsDataURL(file)}
-function kcrRot(d){KCI&&KCI.rotate(d)}
+function kcrZoom(v){if(!KCI)return;const t=1+v/1000*3;KCI.zoom(t/KCZ-1)}
+function kcrRot(d){if(!KCI)return;KCI.rotate(d);KCZ=1;document.getElementById('kcr-z').value=0}
 function kcrFlip(){if(!KCI)return;KCX=!KCX;KCI.scaleX(KCX?-1:1)}
 function kcrEnd(){if(KCI){KCI.destroy();KCI=null}}
 function kcrOk(){if(!KCI||!KCG)return;const g=KCG,c=KCI.getCroppedCanvas({width:g.w,height:g.h,imageSmoothingQuality:'high',fillColor:'#fff'});kcr.close();if(c)g.cb(c)}
@@ -716,7 +726,7 @@ function relFoto(i){const r=f?.d?.relacionados?.[i];if(!ed||!r)return;
  if(r.slug)return alert('Este relacionado já tem ficha de player ou NPC: a foto vem de lá.');
  if(r.foto&&confirm('Remover a foto deste relacionado?\n\n(Cancelar = escolher outra foto)')){delete r.foto;render();return}
  const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
- inp.onchange=()=>{if(!inp.files[0])return;cropOpen(inp.files[0],1,96,96,c=>{r.foto=c.toDataURL('image/jpeg',.8);render()},'Recortar foto do relacionado')};inp.click()}
+ inp.onchange=()=>{if(!inp.files[0])return;cropOpen(inp.files[0],1,96,96,c=>{r.foto=c.toDataURL('image/jpeg',.8);render()},'Recortar foto do relacionado',true)};inp.click()}
 function relRes(e,fix){if(!DIRD||!f?.d?.relacionados)return;const i=+e.dataset.rel,r=f.d.relacionados[i];if(!r)return;const q=nrm(e.value);let m=null,ref=null;
  if(q){m=DIRD.pl.find(x=>x.slug!==f.slug&&nrm(x.nome)===q);ref=m?'player':null;if(!m){m=DIRD.np.find(x=>nrm(x.nome)===q);ref=m?'npc':null}}
  if(m){r.ref=ref;r.slug=m.slug;if(fix&&e.value!==m.nome){e.value=m.nome;r.nome=m.nome}}else{delete r.ref;delete r.slug}
