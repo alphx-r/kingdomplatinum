@@ -1,515 +1,63 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PokéMart | Kingdom Platinum</title>
-<link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
-<!-- PokéMart (/pokemart): compra e venda de itens da Bag da ficha. Itens vêm do items.json (flags.pokemart.enabled + price).
-     Compra desconta o dinheiro e soma na Bag; venda tira da Bag e soma o dinheiro (SELL_PCT do preço). Salva via /api/ficha-salvar.
-     vercel.json: { "source": "/pokemart", "destination": "/pokemart.html" } -->
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
-  --accent:#e8a020;--accent-light:#fdf3dc;
-  --bg:#808080;--surface:#fff;--surface2:#f0f3f8;
-  --border:#dde3ee;--border2:#c8d0e0;
-  --text:#1a1f2e;--muted:#6b7a99;
-  --red:#c03030;--green:#1a7a1a;
-  --r:10px;--font-title:'Cinzel',serif;--font-body:'Nunito',sans-serif;
-}
-html,body{min-height:100%;background:var(--bg);font-family:var(--font-body);color:var(--text)}
-:root{--sidenav-w:64px;--sidenav-w-open:220px}
-body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
-.nav{display:flex;flex-direction:column;align-items:stretch;padding:0;width:var(--sidenav-w);height:100vh;height:100dvh;background:var(--nav-bg,var(--brand));position:fixed;top:0;left:0;z-index:9000;overflow:hidden;transition:width .25s ease;box-shadow:2px 0 12px rgba(0,0,0,.15)}
-.nav.expanded{width:var(--sidenav-w-open);box-shadow:4px 0 24px rgba(0,0,0,.3)}
-.nav-top{display:flex;align-items:center;gap:10px;padding:0 14px;height:58px;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.1)}
-.nav-hamburger{position:relative;display:flex;justify-content:center;align-items:center;width:36px;height:36px;min-width:36px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.25);border-radius:8px;cursor:pointer;padding:0;flex-shrink:0;color:#fff;transition:background .2s,border-color .2s,color .2s}
-.nav-hamburger svg{width:18px;height:18px;display:block}
-#nav-player-badge.is-admin{border-color:rgba(255,255,255,.3)}
-.nav-logo{font-family:var(--font-title);font-size:15px;font-weight:700;color:#fff;letter-spacing:1px;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none}
-.nav.expanded .nav-logo{opacity:1;transition:opacity .3s ease .1s}
-.nav-logo span{color:var(--accent)}
-.nav-links{display:flex;flex-direction:column;gap:2px;padding:8px;overflow-y:auto;overflow-x:hidden;flex:1}
-html,body,*{scrollbar-width:none!important;-ms-overflow-style:none!important}
-html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
-.nav-link{display:flex;align-items:center;gap:12px;font-size:13px;font-weight:600;font-family:var(--font-body);padding:10px 12px;border-radius:10px;border:none;background:transparent;color:rgba(255,255,255,.7);cursor:pointer;transition:all .2s;white-space:nowrap;width:100%;text-align:left;text-decoration:none!important}
-.nav-link:hover,.nav-link:visited,.nav-link:active,.nav-link:focus{text-decoration:none!important}
-.nav-link:hover{background:rgba(255,255,255,.12);color:#fff}
-.nav-link.active{background:rgba(255,255,255,.18);color:#fff}
-.nav-link .nav-ico{font-size:17px;min-width:20px;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.nav-ico svg{width:17px;height:17px;display:block}
-.nav-link .nav-label{opacity:0;transition:opacity .15s;overflow:hidden}
-.nav.expanded .nav-link .nav-label{opacity:1;transition:opacity .25s ease .08s}
-.nav-drop-wrap{position:relative;display:flex;flex-direction:column}
-.nav-drop-btn{font-size:13px;font-weight:600;font-family:var(--font-body);padding:10px 12px;border-radius:10px;border:none;background:transparent;color:rgba(255,255,255,.7);cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:12px;width:100%;text-align:left;white-space:nowrap}
-.nav-drop-btn:hover,.nav-drop-btn.open,.nav-drop-btn.active{background:rgba(255,255,255,.2);color:#fff}
-.nav-drop-btn .nav-ico{font-size:17px;min-width:20px;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.nav-drop-btn .nav-label{opacity:0;transition:opacity .15s;overflow:hidden;flex:1}
-.nav.expanded .nav-drop-btn .nav-label{opacity:1;transition:opacity .25s ease .08s}
-.nav-drop-btn .nav-drop-arrow{font-size:10px;line-height:1;opacity:0;transition:opacity .15s,transform .2s;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px}
-.nav.expanded .nav-drop-btn .nav-drop-arrow{opacity:1}
-.nav-drop-btn.open .nav-drop-arrow{transform:rotate(180deg)}
-.nav-drop-menu{display:none;flex-direction:column;gap:2px;padding:2px 0 2px 14px;margin-top:2px}
-.nav-drop-menu.open{display:flex}
-.nav-drop-item{font-size:12.5px;font-weight:600;font-family:var(--font-body);padding:9px 12px;border-radius:8px;border:none;background:transparent;color:rgba(255,255,255,.75);cursor:pointer;transition:all .15s;text-align:left;white-space:nowrap;display:flex;align-items:center;gap:10px}
-.nav-drop-item:hover{background:rgba(255,255,255,.15);color:#fff}
-.nav-bottom{padding:8px;border-top:1px solid rgba(255,255,255,.1);flex-shrink:0}
-.nav-login{font-size:12px;font-weight:700;font-family:var(--font-body);padding:10px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.5);background:transparent;color:#fff;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:12px;width:100%;white-space:nowrap}
-.nav-login .nav-ico{font-size:16px;min-width:20px;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.nav-login .nav-label{opacity:0;transition:opacity .15s;overflow:hidden}
-.nav.expanded .nav-login .nav-label{opacity:1;transition:opacity .25s ease .08s}
-.nav-login:hover{background:var(--accent);border-color:var(--accent)}
-.nav-login.active{background:var(--accent);border-color:var(--accent)}
-.nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:8999}
-.nav-overlay.open{display:block}
-.loading-overlay{position:fixed;inset:0;background:var(--bg, #f4f6fa);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
-.loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:#e53e3e;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-text{font-size:14px;color:var(--muted);font-weight:600}
-#nav-player-badge{
-  display:none;align-items:center;gap:0;justify-content:center;
-  background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.3);
-  border-radius:20px;padding:8px 0;font-size:12px;font-weight:700;color:#fff;
-  width:100%;overflow:hidden;white-space:nowrap;
-}
-#nav-player-name{overflow:hidden;text-overflow:ellipsis;text-align:center;opacity:0;width:0;transition:opacity .15s}
-.nav-player-ico{width:14px;height:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.nav-player-ico svg{width:14px;height:14px;display:block}
-.nav.expanded #nav-player-badge{gap:6px;padding:8px 10px;width:100%}
-.nav.expanded #nav-player-name{opacity:1;width:auto;flex:1;transition:opacity .25s ease .08s}
-#nav-player-badge .player-logout-btn{
-  background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;
-  font-size:13px;padding:0 0 0 6px;line-height:1;transition:color .15s,opacity .15s;flex-shrink:0;
-  opacity:0;width:0;overflow:hidden;pointer-events:none;
-}
-.nav.expanded #nav-player-badge .player-logout-btn{opacity:1;width:auto;padding:0 0 0 6px;pointer-events:auto;transition:opacity .2s ease .08s}
-#nav-player-badge .player-logout-btn:hover{color:#fff}
-.btn{padding:8px 16px;border-radius:3px;border:0;font:700 13px var(--fb);cursor:pointer;background:#eee;color:#222;border:1px solid #ccc}
-.btn:hover{opacity:.85}
-.btn.p{background:var(--brand-mid);color:#fff;border-color:var(--brand-mid)}
-.btn.d{background:#fee2e2;color:#c00;border-color:#fca5a5}
-.btn.s{padding:5px 12px;font-size:12px}
-dialog#rlm{width:min(440px,94vw);text-align:left}
-.in{width:100%;padding:6px 10px;border:1.5px solid #ccc;border-radius:3px;font:13px var(--fb);background:#fff;outline:none}
-.in:focus{border-color:var(--pri)}
-dialog{margin:auto;padding:24px;border:0;border-radius:4px;width:min(360px,92vw);box-shadow:0 8px 32px rgba(0,0,0,.3)}
-dialog::backdrop{background:rgba(0,0,0,.6)}
-.mtl{font:700 16px var(--ft);text-align:center;margin-bottom:16px}
-dialog .in{margin-bottom:8px}
-.mb{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 16px;border-radius:4px;font-size:13px;display:none;z-index:9100}
-.card{background:var(--surface);border-radius:var(--r);padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.12);margin-bottom:16px}
-.btn2{padding:9px 18px;border-radius:8px;border:0;font:700 13px var(--fb);cursor:pointer;text-decoration:none;display:inline-block;background:var(--surface2);color:var(--tx)}
-.btn2.p{background:var(--brand-mid);color:#fff}
-.btn2.p:hover{background:var(--brand)}
-.btn2.d{background:#fde8e8;color:#c03030}
-.btn2.s{padding:5px 11px;font-size:12px}
-:root{--pri:#1a1a1a;--sec:#3a3a3a;--fbg:#f4f6fa;--sf:#fff;--s2:#f0f0f0;--tx:#1a1f2e;--mu:#666;--bd:#d0d0d0;--ft:var(--font-title);--fb:var(--font-body)}
-a.nav-login,a.nav-drop-item{text-decoration:none}
-a.nav-login{margin-bottom:6px}
-@media(max-width:768px){
-:root{--sidenav-w:0px}
-body{padding-left:0!important}
-body.nav-expanded{padding-left:0!important}
-.nav{
-    flex-direction:row;align-items:center;justify-content:flex-start;
-    width:100%!important;height:52px;padding:0 14px;
-    position:sticky;top:0;left:auto;
-    overflow:visible;box-shadow:0 2px 12px rgba(0,0,0,.25);
-  }
-.nav.expanded{width:100%!important;box-shadow:0 2px 12px rgba(0,0,0,.25)}
-.nav-top{padding:0;height:auto;border-bottom:none;flex:0 0 auto;width:auto}
-.nav-logo{font-size:14px;opacity:1!important;pointer-events:auto}
-.nav-links{
-    display:none;position:fixed;top:52px;left:0;right:0;
-    flex-direction:column;flex:none;padding:8px 10px 12px;
-    background:var(--nav-bg,var(--brand));box-shadow:0 6px 20px rgba(0,0,0,.3);
-    max-height:calc(100dvh - 52px);overflow-y:auto;gap:2px;
-  }
-.nav.expanded .nav-links{display:flex}
-.nav-bottom{border-top:none;padding:0;flex:0 0 auto;display:flex;align-items:center;margin-left:auto}
-.nav-login{width:auto;padding:6px 12px;font-size:11px}
-.nav-login .nav-label{opacity:1!important;width:auto!important}
-#nav-player-badge,.nav.expanded #nav-player-badge{width:auto!important;min-width:0!important;flex-shrink:0;gap:14px!important;padding:11px 24px!important}
-#nav-player-name{opacity:1!important;width:auto!important;font-size:14px;letter-spacing:.2px}
-#nav-player-badge .player-logout-btn,.nav.expanded #nav-player-badge .player-logout-btn{opacity:1!important;width:auto!important;pointer-events:auto!important;padding:0!important;font-size:16px}
-.nav.expanded #nav-player-name{flex:none}
-a.nav-login{margin:0 6px 0 0}
-#btn-adm{padding:8px 10px}
-#btn-adm .nav-label{display:none!important}
-#nav-player-badge,.nav.expanded #nav-player-badge{padding:9px 14px!important;gap:8px!important;max-width:42vw}
-.nav-bottom{min-width:0}
-}
-dialog#lg{background:#717171;border:1.5px solid rgba(255,255,255,.15);border-radius:16px;padding:36px 32px 28px;width:min(380px,94vw);box-shadow:0 16px 60px rgba(0,0,0,.5);color:#fff}
-dialog#lg::backdrop{background:rgba(10,20,40,.92);backdrop-filter:blur(6px)}
-dialog#invm{width:min(520px,94vw)}
-.imr{display:flex;align-items:center;gap:10px;padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--bd);font:600 13px var(--fb)}
-.imr:last-child{border-bottom:0}
-.imr:hover{background:var(--s2)}
-.imi{width:24px;height:24px;flex:none;display:flex;align-items:center;justify-content:center}
-.imi img{width:24px;height:24px;object-fit:contain}
-.imn{flex:1;min-width:0}
-dialog#cqm{width:min(420px,94vw);text-align:center}
-@media(max-width:768px){
-body.rolou .fback,body.rolou .fgear{opacity:.2}
-body.rolou .fback:active,body.rolou .fgear:active,body.rolou .fgear:has(.fstack.open){opacity:1}
-}
-:root{--pri:#1a1a1a;--s2:#f0f0f0;--mu:#666;--bd:#d0d0d0;--ft:var(--font-title);--fb:var(--font-body)}
-.wrap{max-width:900px;margin:0 auto;padding:16px 12px 40px}
-.lt{font-size:15px;color:#333;font-weight:600;padding:40px;text-align:center}
-.card{background:var(--surface);border-radius:var(--r);padding:16px 18px;box-shadow:0 2px 10px rgba(0,0,0,.12);margin-bottom:14px}
-.lh{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.lhf{display:flex;align-items:center;gap:12px;flex:1;min-width:200px}
-.lhf img,.lhf .ph{width:52px;height:52px;border-radius:50%;object-fit:cover;background:var(--s2);flex:none;display:flex;align-items:center;justify-content:center;font:700 20px var(--ft);color:var(--mu)}
-.lhn{font:800 18px var(--ft)}.mu{color:var(--mu);font:600 12px var(--fb)}
-.lhs{text-align:right}.lhs span{display:block;font:800 10px var(--fb);letter-spacing:.6px;text-transform:uppercase;color:var(--mu)}.lhs b{font:800 22px var(--ft)}
-.ltabs{display:flex;gap:4px;padding:4px;margin:0 0 12px;background:rgba(255,255,255,.35);border-radius:10px}
-.ltabs button{flex:1;border:0;background:none;border-radius:7px;padding:10px 14px;font:800 13px var(--fb);cursor:pointer;color:#fff}
-.ltabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.15)}
-.tb{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
-.chs{display:flex;flex-wrap:wrap;gap:6px}.ch{border:1px solid var(--bd);background:var(--surface);color:var(--text);border-radius:14px;padding:4px 11px;font:700 11px var(--fb);cursor:pointer}.ch.on{background:var(--brand-mid);color:#fff;border-color:transparent}
-.lst{background:var(--surface);border-radius:var(--r);box-shadow:0 2px 10px rgba(0,0,0,.12);overflow:hidden}
-.lr{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--bd);font:600 13px var(--fb)}.lr:last-child{border-bottom:0}
-.lr.on{background:var(--accent-light)}
-.lr .imi{width:30px;height:30px}.lr .imi img{width:30px;height:30px;object-fit:contain}
-.lr .imn{flex:1;min-width:0}.lr .imn small{display:block;font:500 11px var(--fb);color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lown{font:700 11px var(--fb);color:var(--mu);white-space:nowrap}
-.lp{font:800 12px var(--fb);white-space:nowrap;min-width:64px;text-align:right}
-.stp{display:flex;align-items:center;gap:4px;flex:none}.stp button{width:28px;height:28px;border:1px solid var(--bd);border-radius:6px;background:var(--s2);font:800 15px var(--fb);cursor:pointer;line-height:1}.stp button:hover{background:#e4e4e4}
-.stp input{width:46px;height:28px;text-align:center;border:1.5px solid #ccc;border-radius:6px;font:700 13px var(--fb);padding:0;-moz-appearance:textfield}.stp input::-webkit-outer-spin-button,.stp input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.lns{font:700 11px var(--fb);color:var(--mu);width:150px;text-align:right}
-.sum{position:sticky;bottom:10px;z-index:60;margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--surface);border-radius:var(--r);padding:12px 16px;box-shadow:0 4px 20px rgba(0,0,0,.3)}
-.sumi{display:flex;gap:16px;flex-wrap:wrap;font:600 12px var(--fb);color:var(--mu)}.sumi b{font:800 14px var(--fb);color:var(--text);margin-left:3px}.sumi .neg{color:#c03030}.sumi .pos{color:#1a7a1a}
-.suma{display:flex;gap:8px}.suma .btn[disabled]{opacity:.45;cursor:not-allowed}
-/* Login — mesmo estilo do index */
-dialog#lg{background:#717171;border:1.5px solid rgba(255,255,255,.15);border-radius:16px;padding:36px 32px 28px;width:min(380px,94vw);box-shadow:0 16px 60px rgba(0,0,0,.5);color:#fff}
-dialog#lg::backdrop{background:rgba(10,20,40,.92);backdrop-filter:blur(6px)}
-.lg-logo{display:flex;justify-content:center;margin-bottom:18px}.lg-logo img{height:48px;object-fit:contain}
-.lg-title{font-family:var(--font-title);font-size:20px;color:#fff;text-align:center;margin-bottom:4px;letter-spacing:.5px}
-.lg-sub{font-size:13px;color:rgba(255,255,255,.65);text-align:center;margin-bottom:24px}
-.lgf{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
-.lgf label{font-size:11px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;letter-spacing:.6px}
-.lgf input{padding:9px 12px;border-radius:8px;border:1.5px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);font-family:var(--font-body);font-size:14px;color:#fff;transition:border .2s;width:100%}
-.lgf input::placeholder{color:rgba(255,255,255,.4)}.lgf input:focus{border-color:rgba(255,255,255,.6);outline:none}
-#le{background:rgba(255,80,80,.2);color:#ffcccc;border:1px solid rgba(255,100,100,.35);font-size:12px;font-weight:700;border-radius:6px;padding:7px 12px;margin-top:8px;display:none;text-align:center}
-.lg-btn{width:100%;padding:12px;border-radius:10px;border:none;background:var(--brand-mid);color:#fff;font-family:var(--font-title);font-size:15px;letter-spacing:1px;cursor:pointer;transition:background .2s;margin-top:8px}.lg-btn:hover{background:var(--brand)}
-.lg-skip{display:block;margin:14px auto 0;background:none;border:0;color:rgba(255,255,255,.6);font:600 12px var(--font-body);cursor:pointer}.lg-skip:hover{color:#fff}
+-- PokéMart: cupons. Rode uma vez no SQL Editor do Supabase do projeto "ucbkodkjlbatttiuqjtv" (o mesmo do player_login).
+create table if not exists pokemart_cupons(
+  codigo text primary key,
+  tipo text not null check (tipo in ('pct','fixo')),
+  valor int not null check (valor > 0),
+  expira_em date,
+  usos_max int,
+  usos int not null default 0,
+  ativo boolean not null default true,
+  criado_em timestamptz not null default now()
+);
+alter table pokemart_cupons enable row level security;  -- sem policies: só as funções abaixo acessam
 
-dialog#qm{width:min(520px,94vw)}.qg{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:60vh;overflow-y:auto;padding:2px}
-.qc{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 10px;border:2px solid var(--bd);border-radius:12px;background:var(--surface);color:var(--text);cursor:pointer;font-family:var(--font-body);text-align:center;transition:transform .12s,border-color .12s,box-shadow .12s}
-.qc:hover{transform:translateY(-2px);border-color:var(--brand-mid);box-shadow:0 6px 16px rgba(0,0,0,.18)}.qc.on{border-color:var(--accent);background:var(--accent-light)}
-.qc img,.qc .ph{width:72px;height:72px;border-radius:50%;object-fit:cover;background:var(--s2);display:flex;align-items:center;justify-content:center;font:700 28px var(--ft);color:var(--mu)}
-.qc b{font:800 15px var(--ft);word-break:break-word}.qc small{font:600 12px var(--fb);color:var(--mu)}
-@media(max-width:560px){.lr{flex-wrap:wrap}.lr .imn{flex:1 1 55%}.lown{order:5}.lns{width:auto}}
-</style>
-</head>
-<body>
-<div class="loading-overlay" id="loading-overlay"><div class="loading-spinner"></div><div class="loading-text">Carregando Kingdom Platinum...</div></div>
-<nav class="nav" id="main-nav">
-  <div class="nav-top">
-    <button class="nav-hamburger" id="nav-hamburger" onclick="toggleSidenav()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
-    <div class="nav-logo"><img src="https://kpfichas.vercel.app/favicon.png?v=5" style="height:26px;object-fit:contain;" alt="Kingdom Platinum"></div>
-  </div>
-  <div class="nav-links">
-    <a class="nav-link" href="/"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg></span><span class="nav-label">Pokémon</span></a>
-    <a class="nav-link" href="/bioma"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 4 13c0-4.5 3-8 8-13 5 5 8 8.5 8 13a7 7 0 0 1-7 7"/><path d="M11 20v-9"/></svg></span><span class="nav-label">Bioma</span></a>
-    <a class="nav-link" href="/dados"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="16" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg></span><span class="nav-label">Dados</span></a>
-    <a class="nav-link" href="/rolls"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="11" height="11" rx="2"/><circle cx="5.5" cy="12.5" r=".8" fill="currentColor" stroke="none"/><circle cx="9.5" cy="16.5" r=".8" fill="currentColor" stroke="none"/><rect x="11" y="2" width="11" height="11" rx="2"/><circle cx="14.5" cy="5.5" r=".8" fill="currentColor" stroke="none"/><circle cx="18.5" cy="5.5" r=".8" fill="currentColor" stroke="none"/><circle cx="14.5" cy="9.5" r=".8" fill="currentColor" stroke="none"/><circle cx="18.5" cy="9.5" r=".8" fill="currentColor" stroke="none"/></svg></span><span class="nav-label">Rolls</span></a>
-    <a class="nav-link" href="/fichas"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="nav-label">Fichário</span></a>
-    <a class="nav-link active" href="/pokemart"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M10 20v-5h4v5"/></svg></span><span class="nav-label">PokéMart</span></a>
-    <a class="nav-link" href="/datadex"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="nav-label">Datadex</span></a>
-    <a class="nav-link" href="/calendario"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg></span><span class="nav-label">Calendário</span></a>
-    <a class="nav-link" href="/tramas"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.5 5.2 8.2 4.5 6 4.5c-1 0-2 .1-3 .4v13c1-.3 2-.4 3-.4 2.2 0 4.5.7 6 2 1.5-1.3 3.8-2 6-2 1 0 2 .1 3 .4v-13c-1-.3-2-.4-3-.4-2.2 0-4.5.7-6 2z"/><path d="M12 6.5v13"/></svg></span><span class="nav-label">Tramas</span></a>
-    <a class="nav-link" href="https://kpfichas.vercel.app/integrar-rolagens"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg></span><span class="nav-label">Conectar Fichário</span></a>
-    <button class="nav-link" onclick="abrirPokegram()"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span><span class="nav-label">Pokégram</span></button>
-    <a class="nav-link" href="weathercast.html" style="display:none"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.6 1.5A4 4 0 0 0 6.5 19h11z"/></svg></span><span class="nav-label">WeatherCast</span></a>
-    <!-- WeatherCast oculto do menu por enquanto -->
-    <div class="nav-drop-wrap" id="nav-drop-wrap">
-      <button class="nav-drop-btn" id="nav-drop-btn" onclick="toggleNavDrop(event)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg></span><span class="nav-label">Mais</span><span class="nav-drop-arrow">▾</span></button>
-      <div class="nav-drop-menu" id="nav-drop-menu">
-        <a class="nav-drop-item" href="/ganhos"><span class="nav-label">Ganhos</span></a>
-        <a class="nav-drop-item" href="/nature"><span class="nav-label">Natures</span></a>
-        <a class="nav-drop-item" href="/batalhas"><span class="nav-label">Batalhas</span></a>
-      </div>
-    </div>
-  </div>
-  <div class="nav-bottom">
-    <a class="nav-login" id="btn-adm" href="/fichas/adm" style="display:none"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 19 4M16 4h4v4M19 4l-4 4"/></svg></span><span class="nav-label">Painel ADM</span></a>
-    <button class="nav-login" id="btn-entrar" onclick="closeSidenav();lg.showModal()"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg></span><span class="nav-label">Entrar</span></button>
-    <div id="nav-player-badge">
-      <span id="nav-player-ico" class="nav-player-ico"></span>
-      <span id="nav-player-name">—</span>
-      <button class="player-logout-btn" onclick="sair()" title="Sair">✕</button>
-    </div>
-  </div>
-</nav>
-<div class="nav-overlay" id="nav-overlay" onclick="closeSidenavMobile()"></div>
-<div id="app"></div><div class="toast" id="tst"></div>
-<dialog id="qm" oncancel="if(!F)event.preventDefault()" onclick="if(event.target===this&&F)this.close()"><div class="mtl">Quem está acessando a PokéMart?</div><div class="mu" style="text-align:center;margin:-8px 0 12px">Escolha a ficha que vai comprar e vender.</div><input class="in" id="qq" type="search" autocomplete="off" placeholder="Buscar ficha..." style="display:none" oninput="drawQm()"><div class="qg" id="qg" onclick="qmClick(event)"></div><div class="mb" id="qmb"></div></dialog>
-<dialog id="lg"><div class="lg-logo"><img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" alt="Kingdom Platinum"></div>
-<div class="lg-title">Kingdom Platinum</div>
-<div class="lg-sub" id="lsub">Use a mesma conta do Kingdom Platinum</div>
-<div class="lgf"><label>Player</label><input id="ln" type="text" placeholder="Ex: joaosilva" autocomplete="username" onkeydown="if(event.key==='Enter')ls.focus()" oninput="sanP(this);chk1()"></div>
-<div class="lgf"><label>Senha</label><input id="ls" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter'){if(lcw.style.display!=='none')lc.focus();else entrar()}"></div>
-<div class="lgf" id="lcw" style="display:none"><label>Confirmar Senha <span style="font-size:10px;font-weight:400;opacity:.7">(primeiro acesso)</span></label><input id="lc" type="password" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')entrar()"></div>
-<div id="le"></div>
-<button type="button" class="lg-btn" onclick="entrar()">Entrar</button>
-<button type="button" class="lg-skip" onclick="lg.close();">Continuar sem entrar</button></dialog>
-<script>
-// ── Ícone do botão de controle do sidebar (vetor): hamburguer/fechar ──
-const NAV_ICO_MENU  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>';
-const NAV_ICO_GAMEPAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>';
-const NAV_ICO_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-const NAV_ICO_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2 11.4 11.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>';
-function renderHamburgerIcon(){
-  const btn=document.getElementById('nav-hamburger');
-  if(!btn) return;
-  const isOpen = document.getElementById('main-nav')?.classList.contains('expanded');
-  btn.innerHTML = isOpen ? NAV_ICO_CLOSE : NAV_ICO_MENU;
-}
+create or replace function pokemart_is_admin(p_admin text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if lower(coalesce(p_admin,'')) in ('ricky','jef','lucas') then return true; end if;
+  begin
+    return exists (select 1 from admin_list() a where a.nome = p_admin);
+  exception when others then return false;
+  end;
+end $$;
 
-function toggleSidenav(){
-  const nav=document.getElementById('main-nav');
-  nav.classList.contains('expanded') ? closeSidenav() : openSidenav();
-}
-function openSidenav(){
-  const nav=document.getElementById('main-nav');
-  const btn=document.getElementById('nav-hamburger');
-  const overlay=document.getElementById('nav-overlay');
-  nav.classList.add('expanded');
-  btn.classList.add('open');
-  document.body.classList.add('nav-expanded');
-  overlay.classList.add('open');
-  renderHamburgerIcon();
-}
-function closeSidenav(){
-  const nav=document.getElementById('main-nav');
-  const btn=document.getElementById('nav-hamburger');
-  const overlay=document.getElementById('nav-overlay');
-  nav.classList.remove('expanded');
-  btn.classList.remove('open');
-  document.body.classList.remove('nav-expanded');
-  overlay.classList.remove('open');
-  document.getElementById('nav-drop-menu')?.classList.remove('open');
-  document.getElementById('nav-drop-btn')?.classList.remove('open');
-  renderHamburgerIcon();
-}
-function closeSidenavMobile(){ closeSidenav(); }
-// Recolhe a sidenav automaticamente ao clicar em um link (sempre sobrepõe, então sempre recolhe)
-document.addEventListener('click',function(e){
-  const nav=document.getElementById('main-nav');
-  if(!nav||!nav.classList.contains('expanded'))return;
-  const link=e.target.closest('.nav-link,.nav-drop-item');
-  if(link) closeSidenav();
-});
-// Compatibilidade com chamadas antigas (não usadas mais, mas evita erros)
-function toggleMobileMenu(){ toggleSidenav(); }
-function closeMobileMenu(){ closeSidenav(); }
-function toggleNavDrop(e){
-  e.stopPropagation();
-  const nav = document.getElementById('main-nav');
-  if(nav && !nav.classList.contains('expanded')) openSidenav();
-  const menu = document.getElementById('nav-drop-menu');
-  const btn  = document.getElementById('nav-drop-btn');
-  const open = menu.classList.toggle('open');
-  btn.classList.toggle('open', open);
-  if(open) document.addEventListener('click', closeNavDrop, {once:true});
-}
-function closeNavDrop(){
-  document.getElementById('nav-drop-menu')?.classList.remove('open');
-  document.getElementById('nav-drop-btn')?.classList.remove('open');
-}
+create or replace function pokemart_cupom_check(p_codigo text)
+returns table(codigo text, tipo text, valor int)
+language sql security definer set search_path = public as $$
+  select c.codigo, c.tipo, c.valor from pokemart_cupons c
+  where c.codigo = upper(trim(p_codigo)) and c.ativo
+    and (c.expira_em is null or c.expira_em >= current_date)
+    and (c.usos_max is null or c.usos < c.usos_max)
+$$;
 
-const IU='https://ucbkodkjlbatttiuqjtv.supabase.co',IK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4',SK='kp_ficha_sessao';
-const SELL_PCT=0.5,MAXQ=99,ADM_PLAYERS=['ricky','jef','lucas'];
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const nk=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-const nrm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-const jl=u=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);
-const fnum=v=>String(v??'').replace(/\D/g,'').replace(/^0+(?=\d)/,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-const dig=v=>parseInt(String(v??'').replace(/\D/g,''))||0;
-const fm=n=>fnum(Math.abs(n)||0)+'C$';
-function toast(m){const t=$('tst');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2400)}
-function fim(){$('loading-overlay')?.remove()}
+create or replace function pokemart_cupom_usar(p_codigo text) returns void
+language sql security definer set search_path = public as $$
+  update pokemart_cupons set usos = usos + 1
+  where codigo = upper(trim(p_codigo)) and ativo
+    and (usos_max is null or usos < usos_max)
+$$;
 
-/* tema (mesmas cores do index/fichas) */
-const TEMAS_SAZ={
- primavera:{brand:'#1a4a2a',brandMid:'#2e9e50',accent:'#80d880',bg:'#f0fbf2',surface:'#ffffff',text:'#0a1e0e'},
- verao:{brand:'#E2582B',brandMid:'#C2410C',accent:'#D9483B',bg:'#fff7f0',surface:'#ffffff',text:'#2b1208'},
- outono:{brand:'#3a1800',brandMid:'#a05020',accent:'#d08030',bg:'#fff8f0',surface:'#ffffff',text:'#1e0e00'},
- inverno:{brand:'#0a1e3a',brandMid:'#3a80c8',accent:'#90c8f0',bg:'#f0f6ff',surface:'#ffffff',text:'#0a1428'}
-};
-const EST_MES={1:'primavera',2:'verao',3:'outono',4:'inverno',5:'primavera',6:'verao',7:'outono',8:'inverno',9:'primavera',10:'verao',11:'outono',12:'inverno'};
-function aplicaTema(t){if(!t)return;const r=document.documentElement.style;[['--brand','brand'],['--brand-mid','brandMid'],['--accent','accent'],['--bg','bg'],['--surface','surface'],['--text','text']].forEach(([v,k])=>{if(t[k])r.setProperty(v,t[k])})}
-(async()=>{
- try{aplicaTema(JSON.parse(localStorage.getItem('kp_tema')))}catch{}
- const IU='https://ucbkodkjlbatttiuqjtv.supabase.co',IK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
- const q=p=>fetch(IU+'/rest/v1/'+p,{headers:{apikey:IK,Authorization:'Bearer '+IK}}).then(r=>r.ok?r.json():[]).catch(()=>[]);
- const [ea,es]=await Promise.all([q('config?chave=eq.estacao_ativa&select=valor'),q('configuracoes?chave=eq.estilo&select=valor')]);
- let est=ea?.[0]?.valor;
- if(!TEMAS_SAZ[est]){const m=parseInt(new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',month:'numeric'}).format(new Date()),10);est=EST_MES[m]}
- const base=es?.[0]?.valor&&typeof es[0].valor==='object'?es[0].valor:{};
- const t={...base,...(TEMAS_SAZ[est]||{})};
- aplicaTema(t);try{localStorage.setItem('kp_tema',JSON.stringify(t))}catch{}
-})();
+create or replace function pokemart_cupom_listar(p_admin text)
+returns setof pokemart_cupons
+language plpgsql security definer set search_path = public as $$
+begin
+  if not pokemart_is_admin(p_admin) then raise exception 'Sem permissão.'; end if;
+  return query select * from pokemart_cupons order by criado_em desc;
+end $$;
 
-let ses=null;try{ses=JSON.parse(localStorage.getItem(SK))}catch{}
-let LST=null,FL=[],F=null,ITM=null,TAB='b',CAT='',Q='',CB={},CS={},busy=false;
+create or replace function pokemart_cupom_salvar(p_admin text, p_codigo text, p_tipo text, p_valor int, p_expira date, p_usos_max int, p_ativo boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not pokemart_is_admin(p_admin) then raise exception 'Sem permissão.'; end if;
+  insert into pokemart_cupons(codigo,tipo,valor,expira_em,usos_max,ativo)
+  values (upper(trim(p_codigo)),p_tipo,p_valor,p_expira,p_usos_max,p_ativo)
+  on conflict (codigo) do update set tipo=excluded.tipo, valor=excluded.valor,
+    expira_em=excluded.expira_em, usos_max=excluded.usos_max, ativo=excluded.ativo;
+end $$;
 
-/* itens: items.json do repositório */
-let ITD;const ITL=()=>ITD??=jl('/itemdex/items.json').then(d=>d||jl('/items.json')).then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:x.sprite||x.image||x.img,item_desc:x.item_desc||x.desc||x.descricao})});return m});
-const isMart=it=>!!it&&it.flags?.pokemart?.enabled===true&&it.price!=null&&Number.isFinite(+it.price)&&+it.price>0;
-const sellUnit=it=>it&&it.price!=null&&Number.isFinite(+it.price)?Math.floor(+it.price*SELL_PCT):0;
-
-/* sessão: admin do index (adm_session) vira admin aqui */
-async function idxSync(){
- try{
-  let a=null;try{a=JSON.parse(localStorage.getItem('adm_session'))}catch{}
-  let ok=false;
-  if(a?.email){
-   const r=await fetch(IU+'/rest/v1/rpc/admin_list',{method:'POST',headers:{apikey:IK,Authorization:'Bearer '+IK,'Content-Type':'application/json'},body:'{}'});
-   if(r.ok){const l=await r.json();ok=Array.isArray(l)&&l.some(x=>x&&x.nome===a.email)}else return;
-  }
-  if(ok){ses={...(ses||{}),admin:true,idx:true};if(!ses.nome)ses.nome=a.email;localStorage.setItem(SK,JSON.stringify(ses))}
-  else if(ses?.idx){delete ses.admin;delete ses.idx;if(ses.token)localStorage.setItem(SK,JSON.stringify(ses));else{ses=null;localStorage.removeItem(SK)}}
- }catch{}
-}
-const isAdm=()=>!!ses&&(!!ses.admin||ADM_PLAYERS.includes(nrm(ses.nome)));
-const irpc=async(n,b)=>{const r=await fetch(IU+'/rest/v1/rpc/'+n,{method:'POST',headers:{apikey:IK,Authorization:'Bearer '+IK,'Content-Type':'application/json'},body:JSON.stringify(b)});const t=await r.text();let j=null;try{j=JSON.parse(t)}catch{}if(!r.ok)throw new Error(j?.message||'HTTP '+r.status);return Array.isArray(j)?j[0]:j};
-const sanP=el=>{const v=el.value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();if(v!==el.value)el.value=v};
-let lt=null;
-function chk1(){clearTimeout(lt);lt=setTimeout(async()=>{let p=false;const n=$('ln').value.trim();if(n){try{const st=await irpc('player_check',{p_nome:n});p=!!(st&&st.existe&&st.precisa_senha)}catch{}}$('lcw').style.display=p?'':'none';$('lsub').textContent=p?'Primeiro acesso — crie sua senha':'Use a mesma conta do Kingdom Platinum'},400)}
-async function entrar(){const le=$('le');le.style.display='none';
- try{sanP($('ln'));const n=$('ln').value.trim(),sn=$('ls').value,lc=$('lc');if(!n)throw new Error('Informe seu nome de player.');if(!sn)throw new Error('Informe a senha.');
-  const st=await irpc('player_check',{p_nome:n});if(!st||!st.existe)throw new Error('Player não encontrado.');let m;
-  if(st.precisa_senha){if(!lc.value)throw new Error('Confirme sua senha.');if(sn!==lc.value)throw new Error('As senhas não coincidem.');if(sn.length<4)throw new Error('A senha deve ter pelo menos 4 caracteres.');m=await irpc('player_set_initial_password',{p_nome:n,p_senha:sn});if(!m)throw new Error('Este player já possui uma senha definida.')}
-  else{m=await irpc('player_login',{p_nome:n,p_senha:sn});if(!m)throw new Error('Senha incorreta.')}
-  const r=await fetch('/api/ficha-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:n,senha:sn})});const j=await r.json().catch(()=>null);
-  if(!r.ok||!j?.token)throw new Error(j?.error||'Nome ou senha incorretos.');
-  ses=j;localStorage.setItem(SK,JSON.stringify(j));try{localStorage.setItem('player_session',JSON.stringify({nome:m.nome,id:m.id}))}catch{}
-  $('ls').value='';lc.value='';$('lcw').style.display='none';$('lg').close();await idxSync();LST=null;boot()
- }catch(e){le.textContent=e.message;le.style.display='block'}}
-function sair(){localStorage.removeItem(SK);ses=null;F=null;LST=null;boot()}
-function mostrarBadge(){const b=$('nav-player-badge');if(!b)return;const ad=!!ses?.admin;
- $('btn-entrar').style.display=ses?'none':'';$('btn-adm').style.display=ad?'':'none';
- if(ses){b.classList.toggle('is-admin',ad);$('nav-player-ico').innerHTML=ad?NAV_ICO_KEY:NAV_ICO_GAMEPAD;$('nav-player-name').textContent=ses.nome||(ad?'Admin':'');b.style.display='flex'}else b.style.display='none'}
-
-/* API de fichas (mesma do fichário) */
-async function carregaLista(){if(!LST){const r=await fetch('/api/ficha-salvar?lista=1');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
-async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug)+'&_='+Date.now());if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
-async function salvarFicha(x){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);return j}
-function minhas(l){const me=nrm(ses.nome);return l.filter(x=>x&&x.desativada!=='true'&&(isAdm()||(x.player_id!=null&&ses.player_id!=null?x.player_id===ses.player_id:nrm(x.player)===me))).sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')))}
-
-/* dados da ficha atual */
-const saldo=()=>dig(F?.d?.dinheiro);
-const bag=()=>(Array.isArray(F?.d?.inventario)?F.d.inventario:[]).filter(x=>x&&x.nome);
-const ownQ=k=>{const e=bag().find(x=>nk(x.nome)===k);return e?(parseInt(e.qtd)||1):0};
-function totais(){let c=0,v=0;
- for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(it&&q>0)c+=+it.price*q}
- for(const[k,q]of Object.entries(CS)){const it=ITM.get(k);if(it&&q>0)v+=sellUnit(it)*q}
- return{c,v,fin:saldo()+v-c}}
-
-/* telas */
-const msg=h=>`<div class="wrap"><div class="card lt">${h}</div></div>`;
-async function boot(){
- mostrarBadge();
- if(!ses){$('app').innerHTML=msg('Entre com a sua conta para usar a PokéMart.<br><br><button class="btn p" onclick="lg.showModal()">Entrar</button>');fim();try{lg.showModal()}catch{}return}
- F=null;$('app').innerHTML=msg('Carregando...');
- try{[LST,ITM]=await Promise.all([carregaLista(),ITL()])}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
- FL=minhas(LST);
- if(!FL.length){$('app').innerHTML=msg('Você não tem nenhuma ficha ativa. <a href="/fichas">Ir ao Fichário</a>');fim();return}
- const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q);
- if(hit)await pick(hit.slug);
- else if(FL.length===1)await pick(FL[0].slug);
- else{F=null;$('app').innerHTML=msg('Escolha a ficha que vai usar a PokéMart.<br><br><button class="btn p" onclick="openQm()">Escolher ficha</button>');openQm()}
- fim()}
-/* modal: quem está acessando a PokéMart (quando há mais de uma ficha ativa) */
-function openQm(){$('qq').value='';$('qq').style.display=FL.length>6?'':'none';drawQm();$('qmb').innerHTML=F?'<button type="button" class="btn s" onclick="qm.close()">Cancelar</button>':'';if(!qm.open)qm.showModal()}
-function drawQm(){const q=nrm($('qq').value),sv=F?.slug||localStorage.getItem('kp_loja_ficha');
- $('qg').innerHTML=FL.filter(x=>!q||nrm((x.nome||'')+' '+(x.player||'')).includes(q)).map(x=>{const th=x.thumb||x.foto;return`<button type="button" class="qc${x.slug===sv?' on':''}" data-s="${esc(x.slug)}">${th?`<img src="${esc(th)}" alt="">`:`<span class="ph">${esc((x.nome||'?')[0])}</span>`}<b>${esc(x.nome)}</b><small>${esc(x.player||'')}</small></button>`}).join('')||'<div class="mu" style="grid-column:1/-1;text-align:center">Nenhuma ficha encontrada.</div>'}
-async function qmClick(e){const c=e.target.closest('.qc');if(!c)return;qm.close();$('app').innerHTML=msg('Carregando...');await pick(c.dataset.s)}
-async function pick(slug){
- CB={};CS={};
- try{const r=await lerFicha(slug);if(!r)throw new Error('Ficha não encontrada.');r.d=r.d||{};F=r;localStorage.setItem('kp_loja_ficha',slug);history.replaceState(null,'','?ficha='+encodeURIComponent(slug))}
- catch(e){$('app').innerHTML=msg('Erro: '+esc(e.message));return}
- render()}
-function render(){
- const th=F.thumb||F.foto;
- $('app').innerHTML=`<div class="wrap">
- <div class="card lh"><div class="lhf">${th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`}<div><div class="lhn">${esc(F.nome)}</div><div class="mu">${esc(F.d.player||'')}</div></div></div>
- ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">Trocar ficha</button>`:''}
- <div class="lhs"><span>Saldo</span><b id="sal">${fm(saldo())}</b></div></div>
- <div class="ltabs" role="tablist"><button type="button" id="tb-b" onclick="setTab('b')">Comprar</button><button type="button" id="tb-s" onclick="setTab('s')">Vender</button></div>
- <div class="tb"><input class="in" id="q" type="search" autocomplete="off" placeholder="Buscar item..." value="${esc(Q)}" oninput="Q=this.value;drawList()"><div class="chs" id="chs"></div></div>
- <div class="lst" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div>
- <div class="sum" id="sum"></div></div>`;
- drawList();drawSum()}
-function setTab(t){TAB=t;CAT='';drawList();drawSum()}
-function setCat(c){CAT=c;drawList()}
-function rowsAtuais(){
- if(TAB==='b')return[...ITM.values()].filter(isMart).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price,mx:MAXQ}));
- return bag().filter(e=>!e.vinculado&&sellUnit(ITM.get(nk(e.nome)))>0).map(e=>{const k=nk(e.nome),it=ITM.get(k),own=parseInt(e.qtd)||1;return{it,k,nome:e.nome,own,unit:sellUnit(it),mx:own}})}
-function drawList(){
- const q=nk(Q);let rows=rowsAtuais();
- const cats=[...new Set(rows.map(r=>r.it?.category||'Outros'))].sort();
- if(CAT&&!cats.includes(CAT))CAT='';
- $('chs').innerHTML=['',...cats].map(c=>`<button type="button" class="ch${c===CAT?' on':''}" onclick="setCat(this.dataset.c)" data-c="${esc(c)}">${c?esc(c):'Todos'}</button>`).join('');
- rows=rows.filter(r=>(!CAT||(r.it?.category||'Outros')===CAT)&&(!q||nk(r.nome).includes(q))).sort((a,b)=>a.nome.localeCompare(b.nome));
- const C=TAB==='b'?CB:CS;
- $('lst').innerHTML=rows.length?rows.map(r=>{const n=C[r.k]||0,ds=String(r.it?.item_desc||'');
-  return`<div class="lr${n?' on':''}" data-k="${esc(r.k)}" title="${esc(ds)}"><span class="imi">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="">`:''}</span><span class="imn">${esc(r.nome)}<small>${esc(ds.slice(0,100))}</small></span><span class="lown">Na bag: x${r.own}</span>
-  ${r.nao?`<span class="lns">${r.vinc?'Vinculado · não vendável':'Não vendável'}</span>`:`<b class="lp">${TAB==='b'?'':'+'}${fm(r.unit)}</b><div class="stp"><button type="button" data-a="-" aria-label="Menos">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+" aria-label="Mais">+</button></div>`}</div>`}).join('')
-  :`<div class="lt">${TAB==='b'?'Nenhum item à venda.':(Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`}
-function lstEv(e){
- const r=e.target.closest('.lr');if(!r||!r.querySelector('.stp'))return;
- const k=r.dataset.k,C=TAB==='b'?CB:CS;let n=C[k]||0;
- if(e.type==='click'){const a=e.target.closest('button')?.dataset.a;if(!a)return;n+=a==='+'?1:-1}
- else if(e.type==='change'&&e.target.matches('input'))n=parseInt(e.target.value)||0;
- else return;
- const mx=TAB==='b'?MAXQ:ownQ(k);n=Math.max(0,Math.min(mx,n));
- if(n)C[k]=n;else delete C[k];
- r.querySelector('input').value=n;r.classList.toggle('on',n>0);drawSum()}
-function drawSum(){
- if(!$('sum'))return;
- const t=totais(),nb=Object.keys(CB).length,ns=Object.keys(CS).length,vazio=!nb&&!ns;
- $('tb-b').className=TAB==='b'?'on':'';$('tb-s').className=TAB==='s'?'on':'';
- $('tb-b').textContent='Comprar'+(nb?` (${nb})`:'');$('tb-s').textContent='Vender'+(ns?` (${ns})`:'');
- $('sum').innerHTML=`<div class="sumi"><span>Compra<b class="neg">${t.c?'−':''}${fm(t.c)}</b></span><span>Venda<b class="pos">${t.v?'+':''}${fm(t.v)}</b></span><span>Saldo final<b class="${t.fin<0?'neg':''}">${t.fin<0?'−':''}${fm(t.fin)}</b></span></div><div class="suma"><button type="button" class="btn s" onclick="limpa()"${vazio?' disabled':''}>Limpar</button><button type="button" class="btn p" onclick="finaliza()"${vazio||t.fin<0||busy?' disabled':''}>Finalizar</button></div>`}
-function limpa(){CB={};CS={};drawList();drawSum()}
-
-/* transação: relê a ficha, aplica compras/vendas e salva de uma vez */
-async function finaliza(){
- if(busy)return;const nb=Object.keys(CB).length,ns=Object.keys(CS).length;if(!nb&&!ns)return;
- const t=totais();if(t.fin<0)return toast('Saldo insuficiente');
- if(!ses?.token){alert('Para concluir, entre com a sua conta de player (botão Entrar).');lg.showModal();return}
- const ln=[];for(const[k,q]of Object.entries(CB))ln.push('Comprar '+q+'x '+ITM.get(k).name);for(const[k,q]of Object.entries(CS))ln.push('Vender '+q+'x '+ITM.get(k).name);
- if(!confirm(ln.join('\n')+'\n\nCompra: −'+fm(t.c)+'\nVenda: +'+fm(t.v)+'\nSaldo final: '+fm(t.fin)+'\n\nConfirmar?'))return;
- busy=true;drawSum();
- try{
-  const fr=await lerFicha(F.slug);if(!fr)throw new Error('Ficha não encontrada.');fr.d=fr.d||{};
-  const inv=fr.d.inventario=Array.isArray(fr.d.inventario)?fr.d.inventario:[];
-  const sal=dig(fr.d.dinheiro);let ganho=0,gasto=0;
-  for(const[k,q]of Object.entries(CS)){const it=ITM.get(k),i=inv.findIndex(x=>x&&nk(x.nome)===k),cur=i<0?0:(parseInt(inv[i].qtd)||1);
-   if(i>=0&&inv[i].vinculado)throw new Error((it?.name||k)+' é um item vinculado e não pode ser vendido.');
-   if(!it||sellUnit(it)<=0||cur<q)throw new Error('A Bag mudou: você não tem mais '+q+'x '+(it?.name||k)+'.');
-   if(cur-q>0)inv[i].qtd=cur-q;else inv.splice(i,1);ganho+=sellUnit(it)*q}
-  for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(!isMart(it))throw new Error('Item indisponível na PokéMart: '+k);
-   const i=inv.findIndex(x=>x&&nk(x.nome)===k);if(i>=0)inv[i].qtd=(parseInt(inv[i].qtd)||1)+q;else inv.push({nome:it.name,qtd:q});gasto+=+it.price*q}
-  if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente (o dinheiro da ficha mudou).');
-  fr.d.dinheiro=fnum(sal+ganho-gasto);
-  const j=await salvarFicha({slug:fr.slug,nome:fr.nome,foto:fr.foto,banner:fr.banner,thumb:fr.thumb,player_id:fr.player_id,d:fr.d});
-  if(j){fr.foto=j.foto;fr.banner=j.banner;fr.thumb=j.thumb;fr.atualizado_em=j.atualizado_em}
-  F=fr;CB={};CS={};busy=false;toast('Transação concluída');render()
- }catch(e){busy=false;alert(e.message);try{await pick(F.slug)}catch{}}}
-
-addEventListener('popstate',()=>boot());
-renderHamburgerIcon();
-idxSync().finally(boot);
-</script>
-</body>
-</html>
+create or replace function pokemart_cupom_excluir(p_admin text, p_codigo text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not pokemart_is_admin(p_admin) then raise exception 'Sem permissão.'; end if;
+  delete from pokemart_cupons where codigo = upper(trim(p_codigo));
+end $$;
