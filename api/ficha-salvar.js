@@ -209,13 +209,14 @@ module.exports = async (req, res) => {
       if (atualN && atualN !== b.base) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
     }
 
-    // limite: cada player só pode ter LIM_ATIVAS fichas ativas (vale para criar ficha nova e para reativar uma desativada)
+    // limite: cada player só pode ter LIM_ATIVAS fichas ativas (vale para criar ficha nova e para reativar uma desativada).
+    // fichas criadas pelo ADM (player_id 'admin') não têm limite
     if (!b.d.desativada) {
       const t1 = await readFile(`data/fichas/${slug}.json`);
       const ex = t1 ? JSON.parse(t1) : null;
       if (!ex || ex.d?.desativada) {   // ficha nova ou sendo reativada (já ativa e só editando: não conta)
         const pid = ex ? ex.player_id : b.player_id;   // numa ficha existente vale o dono gravado, não o que o navegador mandou
-        if (pid != null && await fichasAtivasDoDono(slug, pid, ex?.d?.player ?? b.d.player) >= LIM_ATIVAS)
+        if (pid != null && pid !== 'admin' && await fichasAtivasDoDono(slug, pid, ex?.d?.player ?? b.d.player) >= LIM_ATIVAS)
           return res.status(409).json({ error: `Limite atingido: cada player só pode ter ${LIM_ATIVAS} fichas ativas. Desative uma das fichas antigas para criar ou reativar outra.`, code: 'limite' });
       }
     }
