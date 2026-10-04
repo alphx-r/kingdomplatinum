@@ -5716,8 +5716,73 @@ async function carregarFichasIntegradas(fichasDaSessao){
   });
 }
 
+// ── Fichas do sistema novo (/fichas, JSON no GitHub): o inventário é descontado/adicionado direto na ficha ──
+let fichasNovas = [], _fichasNovasCarregando = false, _fichasNovasTentou = false;
+const qtdItemInv = (inv, nome)=>{
+  const k = normalizarNome(nome);
+  return (inv||[]).reduce((s,x)=> x && normalizarNome(x.nome)===k
+    ? s + (String(x.qtd??'').trim()==='' ? 1 : (parseInt(String(x.qtd).replace(/\D/g,''),10)||0)) : s, 0);
+};
+function sessaoFichaNova(){
+  try{ const s = JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null'); return s && s.token ? s : null; }catch(e){ return null; }
+}
+function aplicarInventarioNovo(ficha, inv){
+  ficha.inventario = inv || [];
+  ficha.quantidadeHoney = qtdItemInv(inv,'Honey');
+  ficha.quantidadeShinyCharm = qtdItemInv(inv,'Shiny Charm');
+}
+async function carregarFichasNovas(){
+  const sess = sessaoFichaNova();
+  const dono = normalizarNome(playerLogado?.nome || sess?.nome || '');
+  if(!sess || !dono || _fichasNovasCarregando) return;
+  _fichasNovasCarregando = true; _fichasNovasTentou = true;
+  try{
+    const lista = await (await fetch('/api/ficha-salvar?lista=1')).json();
+    const minhas = (Array.isArray(lista)?lista:[]).filter(e=>e.slug && !e.desativada && normalizarNome(e.player)===dono);
+    const novas = [];
+    for(const e of minhas){
+      const r = await fetch('/api/ficha-salvar?slug='+encodeURIComponent(e.slug));
+      if(!r.ok) continue;
+      const f = await r.json();
+      const x = {id:e.slug, slug:e.slug, nome:f.nome||e.nome, _novo:true};
+      aplicarInventarioNovo(x, f.d?.inventario);
+      novas.push(x);
+    }
+    fichasNovas = novas;
+  }catch(e){ console.warn('[fichas novas]', e); }
+  finally{ _fichasNovasCarregando = false; if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); }
+}
 function fichaIntegradaDoPersonagem(nome){
-  return fichasIntegradas.find(f=>normalizarNome(f.nome)===normalizarNome(nome)) || null;
+  const k = normalizarNome(nome);
+  return fichasNovas.find(f=>normalizarNome(f.nome)===k) || fichasIntegradas.find(f=>normalizarNome(f.nome)===k) || null;
+}
+// acao: 'consumir' | 'adicionar'. Também serve para a loja:  kpFichaItens.adicionar('Zach',[{nome:'Honey',qtd:3}],1500)
+async function itensDaFichaNova(acao, ficha, itens, custo){
+  const sess = sessaoFichaNova();
+  if(!sess){
+    alert('Sua sessão das fichas expirou. Entre novamente antes de usar itens.');
+    document.getElementById('player-login-overlay').style.display='flex';
+    return false;
+  }
+  const r = await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:acao, token:sess.token, slug:ficha.slug, op:crypto.randomUUID(), itens, custo:custo||0})});
+  const j = await r.json().catch(()=>null);
+  if(!r.ok) throw Object.assign(new Error(j?.error||'Falha ao atualizar o inventário da ficha.'),{status:r.status});
+  aplicarInventarioNovo(ficha, j.inventario);
+  atualizarHoneyStatus();
+  return j;
+}
+window.kpFichaItens = {
+  consumir:(personagem,itens)=>itensDaFichaNova('consumir',fichaIntegradaDoPersonagem(personagem),itens),
+  adicionar:(personagem,itens,custo)=>itensDaFichaNova('adicionar',fichaIntegradaDoPersonagem(personagem),itens,custo)
+};
+let _consumindoNovo = false;
+async function consumirItensNovo(ficha, nomes){
+  if(_consumindoNovo) return false;
+  _consumindoNovo = true;
+  try{ await itensDaFichaNova('consumir', ficha, nomes.map(n=>({nome:n,qtd:1}))); return true; }
+  catch(e){ alert(e.message || 'Não foi possível descontar os itens da ficha.'); return false; }
+  finally{ _consumindoNovo = false; }
 }
 
 let _consumindoHoney = false;
@@ -5732,6 +5797,7 @@ async function consumirHoneyDaFicha(nomePersonagem){
     alert(`${ficha.nome} não possui Honey no inventário.`);
     return false;
   }
+  if(ficha._novo) return consumirItensNovo(ficha,['Honey']);
   _consumindoHoney = true;
   try{
     const result = await fichasApi('/integracoes/rolagens/honey', {
@@ -5768,6 +5834,7 @@ async function consumirShinyCharmDaFicha(nomePersonagem){
     alert(`${ficha.nome} não possui Shiny Charm no inventário.`);
     return false;
   }
+  if(ficha._novo) return consumirItensNovo(ficha,['Shiny Charm']);
   _consumindoShinyCharm = true;
   try{
     const result = await fichasApi('/integracoes/rolagens/shiny-charm', {
@@ -5809,6 +5876,7 @@ async function consumirBonusDaFicha(nomePersonagem, usarHoney, usarShinyCharm){
     return false;
   }
 
+  if(ficha._novo) return consumirItensNovo(ficha,[usarHoney&&'Honey',usarShinyCharm&&'Shiny Charm'].filter(Boolean));
   _consumindoBonusRolagem = true;
   try{
     const idOperacao = crypto.randomUUID();
@@ -6103,7 +6171,7 @@ async function fazerLogoutPlayer(){
   playerLogado = null;
   _loginPlayerCache = null;
   localStorage.removeItem('player_session');
-  localStorage.removeItem('kp_ficha_sessao');
+  localStorage.removeItem('kp_ficha_sessao'); fichasNovas=[]; _fichasNovasTentou=false;
   localStorage.removeItem(FICHAS_SESSION_KEY);
   fichasAccessToken = null;
   fichasIntegradas = [];
@@ -10673,6 +10741,7 @@ function formatarTempoRestante(ms){
 }
 
 function atualizarHoneyStatus(){
+  if(!_fichasNovasTentou && sessaoFichaNova()) carregarFichasNovas();
   const status = document.getElementById('honey-status');
   const checkbox = document.getElementById('bonus-honey');
   const shinyCharmCheckbox = getShinyCharmCheckbox();
