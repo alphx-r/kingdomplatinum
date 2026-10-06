@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
 const { aplicar } = require('./_itens');
+const { diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
 //   GET  /api/ficha-salvar?lista=1      -> data/index.json
 //   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
@@ -133,6 +134,13 @@ module.exports = async (req, res) => {
       const q = req.query || {};
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       if (q.migrar) { res.setHeader('Cache-Control', 'no-store'); return await migrar(q, res); }
+      if (q.historico) {   // GET /api/ficha-salvar?historico=2026-10  -> data/historico/2026-10.json
+        const mes = String(q.historico);
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return res.status(400).json({ error: 'Mês inválido.' });
+        const t = await readFile(`data/historico/${mes}.json`);
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5');
+        return res.status(200).send(t || '[]');
+      }
       if (q.lista) {
         const t = await readFile('data/index.json');
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
@@ -176,7 +184,10 @@ module.exports = async (req, res) => {
         saida = { f, d: r.d, repetida: !!r.repetida, atualizado_em: f.atualizado_em };
         if (r.repetida) return [];
         f.d = r.d; f.atualizado_em = saida.atualizado_em = new Date().toISOString();
-        return [{ path: caminho, content: JSON.stringify(f) }];
+        const ch = [{ path: caminho, content: JSON.stringify(f) }];
+        const hist = await mudancaHist(readFile, parent, entradas(f, b.por, eventosItens(action, itens, custo, op)));
+        if (hist) ch.push(hist);
+        return ch;
       }, `ficha: ${action === 'consumir' ? 'usar' : 'receber'} item (${slug})`);
       if (!saida.repetida) {   // espelho no Supabase (se falhar, o GitHub continua sendo a fonte da verdade)
         try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: saida.f.nome, p_foto: saida.f.foto ?? null, p_banner: saida.f.banner ?? null, p_d: saida.d }); }
@@ -189,6 +200,11 @@ module.exports = async (req, res) => {
       await sbRpc('ficha_excluir', { p_token: token, p_slug: slug });
       await commit(async parent => {
         const ch = [{ path: `data/fichas/${slug}.json`, content: null }];
+        try {
+          const t = await readFile(`data/fichas/${slug}.json`, parent);
+          const hist = await mudancaHist(readFile, parent, entradas(t ? JSON.parse(t) : { slug, nome: slug, d: {} }, b.por, [{ cat: 'ficha', txt: 'Excluiu a ficha' }]));
+          if (hist) ch.push(hist);
+        } catch {}
         for (const f of await listDir(`img/fichas/${slug}`, parent)) ch.push({ path: f.path, content: null });
         const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
         ch.push({ path: 'data/index.json', content: JSON.stringify(idx) });
@@ -242,6 +258,11 @@ module.exports = async (req, res) => {
     const ficha = { slug, nome, player_id: b.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d: b.d, atualizado_em };
     await commit(async parent => {
       const ch = [{ path: `data/fichas/${slug}.json`, content: JSON.stringify(ficha) }];
+      try {   // histórico: compara com a versão que está no GitHub agora
+        const t = await readFile(`data/fichas/${slug}.json`, parent);
+        const hist = await mudancaHist(readFile, parent, entradas(ficha, b.por, diffFicha(t ? JSON.parse(t) : null, ficha)));
+        if (hist) ch.push(hist);
+      } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); }
       const manter = new Set(Object.values(novas).map(n => n.path));
       for (const [kind, n] of Object.entries(novas)) {
         ch.push({ path: n.path, content: n.buf });
