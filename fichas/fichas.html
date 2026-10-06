@@ -955,6 +955,46 @@ async function salvarFicha(x){const r=await fetch('/api/ficha-salvar',{method:'P
 async function apagarFicha(slug){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',token:ses.token,slug})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}
 async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug));if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 function aplicaSalvo(j){if(!j)return;f.foto=j.foto;f.banner=j.banner;f.thumb=j.thumb;f.atualizado_em=j.atualizado_em}
+/* ===== autosave: fichas já criadas, em modo edição =====
+   A cada AS_MS (1 min) verifica se algo mudou e, se sim, salva. Cada save vira um commit no GitHub,
+   por isso só envia se houve alteração real e nunca roda em paralelo com outro save. */
+const AS_MS=60000;
+let asF=null,asBase=null,asT=null,asBusy=false,asQ=Promise.resolve();
+const asImg=v=>!v?'':String(v).startsWith('data:')?'D'+v.length+':'+v.slice(-40):'U';
+const asSnapOf=x=>JSON.stringify([(x.nome||'').trim(),asImg(x.foto),asImg(x.banner),asImg(x.thumb),x.d]);
+const asSnap=()=>asSnapOf(f);
+const asOn=()=>!!(ed&&f&&f.slug&&asF===f);
+function asMsg(t,err,hide){let e=document.getElementById('asv');if(!e){e=document.createElement('div');e.id='asv';e.style.cssText='position:fixed;bottom:18px;left:14px;color:#fff;padding:6px 12px;border-radius:4px;font-size:12px;z-index:9000;display:none;pointer-events:none';document.body.appendChild(e)}
+ clearTimeout(e._t);if(!t){e.style.display='none';return}e.textContent=t;e.style.background=err?'rgba(170,30,30,.92)':'rgba(17,17,17,.88)';e.style.display='block';if(hide)e._t=setTimeout(()=>e.style.display='none',hide)}
+function asReset(){clearTimeout(asT);asT=null;asF=null;asBase=null;asMsg('')}
+function asSched(){}   /* o salvamento é periódico (setInterval abaixo); alterações só precisam ser detectadas pelo snapshot */
+setInterval(()=>{if(asOn())asRun()},AS_MS);
+async function asRun(){
+ clearTimeout(asT);asT=null;
+ if(!asOn()||asBase===null||asSnap()===asBase)return;
+ if(!(f.nome||'').trim()){asMsg('Informe o nome do personagem para salvar automaticamente',true,3500);return}
+ if(asBusy){asSched();return}
+ const F=f;asBusy=true;asMsg('Salvando…');let ok=false;
+ try{await salvarFicha({slug:F.slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d});LST=null;ok=true;if(F===f)asMsg('Salvo automaticamente ✓',false,2000)}
+ catch(e){if(F===f)asMsg('Falha no autosave — use o botão Salvar',true,5000)}
+ finally{asBusy=false}
+ if(ok&&asOn()&&asSnap()!==asBase)asSched();
+}
+/* todo save (manual, desativar ou auto) passa por uma fila e atualiza o "último estado salvo" */
+const _sf=salvarFicha;
+salvarFicha=function(x){const sn=asSnapOf(x),F=f,p=asQ.then(()=>_sf(x));asQ=p.catch(()=>{});
+ return p.then(j=>{if(asF&&F&&F===f&&F.slug===x.slug){if(asSnap()===sn){aplicaSalvo(j);asBase=asSnap()}else asBase=sn}return j})};
+const _rd=render;
+render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap()}else asSched();return r};
+const _cn=cancelar;
+cancelar=function(){asReset();return _cn.apply(this,arguments)};   /* Cancelar descarta o que ainda não foi salvo */
+const _rt=route;
+route=function(){if(asOn())asRun();return _rt.apply(this,arguments)};   /* sair da ficha salva o pendente */
+document.addEventListener('input',asSched,true);
+document.addEventListener('change',asSched,true);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&asOn())asRun()});
+addEventListener('pagehide',()=>{if(asOn())asRun()});
+addEventListener('beforeunload',e=>{if(asOn()&&asBase!==null&&(asBusy||asSnap()!==asBase)){e.preventDefault();e.returnValue=''}});
 function route(){const id=++rid,s=parse();const p=!s?vLista(id):s==='desativadas'?vLista(id,true):vFicha(s,id);Promise.resolve(p).finally(fim);return p}
 function fim(){document.getElementById('loading-overlay')?.remove()}
 setTimeout(fim,8000);
