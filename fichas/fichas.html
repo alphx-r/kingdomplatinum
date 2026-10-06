@@ -964,20 +964,35 @@ const asImg=v=>!v?'':String(v).startsWith('data:')?'D'+v.length+':'+v.slice(-40)
 const asSnapOf=x=>JSON.stringify([(x.nome||'').trim(),asImg(x.foto),asImg(x.banner),asImg(x.thumb),x.d]);
 const asSnap=()=>asSnapOf(f);
 const asOn=()=>!!(ed&&f&&f.slug&&asF===f);
-function asMsg(t,err,hide){let e=document.getElementById('asv');if(!e){e=document.createElement('div');e.id='asv';e.style.cssText='position:fixed;bottom:18px;left:14px;color:#fff;padding:6px 12px;border-radius:4px;font-size:12px;z-index:9000;display:none;pointer-events:none';document.body.appendChild(e)}
- clearTimeout(e._t);if(!t){e.style.display='none';return}e.textContent=t;e.style.background=err?'rgba(170,30,30,.92)':'rgba(17,17,17,.88)';e.style.display='block';if(hide)e._t=setTimeout(()=>e.style.display='none',hide)}
-function asReset(){clearTimeout(asT);asT=null;asF=null;asBase=null;asMsg('')}
+let asLast=null,asErr='',asErrT=null,asNext=Date.now()+AS_MS;
+const asHM=d=>d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+/* mensagem de erro/aviso (ms=0 => fica até o próximo save bem-sucedido) */
+function asFlash(t,ms){clearTimeout(asErrT);asErr=t||'';if(t&&ms)asErrT=setTimeout(()=>{asErr='';asUi()},ms);asUi()}
+/* indicador fixo no canto inferior esquerdo, sempre visível enquanto o autosave está ativo */
+function asUi(){
+ let e=document.getElementById('asv');
+ if(!asOn()){if(e)e.style.display='none';return}
+ if(!e){e=document.createElement('div');e.id='asv';e.style.cssText='position:fixed;bottom:18px;left:14px;max-width:calc(100vw - 28px);color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;line-height:1.3;z-index:9000;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,.4);transition:background .25s';document.body.appendChild(e)}
+ let bg,tx;
+ if(asErr){bg='rgba(175,30,30,.96)';tx='⚠ '+asErr}
+ else if(asBusy){bg='rgba(30,90,170,.96)';tx='⟳ Salvando…'}
+ else if(asBase!==null&&asSnap()!==asBase){bg='rgba(176,110,0,.96)';tx='● Alterações não salvas · autosave em '+Math.max(0,Math.ceil((asNext-Date.now())/1000))+'s'}
+ else if(asLast){bg='rgba(20,125,60,.96)';tx='✓ Salvo automaticamente às '+asHM(asLast)}
+ else{bg='rgba(17,17,17,.9)';tx='Autosave ativo · a cada 1 min'}
+ e.style.background=bg;e.textContent=tx;e.style.display='block'}
+setInterval(asUi,1000);
+function asReset(){clearTimeout(asT);clearTimeout(asErrT);asT=null;asF=null;asBase=null;asLast=null;asErr='';asUi()}
 function asSched(){}   /* o salvamento é periódico (setInterval abaixo); alterações só precisam ser detectadas pelo snapshot */
-setInterval(()=>{if(asOn())asRun()},AS_MS);
+setInterval(()=>{asNext=Date.now()+AS_MS;if(asOn())asRun()},AS_MS);
 async function asRun(){
  clearTimeout(asT);asT=null;
  if(!asOn()||asBase===null||asSnap()===asBase)return;
- if(!(f.nome||'').trim()){asMsg('Informe o nome do personagem para salvar automaticamente',true,3500);return}
+ if(!(f.nome||'').trim()){asFlash('Informe o nome do personagem para salvar automaticamente',3500);return}
  if(asBusy){asSched();return}
- const F=f;asBusy=true;asMsg('Salvando…');let ok=false;
- try{await salvarFicha({slug:F.slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d});LST=null;ok=true;if(F===f)asMsg('Salvo automaticamente ✓',false,2000)}
- catch(e){if(F===f)asMsg('Falha no autosave — use o botão Salvar',true,5000)}
- finally{asBusy=false}
+ const F=f;asBusy=true;asUi();let ok=false;
+ try{await salvarFicha({slug:F.slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d});LST=null;ok=true;if(F===f){asLast=new Date();asFlash('')}}
+ catch(e){if(F===f)asFlash('Falha no autosave — use o botão Salvar',0)}
+ finally{asBusy=false;asUi()}
  if(ok&&asOn()&&asSnap()!==asBase)asSched();
 }
 /* todo save (manual, desativar ou auto) passa por uma fila e atualiza o "último estado salvo" */
@@ -985,7 +1000,7 @@ const _sf=salvarFicha;
 salvarFicha=function(x){const sn=asSnapOf(x),F=f,p=asQ.then(()=>_sf(x));asQ=p.catch(()=>{});
  return p.then(j=>{if(asF&&F&&F===f&&F.slug===x.slug){if(asSnap()===sn){aplicaSalvo(j);asBase=asSnap()}else asBase=sn}return j})};
 const _rd=render;
-render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap()}else asSched();return r};
+render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap();asLast=null;asErr='';asNext=Date.now()+AS_MS}else asSched();asUi();return r};
 const _cn=cancelar;
 cancelar=function(){asReset();return _cn.apply(this,arguments)};   /* Cancelar descarta o que ainda não foi salvo */
 const _rt=route;
