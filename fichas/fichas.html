@@ -103,6 +103,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .sr{display:flex;gap:28px;flex-wrap:wrap;position:absolute;left:26px;right:26px;bottom:30px;z-index:4}
 .hl{font-size:11px;font-weight:800;color:#9aa0ab;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px}.hv{font-size:14px;color:#1a2a4a}
 .bn{position:absolute;top:0;right:0;width:58%;height:100%;background:#2a2a2a;clip-path:polygon(0 0,100% 0,100% 100%);z-index:3}.bn img{width:100%;height:100%;object-fit:cover;display:block}
+.av-ed{position:relative;cursor:pointer;-webkit-tap-highlight-color:transparent}.av-ed::after{content:"✎";position:absolute;left:0;right:0;bottom:0;height:22px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:1}
 .eb{position:absolute;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:3px;font:11px var(--fb);padding:4px 10px;cursor:pointer;z-index:5}.ph .eb{bottom:8px;right:8px}.bn .eb{top:8px;bottom:auto;right:10px}
 .dt{display:none}.ed .dt{display:flex;align-items:center;justify-content:center;position:absolute;top:8px;left:188px;z-index:6;width:22px;height:22px;padding:0;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:3px;font-size:12px;line-height:1;cursor:pointer}.ed .dt:hover,.ed .dt.on{background:var(--pri)}
 .hdp{display:none}
@@ -938,7 +939,7 @@ const AT=[['pwr','PWR'],['stm','STM'],['skl','SKL'],['jmp','JMP'],['spd','SPD']]
  const conq=has(d.insignias)||has(d.ribbons)||has(d.pins)||has(d.premiacoes);
  app.innerHTML=`<div class="wrap">${tb}${inativa()?'<div class="aviso">Esta ficha está desativada. Ela aparece só em Fichas &gt; Desativadas.</div>':''}
  <div class="hd"><div class="ph">${f.foto?`<img src="${f.foto}" alt="">`:'<div class="nf">Sem foto</div>'}${ed?`<button class="eb" onclick="img('foto',500)">Trocar foto</button>`:''}</div>
- <div class="mid"><div class="mt"><div class="av">${f.foto?`<img src="${f.foto}" alt="">`:ini}</div><div class="mtx"><div class="bg">${V('d.classe','')}</div><div class="tt">${V('nome','')}</div><div class="pn">${V('d.pronomes','')}</div><div class="sl">${V('d.frase','')}</div></div></div>
+ <div class="mid"><div class="mt"><div class="av${ed?' av-ed':''}"${ed?` onclick="img('foto',500)" role="button" tabindex="0" title="Trocar foto" aria-label="Trocar foto"`:''}>${f.foto?`<img src="${f.foto}" alt="">`:ini}</div><div class="mtx"><div class="bg">${V('d.classe','')}</div><div class="tt">${V('nome','')}</div><div class="pn">${V('d.pronomes','')}</div><div class="sl">${V('d.frase','')}</div></div></div>
  <div class="sr">${[['Ocupação','ocupacao'],['Idade','idade'],['Equipe','equipe'],['Naturalidade','naturalidade'],['Pronomes','pronomes']].filter(([l,k])=>k!=='pronomes'||ed||String(get('d.pronomes')||'').trim()).map(([l,k])=>`<div class="sr-${k}"><div class="hl">${l}</div><div class="hv">${V('d.'+k)}</div></div>`).join('')}</div></div>
  ${ed?`<button class="dt${drw?' on':''}" onclick="togHdp()" title="Editar cabeçalho" aria-label="Editar cabeçalho">✎</button>`:''}
  <div class="bn">${f.banner?`<img src="${f.banner}" alt="">`:''}${ed?`<button class="eb" onclick="img('banner',1000)">Trocar banner</button>`:''}</div></div>
@@ -966,10 +967,12 @@ function togFab(){fab=!fab;document.querySelector('.fstack')?.classList.toggle('
 function cancelar(){f.slug?route():go('/fichas')}
 function sair(){localStorage.removeItem(SK);ses=null;route()}
 async function salvar(){if(!f.nome?.trim()){drw=true;render();return alert('Informe o nome do personagem.')}
+ if(!ses?.token){localStorage.removeItem(SK);ses=null;mostrarBadge();alert('Sua sessão expirou ou é de uma versão antiga e não tem permissão para salvar.\n\nEntre novamente e depois clique em salvar (suas alterações continuam na tela).');lg.showModal();return}
  if(!f.slug){try{if(await atingiuLimite())return alert(LIM_MSG)}catch{}}
  let slug=f.slug||slugify(f.nome);if(!f.slug&&(!slug||RES.includes(slug)))slug=(slug||'ficha')+'-ficha';
- try{aplicaSalvo(await salvarFicha({slug,nome:f.nome.trim(),foto:f.foto,banner:f.banner,thumb:f.thumb,player_id:f.player_id,d:f.d}));LST=null;
-  if(!f.slug){go('/fichas/'+slug,true);toast('Ficha criada');return}ed=false;render();toast('Ficha salva')}catch(e){alert('Erro ao salvar: '+e.message)}}
+ try{const F=f,novo=!F.slug;aplicaSalvo(await salvarFicha({slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d}),F);LST=null;
+  if(f!==F){toast(novo?'Ficha criada':'Ficha salva');return}   // a tela mudou durante o salvamento (já foi gravado)
+  if(novo){go('/fichas/'+slug,true);toast('Ficha criada');return}ed=false;render();toast('Ficha salva')}catch(e){alert('Erro ao salvar: '+e.message)}}
 async function desativar(on){if(!on){try{if(await atingiuLimite(f.slug))return alert(LIM_MSG)}catch{}}if(!confirm(on?'Desativar esta ficha? Ela sai da lista principal e vai para Fichas > Desativadas. Dá para reativar depois.':'Reativar esta ficha?'))return;
  const ant=f.d.desativada;if(on)f.d.desativada=true;else delete f.d.desativada;
  try{aplicaSalvo(await salvarFicha({slug:f.slug,nome:f.nome,foto:f.foto,banner:f.banner,thumb:f.thumb,player_id:f.player_id,d:f.d}));LST=null;render();toast(on?'Ficha desativada':'Ficha reativada')}
@@ -986,7 +989,7 @@ if(st.precisa_senha){if(!lc.value)throw new Error('Confirme sua senha.');if(sn!=
 else{m=await irpc('player_login',{p_nome:n,p_senha:sn});if(!m)throw new Error('Senha incorreta.')}
 const r=await fetch('/api/ficha-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:n,senha:sn})});const j=await r.json().catch(()=>null);if(!r.ok||!j?.token)throw new Error(j?.error||'Nome ou senha incorretos.');
 ses=j;localStorage.setItem(SK,JSON.stringify(j));try{localStorage.setItem('player_session',JSON.stringify({nome:m.nome,id:m.id}))}catch{}
-ls.value='';lc.value='';lcw.style.display='none';lg.close();route()}catch(e){le.textContent=e.message;le.style.display='block'}}
+ls.value='';lc.value='';lcw.style.display='none';lg.close();if(f&&ed){mostrarBadge();toast('Sessão renovada — clique em salvar')}else route()}catch(e){le.textContent=e.message;le.style.display='block'}}
 document.addEventListener('paste',e=>{if(!e.target.closest?.('.rich'))return;e.preventDefault();const t=(e.clipboardData||window.clipboardData).getData('text/plain');if(t)document.execCommand('insertText',false,t)});
 
 /* ===== roteador (a URL muda sem recarregar a página) ===== */
@@ -1005,7 +1008,7 @@ async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;co
 async function salvarFicha(x){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d,base:x.base||undefined,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);return j}
 async function apagarFicha(slug){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',token:ses.token,slug,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}
 async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug));if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
-function aplicaSalvo(j){if(!j)return;if(j.pk&&f?.d)Object.entries(j.pk).forEach(([k,u])=>{const[K,n]=k.split('.'),x=f.d[K]?.[+n];if(x&&typeof x.foto==='string'&&x.foto.startsWith('data:'))x.foto=u});f.foto=j.foto;f.banner=j.banner;f.thumb=j.thumb;f.atualizado_em=j.atualizado_em}
+function aplicaSalvo(j,F=f){if(!j||!F)return;if(j.pk&&F.d)Object.entries(j.pk).forEach(([k,u])=>{const[K,n]=k.split('.'),x=F.d[K]?.[+n];if(x&&typeof x.foto==='string'&&x.foto.startsWith('data:'))x.foto=u});F.foto=j.foto;F.banner=j.banner;F.thumb=j.thumb;F.atualizado_em=j.atualizado_em}
 /* ===== histórico de alterações (só admin) ===== */
 const HC={ficha:'Ficha',pokemon:'Pokémon',bag:'Bag',compra:'Compra',dinheiro:'Dinheiro',stats:'Stats',conquista:'Conquista',perfil:'Perfil',timeline:'Timeline'};
 const canHist=()=>!!ses&&(ses.admin||admPlayer());
