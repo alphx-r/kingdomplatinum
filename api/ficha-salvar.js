@@ -254,6 +254,20 @@ module.exports = async (req, res) => {
         urls[kind] = `${IMG_BASE}/${path}`;
       }
     }
+    // fotos dos Pokémon "Modified" (d.time[i].foto / d.box[i].foto): data URI vira arquivo no GitHub e o JSON guarda só a URL
+    const pkUrls = {}, pkEmUso = [];
+    for (const K of ['time', 'box']) {
+      const arr = Array.isArray(b.d[K]) ? b.d[K] : [];
+      arr.forEach((x, i) => {
+        if (!x || typeof x !== 'object' || !x.foto) return;
+        let p; try { p = parseImg(x.foto); } catch (e) { e.status = 400; throw e; }
+        if (!p) { delete x.foto; return; }
+        if (p.url) { pkEmUso.push(p.url); return; }
+        const path = `img/fichas/${slug}/pk-${hash(p.buf)}.${p.ext}`;
+        novas['pk' + K + i] = { path, buf: p.buf };
+        x.foto = `${IMG_BASE}/${path}`; pkUrls[K + '.' + i] = x.foto; pkEmUso.push(x.foto);
+      });
+    }
     const atualizado_em = new Date().toISOString();
 
     // 1) o Supabase confere o token e a permissão. Guarda só texto e URLs (sem base64).
@@ -280,8 +294,8 @@ module.exports = async (req, res) => {
       }
       for (const f of existentes) {
         const kind = f.name.split('-')[0];
-        const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path));
-        if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb'].includes(kind)) ch.push({ path: f.path, content: null });
+        const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path)) || pkEmUso.some(u => u.endsWith('/' + f.path));
+        if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb', 'pk'].includes(kind)) ch.push({ path: f.path, content: null });
       }
       const idx = parseIdx(idxTxt).filter(x => x.slug !== slug);
       idx.push(indexEntry(ficha));
@@ -289,7 +303,7 @@ module.exports = async (req, res) => {
       return ch;
     }, `ficha: ${slug}`);
 
-    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, atualizado_em });
+    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em });
   } catch (e) {
     return res.status(e.status || 500).json({ error: e.message || 'Erro ao salvar.' });
   }
