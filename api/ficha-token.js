@@ -1,4 +1,4 @@
-// Vercel serverless: valida o player no projeto do index e emite o token no projeto das fichas.
+// Vercel serverless: valida o player (ou o ADM) no projeto do index e emite o token no projeto das fichas.
 // Variáveis de ambiente (Vercel > Settings > Environment Variables, marcadas para Production):
 //   INDEX_SUPA_URL, INDEX_SUPA_KEY            -> projeto do index (URL e chave anon)
 //   FICHAS_SUPA_URL, FICHAS_SUPA_SERVICE_KEY  -> projeto das fichas (URL e chave service_role, NUNCA no front)
@@ -18,17 +18,33 @@ module.exports = async (req, res) => {
   if (!nome || !senha) return res.status(400).json({ error: 'Informe nome e senha.' });
 
   try {
+    // 1) player comum
+    let id = null, nomeFinal = nome;
     const a = await fetch(`${process.env.INDEX_SUPA_URL}/rest/v1/rpc/player_login`, {
       method: 'POST', headers: H(process.env.INDEX_SUPA_KEY),
       body: JSON.stringify({ p_nome: nome, p_senha: senha })
     });
-    if (!a.ok) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
-    let r = await a.json(); r = Array.isArray(r) ? r[0] : r;
-    if (!r || r.id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
+    if (a.ok) {
+      let r = await a.json().catch(() => null); r = Array.isArray(r) ? r[0] : r;
+      if (r && r.id != null) { id = String(r.id); nomeFinal = r.nome || nome; }
+    }
+    // 2) não é player: tenta como ADM (mesma função que o login da Área ADM do index usa).
+    //    O id 'admin' é o que o servidor de fichas já espera para fichas criadas pelo ADM.
+    if (id == null) {
+      const ad = await fetch(`${process.env.INDEX_SUPA_URL}/rest/v1/rpc/admin_login`, {
+        method: 'POST', headers: H(process.env.INDEX_SUPA_KEY),
+        body: JSON.stringify({ p_nome: nome, p_senha: senha })
+      });
+      if (ad.ok) {
+        let y = await ad.json().catch(() => null); y = Array.isArray(y) ? y[0] : y;
+        if (y && y.nome) { id = 'admin'; nomeFinal = y.nome; }
+      }
+    }
+    if (id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
     const b = await fetch(`${process.env.FICHAS_SUPA_URL}/rest/v1/rpc/ficha_emitir_token`, {
       method: 'POST', headers: H(process.env.FICHAS_SUPA_SERVICE_KEY),
-      body: JSON.stringify({ p_player_id: String(r.id), p_nome: r.nome || nome })
+      body: JSON.stringify({ p_player_id: id, p_nome: nomeFinal })
     });
     if (!b.ok) {
       console.error('ficha-token: ficha_emitir_token falhou:', b.status, await b.text().catch(() => ''));
