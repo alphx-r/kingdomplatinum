@@ -218,18 +218,23 @@ module.exports = async (req, res) => {
     if (!nome) return res.status(400).json({ error: 'Nome obrigatório.' });
     if (!b.d || typeof b.d !== 'object') return res.status(400).json({ error: 'Dados inválidos.' });
 
+    // uma única leitura da ficha atual (serve ao teste de conflito e ao limite de fichas)
+    let exCache;
+    const lerEx = async () => {
+      if (exCache === undefined) { const t = await readFile(`data/fichas/${slug}.json`); exCache = t ? JSON.parse(t) : null; }
+      return exCache;
+    };
+
     // a ficha pode ter mudado em outro lugar (index gastou item, loja entregou item): não sobrescreve às cegas
     if (b.base) {
-      const t0 = await readFile(`data/fichas/${slug}.json`);
-      const atualN = t0 ? JSON.parse(t0).atualizado_em : null;
+      const atualN = (await lerEx())?.atualizado_em || null;
       if (atualN && atualN !== b.base) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
     }
 
     // limite: cada player só pode ter LIM_ATIVAS fichas ativas (vale para criar ficha nova e para reativar uma desativada).
     // fichas criadas pelo ADM (player_id 'admin') não têm limite
     if (!b.d.desativada) {
-      const t1 = await readFile(`data/fichas/${slug}.json`);
-      const ex = t1 ? JSON.parse(t1) : null;
+      const ex = await lerEx();
       if (!ex || ex.d?.desativada) {   // ficha nova ou sendo reativada (já ativa e só editando: não conta)
         const pid = ex ? ex.player_id : b.player_id;   // numa ficha existente vale o dono gravado, não o que o navegador mandou
         if (pid != null && pid !== 'admin' && await fichasAtivasDoDono(slug, pid, ex?.d?.player ?? b.d.player) >= LIM_ATIVAS)
@@ -258,22 +263,27 @@ module.exports = async (req, res) => {
     const ficha = { slug, nome, player_id: b.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d: b.d, atualizado_em };
     await commit(async parent => {
       const ch = [{ path: `data/fichas/${slug}.json`, content: JSON.stringify(ficha) }];
-      try {   // histórico: compara com a versão que está no GitHub agora
-        const t = await readFile(`data/fichas/${slug}.json`, parent);
-        const hist = await mudancaHist(readFile, parent, entradas(ficha, b.por, diffFicha(t ? JSON.parse(t) : null, ficha)));
-        if (hist) ch.push(hist);
-      } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); }
+      // as 3 leituras são independentes: disparam juntas (antes eram em fila)
+      const pExist = listDir(`img/fichas/${slug}`, parent);
+      const pIdx = readFile('data/index.json', parent);
+      const pHist = (async () => {   // histórico: compara com a versão que está no GitHub agora
+        try {
+          const t = await readFile(`data/fichas/${slug}.json`, parent);
+          return await mudancaHist(readFile, parent, entradas(ficha, b.por, diffFicha(t ? JSON.parse(t) : null, ficha)));
+        } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); return null; }
+      })();
+      const [hist, existentes, idxTxt] = await Promise.all([pHist, pExist, pIdx]);
+      if (hist) ch.push(hist);
       const manter = new Set(Object.values(novas).map(n => n.path));
       for (const [kind, n] of Object.entries(novas)) {
         ch.push({ path: n.path, content: n.buf });
       }
-      const existentes = await listDir(`img/fichas/${slug}`, parent);
       for (const f of existentes) {
         const kind = f.name.split('-')[0];
         const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path));
         if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb'].includes(kind)) ch.push({ path: f.path, content: null });
       }
-      const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
+      const idx = parseIdx(idxTxt).filter(x => x.slug !== slug);
       idx.push(indexEntry(ficha));
       ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
       return ch;
