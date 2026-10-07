@@ -372,10 +372,9 @@ dialog#hism[open]{display:flex;flex-direction:column}
 .hs-ts{font:12px var(--fb);color:var(--mu);margin-left:auto}
 .hs-ln{display:flex;gap:10px;align-items:flex-start;padding:4px 0;font:13px/1.45 var(--fb)}
 .hs-p{flex:none;min-width:84px;text-align:center;padding:3px 9px;border-radius:4px;font:800 10px var(--fb);letter-spacing:.4px;text-transform:uppercase;color:#c0390b;background:#fdeadd;border:1px solid #f3c9ad}
-.hs-df{margin:4px 0 6px;padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:#fafbfd;font:12.5px/1.55 var(--fb);white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto}
+.hs-df{margin:6px 0 4px;padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:#fafbfd;font:12.5px/1.55 var(--fb);white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto}
 .hs-df ins{background:#d9f5df;color:#14602a;text-decoration:none;border-radius:2px;padding:0 1px}
 .hs-df del{background:#fde0e0;color:#a31515;border-radius:2px;padding:0 1px}
-.hs-dt{cursor:pointer;color:#c0390b;font:700 11px var(--fb);margin-left:8px;user-select:none}
 .hs-tx{min-width:0;overflow-wrap:anywhere;padding-top:2px}
 @media(max-width:900px){.hs-hc{flex-wrap:wrap}.hs-ctl{width:100%;flex-wrap:wrap}.hs-ctl .in{flex:1 1 180px}}
 @media(max-width:760px){.hs-b{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.hs-s{border-right:0;border-bottom:1px solid var(--bd);max-height:230px}}
@@ -1030,23 +1029,47 @@ function histDiff(a,d){
  while(i<n)o+='<del>'+esc(A[i++])+'</del>';
  while(j<m)o+='<ins>'+esc(B[j++])+'</ins>';
  return o}
-function histDet(e){if(!e.det)return '';return `<span class="hs-dt" onclick="const n=this.parentNode.nextElementSibling;n.hidden=!n.hidden;this.textContent=n.hidden?'ver o que mudou':'ocultar'">ver o que mudou</span>`}
-function histDetBox(e){if(!e.det)return '';const L=Array.isArray(e.det)?e.det:[e.det];return `<div class="hs-df" hidden>${L.map(x=>(x.l?'<b>'+esc(x.l)+'</b>\n':'')+histDiff(x.a,x.d)).join('\n\n')}</div>`}
+function histDetBox(e){if(!e.det)return '';const L=Array.isArray(e.det)?e.det:[e.det];return `<div class="hs-df">${L.map(x=>(x.l?'<b>'+esc(x.l)+'</b>\n':'')+histDiff(x.a,x.d)).join('\n\n')}</div>`}
+/* unifica alterações do mesmo personagem feitas em sequência (intervalo <= 10 min entre uma e outra) */
+const HW=10*60e3;
+function histDetJunta(p,n){
+ const P=(Array.isArray(p)?p:p?[p]:[]).map(x=>({...x})),N=Array.isArray(n)?n:n?[n]:[];
+ for(const y of N){const q=P.find(x=>x.l===y.l);if(q)q.d=y.d;else P.push({...y})}
+ return P.length===1&&!P[0].l&&!Array.isArray(p)&&!Array.isArray(n)?P[0]:P}
+function histJunta(l,e){
+ const q=l.find(x=>x.cat===e.cat&&x.txt===e.txt);
+ if(!q){l.push({...e});return}
+ if(e.det)q.det=histDetJunta(q.det,e.det)}
+function histZero(e){
+ if(!e.det)return false;const L=Array.isArray(e.det)?e.det:[e.det];
+ if(!L.every(x=>String(x.a||'')===String(x.d||'')))return false;
+ return e.cat==='perfil'||(!/;/.test(e.txt)&&/editou (o Combo|"Sobre o Pokémon")$/.test(e.txt))}
+function histUne(ev){   /* ev em ordem cronológica crescente; cada item = entradas de um save */
+ const out=[],last=new Map();
+ for(const g of ev){
+  const t=new Date(g[0].ts).getTime(),L=last.get(g[0].slug);
+  if(L&&t-L.t1<=HW){L.t1=t;L.x=g[0];for(const e of g)histJunta(L.l,e)}
+  else{const o={x:g[0],t0:t,t1:t,l:[]};for(const e of g)histJunta(o.l,e);out.push(o);last.set(g[0].slug,o)}
+ }
+ for(const o of out)o.l=o.l.filter(e=>!histZero(e));
+ return out.filter(o=>o.l.length).reverse()}
+
 function histMain(){
  const l=HD.filter(x=>x&&(!HS||x.slug===HS)&&(!HCAT||x.cat===HCAT));
  const gr=new Map();for(const x of l){const k=x.slug+'|'+x.ts;if(!gr.has(k))gr.set(k,[]);gr.get(k).push(x)}
- const ev=[...gr.values()].sort((a,b)=>String(b[0].ts).localeCompare(String(a[0].ts)));
+ const ev=histUne([...gr.values()].sort((a,b)=>String(a[0].ts).localeCompare(String(b[0].ts))));
  const gs=histGrupos(),g=HS&&gs.find(x=>x.slug===HS),[y,m]=HM.split('-').map(Number);
  let mes=new Date(Date.UTC(y,m-1,15)).toLocaleDateString('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'});mes=mes[0].toUpperCase()+mes.slice(1);
- const n=l.length,qt=`${n} alteraç${n===1?'ão':'ões'}`;
+ const n=ev.reduce((c,o)=>c+o.l.length,0),qt=`${n} alteraç${n===1?'ão':'ões'}`;
  const head=`<div class="hs-hc">${g?histAv(g.slug,g.nome):`<div class="hs-a">${HI_SVG}</div>`}<div class="hs-hi"><div class="hs-hn">${esc(g?g.nome:'Todos os personagens')}</div>${g&&g.player?`<div class="hs-hp">${esc(g.player)}</div>`:''}<div class="hs-hs">${qt}${g?'':' · '+gs.length+' personagen'+(gs.length===1?'':'s')}</div></div>
   <div class="hs-ctl"><div class="hs-mn"><button type="button" onclick="histMes(-1)" aria-label="Mês anterior">‹</button><span>${esc(mes)}</span><button type="button" onclick="histMes(1)" aria-label="Próximo mês">›</button></div>
   <select class="in" onchange="HCAT=this.value;histMain()"><option value="">— Todas as categorias —</option>${Object.entries(HC).map(([k,t])=>`<option value="${k}"${HCAT===k?' selected':''}>${t}</option>`).join('')}</select></div></div>`;
  if(!ev.length){hisl.innerHTML=head+`<div class="hs-hs" style="padding:8px 4px">Nenhuma alteração registrada${HD.length?' com esses filtros':' neste mês'}.</div>`;return}
- hisl.innerHTML=head+ev.map(a=>{
-  const x=a[0],t=new Date(x.ts),por=x.por&&nrm(x.por)!==nrm(x.player||'')?`<small>· por ${esc(x.por)}</small>`:'';
+ hisl.innerHTML=head+ev.map(o=>{
+  const x=o.x,t0=new Date(o.t0),t1=new Date(o.t1),por=x.por&&nrm(x.por)!==nrm(x.player||'')?`<small>· por ${esc(x.por)}</small>`:'';
   const who=HS?'':`<a href="/fichas/${encodeURIComponent(x.slug)}" data-r onclick="hism.close()">${esc(x.nome||x.slug)}</a>${x.player?` <small>(${esc(x.player)})</small>`:''}`;
-  return `<div class="hs-e"><div class="hs-eh"><span>${who} ${por}</span><span class="hs-ts">${t.toLocaleTimeString('pt-BR',HTZ)} · ${t.toLocaleDateString('pt-BR',HTZ)}</span></div>${a.map(e=>`<div class="hs-ln"><span class="hs-p">${esc(HC[e.cat]||e.cat||'—')}</span><span class="hs-tx">${esc(e.txt)}${histDet(e)}</span></div>${histDetBox(e)}`).join('')}</div>`}).join('')}
+  const hr=t=>t.toLocaleTimeString('pt-BR',HTZ),ts=(o.t0===o.t1?hr(t1):hr(t0)+' – '+hr(t1))+' · '+t1.toLocaleDateString('pt-BR',HTZ);
+  return `<div class="hs-e"><div class="hs-eh"><span>${who} ${por}</span><span class="hs-ts">${ts}</span></div>${o.l.map(e=>`<div class="hs-ln"><span class="hs-p">${esc(HC[e.cat]||e.cat||'—')}</span><div class="hs-tx">${esc(e.txt)}${histDetBox(e)}</div></div>`).join('')}</div>`}).join('')}
 /* ===== autosave: fichas já criadas, em modo edição =====
    Salva só ao TROCAR DE PÁGINA (route), ao esconder/fechar a aba (visibilitychange/pagehide) e só se houve alteração real.
    Cada save vira um commit no GitHub; nunca roda em paralelo com outro save. Sem timer e sem aviso fixo na tela. */
