@@ -187,6 +187,14 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .adm-content::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--brand-mid),var(--accent))}
 .adm-section{display:none}
 .adm-section.active{display:block}
+/* pills de sub-abas dentro de uma seção do ADM */
+.adm-pills{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 0 14px;scrollbar-width:none}
+.adm-pills::-webkit-scrollbar{display:none}
+.adm-pill{flex:0 0 auto;font-family:var(--font-body);font-size:13px;font-weight:700;padding:8px 16px;border-radius:999px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.adm-pill:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
+.adm-pill.active{background:var(--brand-mid);border-color:var(--brand-mid);color:#fff}
+.adm-ptab{display:none}
+.adm-ptab.active{display:block}
 .sec-title{font-family:var(--font-title);font-size:17px;color:var(--brand);margin-bottom:6px;padding-bottom:10px;position:relative;display:inline-block}
 .sec-title::after{content:'';position:absolute;left:0;bottom:0;width:26px;height:3px;background:var(--accent);border-radius:2px}
 .sec-sub{font-size:13px;color:var(--muted);margin-top:8px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
@@ -2839,17 +2847,13 @@ function calcSyncSelects(){
         <!-- PERSONAGENS -->
         <div class="adm-section active" id="sec-personagens">
           <div class="sec-title">Players</div>
-          <div class="sec-sub">Cadastre players, gerencie senhas e atribua as fichas (os personagens nascem junto com as fichas)</div>
-          <div class="box">
-            <div class="box-title">Novo player</div>
-            <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Cadastre o player para ele poder entrar (a senha é criada no primeiro acesso). Os personagens vêm das fichas: depois de criar a ficha, atribua-a ao player logo abaixo.</div>
-            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-              <div class="field" style="flex:1;min-width:160px;margin-bottom:0"><label>Nome do Player</label><input type="text" id="np-player" placeholder="Ex: joaosilva" autocomplete="off" oninput="sanitizarInputPlayer(this)" onkeydown="if(event.key==='Enter')adicionarPlayer()"/></div>
-              <button class="btn btn-primary btn-sm" onclick="adicionarPlayer()" style="margin-bottom:1px">+ Adicionar</button>
-            </div>
-            <div class="fb fb-ok" id="np-fb">✓ Player adicionado!</div>
-            <div class="fb fb-err" id="np-fb-err">—</div>
+          <div class="sec-sub">Gerencie senhas e atribua as fichas aos players (o player se cadastra sozinho e os personagens nascem junto com as fichas)</div>
+          <div class="adm-pills" id="adm-players-pills" role="tablist">
+            <button type="button" class="adm-pill active" data-pt="fichas" role="tab" onclick="admPlayersTab('fichas')">Fichas</button>
+            <button type="button" class="adm-pill" data-pt="gerenciar" id="adm-pill-gerenciar" role="tab" onclick="admPlayersTab('gerenciar')">Gerenciar</button>
+            <button type="button" class="adm-pill" data-pt="cadastrados" role="tab" onclick="admPlayersTab('cadastrados')">Players</button>
           </div>
+          <div class="adm-ptab active" data-pt="fichas">
           <div class="box" id="box-fichas-players">
             <div class="box-title">Fichas dos players</div>
             <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Atribua cada ficha do sistema novo (<code>/fichas</code>) a um player. É por esse vínculo que o player enxerga a ficha, edita e tem o inventário descontado nas capturas. A ficha continua casando com o personagem pelo <b>nome</b>.</div>
@@ -2868,6 +2872,8 @@ function calcSyncSelects(){
             <div class="fb fb-ok" id="adm-fichas-fb">✓ Ficha atribuída!</div>
             <div class="fb fb-err" id="adm-fichas-fb-err">—</div>
           </div>
+          </div>
+          <div class="adm-ptab" data-pt="gerenciar">
           <div class="box" id="box-player-senhas">
             <div class="box-title">Gerenciar Players</div>
             <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Renomeie players ou defina/redefina senhas. O campo de confirmação de senha aparece automaticamente no primeiro login do player (quando a senha ainda não foi definida).</div>
@@ -2912,9 +2918,12 @@ function calcSyncSelects(){
             <div class="fb fb-ok" id="adm-senha-fb" style="margin-top:8px">✓ Senha salva!</div>
             <div class="fb fb-err" id="adm-senha-fb-err" style="margin-top:8px">—</div>
           </div>
+          </div>
+          <div class="adm-ptab" data-pt="cadastrados">
           <div class="box">
             <div class="box-title">Players cadastrados</div>
             <div id="tbody-personagens"></div>
+          </div>
           </div>
         </div>
 
@@ -5529,7 +5538,7 @@ function admTab(sec,el){
   document.getElementById('sec-'+sec).classList.add('active');
   document.querySelectorAll('.adm-nav-btn').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
-  if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();admFichasInit();}
+  if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();admFichasInit();admPlayersTabsInit();}
   if(sec==='biomas')renderTbodyBiomas();
   if(sec==='pokemons'){syncBiomaSelects();}
   if(sec==='admins'){ if(!admins||admins.length===0){ dbRpc('admin_list',{}).then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
@@ -6686,6 +6695,20 @@ async function removerPlayer(id,nome){
 }
 function renderTbodyPlayers(){ renderTbodyPersonagens(); }
 
+// sub-abas (pills) da seção Players
+function admPlayersTab(nome){
+  window._admPlayersTab = nome;
+  document.querySelectorAll('#adm-players-pills .adm-pill').forEach(b=>b.classList.toggle('active', b.dataset.pt===nome));
+  document.querySelectorAll('#sec-personagens .adm-ptab').forEach(p=>p.classList.toggle('active', p.dataset.pt===nome));
+}
+function admPlayersTabsInit(){
+  const pg = document.getElementById('adm-pill-gerenciar');
+  if(pg) pg.style.display = isSuperAdmin() ? '' : 'none';   // renomear/senha: só super admin
+  let t = window._admPlayersTab || 'fichas';
+  if(t==='gerenciar' && !isSuperAdmin()) t = 'fichas';
+  admPlayersTab(t);
+}
+
 // ══════════════════════════════════════
 // FICHAS DOS PLAYERS — atribuição pelo ADM (sistema novo: /api/ficha-salvar)
 // O vínculo é gravado na própria ficha: player_id (id do player) + d.player (nome do player).
@@ -6711,16 +6734,6 @@ async function admEmitirSessaoFichas(nome, senha){
     if(r.ok && j?.token){ localStorage.setItem('kp_ficha_sessao', JSON.stringify(j)); _admFichaTok = j.token; return {token:j.token}; }
     return {erro: j?.error || 'HTTP '+r.status};
   }catch(e){ console.warn('[ficha-token adm]', e); return {erro:e.message}; }
-}
-async function admTokenFichas(){
-  if(_admFichaTok) return _admFichaTok;
-  const sv = sessaoFichaNova();
-  if(sv && (sv.admin || normalizarNome(sv.nome)===normalizarNome(admLogado?.email||'#'))) return (_admFichaTok = sv.token);
-  const senha = garantirSenhaAdmSessao();
-  if(!senha) throw new Error('Senha do admin não informada.');
-  const r = await admEmitirSessaoFichas(admLogado.email, senha);
-  if(!r.token){ _admSenhaSessao = null; throw new Error(r.erro || 'Não foi possível obter a sessão de admin das fichas.'); }
-  return r.token;
 }
 async function admFichasInit(force){
   const box = document.getElementById('adm-fichas-lista'); if(!box) return;
@@ -6802,19 +6815,16 @@ async function admAtribuirFicha(btn){
   if(!confirm((semPlayer ? `Remover o player da ficha "${e.nome}"?` : `Atribuir a ficha "${e.nome}" a ${alvo.nome}?`) + (atual?`\n\nPlayer atual: ${atual}`:''))) return;
   const txt = btn.textContent; btn.disabled = true; btn.textContent = 'Salvando…';
   try{
-    const token = await admTokenFichas();
-    const r0 = await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug),{cache:'no-store'});
-    if(!r0.ok) throw new Error('Não foi possível ler a ficha (HTTP '+r0.status+').');
-    const f = await r0.json();
-    f.d = f.d || {};
-    f.d.player = semPlayer ? '' : alvo.nome;
+    const senha = garantirSenhaAdmSessao();
+    if(!senha) throw new Error('Senha do admin não informada.');
     const pid = semPlayer ? 'admin' : alvo.id;
+    // o servidor confere o ADM (nome+senha) e troca o dono no GitHub e no Supabase
     const r = await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      action:'save', token, slug, nome:f.nome, foto:f.foto||null, banner:f.banner||null, thumb:f.thumb||null,
-      player_id:pid, d:f.d, base:f.atualizado_em, por:admLogado?.email
+      action:'atribuir', adm_nome:admLogado.email, adm_senha:senha, slug,
+      player_id:pid, player:semPlayer?'':alvo.nome, por:admLogado.email
     })});
     const j = await r.json().catch(()=>null);
-    if(!r.ok){ if(r.status===401||r.status===403) _admFichaTok = null; throw new Error(j?.error || 'HTTP '+r.status); }
+    if(!r.ok){ if(r.status===403||r.status===401) _admSenhaSessao = null; throw new Error(j?.error || 'HTTP '+r.status); }
     e.player = semPlayer ? null : alvo.nome; e.player_id = pid; e.atualizado_em = j?.atualizado_em || e.atualizado_em;
     admFichasRender();
     renderTbodyPersonagens();
@@ -6828,20 +6838,6 @@ async function admAtribuirFicha(btn){
 // ══════════════════════════════════════
 // PERSONAGENS
 // ══════════════════════════════════════
-async function adicionarPlayer(){
-  const inp=document.getElementById('np-player');
-  const nome=(inp?.value||'').trim();
-  const errEl=document.getElementById('np-fb-err');
-  const erro=m=>{ errEl.textContent=m; errEl.style.display='block'; setTimeout(()=>errEl.style.display='none',5000); };
-  if(!nome){ erro('Informe o nome do player.'); return; }
-  if(players.find(p=>normalizarNome(p.nome)===normalizarNome(nome))){ erro(`O player "${nome}" já existe.`); return; }
-  const res=await dbPost('players',{nome});
-  if(!res||!res[0]){ erro('Não foi possível criar o player no banco. Confira o console (F12) para o erro real e tente de novo.'); return; }
-  players.push(res[0]);
-  inp.value='';
-  fb('np-fb');
-  renderTbodyPersonagens(); populateAdmSenhaSelect(); admFichasRender(); renderPersonagensDatalist();
-}
 async function removerPersonagem(id){
   if(!confirm('Remover este personagem?'))return;
   await dbDel('personagens',`id=eq.${id}`);
