@@ -128,6 +128,68 @@ async function migrar(q, res) {
   return res.json({ ok: true, migradas: rows.map(r => r.slug), restam: pend.length - rows.length, total: todas.length, miniaturas: !!sharp, msg: pend.length - rows.length > 0 ? 'Recarregue esta página para continuar.' : 'Pronto! Todas migradas.' });
 }
 
+// ---- ADM atribui a ficha a um player ----
+// POST { action:'atribuir', adm_nome, adm_senha, slug, player_id, player, por }
+// player_id 'admin' (ou player vazio) = tira o player da ficha.
+// Confere o ADM no projeto do index (admin_login, igual ao ficha-token) e troca o dono nos DOIS lugares:
+// na tabela `fichas` do Supabase (é lá que o ficha_salvar confere "esta ficha pertence a outro player")
+// e no GitHub (JSON da ficha + índice). Precisa das variáveis INDEX_SUPA_URL, INDEX_SUPA_KEY e FICHAS_SUPA_SERVICE_KEY.
+async function atribuir(b, res) {
+  const { adm_nome, adm_senha, slug } = b;
+  if (!adm_nome || !adm_senha) return res.status(401).json({ error: 'Informe o nome e a senha do admin.' });
+  if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
+  const IU = process.env.INDEX_SUPA_URL, IK = process.env.INDEX_SUPA_KEY, FK = process.env.FICHAS_SUPA_SERVICE_KEY;
+  const FU = (process.env.FICHAS_SUPA_URL || SB_URL).replace(/\/$/, '');
+  if (!IU || !IK || !FK) return res.status(500).json({ error: 'Servidor sem configuração (INDEX_SUPA_URL, INDEX_SUPA_KEY ou FICHAS_SUPA_SERVICE_KEY).' });
+  const H = k => ({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' });
+
+  // 1) é ADM mesmo?
+  const a = await fetch(`${IU}/rest/v1/rpc/admin_login`, { method: 'POST', headers: H(IK), body: JSON.stringify({ p_nome: adm_nome, p_senha: adm_senha }) });
+  let adm = a.ok ? await a.json().catch(() => null) : null; adm = Array.isArray(adm) ? adm[0] : adm;
+  if (!adm || !adm.nome) return res.status(403).json({ error: 'Nome ou senha de admin incorretos.' });
+
+  // 2) novo dono
+  const semPlayer = b.player_id === 'admin' || !String(b.player || '').trim();
+  const pid = semPlayer ? 'admin' : String(b.player_id ?? '').trim();
+  const nomePlayer = semPlayer ? '' : String(b.player).trim().slice(0, 60);
+  if (!pid) return res.status(400).json({ error: 'Player inválido.' });
+
+  // 3) ficha atual
+  const caminho = `data/fichas/${slug}.json`;
+  const atual = await readFile(caminho);
+  if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
+  const f0 = JSON.parse(atual);
+
+  // 4) Supabase primeiro: se recusar, nada muda no GitHub
+  const p = await fetch(`${FU}/rest/v1/fichas?slug=eq.${encodeURIComponent(slug)}`, {
+    method: 'PATCH', headers: { ...H(FK), Prefer: 'return=representation' },
+    body: JSON.stringify({ player_id: pid, d: { ...(f0.d || {}), player: nomePlayer } }),
+  });
+  if (!p.ok) { const t = await p.text().catch(() => ''); return res.status(502).json({ error: 'O Supabase recusou a troca de dono: ' + (t.slice(0, 200) || 'HTTP ' + p.status) }); }
+  const linhas = await p.json().catch(() => []);
+
+  // 5) GitHub: ficha + histórico + índice num commit só
+  let saida = null;
+  await commit(async parent => {
+    const t = await readFile(caminho, parent);
+    if (t == null) throw Object.assign(new Error('Ficha não encontrada.'), { status: 404 });
+    const f = JSON.parse(t);
+    f.d = f.d || {}; f.d.player = nomePlayer; f.player_id = pid; f.atualizado_em = new Date().toISOString();
+    saida = f;
+    const ch = [{ path: caminho, content: JSON.stringify(f) }];
+    try {
+      const hist = await mudancaHist(readFile, parent, entradas(f, b.por || adm.nome, [{ cat: 'ficha', txt: semPlayer ? 'Tirou o player da ficha' : `Atribuiu a ficha a ${nomePlayer}` }]));
+      if (hist) ch.push(hist);
+    } catch (e) { console.warn('ficha-salvar: histórico (atribuir) falhou:', e.message); }
+    const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
+    idx.push(indexEntry(f));
+    ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
+    return ch;
+  }, `ficha: atribuir ${slug}`);
+
+  return res.json({ ok: true, slug, player_id: pid, player: nomePlayer, atualizado_em: saida.atualizado_em, supabase_linhas: Array.isArray(linhas) ? linhas.length : 0 });
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'GET') {
     try {
@@ -159,6 +221,7 @@ module.exports = async (req, res) => {
   try {
     const b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const { action = 'save', token, slug } = b;
+    if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
     if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
 
