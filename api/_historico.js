@@ -10,6 +10,7 @@ const s = v => (v == null ? '' : String(v)).trim();
 const num = v => { const n = parseFloat(s(v).replace(/\./g, '').replace(',', '.')); return isNaN(n) ? null : n; };
 const fmt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const curto = v => { const t = s(v); return t.length > 40 ? t.slice(0, 37) + '…' : t; };
+const lim = v => s(v).slice(0, 4000);   // texto completo guardado em det (limitado pra não inchar o JSON do mês)
 const arr = v => (Array.isArray(v) ? v : []);
 const nk = v => s(v).toLowerCase();
 
@@ -33,7 +34,7 @@ const GEN = { male: 'macho', female: 'fêmea', genderless: 'sem gênero' };
 
 function movesDe(x) { return arr(x.moves).map(m => s(m?.n)).filter(Boolean); }
 
-function editaPk(a, b) {   // a = antes, b = depois (mesmo Pokémon)
+function editaPk(a, b, dets = []) {   // a = antes, b = depois (mesmo Pokémon)
   const ch = [];
   if (s(a.apelido) !== s(b.apelido)) ch.push(s(a.apelido) ? (s(b.apelido) ? `apelido "${a.apelido}" → "${b.apelido}"` : `removeu o apelido "${a.apelido}"`) : `apelido definido: "${b.apelido}"`);
   for (const [k, l] of [['nature', 'nature'], ['ability', 'habilidade'], ['feature', 'feature']]) {
@@ -51,8 +52,8 @@ function editaPk(a, b) {   // a = antes, b = depois (mesmo Pokémon)
   const sa = a.stats || {}, sb = b.stats || {}, st = [];
   for (const k of ['hp', 'atk', 'def', 'satk', 'sdef', 'spd']) if (s(sa[k]) !== s(sb[k]) && (s(sa[k]) || s(sb[k]))) st.push(`${k.toUpperCase()} ${s(sa[k]) || '—'} → ${s(sb[k]) || '—'}`);
   if (st.length) ch.push('stats: ' + st.join(', '));
-  if (s(a.combo) !== s(b.combo)) ch.push('editou o Combo');
-  if (s(a.sobre) !== s(b.sobre)) ch.push('editou "Sobre o Pokémon"');
+  if (s(a.combo) !== s(b.combo)) { ch.push('editou o Combo'); dets.push({ l: 'Combo', a: lim(a.combo), d: lim(b.combo) }); }
+  if (s(a.sobre) !== s(b.sobre)) { ch.push('editou "Sobre o Pokémon"'); dets.push({ l: 'Sobre o Pokémon', a: lim(a.sobre), d: lim(b.sobre) }); }
   return ch;
 }
 
@@ -69,8 +70,8 @@ function diffPokemon(A, B) {
   pass((o, n) => nk(o.x.nome) === nk(n.x.nome));
   for (const [o, n] of pares) {
     if (o.loc !== n.loc) ev.push({ cat: 'pokemon', txt: `Moveu ${nomePk(n.x)} do ${LOC[o.loc]} para o ${LOC[n.loc]}` });
-    const ch = editaPk(o.x, n.x);
-    if (ch.length) ev.push({ cat: 'pokemon', txt: `Editou ${nomePk(n.x)}: ${ch.join('; ')}` });
+    const dets = [], ch = editaPk(o.x, n.x, dets);
+    if (ch.length) ev.push({ cat: 'pokemon', txt: `Editou ${nomePk(n.x)}: ${ch.join('; ')}`, ...(dets.length ? { det: dets } : {}) });
   }
   for (const n of dep.filter(n => !n.par)) ev.push({ cat: 'pokemon', txt: `Adicionou ${nomePk(n.x)} ao ${LOC[n.loc]}` });
   for (const o of ant.filter(o => !o.par)) ev.push({ cat: 'pokemon', txt: `Removeu ${nomePk(o.x)} do ${LOC[o.loc]}` });
@@ -123,7 +124,7 @@ function diffPerfil(A, B, fa, fb) {
   if (s(fa?.nome) !== s(fb?.nome)) ch.push(`Nome "${curto(fa?.nome)}" → "${curto(fb?.nome)}"`);
   for (const [k, l] of PERFIL) if (s(A?.[k]) !== s(B?.[k])) ch.push(`${l}: ${curto(A?.[k]) || '—'} → ${curto(B?.[k]) || '—'}`);
   const ev = ch.length ? [{ cat: 'perfil', txt: 'Perfil: ' + ch.join('; ') }] : [];
-  for (const [k, l] of TEXTOS) if (s(A?.[k]) !== s(B?.[k])) ev.push({ cat: 'perfil', txt: `Editou ${l}` });
+  for (const [k, l] of TEXTOS) if (s(A?.[k]) !== s(B?.[k])) ev.push({ cat: 'perfil', txt: `Editou ${l}`, det: { a: lim(A?.[k]), d: lim(B?.[k]) } });
   if (s(fa?.foto) !== s(fb?.foto)) ev.push({ cat: 'perfil', txt: fb?.foto ? 'Trocou a foto' : 'Removeu a foto' });
   if (s(fa?.banner) !== s(fb?.banner)) ev.push({ cat: 'perfil', txt: fb?.banner ? 'Trocou o banner' : 'Removeu o banner' });
   return ev;
@@ -165,7 +166,7 @@ function diffFicha(antes, depois, opts = {}) {
 // transforma eventos em entradas completas
 function entradas(ficha, por, eventos, ts = new Date().toISOString()) {
   const d = ficha?.d || {};
-  return eventos.map(e => ({ ts, slug: ficha.slug, nome: s(ficha.nome), player: s(d.player), por: s(por).slice(0, 40) || null, cat: e.cat, txt: e.txt }));
+  return eventos.map(e => ({ ts, slug: ficha.slug, nome: s(ficha.nome), player: s(d.player), por: s(por).slice(0, 40) || null, cat: e.cat, txt: e.txt, ...(e.det ? { det: e.det } : {}) }));
 }
 
 // eventos explícitos das ações da loja/captura (itens vêm da requisição, não do diff)
