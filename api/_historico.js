@@ -71,7 +71,10 @@ function diffPokemon(A, B) {
   for (const [o, n] of pares) {
     if (o.loc !== n.loc) ev.push({ cat: 'pokemon', txt: `Moveu ${nomePk(n.x)} do ${LOC[o.loc]} para o ${LOC[n.loc]}` });
     const dets = [], ch = editaPk(o.x, n.x, dets);
-    if (ch.length) ev.push({ cat: 'pokemon', txt: `Editou ${nomePk(n.x)}: ${ch.join('; ')}`, ...(dets.length ? { det: dets } : {}) });
+    for (const c of ch) {   // uma linha por mudança
+      const dt = dets.filter(x => c === (x.l === 'Combo' ? 'editou o Combo' : 'editou "Sobre o Pokémon"'));
+      ev.push({ cat: 'pokemon', txt: `Editou ${nomePk(n.x)}: ${c}`, ...(dt.length ? { det: dt } : {}) });
+    }
   }
   for (const n of dep.filter(n => !n.par)) ev.push({ cat: 'pokemon', txt: `Adicionou ${nomePk(n.x)} ao ${LOC[n.loc]}` });
   for (const o of ant.filter(o => !o.par)) ev.push({ cat: 'pokemon', txt: `Removeu ${nomePk(o.x)} do ${LOC[o.loc]}` });
@@ -120,10 +123,9 @@ function diffNums(A, B) {
   return ev;
 }
 function diffPerfil(A, B, fa, fb) {
-  const ch = [];
-  if (s(fa?.nome) !== s(fb?.nome)) ch.push(`Nome "${curto(fa?.nome)}" → "${curto(fb?.nome)}"`);
-  for (const [k, l] of PERFIL) if (s(A?.[k]) !== s(B?.[k])) ch.push(`${l}: ${curto(A?.[k]) || '—'} → ${curto(B?.[k]) || '—'}`);
-  const ev = ch.length ? [{ cat: 'perfil', txt: 'Perfil: ' + ch.join('; ') }] : [];
+  const ev = [];   // uma linha por campo alterado
+  if (s(fa?.nome) !== s(fb?.nome)) ev.push({ cat: 'perfil', txt: `Nome: ${curto(fa?.nome) || '—'} → ${curto(fb?.nome) || '—'}` });
+  for (const [k, l] of PERFIL) if (s(A?.[k]) !== s(B?.[k])) ev.push({ cat: 'perfil', txt: `${l}: ${curto(A?.[k]) || '—'} → ${curto(B?.[k]) || '—'}` });
   for (const [k, l] of TEXTOS) if (s(A?.[k]) !== s(B?.[k])) ev.push({ cat: 'perfil', txt: `Editou ${l}`, det: { a: lim(A?.[k]), d: lim(B?.[k]) } });
   if (s(fa?.foto) !== s(fb?.foto)) ev.push({ cat: 'perfil', txt: fb?.foto ? 'Trocou a foto' : 'Removeu a foto' });
   if (s(fa?.banner) !== s(fb?.banner)) ev.push({ cat: 'perfil', txt: fb?.banner ? 'Trocou o banner' : 'Removeu o banner' });
