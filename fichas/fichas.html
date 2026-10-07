@@ -372,6 +372,10 @@ dialog#hism[open]{display:flex;flex-direction:column}
 .hs-ts{font:12px var(--fb);color:var(--mu);margin-left:auto}
 .hs-ln{display:flex;gap:10px;align-items:flex-start;padding:4px 0;font:13px/1.45 var(--fb)}
 .hs-p{flex:none;min-width:84px;text-align:center;padding:3px 9px;border-radius:4px;font:800 10px var(--fb);letter-spacing:.4px;text-transform:uppercase;color:#c0390b;background:#fdeadd;border:1px solid #f3c9ad}
+.hs-df{margin:4px 0 6px;padding:8px 10px;border:1px solid var(--bd);border-radius:6px;background:#fafbfd;font:12.5px/1.55 var(--fb);white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto}
+.hs-df ins{background:#d9f5df;color:#14602a;text-decoration:none;border-radius:2px;padding:0 1px}
+.hs-df del{background:#fde0e0;color:#a31515;border-radius:2px;padding:0 1px}
+.hs-dt{cursor:pointer;color:#c0390b;font:700 11px var(--fb);margin-left:8px;user-select:none}
 .hs-tx{min-width:0;overflow-wrap:anywhere;padding-top:2px}
 @media(max-width:900px){.hs-hc{flex-wrap:wrap}.hs-ctl{width:100%;flex-wrap:wrap}.hs-ctl .in{flex:1 1 180px}}
 @media(max-width:760px){.hs-b{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.hs-s{border-right:0;border-bottom:1px solid var(--bd);max-height:230px}}
@@ -1014,6 +1018,20 @@ function histSide(){
  hiss.innerHTML=`<div class="hs-i${HS?'':' on'}" onclick="histSel('')"><div class="hs-a">${HI_SVG}</div><span class="hs-nm">Todos os personagens</span><span class="hs-n">${HD.length}</span></div><div class="hs-sec">Personagens</div>`
   +(g.length?g.map(x=>`<div class="hs-i${HS===x.slug?' on':''}" data-s="${esc(x.slug)}" onclick="histSel(this.dataset.s)">${histAv(x.slug,x.nome)}<span class="hs-nm">${esc(x.nome)}</span><span class="hs-n">${x.n}</span></div>`).join(''):'<div class="hs-hs" style="padding:8px 10px">Nenhum personagem com alterações.</div>')}
 function histSel(sl){HS=sl;histSide();histMain();hisl.scrollTop=0}
+/* diff palavra a palavra: det = {a:'antes', d:'depois'} gravado pelo servidor */
+function histDiff(a,d){
+ a=String(a||'');d=String(d||'');
+ const A=a.split(/(\s+)/).filter(x=>x!==''),B=d.split(/(\s+)/).filter(x=>x!=='');
+ if(A.length*B.length>4e6)return `<del>${esc(a)}</del>\n<ins>${esc(d)}</ins>`;
+ const n=A.length,m=B.length,L=Array.from({length:n+1},()=>new Uint16Array(m+1));
+ for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)L[i][j]=A[i]===B[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
+ let i=0,j=0,o='';
+ while(i<n&&j<m){if(A[i]===B[j]){o+=esc(A[i]);i++;j++}else if(L[i+1][j]>=L[i][j+1]){o+='<del>'+esc(A[i])+'</del>';i++}else{o+='<ins>'+esc(B[j])+'</ins>';j++}}
+ while(i<n)o+='<del>'+esc(A[i++])+'</del>';
+ while(j<m)o+='<ins>'+esc(B[j++])+'</ins>';
+ return o}
+function histDet(e){if(!e.det)return '';return `<span class="hs-dt" onclick="const n=this.parentNode.nextElementSibling;n.hidden=!n.hidden;this.textContent=n.hidden?'ver o que mudou':'ocultar'">ver o que mudou</span>`}
+function histDetBox(e){if(!e.det)return '';const L=Array.isArray(e.det)?e.det:[e.det];return `<div class="hs-df" hidden>${L.map(x=>(x.l?'<b>'+esc(x.l)+'</b>\n':'')+histDiff(x.a,x.d)).join('\n\n')}</div>`}
 function histMain(){
  const l=HD.filter(x=>x&&(!HS||x.slug===HS)&&(!HCAT||x.cat===HCAT));
  const gr=new Map();for(const x of l){const k=x.slug+'|'+x.ts;if(!gr.has(k))gr.set(k,[]);gr.get(k).push(x)}
@@ -1028,7 +1046,7 @@ function histMain(){
  hisl.innerHTML=head+ev.map(a=>{
   const x=a[0],t=new Date(x.ts),por=x.por&&nrm(x.por)!==nrm(x.player||'')?`<small>· por ${esc(x.por)}</small>`:'';
   const who=HS?'':`<a href="/fichas/${encodeURIComponent(x.slug)}" data-r onclick="hism.close()">${esc(x.nome||x.slug)}</a>${x.player?` <small>(${esc(x.player)})</small>`:''}`;
-  return `<div class="hs-e"><div class="hs-eh"><span>${who} ${por}</span><span class="hs-ts">${t.toLocaleTimeString('pt-BR',HTZ)} · ${t.toLocaleDateString('pt-BR',HTZ)}</span></div>${a.map(e=>`<div class="hs-ln"><span class="hs-p">${esc(HC[e.cat]||e.cat||'—')}</span><span class="hs-tx">${esc(e.txt)}</span></div>`).join('')}</div>`}).join('')}
+  return `<div class="hs-e"><div class="hs-eh"><span>${who} ${por}</span><span class="hs-ts">${t.toLocaleTimeString('pt-BR',HTZ)} · ${t.toLocaleDateString('pt-BR',HTZ)}</span></div>${a.map(e=>`<div class="hs-ln"><span class="hs-p">${esc(HC[e.cat]||e.cat||'—')}</span><span class="hs-tx">${esc(e.txt)}${histDet(e)}</span></div>${histDetBox(e)}`).join('')}</div>`}).join('')}
 /* ===== autosave: fichas já criadas, em modo edição =====
    Salva só ao TROCAR DE PÁGINA (route), ao esconder/fechar a aba (visibilitychange/pagehide) e só se houve alteração real.
    Cada save vira um commit no GitHub; nunca roda em paralelo com outro save. Sem timer e sem aviso fixo na tela. */
