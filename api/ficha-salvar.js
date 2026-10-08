@@ -53,7 +53,7 @@ function indexEntry(f) {
     player_id: f.player_id ?? null,
     desativada: d.desativada ? 'true' : null,
     cor: d.cor_pri || null,
-    time: (Array.isArray(d.time) ? d.time : []).slice(0, 6).map(t => ({ nome: t?.nome || '', apelido: t?.apelido || '' })),
+    time: (Array.isArray(d.time) ? d.time : []).slice(0, 6).map(t => ({ nome: t?.nome || '', apelido: t?.apelido || '', feature: t?.feature || '' })),
     atualizado_em: f.atualizado_em,
   };
 }
