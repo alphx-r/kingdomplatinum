@@ -47,9 +47,10 @@ module.exports = async (req, res) => {
     if (id != null && id !== 'admin' && (ADM_PLAYERS.includes(nrm(nomeFinal)) || ADM_PLAYERS.includes(nrm(nome)))) id = 'admin';
     if (id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
+    // p_admin: grava player_tokens.admin = true; é essa coluna que o ficha_salvar/ficha_excluir conferem para liberar edição de ficha alheia.
     const b = await fetch(`${process.env.FICHAS_SUPA_URL}/rest/v1/rpc/ficha_emitir_token`, {
       method: 'POST', headers: H(process.env.FICHAS_SUPA_SERVICE_KEY),
-      body: JSON.stringify({ p_player_id: id, p_nome: nomeFinal })
+      body: JSON.stringify({ p_player_id: id, p_nome: nomeFinal, p_admin: id === 'admin' })
     });
     if (!b.ok) {
       console.error('ficha-token: ficha_emitir_token falhou:', b.status, await b.text().catch(() => ''));
