@@ -44,6 +44,14 @@ module.exports = async (req, res) => {
         if (y && y.nome) { id = 'admin'; nomeFinal = y.nome; }
       }
     }
+    // Player desativado pelo ADM (players.ativo = false) não recebe token. Se a coluna ainda não existe ou a consulta falha, segue normalmente.
+    if (id != null && id !== 'admin') {
+      const dz = await fetch(`${process.env.INDEX_SUPA_URL}/rest/v1/players?id=eq.${encodeURIComponent(id)}&select=ativo`, { headers: H(process.env.INDEX_SUPA_KEY) });
+      if (dz.ok) {
+        const rows = await dz.json().catch(() => []);
+        if (Array.isArray(rows) && rows[0] && rows[0].ativo === false) return res.status(403).json({ error: 'Este player está desativado. Fale com a administração.' });
+      }
+    }
     if (id != null && id !== 'admin' && (ADM_PLAYERS.includes(nrm(nomeFinal)) || ADM_PLAYERS.includes(nrm(nome)))) id = 'admin';
     if (id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
