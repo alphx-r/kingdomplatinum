@@ -230,7 +230,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .apl-ib.del:hover{border-color:var(--red);background:#fdeaea}
 .apl-sub{padding:8px 12px 3px;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .apl-empty{padding:14px 12px;font-size:12px;color:var(--muted);text-align:center}
-.apl-foot{padding:8px 12px;display:flex;justify-content:flex-end}
+.apl-foot{padding:8px 12px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.apl-card.off{border-style:dashed}
+.apl-card.off .apl-av,.apl-card.off .apl-name{opacity:.5}
 @media(max-width:600px){.apl-grid{grid-template-columns:1fr}}
 .sec-title{font-family:var(--font-title);font-size:17px;color:var(--brand);margin-bottom:6px;padding-bottom:10px;position:relative;display:inline-block}
 .sec-title::after{content:'';position:absolute;left:0;bottom:0;width:26px;height:3px;background:var(--accent);border-radius:2px}
@@ -4930,7 +4932,7 @@ const FICHAS_SESSION_KEY = 'kp_fichas_session';
 let fichasCallbackCode = new URLSearchParams(window.location.search).get('kp_fichas_code');
 
 // ⚠️ Troque pela URL real onde o Pokégram está publicado.
-const POKEGRAM_URL = 'http://pokegramrpg.vercel.app/';
+const POKEGRAM_URL = 'https://pokegramrpg.vercel.app/';
 
 async function sb(path, opts={}){
   const {prefer, headers:extraHeaders, ...fetchOpts} = opts;
@@ -5581,7 +5583,7 @@ function admTab(sec,el){
   document.getElementById('sec-'+sec).classList.add('active');
   document.querySelectorAll('.adm-nav-btn').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
-  if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();admFichasInit();admPlayersTabsInit();}
+  if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();admFichasInit();admPlayersTabsInit();carregarPlayersInativos();}
   if(sec==='biomas')renderTbodyBiomas();
   if(sec==='pokemons'){syncBiomaSelects();}
   if(sec==='admins'){ if(!admins||admins.length===0){ dbRpc('admin_list',{}).then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
@@ -6124,6 +6126,7 @@ async function fazerLoginPlayer(){
     if(!match){ errEl.textContent='Senha incorreta.'; errEl.style.display='block'; return; }
   }
 
+  if(await playerEstaDesativado(match.id)){ errEl.textContent='Este player está desativado. Fale com a administração.'; errEl.style.display='block'; return; }
   playerLogado = {nome: match.nome, id: match.id};
   localStorage.setItem('player_session', JSON.stringify(playerLogado));
   // Emite também a sessão do Fichário (kp_ficha_sessao) para o /fichas já abrir logado
@@ -6284,7 +6287,13 @@ async function fazerLogoutPlayer(){
   playerLogado = null;
   _loginPlayerCache = null;
   localStorage.removeItem('player_session');
-  localStorage.removeItem('kp_ficha_sessao'); fichasNovas=[]; _fichasNovasTentou=false;
+  // Não derruba a sessão do Fichário se ela for do ADM que continua logado neste navegador (mesma regra do logout do ADM)
+  try{
+    const sv = JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null');
+    const doAdm = !!(sv && admLogado && normalizarNome(sv.nome)===normalizarNome(admLogado.email));
+    if(!doAdm) localStorage.removeItem('kp_ficha_sessao');
+  }catch(e){ localStorage.removeItem('kp_ficha_sessao'); }
+  fichasNovas=[]; _fichasNovasTentou=false;
   localStorage.removeItem(FICHAS_SESSION_KEY);
   fichasAccessToken = null;
   fichasIntegradas = [];
@@ -6329,6 +6338,11 @@ async function restaurarSessaoPlayer(){
     }
     const match = lista.find(p=>p.nome===sess.nome);
     if(!match){ localStorage.removeItem('player_session'); playerLogado=null; return false; }
+    if(await playerEstaDesativado(match.id)){
+      localStorage.removeItem('player_session'); playerLogado=null;
+      try{ const sv=JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null'); if(sv && normalizarNome(sv.nome)===normalizarNome(match.nome)) localStorage.removeItem('kp_ficha_sessao'); }catch(e){}
+      return false;
+    }
     playerLogado = {nome:match.nome, id:match.id};
     return true;
   } catch(e){ playerLogado=null; return false; }
@@ -6995,10 +7009,11 @@ function renderTbodyPersonagens(){
     const k='pl-'+String(pl.id).replace(/[^\w-]/g,'');
     const ativas=fs.filter(e=>e.desativada!=='true').length, desat=fs.length-ativas;
     const chips=[];
+    const inativo=playersInativos.has(String(pl.id));
+    if(inativo) chips.push('<span class="apl-chip warn" title="Este player não consegue entrar">desativado</span>');
     if(fichasOk) chips.push(`<span class="apl-chip ${fs.length?'ok':''}">${fs.length} ficha${fs.length!==1?'s':''}</span>`);
     if(fichasOk&&ativas>2) chips.push(`<span class="apl-chip warn" title="O limite é 2 fichas ativas por player">${ativas} ativas · limite 2</span>`);
     if(fichasOk&&desat) chips.push(`<span class="apl-chip">${desat} desativada${desat!==1?'s':''}</span>`);
-    if(orfaos.length) chips.push(`<span class="apl-chip warn" title="Cadastro legado sem ficha de mesmo nome">${orfaos.length} legado${fichasOk?' sem ficha':''}</span>`);
     const linhaFicha=e=>{
       const p=persPorNome.get(nk(e.nome)), des=e.desativada==='true';
       const cor=corOk(e.cor)||corOk(p&&p.cor);
@@ -7027,13 +7042,13 @@ function renderTbodyPersonagens(){
       if(orfaos.length) corpo+=(fichasOk?`<div class="apl-sub">Legado · sem ficha de mesmo nome</div>`:'')+orfaos.map(linhaLegado).join('');
     }
     const aberto=q||abertos.has(k);
-    return `<div class="apl-card${aberto?' open':''}" id="apl-${k}">
+    return `<div class="apl-card${aberto?' open':''}${inativo?' off':''}" id="apl-${k}">
       <div class="apl-head" onclick="toggleAdmPlayer('${k}')">
         <div class="apl-av">${_fcEsc(String(pl.nome||'?').trim().charAt(0).toUpperCase())}</div>
         <div style="min-width:0"><div class="apl-name" title="${_fcEsc(pl.nome)}">${_fcEsc(pl.nome)}</div><div class="apl-meta">${chips.join('')||'<span class="apl-chip">sem fichas</span>'}</div></div>
         <span class="apl-arrow">▼</span>
       </div>
-      <div class="apl-body">${corpo}<div class="apl-foot"><button class="btn btn-danger btn-sm" onclick="removerPlayer('${pl.id}','${_fcEsc(String(pl.nome).replace(/'/g,"\\'"))}')">Remover player</button></div></div>
+      <div class="apl-body">${corpo}<div class="apl-foot"><button class="btn btn-warn btn-sm" onclick="alternarPlayerAtivo('${pl.id}','${_fcEsc(String(pl.nome).replace(/'/g,"\\'"))}')">${inativo?'Reativar player':'Desativar player'}</button><button class="btn btn-danger btn-sm" onclick="removerPlayer('${pl.id}','${_fcEsc(String(pl.nome).replace(/'/g,"\\'"))}')">Remover player</button></div></div>
     </div>`;
   }).join('');
   const cnt=document.getElementById('apl-count');
@@ -7053,6 +7068,45 @@ function toggleAdmPlayer(k){
   const open=c.classList.toggle('open');
   const set=(window._aplOpen=window._aplOpen||new Set());
   if(open) set.add(k); else set.delete(k);
+}
+// ── Desativar / reativar player (coluna players.ativo; ver SQL no aviso de erro abaixo) ──
+let playersInativos = new Set();   // ids (texto) dos players com ativo = false
+let _colAtivoOk = true;            // false quando a coluna players.ativo ainda não existe no banco
+const _SQL_COL_ATIVO = "alter table players add column if not exists ativo boolean not null default true;";
+async function carregarPlayersInativos(){
+  try{
+    const r = await fetch(`${SUPA_URL}/rest/v1/players?select=id&ativo=eq.false`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY}});
+    if(!r.ok){ _colAtivoOk=false; }
+    else{
+      const j = await r.json().catch(()=>[]);
+      playersInativos = new Set((Array.isArray(j)?j:[]).map(x=>String(x.id)));
+      _colAtivoOk = true;
+    }
+  }catch(e){ console.warn('[players.ativo]', e); }
+  if(document.getElementById('tbody-personagens')) renderTbodyPersonagens();
+}
+// true só quando o banco confirma ativo = false; em qualquer falha (rede, coluna inexistente) não bloqueia ninguém
+async function playerEstaDesativado(id){
+  try{
+    const r = await fetch(`${SUPA_URL}/rest/v1/players?id=eq.${encodeURIComponent(id)}&select=ativo`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY}});
+    if(!r.ok) return false;
+    const j = await r.json().catch(()=>[]);
+    return !!(Array.isArray(j) && j[0] && j[0].ativo===false);
+  }catch(e){ return false; }
+}
+async function alternarPlayerAtivo(id,nome){
+  const desat = playersInativos.has(String(id));
+  const msg = desat
+    ? `Reativar o player "${nome}"?\n\nEle volta a poder entrar no index e nas fichas.`
+    : `Desativar o player "${nome}"?\n\nEle não conseguirá mais entrar (index e fichas). Personagens e fichas ficam preservados e dá para reativar quando quiser.`;
+  if(!confirm(msg)) return;
+  const r = await dbPatch('players',`id=eq.${id}`,{ativo: desat});
+  if(!r || !r.length){
+    alert('Não foi possível salvar. Se a coluna ainda não existe, rode no SQL Editor do Supabase (projeto do index):\n\n'+_SQL_COL_ATIVO);
+    return;
+  }
+  if(desat) playersInativos.delete(String(id)); else playersInativos.add(String(id));
+  renderTbodyPersonagens();
 }
 function aplToggleAll(){
   const cards=[...document.querySelectorAll('#tbody-personagens .apl-card')];
