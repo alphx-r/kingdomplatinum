@@ -1043,12 +1043,17 @@ document.addEventListener('paste',e=>{if(!e.target.closest?.('.rich'))return;e.p
 
 /* ===== roteador (a URL muda sem recarregar a página) ===== */
 let LST=null,rid=0;
+/* /fichas: se a lista não trouxer o Feature dos Pokémon, busca a ficha completa em segundo plano (4 por vez) para marcar os shiny */
+const SHC=new Map(),SHQ=new Set(),SHP=[];let SHN=0;
+const shPaint=slug=>{const fl=SHC.get(slug);if(!fl)return;const a=[...document.querySelectorAll('a.fc')].find(e=>e.getAttribute('href')==='/fichas/'+encodeURIComponent(slug));if(!a)return;const sp=a.querySelectorAll('.tm span');fl.forEach((on,i)=>{const im=sp[i]?.querySelector('img');if(im&&on&&!im.dataset.sh){im.dataset.sh='1';spriteSh(im.dataset.n).then(u=>{if(u)im.src=u})}})};
+function shPump(){while(SHN<4&&SHP.length){const sl=SHP.shift();SHN++;lerFicha(sl).then(j=>{const t=Array.isArray(j?.d?.time)?j.d.time:Array.isArray(j?.time)?j.time:[];SHC.set(sl,Array.from({length:6},(_,i)=>ftv(t[i])==='Shiny'));shPaint(sl)}).catch(()=>{}).finally(()=>{SHN--;SHQ.delete(sl);shPump()})}}
+function shLazy(l){l.forEach(x=>{const t=Array.isArray(x.time)?x.time:[];if(!t.some(q=>q&&q.nome)||t.some(q=>q&&('feature' in q||'shiny' in q)))return;if(SHC.has(x.slug)){shPaint(x.slug);return}if(!SHQ.has(x.slug)){SHQ.add(x.slug);SHP.push(x.slug)}});shPump()}
 const parse=()=>{const m=decodeURIComponent(location.pathname).replace(/\/+$/,'').match(/\/fichas(?:\/([^\/]+).*)?$/);return m&&m[1]||''};
 function go(u,rep){history[rep?'replaceState':'pushState'](null,'',u);route();scrollTo(0,0)}
 document.addEventListener('click',e=>{const a=e.target.closest?.('a[data-r]');if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey)return;e.preventDefault();go(a.getAttribute('href'))});
 addEventListener('popstate',()=>route());
 function modo(m){document.body.classList.remove('ed');f=null;ed=false;drw=false;fab=true;ab.clear();so.clear();psA=0;setColors({});mostrarBadge()}
-async function carregaLista(){if(!LST){const r=await fetch('/api/ficha-salvar?lista=1');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
+async function carregaLista(){if(!LST){SHC.clear();const r=await fetch('/api/ficha-salvar?lista=1');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
 /* limite: cada player só pode ter 2 fichas ativas (admin não tem limite) */
 const LIM_ATIVAS=2,LIM_MSG='Limite atingido: cada player só pode ter 2 fichas ativas. Desative uma das fichas antigas (Fichas > Desativadas) para criar ou reativar outra.';
 async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;const l=await carregaLista(),me=String(ses.nome||'').trim().toLowerCase();
@@ -1215,7 +1220,7 @@ const semDono=x=>!String(x?.player||'').trim()||String(x.player_id)==='admin'||S
 function drawL(){const q=qi.value.toLowerCase().trim(),l=LST.filter(x=>off(x)===DES&&(!q||(x.nome+' '+(x.player||'')).toLowerCase().includes(q)));
  const tm=x=>{const t=Array.isArray(x.time)?x.time:[];return Array.from({length:6},(_,i)=>t[i]?.nome?`<span title="${esc(t[i].apelido||t[i].nome)}"><img data-n="${esc(t[i].nome)}"${ftv(t[i])==='Shiny'?' data-sh="1"':''} alt=""></span>`:'<span></span>').join('')};
  grid.innerHTML=l.length?l.map(x=>`<a class="fc" href="/fichas/${encodeURIComponent(x.slug)}" data-r><span class="ctag${semDono(x)?' sp':''}">${semDono(x)?'Sem player':esc(x.player)}</span>${x.foto?`<img src="${x.foto}" alt="">`:`<div class="fph">${esc((x.nome||'?')[0])}</div>`}<div class="fn">${esc(x.nome)}</div><div class="cl">${esc(x.classe||'')}</div><div class="tm">${tm(x)}</div></a>`).join(''):`<div class="em">${DES&&!q?'Nenhuma ficha desativada.':'Nenhuma ficha encontrada.'}</div>`;
- sprites()}
+ sprites();shLazy(l)}
 
 async function vFicha(slug,id){modo('F');document.title='Ficha | Kingdom Platinum';
  if(slug==='nova'){document.title='Nova ficha | Kingdom Platinum';if(!ses){render();lg.showModal();return}
