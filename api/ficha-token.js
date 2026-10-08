@@ -3,6 +3,10 @@
 //   INDEX_SUPA_URL, INDEX_SUPA_KEY            -> projeto do index (URL e chave anon)
 //   FICHAS_SUPA_URL, FICHAS_SUPA_SERVICE_KEY  -> projeto das fichas (URL e chave service_role, NUNCA no front)
 const H = k => ({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' });
+// Players com poder de admin (mesma lista do fichas.html): entram com a senha de player, mas o token sai como 'admin',
+// que é o que o ficha_salvar do Supabase aceita para editar ficha de outro player.
+const ADM_PLAYERS = ['ricky', 'jef', 'lucas'];
+const nrm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase();
 const ENV = ['INDEX_SUPA_URL', 'INDEX_SUPA_KEY', 'FICHAS_SUPA_URL', 'FICHAS_SUPA_SERVICE_KEY'];
 
 module.exports = async (req, res) => {
@@ -40,6 +44,7 @@ module.exports = async (req, res) => {
         if (y && y.nome) { id = 'admin'; nomeFinal = y.nome; }
       }
     }
+    if (id != null && id !== 'admin' && (ADM_PLAYERS.includes(nrm(nomeFinal)) || ADM_PLAYERS.includes(nrm(nome)))) id = 'admin';
     if (id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
     const b = await fetch(`${process.env.FICHAS_SUPA_URL}/rest/v1/rpc/ficha_emitir_token`, {
