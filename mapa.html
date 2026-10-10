@@ -170,11 +170,14 @@ body{padding-left:var(--sidenav-w);transition:padding-left .25s ease}
 #mapaPins{position:absolute;inset:0;pointer-events:none}
 #mapaPins .mapa-pin{pointer-events:auto}
 /* Pin */
-.mapa-pin{position:absolute;transform:translate(-50%,-100%);cursor:pointer;z-index:10;transition:transform .15s}
+/* A PONTA do pin (centro da base do SVG) fica exatamente no ponto salvo (left/top em %).
+   width/height fixos + svg block eliminam o vão de linha do <svg> inline, e
+   transform-origin na base faz hover/drag crescerem sem deslocar a ponta. */
+.mapa-pin{position:absolute;width:22px;height:30px;transform:translate(-50%,-100%);transform-origin:50% 100%;cursor:pointer;z-index:10;transition:transform .15s}
 .mapa-pin:hover{transform:translate(-50%,-100%) scale(1.25)}
-.mapa-pin svg{filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.mapa-pin svg{display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
 /* Tooltip */
-.mapa-tooltip{position:absolute;background:rgba(15,25,50,.9);color:#fff;font-family:var(--font-body);font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:20;transform:translate(-50%,-130%);opacity:0;transition:opacity .15s;letter-spacing:.3px}
+.mapa-tooltip{position:absolute;left:50%;top:0;background:rgba(15,25,50,.9);color:#fff;font-family:var(--font-body);font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:20;transform:translate(-50%,-130%);opacity:0;transition:opacity .15s;letter-spacing:.3px}
 .mapa-pin:hover .mapa-tooltip{opacity:1}
 /* Popup */
 .mapa-popup-overlay{position:fixed;inset:0;z-index:8000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
@@ -1469,7 +1472,9 @@ async function carregarMapaLocais() {
     if (Array.isArray(rows) && rows.length > 0) {
       MAPA_LOCAIS = rows.map(r => ({
         id: r.local_id, nome: r.nome, tipo: r.tipo,
-        desc: r.descricao || '', x: r.x || 0, y: r.y || 0
+        desc: r.descricao || '',
+        x: Number.isFinite(parseFloat(r.x)) ? parseFloat(r.x) : 0,
+        y: Number.isFinite(parseFloat(r.y)) ? parseFloat(r.y) : 0
       }));
       // Salva cache
       try { localStorage.setItem(LS_KEY, JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
@@ -1683,6 +1688,7 @@ let _mapaDragging = false;
 let _mapaStartX = 0, _mapaStartY = 0;
 let _mapaStartPanX = 0, _mapaStartPanY = 0;
 let _mapaModoEdicao = false;
+const _mapaPinsMovidos = new Set(); // ids de pins arrastados desde o último salvar
 let _mapaPinDragging = null;  // {pin, loc, startMouseX, startMouseY, startX, startY}
 
 // ── Inicialização ──────────────────────────────────────────
@@ -1714,9 +1720,10 @@ async function initMapa() {
       if (imgSrc && !img.src) img.src = imgSrc;
     }),
     carregarMapaTipos(),
-    carregarMapaLocais(),
+    // Locais e posições em sequência: carregarPosicoesPins() usa MAPA_LOCAIS.find(),
+    // então precisa rodar DEPOIS que carregarMapaLocais() preencheu a lista.
+    (async () => { await carregarMapaLocais(); await carregarPosicoesPins(); })(),
     carregarMapaEventos(),
-    carregarPosicoesPins(),
     carregarMapaFichas(),
     carregarShinyBonusConfig(),
     mapaFiltrosCarregarDB(), // no-op, dados vêm de carregarMapaTipos
@@ -1857,9 +1864,13 @@ async function carregarPosicoesPins() {
     const rows = await dbGet('map_pin_positions', 'select=*');
     if (Array.isArray(rows)) {
       rows.forEach(r => {
-        const loc = MAPA_LOCAIS.find(l => l.id === r.local_id);
-        if (loc) { loc.x = parseFloat(r.x); loc.y = parseFloat(r.y); }
+        const loc = MAPA_LOCAIS.find(l => String(l.id).trim() === String(r.local_id).trim());
+        const px = parseFloat(r.x), py = parseFloat(r.y);
+        // Ignora nulo/NaN: 'NaN%' faria o pin cair no canto (0,0)
+        if (loc && Number.isFinite(px) && Number.isFinite(py)) { loc.x = px; loc.y = py; }
       });
+      // Cache local já com as posições finais (fallback não traz posição antiga)
+      try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     }
   } catch(e) { console.warn('[mapa] Erro ao carregar posições:', e); }
 }
@@ -1871,8 +1882,9 @@ async function salvarPosicoesPins() {
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
     // Upsert todas as posições
-    const payload = MAPA_LOCAIS.map(l => ({ local_id: l.id, x: l.x, y: l.y }));
-    await fetch(`${SUPA_URL}/rest/v1/map_pin_positions`, {
+    const r2 = v => Math.round(v * 100) / 100;
+    const payload = MAPA_LOCAIS.map(l => ({ local_id: l.id, x: r2(l.x), y: r2(l.y) }));
+    const resPos = await fetch(`${SUPA_URL}/rest/v1/map_pin_positions`, {
       method: 'POST',
       headers: {
         'apikey': SUPA_KEY,
@@ -1882,6 +1894,21 @@ async function salvarPosicoesPins() {
       },
       body: JSON.stringify(payload),
     });
+    // fetch não lança erro em 4xx/5xx — sem este check o botão mostrava ✅ mesmo sem salvar
+    if (!resPos.ok) throw new Error('map_pin_positions: ' + resPos.status + ' ' + await resPos.text());
+    // Mantém map_locais.x/y igual a map_pin_positions (antes só uma das duas era
+    // atualizada, e a outra ficava com a posição antiga).
+    const movidos = payload.filter(p => _mapaPinsMovidos.has(String(p.local_id)));
+    const resLoc = await Promise.all(movidos.map(p => fetch(
+      `${SUPA_URL}/rest/v1/map_locais?local_id=eq.${encodeURIComponent(p.local_id)}`, {
+        method: 'PATCH',
+        headers: { ...SUPA_HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ x: p.x, y: p.y }),
+      })));
+    const falhou = resLoc.find(r => !r.ok);
+    if (falhou) throw new Error('map_locais: ' + falhou.status + ' ' + await falhou.text());
+    _mapaPinsMovidos.clear();
+    try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
     // Se algum desses pins estiver vinculado a um local do WeatherCast
     // (tabela `locais`, projeto do datadex), reflete a nova posição lá
     // também — mapa e ADM ficam sempre com a mesma posição fixa.
@@ -2066,8 +2093,9 @@ function _mapaCliqueNovoLocal(clientX, clientY) {
   const x = ((clientX - rect.left) / (rect.width)  * 100 / _mapaScale * _mapaScale).toFixed(2);
   const y = ((clientY - rect.top)  / (rect.height) * 100 / _mapaScale * _mapaScale).toFixed(2);
   // Cálculo correto considerando scale e pan
-  const xPct = ((clientX - rect.left) / rect.width  * 100).toFixed(2);
-  const yPct = ((clientY - rect.top)  / rect.height * 100).toFixed(2);
+  const _cl = v => Math.min(100, Math.max(0, v));
+  const xPct = _cl((clientX - rect.left) / rect.width  * 100).toFixed(2);
+  const yPct = _cl((clientY - rect.top)  / rect.height * 100).toFixed(2);
   _mapaModoNovoLocal = false;
   document.getElementById('mapaWrap').style.cursor = '';
 
@@ -2204,6 +2232,7 @@ function _onPinDragMove(clientX, clientY) {
 function _onPinDragEnd() {
   if (!_mapaPinDragging) return;
   _mapaPinDragging.pin.classList.remove('dragging-pin');
+  _mapaPinsMovidos.add(String(_mapaPinDragging.loc.id));
   _mapaPinDragging = null;
 }
 
@@ -2623,7 +2652,12 @@ function initMapaPanZoom() {
   const img = document.getElementById('mapaImg');
   const doInit = () => {
     canvas.style.visibility = 'hidden';
-    img.style.width = img.naturalWidth + 'px';
+    img.style.width  = img.naturalWidth  + 'px';
+    img.style.height = img.naturalHeight + 'px';
+    // Canvas e camada de pins com o MESMO tamanho exato da imagem: left/top em %
+    // dos pins sempre se referem à imagem, nunca a uma caixa calculada por layout.
+    canvas.style.width  = img.naturalWidth  + 'px';
+    canvas.style.height = img.naturalHeight + 'px';
     void wrap.offsetWidth;
     const minScale = getMinScale();
     // Tenta restaurar posição salva — mas só se foi salva numa tela de
