@@ -1720,9 +1720,7 @@ async function initMapa() {
       if (imgSrc && !img.src) img.src = imgSrc;
     }),
     carregarMapaTipos(),
-    // Locais e posições em sequência: carregarPosicoesPins() usa MAPA_LOCAIS.find(),
-    // então precisa rodar DEPOIS que carregarMapaLocais() preencheu a lista.
-    (async () => { await carregarMapaLocais(); await carregarPosicoesPins(); })(),
+    carregarMapaLocais(), // x/y vêm de map_locais (única fonte de posição)
     carregarMapaEventos(),
     carregarMapaFichas(),
     carregarShinyBonusConfig(),
@@ -1858,22 +1856,7 @@ async function mapaAdmSalvarFicha() {
   }
 }
 
-// ── Carregar posições salvas dos pins ─────────────────────
-async function carregarPosicoesPins() {
-  try {
-    const rows = await dbGet('map_pin_positions', 'select=*');
-    if (Array.isArray(rows)) {
-      rows.forEach(r => {
-        const loc = MAPA_LOCAIS.find(l => String(l.id).trim() === String(r.local_id).trim());
-        const px = parseFloat(r.x), py = parseFloat(r.y);
-        // Ignora nulo/NaN: 'NaN%' faria o pin cair no canto (0,0)
-        if (loc && Number.isFinite(px) && Number.isFinite(py)) { loc.x = px; loc.y = py; }
-      });
-      // Cache local já com as posições finais (fallback não traz posição antiga)
-      try { localStorage.setItem('mapa_locais_cache', JSON.stringify(MAPA_LOCAIS)); } catch(e) {}
-    }
-  } catch(e) { console.warn('[mapa] Erro ao carregar posições:', e); }
-}
+// (carregarPosicoesPins removida: a posição dos pins vem só de map_locais.x/y)
 
 // ── Salvar posições no Supabase ────────────────────────────
 async function salvarPosicoesPins() {
@@ -1884,20 +1867,8 @@ async function salvarPosicoesPins() {
     // Upsert todas as posições
     const r2 = v => Math.round(v * 100) / 100;
     const payload = MAPA_LOCAIS.map(l => ({ local_id: l.id, x: r2(l.x), y: r2(l.y) }));
-    const resPos = await fetch(`${SUPA_URL}/rest/v1/map_pin_positions`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': `Bearer ${SUPA_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates',
-      },
-      body: JSON.stringify(payload),
-    });
-    // fetch não lança erro em 4xx/5xx — sem este check o botão mostrava ✅ mesmo sem salvar
-    if (!resPos.ok) throw new Error('map_pin_positions: ' + resPos.status + ' ' + await resPos.text());
-    // Mantém map_locais.x/y igual a map_pin_positions (antes só uma das duas era
-    // atualizada, e a outra ficava com a posição antiga).
+    // map_locais.x/y é a ÚNICA fonte de posição dos pins. fetch não lança erro em
+    // 4xx/5xx, então cada resposta é checada (senão o botão mostrava ✅ sem salvar).
     const movidos = payload.filter(p => _mapaPinsMovidos.has(String(p.local_id)));
     const resLoc = await Promise.all(movidos.map(p => fetch(
       `${SUPA_URL}/rest/v1/map_locais?local_id=eq.${encodeURIComponent(p.local_id)}`, {
@@ -2113,12 +2084,7 @@ function _mapaCliqueNovoLocal(clientX, clientY) {
     headers:{...SUPA_HEADERS,'Prefer':'resolution=merge-duplicates'},
     body: JSON.stringify({local_id:id, nome, tipo, descricao:'', x:parseFloat(xPct), y:parseFloat(yPct), excluido:false})
   });
-  // Salva posição e cria ficha vazia
-  fetch(`${SUPA_URL}/rest/v1/map_pin_positions`, {
-    method:'POST',
-    headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
-    body: JSON.stringify([{local_id:id, x:parseFloat(xPct), y:parseFloat(yPct)}])
-  });
+  // Cria ficha vazia (a posição já foi gravada em map_locais acima)
   fetch(`${SUPA_URL}/rest/v1/map_local_fichas`, {
     method:'POST',
     headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
