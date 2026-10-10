@@ -750,6 +750,14 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .ev-pool-btn:hover:not(.active){border-color:var(--brand-mid);color:var(--brand)}
 .modal-pool-bioma-tab{padding:6px 14px;border-radius:20px 20px 0 0;border:1.5px solid var(--border);border-bottom:none;background:var(--surface2);font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;margin-bottom:-1px;position:relative;z-index:1}
 .modal-pool-bioma-tab.active{background:var(--surface);color:var(--brand-mid);border-color:var(--brand-mid)}
+/* Pool de itens: reordenar arrastando */
+.pool-item-row{position:relative}
+.pool-drag-handle{flex-shrink:0;color:var(--muted);font-size:13px;line-height:1;padding:3px 4px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;border-radius:4px}
+.pool-drag-handle:hover{color:var(--brand-mid);background:var(--surface)}
+.pool-item-row.pool-dragging{opacity:.45}
+.pool-item-row.pool-dragging .pool-drag-handle{cursor:grabbing}
+.pool-item-row.pool-drop-before{box-shadow:0 -3px 0 0 var(--brand-mid)}
+.pool-item-row.pool-drop-after{box-shadow:0 3px 0 0 var(--brand-mid)}
 
 /* PLAYER LOGIN OVERLAY */
 #player-login-overlay{
@@ -9456,7 +9464,7 @@ function _poolHtml(prefix){
     const bg = isAtiva ? 'var(--surface)' : 'var(--surface2)';
     const border = isAtiva ? '1.5px solid var(--border)' : '1.5px solid var(--border)';
     const bBot = isAtiva ? 'border-bottom:1.5px solid var(--surface)' : '';
-    const activeIcon = p.ativa ? ' 🟢' : ' ⚫';
+    const activeIcon = _poolTabIcons(p);
     return `<button onclick="_poolSetAba('${prefix}',${i})" style="padding:5px 12px;border-radius:8px 8px 0 0;border:${border};${bBot};background:${bg};font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap">${p.titulo||('Pool '+(i+1))}${activeIcon}</button>`;
   }).join('');
 
@@ -9465,8 +9473,11 @@ function _poolHtml(prefix){
   contEl.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
       <div style="display:flex;align-items:center;gap:8px">
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--text);cursor:pointer">
-          <input type="checkbox" ${p.ativa?'checked':''} onchange="_poolToggleAtiva('${prefix}',${abaIdx},this.checked)" style="cursor:pointer"/> Ativa (visível aos jogadores)
+        <label title="Ativa: os itens do rolador do evento são sorteados desta pool" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--text);cursor:pointer">
+          <input type="checkbox" ${p.ativa?'checked':''} onchange="_poolToggleAtiva('${prefix}',${abaIdx},this.checked)" style="cursor:pointer"/> 🟢 Ativa <span style="font-weight:400;color:var(--muted)">(sorteia no rolador)</span>
+        </label>
+        <label title="Visível: os jogadores veem esta pool (tabela de itens) na página do evento" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--text);cursor:pointer;margin-left:6px">
+          <input type="checkbox" ${_poolVisivel(p)?'checked':''} onchange="_poolToggleVisivel('${prefix}',${abaIdx},this.checked)" style="cursor:pointer"/> 👁 Visível <span style="font-weight:400;color:var(--muted)">(aos jogadores)</span>
         </label>
       </div>
       <button onclick="_poolRemover('${prefix}',${abaIdx})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;transition:background .15s" onmouseover="this.style.background='#fde8e8'" onmouseout="this.style.background='none'">🗑 Remover pool</button>
@@ -9538,13 +9549,30 @@ function _renderPoolItensInline(prefix, idx){
         <button onclick="_poolConverterTodosLegado('${prefix}',${idx})" style="font-size:11px;font-weight:700;background:var(--brand);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap">🔄 Converter todos p/ novo formato</button>
       </div>`
     : '';
-  cont.innerHTML = avisoLegado + '<div style="display:flex;flex-direction:column;gap:4px">'
+  const handle = '<span class="pool-drag-handle" title="Arraste para reordenar">⠿</span>';
+  let _n = 0; // numeração do dado: cabeçalhos "###" não contam (igual ao rolador)
+  const _nomesDl = Array.from(new Set(lista.map(function(it){ return typeof it === 'string' ? it : (it && it.nome) || ''; })
+    .filter(function(n){ return n && !_lootIsGroupHeader(n); })));
+  const _datalist = `<datalist id="${prefix}-sub-dl-${idx}">${_nomesDl.map(function(n){ return '<option value="'+String(n).replace(/"/g,'&quot;')+'">'; }).join('')}</datalist>`;
+  cont.innerHTML = avisoLegado + _datalist + '<div class="pool-items-col" style="display:flex;flex-direction:column;gap:4px">'
     + lista.map(function(item, i){
+      // cabeçalho de grupo ("### Comum", "### Rara"...): linha própria, sem número de dado
+      if(typeof item === 'string' && _lootIsGroupHeader(item)){
+        const rotulo = item.replace(/^###\s*/,'').replace(/</g,'&lt;');
+        return `<div class="pool-item-row" data-pi="${i}" style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;background:var(--surface);border:1px dashed var(--border)">
+          ${handle}
+          <span style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="Grupo">${rotulo}</span>
+          <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1" title="Remover">×</button>
+        </div>`;
+      }
       // formato legado: string pura, sem sabor/raridade/números
       if(typeof item === 'string'){
-        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
-          <span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#4caf50;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${i+1}</span>
+        _n++;
+        return `<div class="pool-item-row" data-pi="${i}" style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
+          ${handle}
+          <span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#4caf50;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${_n}</span>
           <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item}">${item}${ehBerry?' <em style="color:var(--muted);font-weight:400">(legado)</em>':''}</span>
+          ${_poolLimiteHtml(prefix, idx, i, item)}
           <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1" title="Remover">×</button>
         </div>`;
       }
@@ -9558,14 +9586,99 @@ function _renderPoolItensInline(prefix, idx){
           ${RARIDADES.map(r=>`<option value="${r.id}"${r.id===raridadeAtual?' selected':''}>${r.label}</option>`).join('')}
           <option value="bonus"${raridadeAtual==='bonus'?' selected':''}>Bônus</option>
         </select>`;
-      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:${s?s.bgBasica+'55':'var(--surface2)'};border:1px solid var(--border)">
+      return `<div class="pool-item-row" data-pi="${i}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:${s?s.bgBasica+'55':'var(--surface2)'};border:1px solid var(--border)">
+        ${handle}
         ${saborSelect}
         <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.nome}">${item.nome}</span>
         ${raridadeSelect}
         <span style="font-size:10px;font-weight:700;color:var(--brand);flex-shrink:0">(${nums})</span>
+        ${_poolLimiteHtml(prefix, idx, i, item.nome)}
         <button onclick="_poolRemoverItem('${prefix}',${idx},${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0;line-height:1;flex-shrink:0" title="Remover">×</button>
       </div>`;
     }).join('') + '</div>';
+  _poolBindDrag(cont, prefix, idx);
+}
+
+// Ancestral rolável mais próximo (modal/painel) ou a janela — usado no auto-scroll do arraste.
+function _poolScrollParent(el){
+  for(let p = el.parentElement; p && p !== document.body; p = p.parentElement){
+    const oy = getComputedStyle(p).overflowY;
+    if((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 1) return p;
+  }
+  return window;
+}
+// Reordenar itens da pool arrastando o "⠿". Usa pointer events (funciona com mouse
+// E toque), mostra uma linha onde o item vai cair e rola a lista sozinha perto das bordas.
+// A posição na lista é o que define o nº do dado nas pools do tipo "Itens".
+function _poolBindDrag(cont, prefix, idx){
+  const list = cont.querySelector('.pool-items-col');
+  if(!list) return;
+  list.querySelectorAll('.pool-drag-handle').forEach(function(h){
+    h.addEventListener('pointerdown', function(e){
+      if(e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      const row  = h.closest('.pool-item-row');
+      const from = parseInt(row.dataset.pi, 10);
+      const rows = Array.from(list.querySelectorAll('.pool-item-row'));
+      const scroller = _poolScrollParent(list);
+      let pos = from, lastY = e.clientY, raf = 0, ativo = true;
+      row.classList.add('pool-dragging');
+      try{ h.setPointerCapture(e.pointerId); }catch(_){}
+
+      function atualizar(){
+        // pos = índice (0..n) onde o item será inserido, antes de rows[pos]
+        pos = rows.length;
+        for(let k = 0; k < rows.length; k++){
+          const r = rows[k].getBoundingClientRect();
+          if(lastY < r.top + r.height/2){ pos = k; break; }
+        }
+        rows.forEach(function(r){ r.classList.remove('pool-drop-before','pool-drop-after'); });
+        if(pos === from || pos === from + 1) return; // soltar aqui não muda nada
+        if(pos < rows.length) rows[pos].classList.add('pool-drop-before');
+        else rows[rows.length-1].classList.add('pool-drop-after');
+      }
+      function auto(){
+        if(!ativo) return;
+        const box = scroller === window ? {top:0, bottom:window.innerHeight} : scroller.getBoundingClientRect();
+        const borda = 48;
+        let dy = 0;
+        if(lastY < box.top + borda)         dy = -(1 - Math.min(Math.max(lastY - box.top, 0), borda) / borda);
+        else if(lastY > box.bottom - borda) dy =  (1 - Math.min(Math.max(box.bottom - lastY, 0), borda) / borda);
+        if(dy){
+          const passo = Math.sign(dy) * Math.max(1, Math.round(Math.abs(dy) * 14));
+          if(scroller === window) window.scrollBy(0, passo); else scroller.scrollTop += passo;
+          atualizar();
+        }
+        raf = requestAnimationFrame(auto);
+      }
+      function mover(ev){ lastY = ev.clientY; atualizar(); }
+      function limpar(){
+        ativo = false;
+        cancelAnimationFrame(raf);
+        h.removeEventListener('pointermove', mover);
+        h.removeEventListener('pointerup', soltar);
+        h.removeEventListener('pointercancel', cancelar);
+        rows.forEach(function(r){ r.classList.remove('pool-dragging','pool-drop-before','pool-drop-after'); });
+        try{ h.releasePointerCapture(e.pointerId); }catch(_){}
+      }
+      function soltar(ev){
+        lastY = ev.clientY; atualizar();
+        const destino = pos;
+        limpar();
+        if(destino === from || destino === from + 1) return;
+        const arr = _pools[prefix][idx].itens;
+        const item = arr.splice(from, 1)[0];
+        arr.splice(destino > from ? destino - 1 : destino, 0, item);
+        _renderPoolItensInline(prefix, idx);
+      }
+      function cancelar(){ limpar(); }
+
+      h.addEventListener('pointermove', mover);
+      h.addEventListener('pointerup', soltar);
+      h.addEventListener('pointercancel', cancelar);
+      raf = requestAnimationFrame(auto);
+    });
+  });
 }
 // Converte TODOS os itens legado (string) de uma pool pro formato novo de uma
 // só vez, preservando o número do dado que cada um já respondia (importante:
@@ -9594,7 +9707,15 @@ function _poolItemSetCampo(prefix, idx, itemIdx, campo, valor){
 
 
 function _poolSetAba(prefix, idx){ _poolAba[prefix] = idx; _poolHtml(prefix); }
+// Cada pool tem duas flags independentes:
+//   ativa   -> os itens do rolador (dado do evento) são sorteados SÓ das pools ativas
+//   visivel -> os jogadores enxergam a pool (badge + tabela de itens) na página do evento
+// Pools salvas antes dessa separação não têm `visivel`: nelas "ativa" já significava
+// "ativa e visível", então herdam o valor de `ativa` (comportamento antigo preservado).
+function _poolVisivel(p){ return !!p && (p.visivel === undefined ? !!p.ativa : !!p.visivel); }
+function _poolTabIcons(p){ return (p.ativa ? ' 🟢' : ' ⚫') + (_poolVisivel(p) ? ' 👁' : ''); }
 function _poolToggleAtiva(prefix, idx, val){ if(_pools[prefix][idx]) _pools[prefix][idx].ativa = val; _poolHtml(prefix); }
+function _poolToggleVisivel(prefix, idx, val){ if(_pools[prefix][idx]) _pools[prefix][idx].visivel = val; _poolHtml(prefix); }
 function _poolSetTitulo(prefix, idx, val){
   if(_pools[prefix][idx]) _pools[prefix][idx].titulo = val;
   // só atualiza o texto da aba, sem re-renderizar o conteúdo (evita perda de foco)
@@ -9603,7 +9724,7 @@ function _poolSetTitulo(prefix, idx, val){
     const btns = tabsEl.querySelectorAll('button');
     if(btns[idx]){
       const p = _pools[prefix][idx];
-      const activeIcon = p.ativa ? ' 🟢' : ' ⚫';
+      const activeIcon = _poolTabIcons(p);
       btns[idx].textContent = (val||('Pool '+(idx+1))) + activeIcon;
     }
   }
@@ -9660,9 +9781,43 @@ function _poolColarLista(prefix, idx, txt){
   const inp = document.getElementById(`${prefix}-item-nome-${idx}`);
   if(inp){ inp.value=''; inp.placeholder = linhas.length+' itens adicionados'; }
 }
+function _poolNomeDoItem(prefix, idx, i){
+  const it = (_pools[prefix][idx].itens||[])[i];
+  return typeof it === 'string' ? it : ((it && it.nome) || '');
+}
 function _poolRemoverItem(prefix, idx, itemIdx){
-  _pools[prefix][idx].itens.splice(itemIdx, 1);
+  const p = _pools[prefix][idx];
+  const nome = _poolNomeDoItem(prefix, idx, itemIdx);
+  p.itens.splice(itemIdx, 1);
+  // sem mais nenhum item com esse nome, o limite dele não faz mais sentido
+  if(p.limites && nome && !p.itens.some(function(it){ return (typeof it === 'string' ? it : (it && it.nome)) === nome; })) delete p.limites[nome];
   _renderPoolItensInline(prefix, idx);
+}
+// Limite = quantas vezes o item pode sair no evento (vazio = ilimitado). Chave = nome do item.
+function _poolSetLimite(prefix, idx, i, val){
+  const p = _pools[prefix][idx]; if(!p) return;
+  const nome = _poolNomeDoItem(prefix, idx, i); if(!nome) return;
+  const n = parseInt(val, 10);
+  if(!p.limites) p.limites = {};
+  if(!n || n < 1) delete p.limites[nome];
+  else p.limites[nome] = { max: n, sub: (p.limites[nome] && p.limites[nome].sub) || '' };
+  _renderPoolItensInline(prefix, idx);
+}
+function _poolSetSubstituto(prefix, idx, i, val){
+  const p = _pools[prefix][idx]; if(!p || !p.limites) return;
+  const nome = _poolNomeDoItem(prefix, idx, i);
+  if(p.limites[nome]) p.limites[nome].sub = String(val||'').trim();
+}
+function _poolLimiteHtml(prefix, idx, i, nome){
+  const l = (_pools[prefix][idx].limites || {})[nome];
+  const max = l && l.max > 0 ? l.max : '';
+  const estilo = 'font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:5px;flex-shrink:0;background:#fff';
+  let h = `<input type="number" min="1" max="99" value="${max}" placeholder="∞" title="Limite: quantas vezes este item pode sair neste evento (vazio = ilimitado)" onchange="_poolSetLimite('${prefix}',${idx},${i},this.value)" style="${estilo};width:44px;text-align:center"/>`;
+  if(max){
+    const sub = String(l.sub||'').replace(/"/g,'&quot;');
+    h += `<input type="text" list="${prefix}-sub-dl-${idx}" value="${sub}" placeholder="se esgotar →" title="Item que sai no lugar quando o limite acabar (vazio = nada)" oninput="_poolSetSubstituto('${prefix}',${idx},${i},this.value)" style="${estilo};width:104px"/>`;
+  }
+  return h;
 }
 function _poolRemover(prefix, idx){
   if(!confirm('Remover esta pool?')) return;
@@ -9671,12 +9826,12 @@ function _poolRemover(prefix, idx){
   _poolHtml(prefix);
 }
 function evAdicionarPool(){
-  _pools['ev'].push({titulo:'Pool '+(  _pools['ev'].length+1), obs:'', tipo:'itens', itens:[], ativa:false});
+  _pools['ev'].push({titulo:'Pool '+(  _pools['ev'].length+1), obs:'', tipo:'itens', itens:[], ativa:false, visivel:false, limites:{}});
   _poolAba['ev'] = _pools['ev'].length - 1;
   _poolHtml('ev');
 }
 function editEvAdicionarPool(){
-  _pools['edit-ev'].push({titulo:'Pool '+(_pools['edit-ev'].length+1), obs:'', tipo:'itens', itens:[], ativa:false});
+  _pools['edit-ev'].push({titulo:'Pool '+(_pools['edit-ev'].length+1), obs:'', tipo:'itens', itens:[], ativa:false, visivel:false, limites:{}});
   _poolAba['edit-ev'] = _pools['edit-ev'].length - 1;
   _poolHtml('edit-ev');
 }
@@ -10131,9 +10286,10 @@ function abrirLootModal(poolIdx){
   let poolAlvo = null;
   if(Array.isArray(ev?.pool_pools) && ev.pool_pools.length){
     if(poolIdx !== undefined) poolAlvo = ev.pool_pools[poolIdx];
-    else poolAlvo = ev.pool_pools.find(p=>p.ativa);
+    else poolAlvo = ev.pool_pools.find(_poolVisivel);
   }
-  const itens  = poolAlvo?.itens?.length ? poolAlvo.itens : (ev?.pool_itens||[]);
+  const _temPools = Array.isArray(ev?.pool_pools) && ev.pool_pools.length;
+  const itens  = poolAlvo?.itens?.length ? poolAlvo.itens : (_temPools ? [] : (ev?.pool_itens||[]));
   const titulo = (poolAlvo?.titulo||'').trim() || (ev?.pool_titulo||'').trim() || 'Pool de Itens';
 const obs = (poolAlvo?.obs||'').trim();
   if(!itens.length) return;
@@ -14535,9 +14691,9 @@ function abrirEditarEvento(id){
   }
   // Carregar pools para qualquer tipo de evento
   if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
-    _pools['edit-ev'] = ev.pool_pools.map(p=>({titulo:p.titulo||'', obs:p.obs||'', tipo:_poolTipo(p), itens:[...(p.itens||[])], ativa:!!p.ativa}));
+    _pools['edit-ev'] = ev.pool_pools.map(p=>({titulo:p.titulo||'', obs:p.obs||'', tipo:_poolTipo(p), itens:[...(p.itens||[])], ativa:!!p.ativa, visivel:_poolVisivel(p), limites:Object.assign({}, p.limites||{})}));
   } else if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){
-    _pools['edit-ev'] = [{titulo:ev.pool_titulo||'Pool de Itens', obs:ev.pool_obs||'', itens:[...ev.pool_itens], ativa:true}];
+    _pools['edit-ev'] = [{titulo:ev.pool_titulo||'Pool de Itens', obs:ev.pool_obs||'', itens:[...ev.pool_itens], ativa:true, visivel:true}];
   } else {
     _pools['edit-ev'] = [];
   }
@@ -14718,14 +14874,14 @@ async function iniciarPaginaEvento(slug){
       let _badges = '';
       if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
         ev.pool_pools.forEach(function(p, i){
-          if(p.ativa && p.itens && p.itens.length){
+          if(_poolVisivel(p) && p.itens && p.itens.length){
             const _bt = (p.titulo||'').trim() || 'Pool de Itens';
             _badges += ' <span class="loot-desc-badge" onclick="abrirLootModal('+i+')" style="cursor:pointer">' + _bt + '</span>';
           }
         });
       }
       // fallback legado
-      if(!_badges && ev.pool_itens && ev.pool_itens.length){
+      if(!_badges && !(Array.isArray(ev.pool_pools) && ev.pool_pools.length) && ev.pool_itens && ev.pool_itens.length){
         const _bt = (ev.pool_titulo||'').trim() || 'Pool de Itens';
         _badges = ' <span class="loot-desc-badge" onclick="abrirLootModal(0)">'+_bt+'</span>';
       }
@@ -14835,8 +14991,9 @@ async function iniciarPaginaEvento(slug){
       const sidesWrap = document.getElementById('evento-dados-sides-wrap');
       if(sidesWrap) sidesWrap.style.display = ev.lock_dado ? 'none' : '';
       // Renderiza grade de itens
-      const _ativaDisp = Array.isArray(ev.pool_pools) ? ev.pool_pools.find(p=>p.ativa) : null;
-      renderEventoItensGrid(_ativaDisp ? (_ativaDisp.itens||[]) : (ev.pool_itens||[]));
+      const _temPoolsDisp = Array.isArray(ev.pool_pools) && ev.pool_pools.length;
+      const _visDisp = _temPoolsDisp ? ev.pool_pools.find(_poolVisivel) : null;
+      renderEventoItensGrid(_visDisp ? (_visDisp.itens||[]) : (_temPoolsDisp ? [] : (ev.pool_itens||[])));
       renderEventoDiceBtns();
       sincEventoDiceBtn();
       // Quando existe pool de itens ativa, mostra a quantidade de rolagens e adapta o botão
@@ -14856,7 +15013,8 @@ async function iniciarPaginaEvento(slug){
         if(lbl) lbl.innerHTML = 'Qtd. de rolagens' + (_qcfg.travado ? ' <span style="font-size:10px;color:var(--muted)">🔒 travado</span>' : '');
       }
       if(rollBtn){
-        rollBtn.textContent = poolParaColheita ? ('Rolar ' + (poolParaColheita.titulo || 'Itens')) : 'Rolar Dado';
+        const _titAtivas = _eventoPoolsAtivas(ev).map(function(p){ return (p.titulo||'').trim(); }).filter(Boolean).join(' + ');
+        rollBtn.textContent = poolParaColheita ? ('Rolar ' + (_titAtivas || 'Itens')) : 'Rolar Dado';
         rollBtn.style.background = poolParaColheita ? '#2e7d32' : '';
       }
     }
@@ -15086,16 +15244,82 @@ function _eventoQtdCfg(ev){
   const ini = modo==='livre' ? (parseInt(ev.qtd_valor)||'') : '';
   return {mostrar:true, travado:false, valor:ini, max:max};
 }
-function _eventoPoolAtiva(ev){
-  if(!ev) return null;
+// Pools ATIVAS do evento (na ordem das abas). Só elas alimentam o rolador.
+// "Visível" não entra aqui: uma pool pode estar visível e inativa (jogador vê, não sorteia)
+// ou ativa e oculta (sorteia sem aparecer na tabela).
+function _eventoPoolsAtivas(ev){
+  if(!ev) return [];
   if(Array.isArray(ev.pool_pools) && ev.pool_pools.length){
-    return ev.pool_pools.find(function(p){ return p.ativa; }) || null;
+    return ev.pool_pools.filter(function(p){ return p && p.ativa; });
   }
-  if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){
-    return { titulo: ev.pool_titulo||'Pool de Itens', itens: ev.pool_itens };
+  if(Array.isArray(ev.pool_itens) && ev.pool_itens.length){ // evento antigo, sem multi-pool
+    return [{ titulo: ev.pool_titulo||'Pool de Itens', itens: ev.pool_itens }];
+  }
+  return [];
+}
+// ── Limite de itens ──
+// Cada pool guarda `limites = { "<nome do item>": { max: N, sub: "<outro item>" } }`.
+// O item pode sair no máximo N vezes no evento (contado no histórico). Depois de esgotar,
+// o mesmo número do dado passa a render o `sub` (ou nada, se `sub` estiver vazio).
+// Fica fora da lista de itens de propósito: assim o formato dos itens (string/objeto) e a
+// numeração do dado não mudam.
+function _poolsTemLimite(ev){
+  return _eventoPoolsAtivas(ev).some(function(p){ return p && p.limites && Object.keys(p.limites).length; });
+}
+function _contarUsoItens(rows){
+  const uso = {};
+  (rows||[]).forEach(function(e){
+    const lote = e && Array.isArray(e.lote) ? e.lote : null;
+    if(!lote) return;
+    lote.forEach(function(r){ if(r && r.item) uso[r.item] = (uso[r.item]||0) + 1; });
+  });
+  return uso;
+}
+// Quantas vezes cada item já saiu neste evento. Lê o histórico COMPLETO (não só as 200
+// linhas da tela) direto do banco, logo antes de rolar, para diminuir corrida entre jogadores.
+async function _usoItensAtual(ev){
+  if(!_poolsTemLimite(ev)) return {};
+  try{
+    const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados?evento_slug=eq.${encodeURIComponent(ev.slug)}&lote=not.is.null&select=lote`, {
+      headers:{ 'apikey':SUPA_KEY, 'Authorization':`Bearer ${SUPA_KEY}`, 'Range-Unit':'items', 'Range':'0-9999' }
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const rows = await res.json();
+    if(!Array.isArray(rows)) throw new Error('resposta inválida');
+    return _contarUsoItens(rows);
+  }catch(e){
+    console.warn('[limite de itens] não consegui ler o histórico completo; usando o carregado na tela:', e);
+    return _contarUsoItens(eventoHistorico);
+  }
+}
+function _poolObjPorNome(pool, nome){
+  const it = (pool.itens||[]).find(function(x){
+    if(typeof x === 'string') return !_lootIsGroupHeader(x) && x === nome;
+    return !!x && x.nome === nome;
+  });
+  return it ? (typeof it === 'string' ? {nome: it} : it) : null;
+}
+// Aplica o limite: devolve o item (ou o substituto, se esgotou), ou null se esgotou sem substituto.
+// `uso` = contagem atual (sem ela, não aplica limite — usado só para exibir histórico antigo).
+function _resolverLimite(pool, obj, uso){
+  if(!obj || !uso) return obj;
+  const lims = pool.limites || {};
+  const visto = {};
+  let atual = obj;
+  while(atual){
+    const lim = lims[atual.nome];
+    if(!lim || !(lim.max > 0) || (uso[atual.nome]||0) < lim.max){
+      return atual === obj ? obj : Object.assign({}, atual, {substituidoDe: obj.nome});
+    }
+    visto[atual.nome] = true;
+    const sub = String(lim.sub||'').trim();
+    if(!sub || visto[sub]) return null;
+    atual = _poolObjPorNome(pool, sub) || {nome: sub};
   }
   return null;
 }
+// Primeira pool ativa (ou null) — usada onde só importa "existe pool ativa?".
+function _eventoPoolAtiva(ev){ return _eventoPoolsAtivas(ev)[0] || null; }
 // Itens "reais" de uma pool, sem os cabeçalhos "###Grupo" — usado só pra
 // pools no formato legado (strings), onde índice 0 = resultado 1 do dado.
 function _poolRealItens(pool){
@@ -15112,19 +15336,62 @@ function _itemDoResultado(ev, resultado){
 // Como _itemDoResultado, mas devolve o item completo (com raridade/sabor)
 // quando a pool está no formato novo. No formato legado devolve
 // {nome} só com o nome (sem raridade — não tem essa info).
-function _itemObjDoResultado(ev, resultado){
-  const pool = _eventoPoolAtiva(ev);
-  if(!pool || !Array.isArray(pool.itens) || !pool.itens.length) return null;
-  const temObjeto = pool.itens.some(function(it){ return it && typeof it === 'object'; });
-  if(temObjeto){
-    const achado = pool.itens.find(function(it){ return it && typeof it==='object' && Array.isArray(it.numeros) && it.numeros.includes(resultado); });
-    return achado || null;
+function _itemObjDoResultado(ev, resultado, uso){
+  // Procura o número nas pools ativas, na ordem das abas. Se duas pools ativas cobrirem o
+  // mesmo número, vale a primeira (precisa ser determinístico: o histórico recalcula o item).
+  const pools = _eventoPoolsAtivas(ev);
+  for(let k = 0; k < pools.length; k++){
+    const pool = pools[k];
+    if(!pool || !Array.isArray(pool.itens) || !pool.itens.length) continue;
+    const temObjeto = pool.itens.some(function(it){ return it && typeof it === 'object'; });
+    if(temObjeto){
+      const achado = pool.itens.find(function(it){ return it && typeof it==='object' && Array.isArray(it.numeros) && it.numeros.includes(resultado); });
+      if(achado) return _resolverLimite(pool, achado, uso);
+      continue;
+    }
+    const nome = _poolRealItens(pool)[resultado-1];
+    if(nome) return _resolverLimite(pool, {nome}, uso);
   }
-  const reais = _poolRealItens(pool);
-  const nome = reais[resultado-1];
-  return nome ? {nome} : null;
+  return null;
 }
 // HTML do bloco "item sorteado" (com sprite), pra colar embaixo do número do dado
+// Cartão de resultado de UMA rolagem de dado (número grande + frase + barra + item ganho).
+// Usado no resultado ao vivo e no histórico, para os dois ficarem idênticos.
+// Cor do cartão = cor da estação ativa (ESTACAO_CFG[...].cor); sem estação, cai no tema.
+function _dadoCor(){
+  const e = (typeof ESTACAO_CFG !== 'undefined' && ESTACAO_CFG[estacaoAtiva]) || null;
+  return (e && e.cor) || 'var(--brand-mid)';
+}
+function _dadoCardBodyHtml(o){
+  const cor = _dadoCor();
+  const max = o.lados || '?';
+  const res = o.resultado;
+  const pct = max > 1 ? Math.round((res/max)*100) : 100;
+  let itemHtml = '';
+  if(o.item){
+    const nome     = String(o.item);
+    const nomeAttr = nome.replace(/"/g,'&quot;');
+    const nomeJs   = nome.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
+    const src = _itemSpritesCustom[nome] || (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
+    itemHtml = `<div style="display:flex;align-items:center;gap:6px;padding:0 14px 10px">
+      <img class="loot-item-sprite-img" data-item="${nomeAttr}" src="${src}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0" onerror="_lootItemImgError(this,'${nomeJs}')"/>
+      <span style="font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:${cor}">🎁 ${nome}</span>
+      ${o.subDe ? `<span style="font-size:10px;color:var(--muted);font-style:italic">(${String(o.subDe).replace(/</g,'&lt;')} esgotou)</span>` : ''}
+    </div>`;
+  } else if(o.temPool){
+    itemHtml = `<div style="padding:0 14px 10px;font-size:11px;color:var(--muted);font-style:italic">Nenhum item para o resultado ${res}.</div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:16px;padding:8px 14px">
+    <div style="font-family:var(--font-title);font-size:36px;font-weight:700;color:${cor};line-height:1;min-width:48px;text-align:center">${res}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">${o.personagem} rolou <strong>1d${max}</strong> para <strong>${_pickupMotivoDisplay(o.motivo)||'—'}</strong> e obteve: <strong style="color:${cor}">${res}</strong></div>
+      <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px"><div style="height:6px;border-radius:4px;background:${cor};width:${pct}%;transition:width .4s"></div></div>
+      <div style="font-size:11px;color:var(--muted)">${res} de ${max} (${pct}%)</div>
+    </div>
+  </div>` + itemHtml;
+}
+
 function _itemGanhoBlockHtml(itemGanho, pool, resultado){
   if(itemGanho){
     const nomeAttr = String(itemGanho).replace(/"/g,'&quot;');
@@ -15178,10 +15445,12 @@ async function rolarDadoEvento(){
   const data  = agora.toLocaleDateString('pt-BR');
 
   const rolagens = [];
+  const uso = await _usoItensAtual(ev); // estoque dos itens limitados (vazio se não há limite)
   for(let i=0;i<qtd;i++){
     const resultado = Math.floor(Math.random() * lados) + 1;
-    const itemObj = poolAtiva ? _itemObjDoResultado(ev, resultado) : null;
-    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null});
+    const itemObj = poolAtiva ? _itemObjDoResultado(ev, resultado, uso) : null;
+    if(itemObj) uso[itemObj.nome] = (uso[itemObj.nome]||0) + 1; // já conta nas próximas rolagens do lote
+    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null, subDe: itemObj?(itemObj.substituidoDe||null):null});
   }
   const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
   const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
@@ -15191,6 +15460,9 @@ async function rolarDadoEvento(){
   const section = document.getElementById('evento-results');
   if(section){
     const rotulo = '🎲';
+    const _unico = qtd === 1
+      ? '<div style="margin:0 -14px">' + _dadoCardBodyHtml({personagem, lados, motivo, resultado: rolagens[0].resultado, item: rolagens[0].item, subDe: rolagens[0].subDe, temPool: !!poolAtiva}) + '</div>'
+      : '';
     const resumo = qtd === 1
       ? `${personagem} rolou <strong>1d${lados}</strong> para <strong>${motivo}</strong> e obteve: <strong style="color:var(--brand-mid)">${soma}</strong>`
       : `${personagem} rolou <strong>${qtd}d${lados}</strong> para <strong>${motivo}</strong>: [${rolagens.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${soma}</strong>`;
@@ -15202,14 +15474,14 @@ async function rolarDadoEvento(){
         </div>
         <span class="rol-entry-hora">${hora} · ${data}</span>
       </div>
-      ${poolAtiva ? '' : `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>`}
-      <div class="loot-items-grid">
+      ${qtd === 1 ? _unico : (poolAtiva ? '' : `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>`)}
+      ${qtd === 1 ? '' : `      <div class="loot-items-grid">
         ${rolagens.map(function(r){
           if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
           if(poolAtiva) return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
           return '<div class="loot-item-card"><span class="loot-dice-badge">'+r.resultado+'</span></div>';
         }).join('')}
-      </div>
+      </div>`}
     </div>`;
     if(itensGanhos.length) _lootFetchSprites(itensGanhos);
   }
@@ -15288,10 +15560,12 @@ async function rolarColheitaEvento(){
   const data  = agora.toLocaleDateString('pt-BR');
 
   const rolagens = [];
+  const uso = await _usoItensAtual(ev);
   for(let i=0;i<qtd;i++){
     const resultado = Math.floor(Math.random()*lados)+1;
-    const itemObj = _itemObjDoResultado(ev, resultado);
-    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null});
+    const itemObj = _itemObjDoResultado(ev, resultado, uso);
+    if(itemObj) uso[itemObj.nome] = (uso[itemObj.nome]||0) + 1;
+    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null, subDe: itemObj?(itemObj.substituidoDe||null):null});
   }
   const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
   const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
@@ -15359,6 +15633,20 @@ function renderHistoricoEvento(){
       // com o grid de itens, igual ao resultado ao vivo, sem números individuais.
       const max = e.lados||'?';
       const qtd = lote.length;
+      if(qtd === 1){ // uma rolagem só: mesmo cartão do resultado ao vivo
+        const r = lote[0];
+        return `<div class="hist-entry">
+        <div class="hist-header">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
+            <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🎲 1d${max}</span>
+            ${e.evento_slug?`<span class="rol-entry-bioma">${e.evento_slug}</span>`:''}
+          </div>
+          <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
+        </div>
+        ${_dadoCardBodyHtml({personagem:e.personagem, lados:max, motivo:e.motivo, resultado:r.resultado, item:r.item, subDe:r.subDe, temPool:true})}
+      </div>`;
+      }
       return `<div class="hist-entry">
         <div class="hist-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -15378,11 +15666,7 @@ function renderHistoricoEvento(){
     }
     if(isDado){
       const max=e.lados||'?';
-      const res=e.resultado;
-      const pct=max>1?Math.round((res/max)*100):100;
-      const barColor=pct>=80?'#1a7a1a':pct>=50?'var(--brand-mid)':pct>=20?'var(--accent)':'var(--red)';
-      const histPoolAtiva = _eventoPoolAtiva(eventoAtual);
-      const histItemGanho = _itemDoResultado(eventoAtual, res);
+      const histItemGanho = _itemDoResultado(eventoAtual, e.resultado);
       return`<div class="hist-entry">
         <div class="hist-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -15391,20 +15675,7 @@ function renderHistoricoEvento(){
           </div>
           <span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:16px;padding:8px 14px">
-          <div style="font-family:var(--font-title);font-size:36px;font-weight:700;color:var(--brand);line-height:1;min-width:48px;text-align:center">${res}</div>
-          <div style="flex:1">
-            <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">${e.personagem} rolou <strong>1d${max}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
-            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
-              <div style="height:6px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .4s"></div>
-            </div>
-            <div style="font-size:11px;color:var(--muted)">${res} de ${max} (${pct}%)</div>
-          </div>
-        </div>
-        ${histItemGanho ? `<div style="display:flex;align-items:center;gap:8px;padding:0 14px 10px">
-          <img class="loot-item-sprite-img" data-item="${String(histItemGanho).replace(/"/g,'&quot;')}" src="${_itemSpritesCustom[histItemGanho] || (_itemDexByName && _itemDexByName.get(_itemDexNormalize(histItemGanho))?.sprite) || _itemSpriteUrl(histItemGanho)}" style="width:22px;height:22px;object-fit:contain" onerror="_lootItemImgError(this,'${String(histItemGanho).replace(/'/g,"\\'")}')"/>
-          <span style="font-size:11px;font-weight:700;color:var(--brand)">🎁 ${histItemGanho}</span>
-        </div>` : ''}
+        ${_dadoCardBodyHtml({personagem:e.personagem, lados:max, motivo:e.motivo, resultado:e.resultado, item:histItemGanho, temPool:false})}
       </div>`;
     }
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
