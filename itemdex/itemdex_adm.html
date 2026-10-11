@@ -672,9 +672,20 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div id="nit-inline-form" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:var(--brand-mid);margin-bottom:4px;letter-spacing:.04em">＋ NOVO ITEM</div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Adiciona um item do RPG (poké bolas, consumíveis, chave, etc). Será salvo no Supabase e listado no ItemDex.</p>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--text);cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="nit-bulk-on" style="margin:0" onchange="toggleBulkNew(this.checked)"> Criar vários itens de uma vez <span style="font-weight:400;color:var(--muted)">(ex: Z-Crystals)</span>
+      </label>
+      <div id="nit-bulk-wrap" style="display:none;margin-bottom:14px">
+        <div class="field-lbl pt" style="margin-bottom:4px">Itens (um por linha)</div>
+        <textarea class="field-pt" id="nit-bulk-names" rows="8" placeholder="Normalium Z&#10;Firium Z&#10;Waterium Z" style="width:100%"></textarea>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;margin-top:6px">
+          <input type="checkbox" id="nit-bulk-samedesc" checked style="margin:0"> Mesma descrição para todos <span style="font-weight:400;color:var(--muted)">(usa o campo Descrição abaixo; desmarque para dar uma descrição por linha)</span>
+        </label>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Categoria e flags (Consumível, Evento, PokéMart/preço, Conquista) valem para todos. Com "Mesma descrição" desmarcado, use <b>Nome | descrição</b> em cada linha; linhas sem descrição usam o campo Descrição. O ícone de cada um é buscado pelo nome em sprites/items do GitHub (se não achar, fica sem ícone — depois use 🖼️ Atualizar imagens do GitHub). Pickup não vale no modo em lote.</p>
+      </div>
       <div>
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
-          <div style="flex-shrink:0;text-align:center">
+          <div id="nit-icon-col" style="flex-shrink:0;text-align:center">
             <div class="field-lbl pt" style="margin-bottom:4px">Ícone</div>
             <img id="nit-icon-preview" src="" style="width:64px;height:64px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;display:none;margin-bottom:6px">
             <div id="nit-icon-placeholder" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;font-size:26px;margin-bottom:6px">🎒</div>
@@ -693,7 +704,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             </div>
           </div>
           <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <div>
+            <div id="nit-name-wrap">
               <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
               <input class="mv-meta-input" id="nit-name" type="text" placeholder="ex: Pokébola" style="width:100%" oninput="nitAutoSpriteGithub()">
             </div>
@@ -753,6 +764,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
+        <button class="btn btn-outline btn-sm" id="it-berry-btn" style="display:none" onclick="migrarBerryParaForage()" title="Troca a categoria Berry por Forage em todos os itens que ainda estão com Berry">🔁 Berry → Forage</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1068,7 +1080,7 @@ async function uploadImgStorage(b64, bucket, path) {
 /* ══════════════════════════════════════════
    ██ ITEMS
 ══════════════════════════════════════════ */
-const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks', 'Rewards'];
+const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards'];
 
 // Remove o prefixo de tamanho do nome pra achar o "item base" (ex: "Big
 // Nugget" e "Small Nugget" -> "nugget").
@@ -1219,6 +1231,7 @@ function populateItemCategoryFilter() {
   // ainda esteja salvo em itens antigos.
   const dbCats = [...new Set(S.it.all.map(i => i.category).filter(Boolean))];
   const cats = [...new Set([...ITEM_CATEGORIES, ...dbCats])];
+  { const mb = document.getElementById('it-berry-btn'); if (mb) { const n = S.it.all.filter(i => String(i.category || '').toLowerCase() === 'berry').length; mb.style.display = n ? '' : 'none'; mb.textContent = `🔁 Berry → Forage (${n})`; } }
   const sel = document.getElementById('it-f-cat');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -1265,7 +1278,7 @@ function applyItFilter() {
 // Ordem fixa das categorias conhecidas (mesma do <select> de categoria);
 // "Sem categoria" sempre por último, categorias avulsas (customizadas) ficam
 // entre as fixas e "Sem categoria", em ordem alfabética.
-const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Berry', 'Snacks', 'Rewards'];
+const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards'];
 function itCatSortKey(cat) {
   if (cat === 'Sem categoria') return [2, cat];
   const i = IT_CAT_ORDER.indexOf(cat);
@@ -1734,6 +1747,7 @@ async function deleteItem(name) {
 }
 
 function openNewItem() {
+  { const b = document.getElementById('nit-bulk-on'); if (b) b.checked = false; const t = document.getElementById('nit-bulk-names'); if (t) t.value = ''; const sd = document.getElementById('nit-bulk-samedesc'); if (sd) sd.checked = true; toggleBulkNew(false); }
   ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price','nit-pickup-numeros'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento','nit-flag-conquista'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   { const ct = document.getElementById('nit-conquista-tipo'); if (ct) { ct.style.display = 'none'; ct.value = 'insignia'; } }
@@ -2359,6 +2373,7 @@ async function uploadItemIconFile(name, slugInput, file, done) {
 
 
 async function saveNewItem() {
+  if (document.getElementById('nit-bulk-on')?.checked) return saveNewItemsBulk();
   const name = document.getElementById('nit-name').value.trim();
   const category = document.getElementById('nit-category').value.trim() || null;
   const item_desc = document.getElementById('nit-description').value.trim() || null;
@@ -2399,6 +2414,88 @@ async function saveNewItem() {
     closeNewItemForm();
     toast(`Item "${name}" salvo!`, 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
+}
+
+/* ══════════════════════════════════════════
+   CRIAÇÃO EM LOTE (ex: Z-Crystals) + MIGRAÇÃO Berry → Forage
+══════════════════════════════════════════ */
+function toggleBulkNew(on) {
+  const w = document.getElementById('nit-bulk-wrap'); if (w) w.style.display = on ? '' : 'none';
+  const n = document.getElementById('nit-name-wrap'); if (n) n.style.display = on ? 'none' : '';
+  const i = document.getElementById('nit-icon-col'); if (i) i.style.display = on ? 'none' : '';
+  if (on) document.getElementById('nit-bulk-names')?.focus();
+}
+
+async function saveNewItemsBulk() {
+  const category = document.getElementById('nit-category').value.trim() || null;
+  const commonDesc = document.getElementById('nit-description').value.trim();
+  const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
+  const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
+  const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
+  const eventoOn = !!document.getElementById('nit-flag-evento')?.checked;
+  const conquistaOn = !!document.getElementById('nit-flag-conquista')?.checked;
+  const conquistaTipo = document.getElementById('nit-conquista-tipo')?.value || 'insignia';
+  const priceRaw = document.getElementById('nit-price')?.value;
+  const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  if (pickupOn) { toast('Pickup usa números próprios por item — desmarque Pickup para criar vários de uma vez.', 'err'); return; }
+  const sameDesc = !!document.getElementById('nit-bulk-samedesc')?.checked;
+  const existentes = new Set(Object.keys(S.it.dbMap).map(n => n.toLowerCase()));
+  const vistos = new Set(), novos = [], jaExistem = [];
+  String(document.getElementById('nit-bulk-names')?.value || '').split(/\r?\n/).forEach(l => {
+    const t = l.trim(); if (!t) return;
+    const k = t.indexOf('|');
+    const name = (k < 0 ? t : t.slice(0, k)).trim();
+    let d = (k < 0 || sameDesc) ? '' : t.slice(k + 1).trim();
+    if (!name) return;
+    const low = name.toLowerCase();
+    if (vistos.has(low)) return;
+    vistos.add(low);
+    if (existentes.has(low)) { jaExistem.push(name); return; }
+    if (d) {
+      if (consumivelOn && !descStartsWithConsumivel(d)) d = `CONSUMÍVEL. ${d}`;
+      if (eventoOn && !descStartsWithEvento(d)) d = `EVENTO. ${d}`;
+    }
+    novos.push({ name, desc: d || commonDesc || null });
+  });
+  if (!novos.length) { toast(jaExistem.length ? 'Todos esses itens já existem.' : 'Digite ao menos um nome (um por linha).', 'err'); return; }
+  if (!confirm(`Criar ${novos.length} ite${novos.length === 1 ? 'm' : 'ns'}${category ? ` na categoria "${category}"` : ''}?` + (jaExistem.length ? `\n\nJá existem e serão ignorados: ${jaExistem.join(', ')}` : '') + `\n\n` + novos.map(n => '• ' + n.name).join('\n'))) return;
+  const flags = mergeItemFlags(null, pokemartOn, false, consumivelOn, eventoOn, [], conquistaOn, conquistaTipo);
+  const salvos = [], falhas = [], semIcone = [];
+  for (let n = 0; n < novos.length; n++) {
+    const it = novos[n];
+    toast(`Salvando ${n + 1}/${novos.length}: ${it.name}…`);
+    let sprite = null;
+    try { sprite = (await acharSpriteGithub([it.name], conquistaOn ? conquistaTipo : null, category || '', false)).sprite; } catch (e) { semIcone.push(it.name); }
+    const row = { name: it.name, category, item_desc: it.desc, sprite, flags, price, updated_at: new Date().toISOString() };
+    try {
+      await sbUpsert('items', row);
+      S.it.dbMap[it.name] = row; S.it.all.push(row); salvos.push(it.name);
+    } catch (e) { falhas.push(it.name); }
+  }
+  S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  populateItemCategoryFilter();
+  applyItFilter();
+  if (!falhas.length) closeNewItemForm();
+  toast(`${salvos.length} item(ns) salvo(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + (semIcone.length ? ` Sem ícone no GitHub: ${semIcone.join(', ')}.` : ''), falhas.length ? 'err' : 'ok');
+}
+
+async function migrarBerryParaForage() {
+  const lista = S.it.all.filter(i => String(i.category || '').toLowerCase() === 'berry');
+  if (!lista.length) { toast('Nenhum item com categoria Berry.', 'ok'); return; }
+  if (!confirm(`Trocar a categoria de ${lista.length} item(ns) de "Berry" para "Forage"?`)) return;
+  let ok = 0;
+  for (const it of lista) {
+    try {
+      const row = { ...it, category: 'Forage', updated_at: new Date().toISOString() };
+      await sbUpsert('items', row);
+      S.it.dbMap[it.name] = row;
+      const idx = S.it.all.findIndex(x => x.name === it.name); if (idx >= 0) S.it.all[idx] = row;
+      ok++;
+    } catch (e) { console.warn('migrar Berry→Forage falhou:', it.name, e); }
+  }
+  populateItemCategoryFilter();
+  applyItFilter();
+  toast(`${ok}/${lista.length} item(ns) movido(s) para Forage.` + (ok < lista.length ? ' Alguns falharam — veja o console.' : ' Lembre de commitar o items.json.'), ok === lista.length ? 'ok' : 'err');
 }
 
 /* ══════════════════════════════════════════
