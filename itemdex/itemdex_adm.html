@@ -764,7 +764,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
-        <button class="btn btn-outline btn-sm" id="it-caps-btn" style="display:none" onclick="padronizarNomesItens()" title="Coloca a primeira letra de cada palavra em maiúscula nos nomes dos itens que ainda estão em minúscula">Aa Padronizar nomes</button>
+        <button class="btn btn-outline btn-sm" id="it-caps-btn" style="display:none" onclick="padronizarNomesItens()" title="Padroniza nomes como GREEN APRICORN ou Green apricorn para Green Apricorn (nomes com -type não são alterados)">Aa Padronizar nomes</button>
         <button class="btn btn-outline btn-sm" id="it-berry-btn" style="display:none" onclick="migrarBerryParaForage()" title="Troca a categoria Berry por Forage em todos os itens que ainda estão com Berry">🔁 Berry → Forage</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
@@ -925,9 +925,16 @@ function toSlugBase(s) {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
-// Nome de item sempre com a primeira letra de cada palavra maiúscula
-// (red apricorn → Red Apricorn); o resto das letras fica como está.
-function titleCap(s) { return String(s || '').replace(/(^|[\s\-(])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase()); }
+// Padroniza o nome do item: "GREEN APRICORN" ou "Green apricorn" → "Green Apricorn".
+// Nomes com "-type" ficam como estão. Só baixa o resto das letras quando o nome
+// está todo em maiúsculas (e sem números, pra não estragar "TM01"); nos demais
+// casos só garante a inicial maiúscula de cada palavra.
+function titleCap(s) {
+  const t = String(s || '');
+  if (/-type/i.test(t)) return t;
+  const todoMaiusculo = /[A-ZÀ-Ý]/.test(t) && !/[a-zà-ÿ]/.test(t) && !/\d/.test(t);
+  return (todoMaiusculo ? t.toLowerCase() : t).replace(/(^|[\s\-(])([a-zà-ÿ])/g, (m, a, c) => a + c.toUpperCase());
+}
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, ' '); }
 // Escapa aspas simples e barras invertidas pra uso seguro dentro de
 // atributos onclick="fn('...')" com nomes que podem ter apóstrofo, etc.
