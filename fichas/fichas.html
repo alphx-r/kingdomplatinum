@@ -550,6 +550,8 @@ dialog#kcr{width:min(440px,94vw);padding:14px 14px 12px;text-align:left}
 <textarea class="in" id="impt" oninput="impLer()" placeholder="…ou cole aqui o JSON do kpfichas (uma ficha ou lista)" style="width:100%;min-height:90px;box-sizing:border-box;font:12px monospace"></textarea>
 <div id="impall" style="display:none;font-size:13px;margin:8px 0;align-items:center;gap:6px"><span style="opacity:.7">Vincular todas ao player:</span> <select class="in" id="impa" onchange="impTodos()" style="min-width:160px"></select></div>
 <label style="font-size:13px;display:block;margin-bottom:8px"><input type="checkbox" id="impo"> Sobrescrever fichas que já existem (mesmo slug)</label>
+<div style="font-size:12px;opacity:.75;margin:6px 0 4px">Para gravar o dono no banco, informe o admin (mesmo login da página /adm):</div>
+<div style="display:flex;gap:6px;margin-bottom:8px"><input class="in" id="impan" autocomplete="off" placeholder="Admin (e-mail)" style="flex:1;min-width:0"><input class="in" id="imps" type="password" autocomplete="current-password" placeholder="Senha do admin" style="flex:1;min-width:0"></div>
 <div id="impw" style="font-size:12px;color:#b26a00;margin:4px 0"></div>
 <div id="impl" style="max-height:200px;overflow:auto"></div>
 <div class="mb"><button class="btn s" onclick="document.getElementById('impm').close()">Fechar</button><button class="btn p s" id="impg" onclick="impGo()" disabled>Importar</button></div></dialog>
@@ -1405,7 +1407,7 @@ const draw=()=>{$('impl').innerHTML=L.map(row).join('');$('impg').disabled=!L.le
 const sync=()=>L.forEach(x=>{const s=$('sel-'+x.i);if(s)x.sel=s.value});
 window.impSel=i=>{L[i].sel=$('sel-'+i).value};
 window.impTodos=()=>{sync();const v=$('impa').value;L.forEach(x=>x.sel=v);draw();$('impa').value=v};
-window.impAbrir=async()=>{if(!canHist())return;$('impm').showModal();await carregaTr();$('impa').innerHTML=opts('');};
+window.impAbrir=async()=>{if(!canHist())return;if(ses?.admin&&!$('impan').value)$('impan').value=ses.nome||'';$('impm').showModal();await carregaTr();$('impa').innerHTML=opts('');};
 window.impLer=async t0=>{
  if(!TR.length)await carregaTr();
  const txt=typeof t0==='string'?[t0]:[...$('impf').files].length?await Promise.all([...$('impf').files].map(f=>f.text())):[$('impt').value];
@@ -1427,7 +1429,11 @@ window.impGo=async()=>{
    let aviso='';
    try{await salvarFicha({...base,foto:x.foto,banner:x.banner,thumb:th})}
    catch(e){await salvarFicha({...base,foto:null,banner:null,thumb:null});aviso=' (sem imagens: '+esc(e.message)+')'}
-   ok++;set('<span style="color:#2e8b57">importada'+aviso+(pid?' · player: '+esc(pn):' · sem player')+'</span>');
+   let atr='';
+   if(pid){const an=$('impan').value.trim(),as=$('imps').value;
+    if(an&&as){try{const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'atribuir',adm_nome:an,adm_senha:as,slug:x.slug,player_id:pid,player:pn,por:an})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}catch(e){atr=' · <span style="color:#c00">dono não gravado no banco: '+esc(e.message)+'</span>'}}
+    else atr=' · <span style="color:#b26a00">sem senha de admin: o banco ainda aponta para quem importou — use Atribuir no /adm</span>'}
+   ok++;set('<span style="color:#2e8b57">importada'+aviso+(pid?' · player: '+esc(pn):' · sem player')+'</span>'+atr);
   }catch(e){set('<span style="color:#c00">erro: '+esc(e.message)+'</span>')}}
  LST=null;toast(ok+' ficha(s) importada(s)');$('impg').disabled=false;if(ok&&location.pathname.replace(/\/$/,'')==='/fichas')route()};
 })();
