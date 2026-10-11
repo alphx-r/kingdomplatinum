@@ -432,6 +432,9 @@ let LST=null,FL=[],F=null,ITM=null,TAB='b',CAT='',Q='',CB={},CS={},busy=false;
 const CDN_REPO='https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/';
 const itemSrc=p=>(p||'').replace(/^\/?sprites\/items\//,CDN_REPO+'sprites/items/');
 let ITD;const ITL=()=>ITD??=jl('/itemdex/items.json').then(d=>d||jl('/items.json')).then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:itemSrc(x.sprite||x.image||x.img),item_desc:x.item_desc||x.desc||x.descricao})});return m});
+const isTM=it=>!!it&&(/^(tms?|technicalmachines?|machines?)$/.test(nk(it.category))||/^tm\s?\d/i.test(it.name||''));
+const isPill=it=>!!it&&/\bpills?\b|p[ií]lulas?/i.test((it.category||'')+' '+(it.name||''));
+const bagOf=it=>isTM(it)?{bag:'tm'}:isPill(it)?{bag:'pill'}:{};
 const isMart=it=>!!it&&it.flags?.pokemart?.enabled===true&&it.price!=null&&Number.isFinite(+it.price)&&+it.price>0;
 const sellUnit=it=>it&&it.price!=null&&Number.isFinite(+it.price)?Math.floor(+it.price*SELL_PCT):0;
 
@@ -520,7 +523,7 @@ function render(){
  <div class="pmw"><div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):'Escolha uma ficha para comprar e vender'}</div></div></div>
  ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:''}
  <div class="lhs"><span>Saldo</span><b id="sal">${F?fm(saldo()):'—'}</b></div></div>
- <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">Comprar</button><button type="button" id="tb-s" onclick="setTab('s')">Vender</button></div>
+ <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">Comprar</button><button type="button" id="tb-t" onclick="setTab('t')">TMs</button><button type="button" id="tb-s" onclick="setTab('s')">Vender</button></div>
  <select class="in pms" onchange="SORT=this.value;drawList()"><option value="n"${SORT==='n'?' selected':''}>Nome (A-Z)</option><option value="a"${SORT==='a'?' selected':''}>Menor preço</option><option value="d"${SORT==='d'?' selected':''}>Maior preço</option></select></div>
  <div class="chs" id="chs"></div><div class="pmg" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div></div>`;
  ensureCart();drawList();drawSum();pmSc()}
@@ -529,34 +532,34 @@ function toggleCart(o){$('pmc').classList.toggle('open',o);$('pmo').classList.to
 function setTab(t){TAB=t;CAT='';drawList();drawSum()}
 function setCat(c){CAT=c;drawList()}
 function rowsAtuais(){
- if(TAB==='b')return[...ITM.values()].filter(isMart).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price,mx:MAXQ}));
+ if(TAB!=='s')return[...ITM.values()].filter(it=>isMart(it)&&isTM(it)===(TAB==='t')).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price,mx:MAXQ}));
  return bag().filter(e=>!e.vinculado&&sellUnit(ITM.get(nk(e.nome)))>0).map(e=>{const k=nk(e.nome),it=ITM.get(k),own=parseInt(e.qtd)||1;return{it,k,nome:e.nome,own,unit:sellUnit(it),mx:own}})}
 function drawList(){
  const q=nk(Q);let rows=rowsAtuais();
  const cats=[...new Set(rows.map(r=>r.it?.category||'Outros'))].sort();
  if(CAT&&!cats.includes(CAT))CAT='';
- $('chs').innerHTML=['',...cats].map(c=>`<button type="button" class="ch${c===CAT?' on':''}" onclick="setCat(this.dataset.c)" data-c="${esc(c)}">${c?esc(c):'Todos'}</button>`).join('');
+ $('chs').innerHTML=cats.length<2?'':['',...cats].map(c=>`<button type="button" class="ch${c===CAT?' on':''}" onclick="setCat(this.dataset.c)" data-c="${esc(c)}">${c?esc(c):'Todos'}</button>`).join('');
  rows=rows.filter(r=>(!CAT||(r.it?.category||'Outros')===CAT)&&(!q||nk(r.nome).includes(q)));
  rows.sort(SORT==='a'?(a,b)=>a.unit-b.unit:SORT==='d'?(a,b)=>b.unit-a.unit:(a,b)=>a.nome.localeCompare(b.nome));
- const C=TAB==='b'?CB:CS;
+ const C=TAB!=='s'?CB:CS;
  $('lst').innerHTML=rows.length?rows.map(r=>{const n=C[r.k]||0;
-  return`<div class="pc${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="">`:''}</span><h3>${esc(r.nome)}</h3></div><span class="pcc">${esc(r.it?.category||'Outros')}</span><p>${esc(r.it?.item_desc||'')}</p><div class="pcf"><b class="lp">${TAB==='b'?'':'+'}${fm(r.unit)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB==='b'?'Adicionar':'Vender'}</button>`}</div></div>`}).join('')
-  :`<div class="lt" style="grid-column:1/-1">${TAB==='b'?'Nenhum item à venda.':(!F?'Escolha uma ficha para ver a sua Bag.':Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`}
+  return`<div class="pc${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="">`:''}</span><h3>${esc(r.nome)}</h3></div><span class="pcc">${esc(r.it?.category||'Outros')}</span><p>${esc(r.it?.item_desc||'')}</p><div class="pcf"><b class="lp">${TAB!=='s'?'':'+'}${fm(r.unit)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}).join('')
+  :`<div class="lt" style="grid-column:1/-1">${TAB==='t'?'Nenhuma TM à venda.':TAB==='b'?'Nenhum item à venda.':(!F?'Escolha uma ficha para ver a sua Bag.':Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`}
 function chg(r,C,mxf,e){const k=r.dataset.k;let n=C[k]||0;
  if(e.type==='click'){const a=e.target.closest('button')?.dataset.a;if(!a)return;n+=a==='+'?1:-1}
  else if(e.type==='change'&&e.target.matches('input'))n=parseInt(e.target.value)||0;else return;
  n=Math.max(0,Math.min(mxf(k),n));if(n)C[k]=n;else delete C[k];drawList();drawSum()}
-function lstEv(e){const r=e.target.closest('.pc');if(!r)return;if(e.type==='click'&&!e.target.closest('button,input'))return openItem(r.dataset.k);chg(r,TAB==='b'?CB:CS,k=>TAB==='b'?MAXQ:ownQ(k),e)}
+function lstEv(e){const r=e.target.closest('.pc');if(!r)return;if(e.type==='click'&&!e.target.closest('button,input'))return openItem(r.dataset.k);chg(r,TAB!=='s'?CB:CS,k=>TAB!=='s'?MAXQ:ownQ(k),e)}
 function openItem(k){const it=ITM.get(k);if(!it)return;let d=$('pim');if(!d){d=document.createElement('dialog');d.id='pim';d.style.width='min(440px,94vw)';d.onclick=e=>{if(e.target===d)d.close()};document.body.appendChild(d)}
- const b=TAB==='b',u=b?+it.price:sellUnit(it);
+ const b=TAB!=='s',u=b?+it.price:sellUnit(it);
  d.innerHTML=`<div class="pct" style="margin-bottom:8px"><span class="pci">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><h3 style="font:800 17px var(--font-body);margin:0">${esc(it.name)}</h3></div><span class="pcc">${esc(it.category||'Outros')}</span><p style="font:500 14px/1.5 var(--font-body);white-space:pre-wrap;margin:12px 0">${esc(it.item_desc||'Sem descrição.')}</p><b style="font:800 20px var(--font-title)">${b?'':'+'}${fm(u)}</b><div class="mb"><button type="button" class="btn s" onclick="pim.close()">Fechar</button>${F?`<button type="button" class="btn p s" onclick="pimAdd('${esc(k)}')">${b?'Adicionar':'Vender'}</button>`:''}</div>`;
  d.showModal()}
-function pimAdd(k){const C=TAB==='b'?CB:CS,mx=TAB==='b'?MAXQ:ownQ(k);if((C[k]||0)<mx)C[k]=(C[k]||0)+1;pim.close();drawList();drawSum()}
+function pimAdd(k){const C=TAB!=='s'?CB:CS,mx=TAB!=='s'?MAXQ:ownQ(k);if((C[k]||0)<mx)C[k]=(C[k]||0)+1;pim.close();drawList();drawSum()}
 function cartEv(e){const r=e.target.closest('.pml');if(r)chg(r,r.dataset.t==='b'?CB:CS,k=>r.dataset.t==='b'?MAXQ:ownQ(k),e)}
 function drawSum(){
  if(!$('pmn'))return;
  const t=totais(),nb=Object.keys(CB).length,ns=Object.keys(CS).length,n=nb+ns,un=Object.values(CB).reduce((a,b)=>a+b,0)+Object.values(CS).reduce((a,b)=>a+b,0);
- $('tb-b').className=TAB==='b'?'on':'';$('tb-s').className=TAB==='s'?'on':'';
+ $('tb-b').className=TAB==='b'?'on':'';$('tb-t').className=TAB==='t'?'on':'';$('tb-s').className=TAB==='s'?'on':'';
  $('pmn').textContent=un>99?'99+':un;$('pmn').style.display=un?'':'none';
  const ln=(k,q,tp)=>{const it=ITM.get(k);if(!it)return'';const u=tp==='b'?+it.price:sellUnit(it);return`<div class="pml" data-t="${tp}" data-k="${esc(k)}"><span class="imi">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><span class="imn">${esc(it.name)}<small>${tp==='b'?'':'+'}${fm(u)} cada</small></span><div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" value="${q}"><button type="button" data-a="+">+</button></div><b class="pmt">${fm(u*q)}</b></div>`};
  const bl=Object.entries(CB).map(([k,q])=>ln(k,q,'b')).join(''),sl=Object.entries(CS).map(([k,q])=>ln(k,q,'s')).join('');
@@ -615,7 +618,7 @@ async function finaliza(){
    if(!it||sellUnit(it)<=0||cur<q)throw new Error('A Bag mudou: você não tem mais '+q+'x '+(it?.name||k)+'.');
    if(cur-q>0)inv[i].qtd=cur-q;else inv.splice(i,1);ganho+=sellUnit(it)*q}
   for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(!isMart(it))throw new Error('Item indisponível na PokéMart: '+k);
-   const i=inv.findIndex(x=>x&&nk(x.nome)===k);if(i>=0)inv[i].qtd=(parseInt(inv[i].qtd)||1)+q;else inv.push({nome:it.name,qtd:q});gasto+=+it.price*q}
+   const i=inv.findIndex(x=>x&&nk(x.nome)===k);if(i>=0)inv[i].qtd=(parseInt(inv[i].qtd)||1)+q;else inv.push({nome:it.name,qtd:q,...bagOf(it)});gasto+=+it.price*q}
   const dsc=cupDesc(gasto);gasto-=dsc;
   if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente (o dinheiro da ficha mudou).');
   fr.d.dinheiro=fnum(sal+ganho-gasto);
