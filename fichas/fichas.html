@@ -545,6 +545,7 @@ dialog#kcr{width:min(440px,94vw);padding:14px 14px 12px;text-align:left}
 <textarea class="in" id="impt" oninput="impLer()" placeholder="…ou cole aqui o JSON do kpfichas (uma ficha ou lista)" style="width:100%;min-height:90px;box-sizing:border-box;font:12px monospace"></textarea>
 <div id="impall" style="display:none;font-size:13px;margin:8px 0;align-items:center;gap:6px"><span style="opacity:.7">Vincular todas ao player:</span> <select class="in" id="impa" onchange="impTodos()" style="min-width:160px"></select></div>
 <label style="font-size:13px;display:block;margin-bottom:8px"><input type="checkbox" id="impo"> Sobrescrever fichas que já existem (mesmo slug)</label>
+<div id="impw" style="font-size:12px;color:#b26a00;margin:4px 0"></div>
 <div id="impl" style="max-height:200px;overflow:auto"></div>
 <div class="mb"><button class="btn s" onclick="document.getElementById('impm').close()">Fechar</button><button class="btn p s" id="impg" onclick="impGo()" disabled>Importar</button></div></dialog>
 <dialog id="hism" onclick="if(event.target===this)this.close()"><div class="hs-h"><div><h2>Histórico</h2><div class="hs-sub">Atualizações de cada player e personagem</div></div><button type="button" class="hs-x2" onclick="hism.close()" title="Fechar" aria-label="Fechar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button></div>
@@ -1363,15 +1364,20 @@ let L=[];
 let TR=[];
 const opts=sel=>'<option value="">— sem player —</option>'+TR.map((t,i)=>`<option value="${i}"${sel===String(i)?' selected':''}>${esc(t.nome)}</option>`).join('');
 /* players: mesma tabela do index (players: id, nome, ativo) */
-const carregaTr=async()=>{let l=[];try{const r=await fetch(IU+'/rest/v1/players?select=id,nome,ativo&order=nome.asc',{headers:{apikey:IK,Authorization:'Bearer '+IK,Range:'0-9999'}});if(r.ok)l=await r.json()}catch{}
- TR=(Array.isArray(l)?l:[]).filter(x=>x&&x.id&&S(x.nome).trim()&&x.ativo!==false).map(x=>({id:String(x.id),nome:S(x.nome).trim()})).sort((a,b)=>a.nome.localeCompare(b.nome))};
+const carregaTr=async()=>{let l=[],err='';
+ for(const q of ['id,nome,ativo','id,nome']){try{const r=await fetch(IU+'/rest/v1/players?select='+q+'&order=nome.asc',{headers:{apikey:IK,Authorization:'Bearer '+IK,Range:'0-9999'}});const j=await r.json().catch(()=>null);if(r.ok&&Array.isArray(j)){l=j;err='';break}err='HTTP '+r.status+(j&&j.message?' — '+j.message:'')}catch(e){err=String(e.message||e)}}
+ TR=l.filter(x=>x&&x.id&&S(x.nome).trim()&&x.ativo!==false).map(x=>({id:String(x.id),nome:S(x.nome).trim()})).sort((a,b)=>a.nome.localeCompare(b.nome));
+ let w=err?'Não consegui ler a tabela players ('+esc(err)+').':'';
+ if(!TR.length){try{const m=new Map();(await carregaLista()).forEach(x=>{const id=x?.player_id,n=S(x?.player).trim();if(id&&String(id)!=='admin'&&n&&!n.includes('@')&&!m.has(String(id)))m.set(String(id),n)});TR=[...m].map(([id,nome])=>({id,nome})).sort((a,b)=>a.nome.localeCompare(b.nome));if(TR.length)w+=' Usando os players das fichas já existentes.'}catch{}}
+ if(!TR.length&&!w)w='A tabela players voltou vazia.';
+ const e=$('impw');if(e)e.innerHTML=w?'⚠ '+w:''};
 const row=x=>`<div style="padding:7px 0;border-bottom:1px solid var(--bd,#ddd);font-size:13px"><div style="display:flex;justify-content:space-between;gap:10px"><span><b>${esc(x.nome)}</b> <span style="opacity:.6">${esc(x.slug)}</span></span><span id="st-${x.i}">${x.st||''}</span></div>
 <div style="display:flex;gap:6px;align-items:center;margin-top:4px"><span style="opacity:.7">Player:</span><select class="in" id="sel-${x.i}" onchange="impSel(${x.i})" style="flex:1;min-width:140px">${opts(x.sel)}</select></div></div>`;
 const draw=()=>{$('impl').innerHTML=L.map(row).join('');$('impg').disabled=!L.length;$('impall').style.display=L.length?'':'none'};
 const sync=()=>L.forEach(x=>{const s=$('sel-'+x.i);if(s)x.sel=s.value});
 window.impSel=i=>{L[i].sel=$('sel-'+i).value};
 window.impTodos=()=>{sync();const v=$('impa').value;L.forEach(x=>x.sel=v);draw();$('impa').value=v};
-window.impAbrir=async()=>{if(!canHist())return;$('impm').showModal();await carregaTr();$('impa').innerHTML=opts('');if(!TR.length)$('impl').innerHTML='<div style="color:#b26a00;font-size:13px">Não consegui carregar a lista de players.</div>'};
+window.impAbrir=async()=>{if(!canHist())return;$('impm').showModal();await carregaTr();$('impa').innerHTML=opts('');};
 window.impLer=async t0=>{
  if(!TR.length)await carregaTr();
  const txt=typeof t0==='string'?[t0]:[...$('impf').files].length?await Promise.all([...$('impf').files].map(f=>f.text())):[$('impt').value];
