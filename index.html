@@ -10292,7 +10292,7 @@ const obs = (poolAlvo?.obs||'').trim();
   const _temLim = !temObjeto && poolAlvo && poolAlvo.limites && Object.keys(poolAlvo.limites).length;
   // Render imediato com o histórico já carregado; depois refaz com o histórico completo do banco.
   grid.innerHTML = temObjeto ? _berryTableHtml(itens)
-    : _lootGridHtml(itens, _temLim ? poolAlvo : null, _temLim ? _contarUsoItens(eventoHistorico) : null);
+    : _lootGridHtml(itens, _temLim ? poolAlvo : null, _temLim ? _contarUsoItens(eventoHistorico, ev) : null);
   _lootFetchSprites(itens);
   if(_temLim){
     _lootFetchSprites(Object.keys(poolAlvo.limites).map(function(k){ return poolAlvo.limites[k].sub; }).filter(Boolean));
@@ -14676,7 +14676,13 @@ function abrirEditarEvento(id){
   } else {
     _pools['edit-ev'] = [];
   }
-  _poolAba['edit-ev'] = 0;
+  // Abre já na pool ativa (se não houver, na visível; senão na primeira)
+  (function(){
+    const ps = _pools['edit-ev'];
+    let i = ps.findIndex(function(p){ return p.ativa; });
+    if(i < 0) i = ps.findIndex(function(p){ return p.visivel; });
+    _poolAba['edit-ev'] = i < 0 ? 0 : i;
+  })();
   _poolHtml('edit-ev');
   _descMeses['edit-ev'] = Array.isArray(ev.desc_meses) ? ev.desc_meses.map(function(d){ return {mes:d.mes,ano:d.ano,texto:d.texto||''}; }) : [];
   _renderDescMeses('edit-ev');
@@ -15245,12 +15251,34 @@ function _eventoPoolsAtivas(ev){
 function _poolsTemLimite(ev){
   return _eventoPoolsAtivas(ev).some(function(p){ return p && p.limites && Object.keys(p.limites).length; });
 }
-function _contarUsoItens(rows){
+// Evento mensal: cada mês tem uma lista nova, então só contam as rolagens do mês atual.
+function _inicioDoMes(){
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), 1);
+}
+function _noMesAtual(criadoEm){
+  if(!criadoEm) return true; // sem data não dá para saber: conta
+  const d = new Date(criadoEm), n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+}
+function _contarUsoItens(rows, ev){
   const uso = {};
+  ev = ev || eventoAtual;
   (rows||[]).forEach(function(e){
-    const lote = e && Array.isArray(e.lote) ? e.lote : null;
-    if(!lote) return;
-    lote.forEach(function(r){ if(r && r.item) uso[r.item] = (uso[r.item]||0) + 1; });
+    if(!e) return;
+    if(!_noMesAtual(e.criado_em)) return;
+    const lote = Array.isArray(e.lote) ? e.lote : null;
+    if(lote){
+      lote.forEach(function(r){ if(r && r.item) uso[r.item] = (uso[r.item]||0) + 1; });
+      return;
+    }
+    // Rolagem antiga (feita antes do `lote` existir): só tem o número sorteado.
+    // O item é o que a pool dava para esse número (sem limite, que não existia).
+    const isDado = e.tipo==='dado' || (e.lados && !e.pokes);
+    if(isDado && ev && e.resultado != null){
+      const nome = _itemDoResultado(ev, Number(e.resultado));
+      if(nome) uso[nome] = (uso[nome]||0) + 1;
+    }
   });
   return uso;
 }
@@ -15259,16 +15287,16 @@ function _contarUsoItens(rows){
 async function _usoItensAtual(ev){
   if(!_poolsTemLimite(ev)) return {};
   try{
-    const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados?evento_slug=eq.${encodeURIComponent(ev.slug)}&lote=not.is.null&select=lote`, {
+    const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados?evento_slug=eq.${encodeURIComponent(ev.slug)}&criado_em=gte.${encodeURIComponent(_inicioDoMes().toISOString())}&select=lote,resultado,lados,criado_em`, {
       headers:{ 'apikey':SUPA_KEY, 'Authorization':`Bearer ${SUPA_KEY}`, 'Range-Unit':'items', 'Range':'0-9999' }
     });
     if(!res.ok) throw new Error('HTTP '+res.status);
     const rows = await res.json();
     if(!Array.isArray(rows)) throw new Error('resposta inválida');
-    return _contarUsoItens(rows);
+    return _contarUsoItens(rows, ev);
   }catch(e){
     console.warn('[limite de itens] não consegui ler o histórico completo; usando o carregado na tela:', e);
-    return _contarUsoItens(eventoHistorico);
+    return _contarUsoItens(eventoHistorico, ev);
   }
 }
 function _poolObjPorNome(pool, nome){
