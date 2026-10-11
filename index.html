@@ -10153,7 +10153,7 @@ function _raridadeNorm(raridade){
   const chave = String(raridade).trim().toLowerCase();
   return RARIDADE_SINONIMOS[chave] || (RARIDADE_LABEL[chave] ? chave : null);
 }
-function _lootCardHtml(nome, diceLabel, raridade){
+function _lootCardHtml(nome, diceLabel, raridade, nota, esgotado){
   const nomeAttr = String(nome).replace(/"/g,'&quot;');
   const nomeJs   = String(nome).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
@@ -10163,12 +10163,16 @@ function _lootCardHtml(nome, diceLabel, raridade){
   const raridadeBadge = raridadeLabel
     ? '<span class="loot-raridade-badge" style="background:'+RARIDADE_COR[raridadeKey]+'">'+raridadeLabel+'</span>'
     : '';
-  return '<div class="loot-item-card">'
+  const notaHtml = nota
+    ? '<span style="font-size:9px;color:var(--muted);font-style:italic;text-align:center">('+String(nota).replace(/</g,'&lt;')+')</span>'
+    : '';
+  return '<div class="loot-item-card"'+(esgotado ? ' style="opacity:.45"' : '')+'>'
     +'<img class="loot-item-sprite-img" data-item="'+nomeAttr+'" src="'+src+'" '
       +'style="width:34px;height:34px;object-fit:contain" '
       +'onerror="_lootItemImgError(this,\''+nomeJs+'\')"/>'
     +'<span class="loot-dice-badge">'+diceLabel+'</span>'
     +'<span class="loot-item-name" title="'+nomeAttr+'">'+nome+'</span>'
+    +notaHtml
     +raridadeBadge
   +'</div>';
 }
@@ -10182,7 +10186,9 @@ function _lootGroupHeaderHtml(nome){
   return '<div class="loot-group-header">'+label.replace(/</g,'&lt;')+'</div>';
 }
 // Monta o grid inteiro (cabeçalhos + cards), numerando só os itens reais
-function _lootGridHtml(itens){
+// `pool` + `uso` (opcionais): quando o item atingiu o limite, mostra o substituto
+// (ou "esgotado" se não houver) — mesma regra usada na hora de rolar.
+function _lootGridHtml(itens, pool, uso){
   let n = 0;
   itens.forEach(function(nome){ if(!_lootIsGroupHeader(nome)) n++; });
   let i = 0;
@@ -10190,6 +10196,11 @@ function _lootGridHtml(itens){
     if(_lootIsGroupHeader(nome)) return _lootGroupHeaderHtml(nome);
     i++;
     const diceLabel = n === 1 ? '1' : String(i);
+    if(pool && uso){
+      const r = _resolverLimite(pool, {nome: nome}, uso);
+      if(!r) return _lootCardHtml(nome, diceLabel, null, 'esgotado', true);
+      if(r.substituidoDe) return _lootCardHtml(r.nome, diceLabel, null, r.substituidoDe + ' esgotou', false);
+    }
     return _lootCardHtml(nome, diceLabel);
   }).join('');
 }
@@ -10278,8 +10289,17 @@ function abrirLootModal(poolIdx){
 const obs = (poolAlvo?.obs||'').trim();
   if(!itens.length) return;
   const temObjeto = itens.some(function(it){ return it && typeof it==='object'; });
-  grid.innerHTML = temObjeto ? _berryTableHtml(itens) : _lootGridHtml(itens);
+  const _temLim = !temObjeto && poolAlvo && poolAlvo.limites && Object.keys(poolAlvo.limites).length;
+  // Render imediato com o histórico já carregado; depois refaz com o histórico completo do banco.
+  grid.innerHTML = temObjeto ? _berryTableHtml(itens)
+    : _lootGridHtml(itens, _temLim ? poolAlvo : null, _temLim ? _contarUsoItens(eventoHistorico) : null);
   _lootFetchSprites(itens);
+  if(_temLim){
+    _lootFetchSprites(Object.keys(poolAlvo.limites).map(function(k){ return poolAlvo.limites[k].sub; }).filter(Boolean));
+    _usoItensAtual(ev).then(function(uso){
+      if(grid.isConnected && eventoAtual === ev) grid.innerHTML = _lootGridHtml(itens, poolAlvo, uso);
+    });
+  }
   const tituloEl = document.getElementById('loot-modal-titulo');
   if(tituloEl) tituloEl.textContent = titulo;
   const obsEl = document.getElementById('loot-modal-obs');
