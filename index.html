@@ -907,8 +907,8 @@ body.edit-mode [data-editing="1"] > *.ed-box-highlight > .ed-drag-handle{opacity
 .loot-group-header:first-child{border-top:none;margin-top:0;padding-top:0}
 .loot-dice-badge{width:28px;height:28px;border-radius:50%;background:#4caf50;color:#fff;font-family:var(--font-title);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .loot-item-name{font-size:11px;font-weight:600;color:var(--text);line-height:1.35;text-align:center;width:100%;word-break:break-word;white-space:normal}
-.loot-desc-badge{display:inline-block;font-family:var(--font-title);font-size:11px;font-weight:700;background:rgba(255,255,255,.12);color:rgba(255,255,255,.75);padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.2);letter-spacing:.5px;cursor:pointer;vertical-align:middle;margin-left:5px;transition:all .15s}
-.loot-desc-badge:hover{background:rgba(255,255,255,.22);color:#fff;border-color:rgba(255,255,255,.35)}
+.loot-desc-badge{display:inline-block;font-family:var(--font-title);font-size:11px;font-weight:700;background:rgba(0,0,0,.28);color:#fff;padding:3px 10px;border-radius:6px;border:1px solid rgba(0,0,0,.3);letter-spacing:.5px;cursor:pointer;vertical-align:middle;margin-left:5px;transition:all .15s}
+.loot-desc-badge:hover{background:rgba(0,0,0,.4);color:#fff;border-color:rgba(0,0,0,.45)}
 /* Keep old tag styles for adm */
 .item-pool-tag{position:relative;width:38px;height:38px;border-radius:8px;background:var(--brand-mid);display:inline-flex;align-items:center;justify-content:center;cursor:default;font-size:13px;font-weight:700;color:#fff;border:2px solid var(--brand);transition:transform .15s,box-shadow .15s;user-select:none;}
 .item-pool-tag:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.18);}
@@ -9901,17 +9901,6 @@ function renderItensLista(prefix){
   });
 }
 
-function _admUploadSprite(inputEl, nome, prefix){
-  const file = inputEl.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    _itemSpritesCustom[nome] = e.target.result;
-    renderItensLista(prefix);
-  };
-  reader.readAsDataURL(file);
-}
-
 function adicionarItemPool(prefix){
   const inp = document.getElementById(`${prefix}-item-nome`);
   const linhas = (inp?.value || '').split('\n').map(s=>s.trim()).filter(Boolean);
@@ -10146,7 +10135,7 @@ async function _fetchItemDexSprite(nome){
   }catch(e){ return null; }
 }
 
-// Monta o card de um item de loot já com sprite (custom > ItemDex > PokeAPI > fallback)
+// Monta o card de um item de loot já com sprite (ItemDex > PokeAPI > fallback Unown)
 const RARIDADE_LABEL = {basica:'Comum', intermedia:'Incomum', rara:'Raro', bonus:'Bônus'};
 const RARIDADE_COR = {basica:'#6b9e6b', intermedia:'#3b7fd9', rara:'#b0862e', bonus:'#9a4fd9'};
 // Aceita variações/sinônimos de raridade (ex.: dados antigos salvos como
@@ -10168,7 +10157,7 @@ function _lootCardHtml(nome, diceLabel, raridade){
   const nomeAttr = String(nome).replace(/"/g,'&quot;');
   const nomeJs   = String(nome).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
-  const src = _itemSpritesCustom[nome] || (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
+  const src = (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
   const raridadeKey = _raridadeNorm(raridade);
   const raridadeLabel = raridadeKey ? RARIDADE_LABEL[raridadeKey] : null;
   const raridadeBadge = raridadeLabel
@@ -10181,10 +10170,6 @@ function _lootCardHtml(nome, diceLabel, raridade){
     +'<span class="loot-dice-badge">'+diceLabel+'</span>'
     +'<span class="loot-item-name" title="'+nomeAttr+'">'+nome+'</span>'
     +raridadeBadge
-    +'<label class="loot-upload-btn" style="display:none;align-items:center;justify-content:center;gap:3px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:2px">'
-      +'📷 trocar'
-      +'<input type="file" accept="image/*" style="display:none" onchange="_lootUploadSprite(this,\''+nomeJs+'\')"/>'
-    +'</label>'
   +'</div>';
 }
 // Um item que comece com "###" vira um cabeçalho de grupo (linha inteira),
@@ -10265,12 +10250,11 @@ function _berryTableHtml(itens){
 }
 // Busca sprite real pra cada item: primeiro no ItemDex, só cai pra PokeAPI
 // se o item não existir lá (ou não tiver sprite cadastrado). Não mexe em
-// itens com upload manual (_itemSpritesCustom) já feito pelo admin.
+// Sem upload manual: ItemDex > PokeAPI > Unown.
 function _lootFetchSprites(itens){
   Array.from(new Set((itens||[]).map(_poolItemNome)))
     .filter(function(n){ return n && !_lootIsGroupHeader(n); })
     .forEach(async function(nome){
-      if(_itemSpritesCustom[nome]) return;
       const dexUrl = await _fetchItemDexSprite(nome);
       if(!dexUrl) _fetchItemSprite(nome);
     });
@@ -10335,9 +10319,6 @@ function fecharLootModal(e){
 }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const o=document.getElementById('loot-modal-overlay'); if(o&&o.style.display!=='none'){ o.style.display='none'; document.body.style.overflow=''; } } });
 
-// Armazena sprites customizados por nome de item (base64)
-const _itemSpritesCustom = {};
-
 // Cache de URLs já resolvidas pela API
 const _itemSpriteCache = {};
 
@@ -10385,28 +10366,6 @@ function _lootItemImgError(el, nome){
   el.src = FALLBACK_SPRITE;
   el.style.opacity = '0.35';
   el.style.filter = 'grayscale(1)';
-  const card = el.closest('.loot-item-card');
-  if(card){
-    const btn = card.querySelector('.loot-upload-btn');
-    if(btn) btn.style.display = 'flex';
-  }
-}
-
-function _lootUploadSprite(inputEl, nome){
-  const file = inputEl.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const b64 = e.target.result;
-    _itemSpritesCustom[nome] = b64;
-    const card = inputEl.closest('.loot-item-card');
-    if(!card) return;
-    const img = card.querySelector('.loot-item-sprite-img');
-    const btn = card.querySelector('.loot-upload-btn');
-    if(img){ img.src = b64; img.style.opacity='1'; img.style.filter='none'; }
-    if(btn){ btn.style.display='none'; }
-  };
-  reader.readAsDataURL(file);
 }
 
 function renderEventoItensGrid(itens){
@@ -15373,7 +15332,7 @@ function _dadoCardBodyHtml(o){
     const nomeAttr = nome.replace(/"/g,'&quot;');
     const nomeJs   = nome.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
-    const src = _itemSpritesCustom[nome] || (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
+    const src = (dexCached && dexCached.sprite) || _itemSpriteUrl(nome);
     itemHtml = `<div style="display:flex;align-items:center;gap:6px;padding:0 14px 10px">
       <img class="loot-item-sprite-img" data-item="${nomeAttr}" src="${src}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0" onerror="_lootItemImgError(this,'${nomeJs}')"/>
       <span style="font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:${cor}">🎁 ${nome}</span>
@@ -15397,7 +15356,7 @@ function _itemGanhoBlockHtml(itemGanho, pool, resultado){
     const nomeAttr = String(itemGanho).replace(/"/g,'&quot;');
     const nomeJs   = String(itemGanho).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(itemGanho));
-    const src = _itemSpritesCustom[itemGanho] || (dexCached && dexCached.sprite) || _itemSpriteUrl(itemGanho);
+    const src = (dexCached && dexCached.sprite) || _itemSpriteUrl(itemGanho);
     return `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px">
       <img class="loot-item-sprite-img" data-item="${nomeAttr}" src="${src}" style="width:38px;height:38px;object-fit:contain;flex-shrink:0" onerror="_lootItemImgError(this,'${nomeJs}')"/>
       <div>
