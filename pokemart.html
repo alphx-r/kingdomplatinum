@@ -258,7 +258,7 @@ dialog#qm{width:min(520px,94vw)}.qg{display:grid;grid-template-columns:1fr 1fr;g
 .pmcart{background:var(--brand-mid);color:#fff}.pmcart:hover{background:var(--brand)}
 .pct{display:flex;align-items:center;gap:8px}.pct h3{flex:1;min-width:0}
 .pci{width:24px;height:24px;flex:none;background:none;border-radius:0;display:block}
-.pci img,.pml .imi img,.imi img{width:24px;height:24px;max-width:none;max-height:none;object-fit:contain;image-rendering:pixelated}
+.pci img,.pml .imi img,.imi img{width:24px;height:24px;max-width:none;max-height:none;object-fit:contain;image-rendering:auto}
 .pml .imi{width:24px;height:24px}
 @media(max-width:768px){.pmh{top:52px}}
 .pc{cursor:pointer}.pc .stp,.pc .btn{cursor:auto}.pc .btn{cursor:pointer}
@@ -279,8 +279,13 @@ dialog#qm{width:min(520px,94vw)}.qg{display:grid;grid-template-columns:1fr 1fr;g
 @media(max-width:860px){.pmg.tmg{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:560px){.pmg.tmg{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pc.tm .pcf{margin-top:auto}
-/* sprites de TM são 30px: reduzir com suavização (pixelated serrilha em 24px) */
-img[src*="/items/tms/"]{image-rendering:auto!important}
+img{image-rendering:auto}
+/* modal do TM: dados do golpe (moves.json) */
+.tmi{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 4px}
+.tmi div{background:var(--s2);border-radius:10px;padding:8px 6px;text-align:center}
+.tmi small{display:block;font:800 10px var(--font-body);text-transform:uppercase;letter-spacing:.5px;color:var(--mu);margin-bottom:2px}
+.tmi b{font:800 14px var(--font-body)}
+@media(max-width:420px){.tmi{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -529,7 +534,7 @@ function render(){
  $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>PokéMart</b><span>Itens para todo treinador</span></div>
  <input class="in pmq" id="q" type="search" autocomplete="off" placeholder="Buscar na PokéMart..." value="${esc(Q)}" oninput="Q=this.value;drawList()">
  ${isAdm()?'<button type="button" class="pmbt" onclick="openCup()">Cupons</button>':''}
- <button type="button" class="pmbt pmcart" onclick="toggleCart(true)" aria-label="Carrinho">🛒<i id="pmn">0</i></button></div></div>
+ <button type="button" class="pmbt pmcart" onclick="toggleCart(true)" aria-label="Carrinho"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2L21 7H6"/></svg><i id="pmn">0</i></button></div></div>
  <div class="pmw"><div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):'Escolha uma ficha para comprar e vender'}</div></div></div>
  ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:''}
  <div class="lhs"><span>Saldo</span><b id="sal">${F?fm(saldo()):'—'}</b></div></div>
@@ -573,9 +578,14 @@ function chg(r,C,mxf,e){const k=r.dataset.k;let n=C[k]||0;
  else if(e.type==='change'&&e.target.matches('input'))n=parseInt(e.target.value)||0;else return;
  n=Math.max(0,Math.min(mxf(k),n));if(n)C[k]=n;else delete C[k];drawList();drawSum()}
 function lstEv(e){const r=e.target.closest('.pc');if(!r)return;if(e.type==='click'&&!e.target.closest('button,input'))return openItem(r.dataset.k);chg(r,TAB!=='s'?CB:CS,k=>TAB!=='s'?MAXQ:ownQ(k),e)}
+const MVCAT={physical:'Físico',special:'Especial',status:'Status'};
+const cap=t=>t?t.charAt(0).toUpperCase()+t.slice(1):'—';
+function tmDetalhe(it){if(!isTM(it))return null;const mv=MV.get(mvSlug(tmParse(it.name).move));if(!mv)return null;
+ const tp=[mv.type,mv.type2].filter(Boolean).map(cap).join(' / ')||'—',v=x=>x==null||x===''?'—':esc(x);
+ return{desc:mv.descricao||'',box:`<div class="tmi"><div><small>Tipo</small><b>${esc(tp)}</b></div><div><small>Categoria</small><b>${esc(MVCAT[mv.damage_class]||cap(mv.damage_class))}</b></div><div><small>Poder</small><b>${v(mv.power)}</b></div><div><small>Precisão</small><b>${v(mv.accuracy)}</b></div></div>`}}
 function openItem(k){const it=ITM.get(k);if(!it)return;let d=$('pim');if(!d){d=document.createElement('dialog');d.id='pim';d.style.width='min(440px,94vw)';d.onclick=e=>{if(e.target===d)d.close()};document.body.appendChild(d)}
- const b=TAB!=='s',u=b?+it.price:sellUnit(it);
- d.innerHTML=`<div class="pct" style="margin-bottom:8px"><span class="pci">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><h3 style="font:800 17px var(--font-body);margin:0">${esc(it.name)}</h3></div><span class="pcc">${esc(it.category||'Outros')}</span><p style="font:500 14px/1.5 var(--font-body);white-space:pre-wrap;margin:12px 0">${esc(it.item_desc||'Sem descrição.')}</p><b style="font:800 20px var(--font-title)">${b?'':'+'}${fm(u)}</b><div class="mb"><button type="button" class="btn s" onclick="pim.close()">Fechar</button>${F?`<button type="button" class="btn p s" onclick="pimAdd('${esc(k)}')">${b?'Adicionar':'Vender'}</button>`:''}</div>`;
+ const b=TAB!=='s',u=b?+it.price:sellUnit(it),tm=tmDetalhe(it);
+ d.innerHTML=`<div class="pct" style="margin-bottom:8px"><span class="pci">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><h3 style="font:800 17px var(--font-body);margin:0">${esc(isTM(it)?tmParse(it.name).move:it.name)}</h3></div><span class="pcc">${tm?esc('TM'+tmParse(it.name).num):esc(it.category||'Outros')}</span>${tm?tm.box:''}<p style="font:500 14px/1.5 var(--font-body);white-space:pre-wrap;margin:12px 0">${esc((tm&&tm.desc)||it.item_desc||'Sem descrição.')}</p><b style="font:800 20px var(--font-title)">${b?'':'+'}${fm(u)}</b><div class="mb"><button type="button" class="btn s" onclick="pim.close()">Fechar</button>${F?`<button type="button" class="btn p s" onclick="pimAdd('${esc(k)}')">${b?'Adicionar':'Vender'}</button>`:''}</div>`;
  d.showModal()}
 function pimAdd(k){const C=TAB!=='s'?CB:CS,mx=TAB!=='s'?MAXQ:ownQ(k);if((C[k]||0)<mx)C[k]=(C[k]||0)+1;pim.close();drawList();drawSum()}
 function cartEv(e){const r=e.target.closest('.pml');if(r)chg(r,r.dataset.t==='b'?CB:CS,k=>r.dataset.t==='b'?MAXQ:ownQ(k),e)}
