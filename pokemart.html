@@ -273,23 +273,12 @@ dialog#qm{width:min(520px,94vw)}.qg{display:grid;grid-template-columns:1fr 1fr;g
 .pmh.sm .pmb{min-width:0}.pmh.sm .pmb span{display:none}.pmh.sm .pmb b{font-size:18px}
 .pmh.sm .pmq{padding:7px 14px!important}.pmh.sm .pmbt{padding:6px 12px}.pmh.sm .pmcart{height:34px;min-width:40px;font-size:16px}
 
-/* TMs: exibição própria (5 colunas, sprite do disco + número + golpe) */
-.pmg.tmg{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+/* TMs: mesmo card dos outros itens (sprite 24px + nome + chip com o nº), em 5 colunas */
+.pmg.tmg{grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
 @media(max-width:1100px){.pmg.tmg{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:860px){.pmg.tmg{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:560px){.pmg.tmg{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.pc.tm{align-items:stretch;text-align:left;gap:6px;padding:10px 12px;border-top:3px solid var(--tc,transparent)}
-.pc.tm .tmh{display:flex;align-items:center;gap:6px}
-.pc.tm .tmd{width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex:none}
-.pc.tm .tmd img{width:22px;height:22px;object-fit:contain;image-rendering:pixelated;opacity:.85}
-.pc.tm .tmnum{font:800 10px var(--font-body);letter-spacing:.6px;color:var(--mu)}
-.pc.tm .tmn{font:800 14px var(--font-body);margin:0;line-height:1.2;flex:1}
-.pc.tm .tmm{display:flex;flex-wrap:wrap;gap:4px;font:700 10px var(--font-body);color:var(--mu)}
-.pc.tm .tmm span{background:var(--s2);border-radius:8px;padding:1px 7px}
-.pc.tm .tmm .tt{background:var(--tc,var(--brand-mid));color:#fff;text-transform:uppercase;letter-spacing:.4px}
-.pc.tm .tmf{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:0}
-.pc.tm .tmf .lp{font:800 14px var(--font-title)}
-.pc.tm .tmf .btn{padding:5px 10px;font-size:11px}
+.pc.tm .pcf{margin-top:auto}
 </style>
 </head>
 <body>
@@ -515,7 +504,7 @@ async function boot(){
  mostrarBadge();
  if(!ses){$('app').innerHTML=msg('Entre com a sua conta para usar a PokéMart.<br><br><button class="btn p" onclick="lg.showModal()">Entrar</button>');fim();try{lg.showModal()}catch{}return}
  F=null;$('app').innerHTML=msg('Carregando...');
- try{[LST,ITM]=await Promise.all([carregaLista(),ITL()])}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
+ try{[LST,ITM,MV]=await Promise.all([carregaLista(),ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
  FL=minhas(LST);
  if(!FL.length){$('app').innerHTML=msg('Você não tem nenhuma ficha ativa. <a href="/fichas">Ir ao Fichário</a>');fim();return}
  const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q);
@@ -554,17 +543,16 @@ function rowsAtuais(){
  if(TAB!=='s')return[...ITM.values()].filter(isMart).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price,mx:MAXQ}));
  return bag().filter(e=>!e.vinculado&&sellUnit(ITM.get(nk(e.nome)))>0).map(e=>{const k=nk(e.nome),it=ITM.get(k),own=parseInt(e.qtd)||1;return{it,k,nome:e.nome,own,unit:sellUnit(it),mx:own}})}
 
-const TMCOR={normal:'#a8a77a',fire:'#ee8130',water:'#6390f0',electric:'#f7d02c',grass:'#7ac74c',ice:'#96d9d6',fighting:'#c22e28',poison:'#a33ea1',ground:'#e2bf65',flying:'#a98ff3',psychic:'#f95587',bug:'#a6b91a',rock:'#b6a136',ghost:'#735797',dragon:'#6f35fc',dark:'#705746',steel:'#b7b7ce',fairy:'#d685ad'};
-const TMTIPO={normal:'Normal',fire:'Fire',water:'Water',electric:'Electric',grass:'Grass',ice:'Ice',fighting:'Fighting',poison:'Poison',ground:'Ground',flying:'Flying',psychic:'Psychic',bug:'Bug',rock:'Rock',ghost:'Ghost',dragon:'Dragon',dark:'Dark',steel:'Steel',fairy:'Fairy'};
-function tmInfo(r){const it=r.it||{},m=String(r.nome||'').match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.*)$/i);
- const tp=nk(it.move_type||it.tm_type||it.type||it.tipo||''),cor=TMCOR[tp]||'';
- const pw=it.power??it.poder,ac=it.accuracy??it.precisao,ct=it.move_category||it.damage_class||it.categoria_golpe;
- const generic=/^um disco t[eé]cnico/i.test(it.item_desc||'');
- return{num:m?m[1].padStart(3,'0'):'',move:m?(m[2]||r.nome):r.nome,tp:TMTIPO[tp]||'',cor,pw,ac,ct,desc:generic?'':(it.item_desc||'')}}
-const TMIMG='https://raw.githubusercontent.com/PokeAPI/sprites/refs/heads/master/sprites/items/tm-normal.png';
-function tmCard(r,n,C){const t=tmInfo(r);
- const meta=[t.tp?`<span class="tt">${esc(t.tp)}</span>`:'',t.ct?`<span>${esc(t.ct)}</span>`:'',t.pw!=null&&t.pw!==''?`<span>Pwr ${esc(t.pw)}</span>`:'',t.ac!=null&&t.ac!==''?`<span>Acc ${esc(t.ac)}</span>`:''].join('');
- return`<div class="pc tm${n?' on':''}" data-k="${esc(r.k)}"${t.cor?` style="--tc:${t.cor}"`:''}><div class="tmh"><span class="tmd"><img src="${TMIMG}" alt="" loading="lazy"></span><span class="tmnum">TM${esc(t.num||'—')}</span></div><h3 class="tmn">${esc(t.move)}</h3>${meta?`<div class="tmm">${meta}</div>`:''}<div class="tmf"><b class="lp">${TAB!=='s'?'':'+'}${fm(r.unit)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}
+/* sprites dos TMs (repo, pasta sprites/items/tms) por tipo do golpe em movedex/moves.json */
+const TMTIPOS=['bug','dark','dragon','electric','fairy','fighting','fire','flying','ghost','grass','ground','ice','light','normal','poison','psychic','rock','scent','steel','water'];
+let MV=new Map();
+const MVL=()=>jl('/movedex/moves.json').then(d=>d||jl(CDN_REPO+'movedex/moves.json')).then(a=>{const m=new Map();(Array.isArray(a)?a:[]).forEach(x=>{if(x&&x.name)m.set(x.name,x)});return m}).catch(()=>new Map());
+const mvSlug=n=>String(n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/['’`.]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+function tmParse(name){const m=String(name||'').match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.*)$/i);return{num:m?m[1].padStart(3,'0'):'',move:m?(m[2]||name):String(name||'')}}
+function tmTipo(it){const mv=MV.get(mvSlug(tmParse(it.name).move));const t=nk(mv?.type||it.move_type||it.type||'');return TMTIPOS.includes(t)?t:'normal'}
+function tmSprites(){if(!ITM)return;ITM.forEach(it=>{if(isTM(it))it.sprite=CDN_REPO+'sprites/items/tms/tm-'+tmTipo(it)+'.png'})}
+function tmCard(r,n,C){const t=tmParse(r.nome);
+ return`<div class="pc tm${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="" loading="lazy">`:''}</span><h3>${esc(t.move)}</h3></div><span class="pcc">${t.num?'TM'+esc(t.num):'TM'}</span><div class="pcf"><b class="lp">${TAB!=='s'?'':'+'}${fm(r.unit)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}
 function drawList(){
  const q=nk(Q);let rows=rowsAtuais();
  const cats=[...new Set(rows.map(catOf))].sort();
