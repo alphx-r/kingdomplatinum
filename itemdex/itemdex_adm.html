@@ -761,6 +761,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
         <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
+        <button class="btn btn-outline btn-sm" id="it-tm-btn" onclick="importarTMsAgora()" title="Cadastra de uma vez as 231 TMs (TM001–TM231) na categoria TM, com preço 5000 e Pokémart ativo. TMs que já existem são ignoradas.">💿 Importar TMs</button>
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
@@ -1091,7 +1092,7 @@ async function uploadImgStorage(b64, bucket, path) {
 /* ══════════════════════════════════════════
    ██ ITEMS
 ══════════════════════════════════════════ */
-const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards'];
+const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards', 'TM'];
 
 // Remove o prefixo de tamanho do nome pra achar o "item base" (ex: "Big
 // Nugget" e "Small Nugget" -> "nugget").
@@ -1180,7 +1181,7 @@ function blobToDataURL(blob) {
 // concorrência pra não disparar dezenas de requisições simultâneas contra
 // a PokeAPI de uma vez.
 async function autoFetchMissingItemSprites() {
-  const pending = S.it.all.filter(it => !it.sprite && !conqTipoDe(it)); // conquistas não existem na PokeAPI: a imagem vem de sprites/rewards
+  const pending = S.it.all.filter(it => !it.sprite && !conqTipoDe(it) && it.category !== 'TM'); // TMs não têm sprite na PokeAPI // conquistas não existem na PokeAPI: a imagem vem de sprites/rewards
   if (!pending.length) return;
   const CONCURRENCY = 4;
   let idx = 0;
@@ -1290,7 +1291,7 @@ function applyItFilter() {
 // Ordem fixa das categorias conhecidas (mesma do <select> de categoria);
 // "Sem categoria" sempre por último, categorias avulsas (customizadas) ficam
 // entre as fixas e "Sem categoria", em ordem alfabética.
-const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards'];
+const IT_CAT_ORDER = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards', 'TM'];
 function itCatSortKey(cat) {
   if (cat === 'Sem categoria') return [2, cat];
   const i = IT_CAT_ORDER.indexOf(cat);
@@ -2563,6 +2564,62 @@ async function migrarBerryParaForage() {
 /* ══════════════════════════════════════════
    INIT
 ══════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════
+   IMPORTAR TMs (TM001–TM231) — upload em lote
+   Todas compartilham a mesma configuração (categoria TM, preço 5000,
+   Pokémart ligado, sem sprite). Itens que já existem no banco são
+   ignorados, então rodar de novo é seguro e não sobrescreve edições.
+══════════════════════════════════════════ */
+const TM_IMPORT_NAMES = ["TM001: Take Down", "TM002: Charm", "TM003: Fake Tears", "TM004: Agility", "TM005: Mud-Slap", "TM006: Scary Face", "TM007: Protect", "TM008: Fire Fang", "TM009: Thunder Fang", "TM010: Ice Fang", "TM011: Water Pulse", "TM012: Low Kick", "TM013: Acid Spray", "TM014: Acrobatics", "TM015: Struggle Bug", "TM016: Psybeam", "TM017: Confuse Ray", "TM018: Thief", "TM019: Disarming Voice", "TM020: Trailblaze", "TM021: Pounce", "TM022: Chilling Water", "TM023: Charge Beam", "TM024: Fire Spin", "TM025: Facade", "TM026: Poison Tail", "TM027: Aerial Ace", "TM028: Bulldoze", "TM029: Hex", "TM030: Snarl", "TM031: Metal Claw", "TM032: Swift", "TM033: Magical Leaf", "TM034: Icy Wind", "TM035: Mud Shot", "TM036: Rock Tomb", "TM037: Draining Kiss", "TM038: Flame Charge", "TM039: Low Sweep", "TM040: Air Cutter", "TM041: Stored Power", "TM042: Night Shade", "TM043: Fling", "TM044: Dragon Tail", "TM045: Venoshock", "TM046: Avalanche", "TM047: Endure", "TM048: Volt Switch", "TM049: Sunny Day", "TM050: Rain Dance", "TM051: Sandstorm", "TM052: Snowscape", "TM053: Smart Strike", "TM054: Psyshock", "TM055: Dig", "TM056: Bullet Seed", "TM057: False Swipe", "TM058: Brick Break", "TM059: Zen Headbutt", "TM060: U-turn", "TM061: Shadow Claw", "TM062: Foul Play", "TM063: Psychic Fangs", "TM064: Bulk Up", "TM065: Air Slash", "TM066: Body Slam", "TM067: Fire Punch", "TM068: Thunder Punch", "TM069: Ice Punch", "TM070: Sleep Talk", "TM071: Seed Bomb", "TM072: Electro Ball", "TM073: Drain Punch", "TM074: Reflect", "TM075: Light Screen", "TM076: Rock Blast", "TM077: Waterfall", "TM078: Dragon Claw", "TM079: Dazzling Gleam", "TM080: Metronome", "TM081: Grass Knot", "TM082: Thunder Wave", "TM083: Poison Jab", "TM084: Stomping Tantrum", "TM085: Rest", "TM086: Rock Slide", "TM087: Taunt", "TM088: Swords Dance", "TM089: Body Press", "TM090: Spikes", "TM091: Toxic Spikes", "TM092: Imprison", "TM093: Flash Cannon", "TM094: Dark Pulse", "TM095: Leech Life", "TM096: Eerie Impulse", "TM097: Fly", "TM098: Skill Swap", "TM099: Iron Head", "TM100: Dragon Dance", "TM101: Power Gem", "TM102: Gunk Shot", "TM103: Substitute", "TM104: Iron Defense", "TM105: X-Scissor", "TM106: Drill Run", "TM107: Will-O-Wisp", "TM108: Crunch", "TM109: Trick", "TM110: Liquidation", "TM111: Giga Drain", "TM112: Aura Sphere", "TM113: Tailwind", "TM114: Shadow Ball", "TM115: Dragon Pulse", "TM116: Stealth Rock", "TM117: Hyper Voice", "TM118: Heat Wave", "TM119: Energy Ball", "TM120: Psychic", "TM121: Heavy Slam", "TM122: Encore", "TM123: Surf", "TM124: Ice Spinner", "TM125: Flamethrower", "TM126: Thunderbolt", "TM127: Play Rough", "TM128: Amnesia", "TM129: Calm Mind", "TM130: Helping Hand", "TM131: Pollen Puff", "TM132: Baton Pass", "TM133: Earth Power", "TM134: Reversal", "TM135: Ice Beam", "TM136: Electric Terrain", "TM137: Grassy Terrain", "TM138: Psychic Terrain", "TM139: Misty Terrain", "TM140: Nasty Plot", "TM141: Fire Blast", "TM142: Hydro Pump", "TM143: Blizzard", "TM144: Fire Pledge", "TM145: Water Pledge", "TM146: Grass Pledge", "TM147: Wild Charge", "TM148: Sludge Bomb", "TM149: Earthquake", "TM150: Stone Edge", "TM151: Phantom Force", "TM152: Giga Impact", "TM153: Blast Burn", "TM154: Hydro Cannon", "TM155: Frenzy Plant", "TM156: Outrage", "TM157: Overheat", "TM158: Focus Blast", "TM159: Leaf Storm", "TM160: Hurricane", "TM161: Trick Room", "TM162: Bug Buzz", "TM163: Hyper Beam", "TM164: Brave Bird", "TM165: Flare Blitz", "TM166: Thunder", "TM167: Close Combat", "TM168: Solar Beam", "TM169: Draco Meteor", "TM170: Steel Beam", "TM171: Tera Blast", "TM172: Roar", "TM173: Charge", "TM174: Haze", "TM175: Toxic", "TM176: Sand Tomb", "TM177: Spite", "TM178: Gravity", "TM179: Smack Down", "TM180: Gyro Ball", "TM181: Knock Off", "TM182: Bug Bite", "TM183: Super Fang", "TM184: Vacuum Wave", "TM185: Lunge", "TM186: High Horsepower", "TM187: Icicle Spear", "TM188: Scald", "TM189: Heat Crash", "TM190: Solar Blade", "TM191: Uproar", "TM192: Focus Punch", "TM193: Weather Ball", "TM194: Grassy Glide", "TM195: Burning Jealousy", "TM196: Flip Turn", "TM197: Dual Wingbeat", "TM198: Poltergeist", "TM199: Lash Out", "TM200: Scale Shot", "TM201: Misty Explosion", "TM202: Pain Split", "TM203: Psych Up", "TM204: Double-Edge", "TM205: Endeavor", "TM206: Petal Blizzard", "TM207: Temper Flare", "TM208: Whirlpool", "TM209: Muddy Water", "TM210: Supercell Slam", "TM211: Electroweb", "TM212: Triple Axel", "TM213: Coaching", "TM214: Sludge Wave", "TM215: Scorching Sands", "TM216: Feather Dance", "TM217: Future Sight", "TM218: Expanding Force", "TM219: Skitter Smack", "TM220: Meteor Beam", "TM221: Throat Chop", "TM222: Breaking Swipe", "TM223: Metal Sound", "TM224: Curse", "TM225: Hard Press", "TM226: Dragon Cheer", "TM227: Alluring Voice", "TM228: Psychic Noise", "TM229: Upper Hand", "TM230: Twilight Skies", "TM231: Strobe"];
+const TM_IMPORT_DESC = "Um disco técnico que permite ensinar um movimento específico a um Pokémon compatível.";
+
+async function importarTMsAgora() {
+  const btn = document.getElementById('it-tm-btn');
+  const origLabel = btn?.innerHTML;
+  const novas = TM_IMPORT_NAMES.filter(n => !S.it.dbMap[n]);
+  const jaExistem = TM_IMPORT_NAMES.length - novas.length;
+  if (!novas.length) { toast(`As ${TM_IMPORT_NAMES.length} TMs já estão no banco.`, 'ok'); return; }
+  if (!confirm(`Importar ${novas.length} TM(s) de ${TM_IMPORT_NAMES.length}?\n\n• Categoria: TM\n• Preço: 5000 (Pokémart ativo)\n• Sem sprite` + (jaExistem ? `\n\n${jaExistem} já existem e serão ignoradas.` : ''))) return;
+  if (btn) btn.disabled = true;
+  const now = new Date().toISOString();
+  const rows = novas.map(name => ({
+    name,
+    category: 'TM',
+    item_desc: TM_IMPORT_DESC,
+    flags: { pokemart: { enabled: true }, consumivel: { enabled: false } },
+    price: 5000,
+    updated_at: now,
+  }));
+  const LOTE = 50;
+  let salvas = 0;
+  const falhas = [];
+  try {
+    for (let i = 0; i < rows.length; i += LOTE) {
+      const lote = rows.slice(i, i + LOTE);
+      if (btn) btn.innerHTML = `⏳ ${Math.min(i + LOTE, rows.length)}/${rows.length}…`;
+      try {
+        await sbUpsert('items', lote);
+        lote.forEach(r => { S.it.dbMap[r.name] = r; S.it.all.push(r); });
+        salvas += lote.length;
+      } catch (e) {
+        console.error('[importarTMs] lote falhou, tentando uma a uma:', e);
+        for (const r of lote) {
+          try { await sbUpsert('items', r); S.it.dbMap[r.name] = r; S.it.all.push(r); salvas++; }
+          catch (e2) { falhas.push(r.name); }
+        }
+      }
+    }
+    S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    S.it.sizeFamilies = null;
+    populateItemCategoryFilter();
+    applyItFilter();
+    toast(`💿 ${salvas} TM(s) importada(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + ' Lembre de clicar em "Commitar items.json".', falhas.length ? 'err' : 'ok');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
+}
+
 function initItemdexAdm() {
   loadItems();
 }
