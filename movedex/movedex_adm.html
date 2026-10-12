@@ -651,6 +651,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
       <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e sobe pro Supabase (sem sobrescrever traduções já feitas)" style="margin-left:auto">📥 Importar da PokeAPI</button>
+      <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e ajusta is_tm / tm_number dos moves no Supabase (usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
       <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Gera o moves.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar moves.json</button>
       <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
@@ -896,6 +897,87 @@ function cbBuildStaticLists() {
 const S = { mv: { all: [], filtered: [], dbMap: {} } };
 
 /* ══════════════════════════════════════════
+   Sincronizar flag de TM com a lista de TMs do items.json
+   Item "TM014: Acrobatics" -> move "acrobatics": is_tm = true, tm_number = 14.
+   Moves que estavam como TM e não estão na lista perdem a flag.
+══════════════════════════════════════════ */
+const tmSlug = n => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`.]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+async function tmLoadItems() {
+  const urls = ['/itemdex/items.json', '/items.json', 'https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/itemdex/items.json'];
+  for (const u of urls) {
+    try {
+      const r = await fetch(u + (u.startsWith('http') ? '' : '?_=' + Date.now()));
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (Array.isArray(j) && j.length) return j;
+    } catch {}
+  }
+  throw new Error('Não consegui carregar o items.json.');
+}
+async function syncTmsFromItems() {
+  const btn = document.getElementById('mv-tmsync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Lendo items.json…'; }
+  try {
+    if (!Object.keys(S.mv.dbMap).length) await loadMoves();
+    const items = await tmLoadItems();
+    const lista = new Map(), semMove = [], dup = [];
+    items.forEach(it => {
+      const nome = it && (it.name || it.nome);
+      if (!nome) return;
+      const cat = String(it.category || '').toLowerCase().replace(/[^a-z]/g, '');
+      const m = String(nome).match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.+)$/i);
+      if (!m) { if (/^(tms?|technicalmachines?|machines?)$/.test(cat)) semMove.push(nome); return; }
+      const mv = tmSlug(m[2]);
+      if (!S.mv.dbMap[mv]) { semMove.push(nome); return; }
+      if (lista.has(mv)) dup.push(nome);
+      lista.set(mv, parseInt(m[1], 10));
+    });
+    if (!lista.size) { toast('Nenhum TM do items.json bateu com um move do banco.', 'err'); return; }
+
+    const mudar = [];
+    Object.entries(S.mv.dbMap).forEach(([name, row]) => {
+      const num = lista.has(name) ? lista.get(name) : null, quer = num != null;
+      if (!!row.is_tm !== quer || (quer && Number(row.tm_number) !== num) || (!quer && row.tm_number != null))
+        mudar.push({ name, row, is_tm: quer, tm_number: num });
+    });
+    const marcar = mudar.filter(x => x.is_tm && !x.row.is_tm).length;
+    const renum = mudar.filter(x => x.is_tm && x.row.is_tm).length;
+    const desmarcar = mudar.filter(x => !x.is_tm).length;
+    if (!mudar.length) { toast(`✅ Já está sincronizado (${lista.size} TMs).`, 'ok'); return; }
+
+    const extra = (semMove.length ? `\n\n⚠️ ${semMove.length} item(ns) TM sem move correspondente no banco (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}` : '')
+      + (dup.length ? `\n⚠️ Número repetido para o mesmo move: ${dup.slice(0, 5).join(', ')}` : '');
+    if (!confirm(`TMs no items.json: ${lista.size}\n\n• ${marcar} move(s) vão virar TM\n• ${renum} move(s) já eram TM e terão o número atualizado\n• ${desmarcar} move(s) deixam de ser TM (não estão na lista)${extra}\n\nAplicar no Supabase?`)) return;
+
+    showProgress('Sincronizando TMs…');
+    let ok = 0, fail = 0, feito = 0;
+    const erros = [], agora = new Date().toISOString();
+    for (let i = 0; i < mudar.length; i += 8) {
+      await Promise.all(mudar.slice(i, i + 8).map(async c => {
+        const e = c.row;
+        // mesmas colunas que o saveMv envia; o resto da linha não é tocado
+        const row = {
+          name: c.name, descricao: e.descricao || '', type: e.type || '', type2: e.type2 || null,
+          damage_class: e.damage_class || '', power: e.power ?? null, accuracy: e.accuracy ?? null,
+          contest_style: e.contest_style || null, is_tm: c.is_tm, tm_number: c.tm_number,
+          approved: !!e.approved, updated_at: agora
+        };
+        try { await sbUpsert('moves', row); ok++; } catch (err) { fail++; erros.push(`${c.name}: ${err.message}`); }
+        updateProgress(++feito, mudar.length);
+      }));
+    }
+    if (fail) console.warn('Falhas ao sincronizar TMs:', erros);
+    await loadMoves();
+    toast(`TMs sincronizados: ${ok} atualizados${fail ? `, ${fail} falharam (veja o console)` : ''}. Agora clique em “Commitar moves.json”.`, fail ? 'err' : 'ok');
+  } catch (e) {
+    toast('Erro ao sincronizar TMs: ' + e.message, 'err');
+  } finally {
+    hideProgress();
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Sincronizar TMs (items.json)'; }
+  }
+}
+
+/* ══════════════════════════════════════════
    ██ MOVES
 ══════════════════════════════════════════ */
 let mvFilter = 'all';
@@ -942,7 +1024,7 @@ function renderMvList() {
     return `<div class="entry${appr?' approved':''}${hasDesc?' has-pt':''}" id="mv-entry-${item.name}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
       <div class="entry-head" onclick="toggleEntry('mv-entry-${item.name}')">
         <span class="entry-name">${cap(item.name)}${typeLabel?`<small>${typeLabel}${cat?' · '+catLabel:''}</small>`:''}</span>
-        ${db.is_tm&&db.tm_number?`<span class="badge tm-pill" style="background:#e0eaff;color:#2050a0">TM${String(db.tm_number).padStart(2,'0')}</span>`:''}
+        ${db.is_tm&&db.tm_number?`<span class="badge tm-pill" style="background:#e0eaff;color:#2050a0">TM${String(db.tm_number).padStart(3,'0')}</span>`:''}
         ${catClass?`<span class="badge cat-pill ${catClass}">${catLabel}</span>`:''}
         ${db.contest_style?`<span class="badge" style="background:#eee;color:#555">${cap(db.contest_style)}</span>`:''}
         <span class="badge ${appr?'badge-appr':hasDesc?'badge-pt':'badge-pend'}">${appr?'✓ Aprovado':hasDesc?'Rascunho':'Pendente'}</span>
@@ -1060,7 +1142,7 @@ async function saveMv(name, approve) {
       if (badge) { badge.textContent = approve ? '✓ Aprovado' : 'Rascunho'; badge.className = 'badge ' + (approve ? 'badge-appr' : 'badge-pt'); }
       let tmBadge = entry.querySelector('.tm-pill');
       if (is_tm && tm_number) {
-        const label = 'TM' + String(tm_number).padStart(2, '0');
+        const label = 'TM' + String(tm_number).padStart(3, '0');
         if (tmBadge) { tmBadge.textContent = label; }
         else {
           tmBadge = document.createElement('span');
