@@ -497,12 +497,12 @@ const saldo=()=>dig(F?.d?.dinheiro);
 const bag=()=>(Array.isArray(F?.d?.inventario)?F.d.inventario:[]).filter(x=>x&&x.nome);
 const ownQ=k=>{const e=bag().find(x=>nk(x.nome)===k);return e?(parseInt(e.qtd)||1):0};
 let CUP=null,SORT='n';
-/* Discount Cupom (item da Bag): cada entrada tem `desconto` (%). Só um cupom por compra: o do item não acumula com cupom de código. */
-const dcNk=n=>nk(n)==='discountcupom',dcPct=x=>{const n=parseInt(x&&x.desconto);return n>0&&n<=100?n:0};
+/* Discount Coupon (item da Bag): cada entrada tem `desconto` (%). Só um cupom por compra: o do item não acumula com cupom de código. */
+const dcNk=n=>nk(n)==='discountcoupon',dcPct=x=>{const n=parseInt(x&&x.desconto);return n>0&&n<=100?n:0};
 const cupItens=()=>{const s=new Set();for(const e of bag())if(dcNk(e.nome)&&dcPct(e))s.add(dcPct(e));return[...s].sort((a,b)=>b-a)};
 const cupLbl=()=>CUP.item?CUP.codigo:'Cupom '+CUP.codigo;
-function cupItem(pc){if(CUP||!cupItens().includes(pc))return;CUP={codigo:'Discount Cupom ('+pc+'% OFF)',tipo:'pct',valor:pc,item:true};toast('Discount Cupom aplicado');drawSum()}
-const cupBanner=()=>{if(CUP)return'';const l=cupItens();return l.length?`<div class="pmcd"><span>Você possui ${l.length>1?'Discount Cupons com <b>'+l.map(x=>x+'%').join(' e ')+' off</b>':'um Discount Cupom com <b>'+l[0]+'% off</b>'}. Deseja aplicar?</span>${l.map(x=>`<button type="button" class="btn p s" onclick="cupItem(${x})">Aplicar ${x}%</button>`).join('')}</div>`:''};
+function cupItem(pc){if(CUP||!cupItens().includes(pc))return;CUP={codigo:'Discount Coupon ('+pc+'% OFF)',tipo:'pct',valor:pc,item:true};toast('Discount Coupon aplicado');drawSum()}
+const cupBanner=()=>{if(CUP)return'';const l=cupItens();return l.length?`<div class="pmcd"><span>Você possui ${l.length>1?'Discount Cupons com <b>'+l.map(x=>x+'%').join(' e ')+' off</b>':'um Discount Coupon com <b>'+l[0]+'% off</b>'}. Deseja aplicar?</span>${l.map(x=>`<button type="button" class="btn p s" onclick="cupItem(${x})">Aplicar ${x}%</button>`).join('')}</div>`:''};
 const cupDesc=c=>!CUP?0:CUP.tipo==='pct'?Math.floor(c*Math.min(100,CUP.valor)/100):Math.min(c,CUP.valor);
 function totais(){let c=0,v=0;
  for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(it&&q>0)c+=+it.price*q}
@@ -652,13 +652,13 @@ async function finaliza(){
   const sal=dig(fr.d.dinheiro);let ganho=0,gasto=0;
   for(const[k,q]of Object.entries(CS)){const it=ITM.get(k),i=inv.findIndex(x=>x&&nk(x.nome)===k),cur=i<0?0:(parseInt(inv[i].qtd)||1);
    if(i>=0&&inv[i].vinculado)throw new Error((it?.name||k)+' é um item vinculado e não pode ser vendido.');
-   if(dcNk(k))throw new Error('O Discount Cupom não pode ser vendido na PokéMart.');
+   if(dcNk(k))throw new Error('O Discount Coupon não pode ser vendido na PokéMart.');
    if(!it||sellUnit(it)<=0||cur<q)throw new Error('A Bag mudou: você não tem mais '+q+'x '+(it?.name||k)+'.');
    if(cur-q>0)inv[i].qtd=cur-q;else inv.splice(i,1);ganho+=sellUnit(it)*q}
   for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(!isMart(it))throw new Error('Item indisponível na PokéMart: '+k);
    const i=inv.findIndex(x=>x&&nk(x.nome)===k);if(i>=0)inv[i].qtd=(parseInt(inv[i].qtd)||1)+q;else inv.push({nome:it.name,qtd:q,...bagOf(it)});gasto+=+it.price*q}
   const dsc=cupDesc(gasto);gasto-=dsc;
-  if(dsc>0&&CUP&&CUP.item){const i=inv.findIndex(x=>x&&dcNk(x.nome)&&dcPct(x)===CUP.valor);if(i<0)throw new Error('O Discount Cupom de '+CUP.valor+'% não está mais na Bag.');const q=parseInt(inv[i].qtd)||1;if(q>1)inv[i].qtd=q-1;else inv.splice(i,1)}
+  if(dsc>0&&CUP&&CUP.item){const i=inv.findIndex(x=>x&&dcNk(x.nome)&&dcPct(x)===CUP.valor);if(i<0)throw new Error('O Discount Coupon de '+CUP.valor+'% não está mais na Bag.');const q=parseInt(inv[i].qtd)||1;if(q>1)inv[i].qtd=q-1;else inv.splice(i,1)}
   if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente (o dinheiro da ficha mudou).');
   fr.d.dinheiro=fnum(sal+ganho-gasto);
   const j=await salvarFicha({slug:fr.slug,nome:fr.nome,foto:fr.foto,banner:fr.banner,thumb:fr.thumb,player_id:fr.player_id,d:fr.d});
