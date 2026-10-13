@@ -5212,6 +5212,8 @@ async function iniciarSessaoPlayer(){
     }
     renderPersonagensDatalist();
     mostrarBadgePlayer();
+    // fichas do Fichário (sistema novo) entram no seletor de personagem
+    if(typeof sessaoFichaNova==='function' && sessaoFichaNova() && !_fichasNovasTentou) carregarFichasNovas();
     // Restaura último personagem para o player logado
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem')||'';
     const meus = personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase());
@@ -5707,7 +5709,7 @@ async function carregarFichasNovas(){
     }
     fichasNovas = novas;
   }catch(e){ console.warn('[fichas novas]', e); }
-  finally{ _fichasNovasCarregando = false; if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); }
+  finally{ _fichasNovasCarregando = false; if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); if(typeof renderPersonagensDatalist==='function') renderPersonagensDatalist(); }
 }
 function fichaIntegradaDoPersonagem(nome){
   const k = normalizarNome(nome);
@@ -5885,6 +5887,8 @@ async function fazerLoginPlayer(){
   renderPersonagensDatalist();
   mostrarBadgePlayer();
   fecharLoginOverlay();
+  // fichas do Fichário (sistema novo) entram no seletor de personagem
+  if(typeof sessaoFichaNova==='function' && sessaoFichaNova()){ _fichasNovasTentou=false; carregarFichasNovas(); }
 }
 
 function fecharLoginOverlay(){
@@ -9103,9 +9107,18 @@ function filtrarFichas(q){
 }
 function renderPersonagensDatalist(){
   // Se há player logado, mostra apenas seus personagens; caso contrário, todos
-  const filtrados = playerLogado
+  let filtrados = playerLogado
     ? personagens.filter(p=>p.player.toLowerCase()===playerLogado.nome.toLowerCase())
     : personagens;
+  // Fichas do Fichário (sistema novo) do player logado entram no seletor automaticamente,
+  // ligadas ao player dono da ficha — sem precisar de linha na tabela "personagens".
+  if(playerLogado && Array.isArray(fichasNovas) && fichasNovas.length){
+    const jaTem = new Set(filtrados.map(p=>normalizarNome(p.nome)));
+    const extras = fichasNovas
+      .filter(f=>f && f.nome && !jaTem.has(normalizarNome(f.nome)))
+      .map(f=>({nome:f.nome, player:playerLogado.nome, _fichario:true, slug:f.slug}));
+    filtrados = filtrados.concat(extras);
+  }
 
   const opcoesHtml = '<option value="">— Selecione o personagem —</option>' +
     filtrados.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('');
