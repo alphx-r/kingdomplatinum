@@ -444,7 +444,7 @@ let LST=null,FL=[],F=null,ITM=null,TAB='b',CAT='',Q='',CB={},CS={},busy=false;
 const CDN_REPO='https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/';
 const itemSrc=p=>(p||'').replace(/^\/?sprites\/items\//,CDN_REPO+'sprites/items/');
 let ITD;const ITL=()=>ITD??=jl('/itemdex/items.json').then(d=>d||jl('/items.json')).then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:itemSrc(x.sprite||x.image||x.img),item_desc:x.item_desc||x.desc||x.descricao})});return m});
-const isTM=it=>!!it&&(/^(tms?|technicalmachines?|machines?)$/.test(nk(it.category))||/^tm\s?\d/i.test(it.name||''));
+const isTM=it=>!!it&&nk(it.name)!=='tmvoucher'&&(/^(tms?|technicalmachines?|machines?)$/.test(nk(it.category))||/^tm\s?\d/i.test(it.name||''));
 const isPill=it=>!!it&&/\bpills?\b|p[ií]lulas?/i.test((it.category||'')+' '+(it.name||''));
 const catOf=r=>isTM(r.it)?'TMs':(r.it?.category||'Outros');
 const bagOf=it=>isTM(it)?{bag:'tm'}:isPill(it)?{bag:'pill'}:{};
@@ -496,18 +496,32 @@ function minhas(l){const me=nrm(ses.nome),ids=meusIds();return l.filter(x=>x&&x.
 const saldo=()=>dig(F?.d?.dinheiro);
 const bag=()=>(Array.isArray(F?.d?.inventario)?F.d.inventario:[]).filter(x=>x&&x.nome);
 const ownQ=k=>{const e=bag().find(x=>nk(x.nome)===k);return e?(parseInt(e.qtd)||1):0};
-let CUP=null,SORT='n';
+let CUP=null,SORT='n',VCH={};
 /* Discount Coupon (item da Bag): cada entrada tem `desconto` (%). Só um cupom por compra: o do item não acumula com cupom de código. */
 const dcNk=n=>nk(n)==='discountcoupon',dcPct=x=>{const n=parseInt(x&&x.desconto);return n>0&&n<=100?n:0};
 const cupItens=()=>{const s=new Set();for(const e of bag())if(dcNk(e.nome)&&dcPct(e))s.add(dcPct(e));return[...s].sort((a,b)=>b-a)};
 const cupLbl=()=>CUP.item?CUP.codigo:'Cupom '+CUP.codigo;
 function cupItem(pc){if(CUP||!cupItens().includes(pc))return;CUP={codigo:'Discount Coupon ('+pc+'% OFF)',tipo:'pct',valor:pc,item:true};toast('Discount Coupon aplicado');drawSum()}
+/* TM Voucher (item da Bag): avisa na aba de TMs que pode ser utilizado */
+const tmvQtd=()=>bag().reduce((n,e)=>n+(nk(e.nome)==='tmvoucher'?(parseInt(e.qtd)||1):0),0);
+const tmvBanner=()=>{const q=tmvQtd();return q?`<div class="pmcd" style="grid-column:1/-1"><span>Você possui <b>TM Voucher${q>1?' ×'+q:''}</b> e pode trocá-lo por qualquer TM: adicione o TM ao carrinho e aplique o voucher.</span></div>`:''};
+/* TM Voucher é CONSUMÍVEL: 1 voucher = 1 TM do carrinho de graça. VCH = {chave do TM: nº de vouchers aplicados} */
+const vchUsed=()=>Object.values(VCH).reduce((a,b)=>a+b,0);
+function vchFix(){let r=tmvQtd();for(const k of Object.keys(VCH)){const m=Math.min(VCH[k]||0,CB[k]||0,r);if(m>0&&isTM(ITM.get(k))){VCH[k]=m;r-=m}else delete VCH[k]}}
+function vchUse(k){vchFix();if(vchUsed()>=tmvQtd()||(VCH[k]||0)>=(CB[k]||0))return;VCH[k]=(VCH[k]||0)+1;toast('TM Voucher aplicado');drawSum()}
+function vchOff(k){if(VCH[k]>1)VCH[k]--;else delete VCH[k];drawSum()}
+const vchBox=()=>{vchFix();const T=tmvQtd();if(!T)return'';const tms=Object.entries(CB).filter(([k])=>isTM(ITM.get(k)));if(!tms.length)return'';
+ const ap=Object.entries(VCH).map(([k,u])=>{const it=ITM.get(k);return`<div class="pmcd"><span>TM Voucher aplicado em <b>${esc(it.name)}</b>${u>1?' ×'+u:''} (−${fm(+it.price*u)})</span><button type="button" class="btn s" onclick="vchOff('${esc(k)}')">Remover</button></div>`}).join('');
+ const ok=tms.filter(([k,q])=>q>(VCH[k]||0));
+ const of=T-vchUsed()>0&&ok.length?`<div class="pmcd"><span>Você possui <b>TM Voucher${T-vchUsed()>1?' ×'+(T-vchUsed()):''}</b>. Deseja trocá-lo por um TM do carrinho?</span>${ok.map(([k])=>`<button type="button" class="btn p s" onclick="vchUse('${esc(k)}')">${esc(ITM.get(k).name)}</button>`).join('')}</div>`:'';
+ return ap+of};
 const cupBanner=()=>{if(CUP)return'';const l=cupItens();return l.length?`<div class="pmcd"><span>Você possui ${l.length>1?'Discount Cupons com <b>'+l.map(x=>x+'%').join(' e ')+' off</b>':'um Discount Coupon com <b>'+l[0]+'% off</b>'}. Deseja aplicar?</span>${l.map(x=>`<button type="button" class="btn p s" onclick="cupItem(${x})">Aplicar ${x}%</button>`).join('')}</div>`:''};
 const cupDesc=c=>!CUP?0:CUP.tipo==='pct'?Math.floor(c*Math.min(100,CUP.valor)/100):Math.min(c,CUP.valor);
-function totais(){let c=0,v=0;
+function totais(){vchFix();let c=0,v=0,vd=0;
  for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(it&&q>0)c+=+it.price*q}
  for(const[k,q]of Object.entries(CS)){const it=ITM.get(k);if(it&&q>0)v+=sellUnit(it)*q}
- const d=cupDesc(c);return{c,d,v,fin:saldo()+v-(c-d)}}
+ for(const[k,u]of Object.entries(VCH)){const it=ITM.get(k);if(it)vd+=+it.price*u}
+ const d=cupDesc(c-vd);return{c,vd,d,v,fin:saldo()+v-(c-vd-d)}}
 
 /* telas */
 const msg=h=>`<div class="wrap"><div class="card lt">${h}</div></div>`;
@@ -521,7 +535,7 @@ async function boot(){
  const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q);
  if(hit)await pick(hit.slug);
  else if(FL.length===1)await pick(FL[0].slug);
- else{F=null;CB={};CS={};CUP=null;render();openQm()}
+ else{F=null;CB={};CS={};CUP=null;VCH={};render();openQm()}
  fim()}
 /* modal: quem está acessando a PokéMart (quando há mais de uma ficha ativa) */
 function openQm(){$('qq').value='';$('qq').style.display=FL.length>6?'':'none';drawQm();$('qmb').innerHTML='<button type="button" class="btn s" onclick="qm.close()">Cancelar</button>';if(!qm.open)qm.showModal()}
@@ -529,7 +543,7 @@ function drawQm(){const q=nrm($('qq').value),sv=F?.slug||localStorage.getItem('k
  $('qg').innerHTML=FL.filter(x=>!q||nrm((x.nome||'')+' '+(x.player||'')).includes(q)).map(x=>{const th=x.thumb||x.foto;return`<button type="button" class="qc${x.slug===sv?' on':''}" data-s="${esc(x.slug)}">${th?`<img src="${esc(th)}" alt="">`:`<span class="ph">${esc((x.nome||'?')[0])}</span>`}<b>${esc(x.nome)}</b><small>${esc(x.player||'')}</small></button>`}).join('')||'<div class="mu" style="grid-column:1/-1;text-align:center">Nenhuma ficha encontrada.</div>'}
 async function qmClick(e){const c=e.target.closest('.qc');if(!c)return;qm.close();$('app').innerHTML=msg('Carregando...');await pick(c.dataset.s)}
 async function pick(slug){
- CB={};CS={};CUP=null;
+ CB={};CS={};CUP=null;VCH={};
  try{const r=await lerFicha(slug);if(!r)throw new Error('Ficha não encontrada.');r.d=r.d||{};F=r;localStorage.setItem('kp_loja_ficha',slug);history.replaceState(null,'','?ficha='+encodeURIComponent(slug))}
  catch(e){$('app').innerHTML=msg('Erro: '+esc(e.message));return}
  render()}
@@ -573,10 +587,10 @@ function drawList(){
  const soTM=CAT==='TMs';$('lst').classList.toggle('tmg',soTM);
  rows.sort(SORT==='a'?(a,b)=>a.unit-b.unit:SORT==='d'?(a,b)=>b.unit-a.unit:(a,b)=>soTM?a.nome.localeCompare(b.nome,undefined,{numeric:true}):a.nome.localeCompare(b.nome));
  const C=TAB!=='s'?CB:CS;
- $('lst').innerHTML=rows.length?rows.map(r=>{const n=C[r.k]||0;
+ $('lst').innerHTML=(soTM&&TAB!=='s'?tmvBanner():'')+(rows.length?rows.map(r=>{const n=C[r.k]||0;
   if(soTM)return tmCard(r,n,C);
   return`<div class="pc${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="">`:''}</span><h3>${esc(r.nome)}</h3></div><span class="pcc">${esc(catOf(r))}</span><p>${esc(r.it?.item_desc||'')}</p><div class="pcf"><b class="lp">${TAB!=='s'?'':'+'}${fm(r.unit)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}).join('')
-  :`<div class="lt" style="grid-column:1/-1">${TAB==='b'?'Nenhum item à venda.':(!F?'Escolha uma ficha para ver a sua Bag.':Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`}
+  :`<div class="lt" style="grid-column:1/-1">${TAB==='b'?'Nenhum item à venda.':(!F?'Escolha uma ficha para ver a sua Bag.':Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`)}
 function chg(r,C,mxf,e){const k=r.dataset.k;let n=C[k]||0;
  if(e.type==='click'){const a=e.target.closest('button')?.dataset.a;if(!a)return;n+=a==='+'?1:-1}
  else if(e.type==='change'&&e.target.matches('input'))n=parseInt(e.target.value)||0;else return;
@@ -602,11 +616,11 @@ function drawSum(){
  const bl=Object.entries(CB).map(([k,q])=>ln(k,q,'b')).join(''),sl=Object.entries(CS).map(([k,q])=>ln(k,q,'s')).join('');
  $('pmc').innerHTML=`<div class="pmch"><span>Carrinho${un?` (${un})`:''}</span><button type="button" onclick="toggleCart(false)" aria-label="Fechar">✕</button></div>
  <div class="pmcb">${n?(bl?'<h4>Compras</h4>'+bl:'')+(sl?'<h4>Vendas</h4>'+sl:''):'<div class="lt">Seu carrinho está vazio.</div>'}</div>
- <div class="pmcf">${nb?cupBanner()+`<div class="pmcp"><input class="in" id="cpi" placeholder="Cupom de desconto" autocomplete="off" value="${CUP?esc(CUP.codigo):''}"${CUP?' disabled':''} onkeydown="if(event.key==='Enter')aplicaCupom()">${CUP?'<button type="button" class="btn s" onclick="tiraCupom()">Remover</button>':'<button type="button" class="btn s" onclick="aplicaCupom()">Aplicar</button>'}</div><div class="le2" id="cpe"></div>`:''}
- <div class="pmr"><span>Compras</span><b>${fm(t.c)}</b></div>${t.d?`<div class="pmr"><span>${esc(cupLbl())}</span><b class="pos">−${fm(t.d)}</b></div>`:''}<div class="pmr"><span>Vendas</span><b class="pos">+${fm(t.v)}</b></div><div class="pmr"><span>Saldo atual</span><b>${F?fm(saldo()):'—'}</b></div>
+ <div class="pmcf">${nb?vchBox()+cupBanner()+`<div class="pmcp"><input class="in" id="cpi" placeholder="Cupom de desconto" autocomplete="off" value="${CUP?esc(CUP.codigo):''}"${CUP?' disabled':''} onkeydown="if(event.key==='Enter')aplicaCupom()">${CUP?'<button type="button" class="btn s" onclick="tiraCupom()">Remover</button>':'<button type="button" class="btn s" onclick="aplicaCupom()">Aplicar</button>'}</div><div class="le2" id="cpe"></div>`:''}
+ <div class="pmr"><span>Compras</span><b>${fm(t.c)}</b></div>${t.vd?`<div class="pmr"><span>TM Voucher</span><b class="pos">−${fm(t.vd)}</b></div>`:''}${t.d?`<div class="pmr"><span>${esc(cupLbl())}</span><b class="pos">−${fm(t.d)}</b></div>`:''}<div class="pmr"><span>Vendas</span><b class="pos">+${fm(t.v)}</b></div><div class="pmr"><span>Saldo atual</span><b>${F?fm(saldo()):'—'}</b></div>
  <div class="pmr tot"><span>Saldo final</span><b class="${t.fin<0?'neg':''}">${t.fin<0?'−':''}${fm(t.fin)}</b></div>
  <div class="suma"><button type="button" class="btn s" onclick="limpa()"${n?'':' disabled'}>Limpar</button><button type="button" class="btn p" onclick="finaliza()"${!F||!n||t.fin<0||busy?' disabled':''}>Finalizar</button></div></div>`}
-function limpa(){CB={};CS={};CUP=null;drawList();drawSum()}
+function limpa(){CB={};CS={};CUP=null;VCH={};drawList();drawSum()}
 
 /* cupons */
 async function aplicaCupom(){const e=$('cpe'),c=$('cpi').value.trim().toUpperCase();if(!c)return;e.textContent='';
@@ -636,7 +650,7 @@ function confirmaTx(t){return new Promise(res=>{
  $('cfl').innerHTML=Object.entries(CB).map(([k,q])=>row('b',k,q)).join('')+Object.entries(CS).map(([k,q])=>row('s',k,q)).join('');
  $('cfp').textContent=F?.nome?'Ficha: '+F.nome:'';
  const r=(l,v,c='')=>`<div class="cfr ${c}"><span>${l}</span><b>${v}</b></div>`;
- $('cft').innerHTML=r('Saldo atual',fm(saldo()))+(t.c?r('Compras','−'+fm(t.c)):'')+(t.d&&CUP?r(esc(cupLbl()),'+'+fm(t.d)):'')+(t.v?r('Vendas','+'+fm(t.v)):'')+r('Saldo final',fm(t.fin),'fin');
+ $('cft').innerHTML=r('Saldo atual',fm(saldo()))+(t.c?r('Compras','−'+fm(t.c)):'')+(t.vd?r('TM Voucher','+'+fm(t.vd)):'')+(t.d&&CUP?r(esc(cupLbl()),'+'+fm(t.d)):'')+(t.v?r('Vendas','+'+fm(t.v)):'')+r('Saldo final',fm(t.fin),'fin');
  d.returnValue='';d.addEventListener('close',()=>res(d.returnValue==='ok'),{once:true});d.showModal()})}
 
 /* transação: relê a ficha, aplica compras/vendas e salva de uma vez */
@@ -657,6 +671,8 @@ async function finaliza(){
    if(cur-q>0)inv[i].qtd=cur-q;else inv.splice(i,1);ganho+=sellUnit(it)*q}
   for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(!isMart(it))throw new Error('Item indisponível na PokéMart: '+k);
    const i=inv.findIndex(x=>x&&nk(x.nome)===k);if(i>=0)inv[i].qtd=(parseInt(inv[i].qtd)||1)+q;else inv.push({nome:it.name,qtd:q,...bagOf(it)});gasto+=+it.price*q}
+  let vd=0,vn=0;for(const[k,u]of Object.entries(VCH)){const it=ITM.get(k),m=Math.min(u,CB[k]||0);if(it&&m>0){vd+=+it.price*m;vn+=m}}
+  if(vn>0){let r=vn;for(let i=0;i<inv.length&&r>0;i++){const x=inv[i];if(!x||nk(x.nome)!=='tmvoucher')continue;const q=parseInt(x.qtd)||1,m=Math.min(q,r);r-=m;if(q-m>0)x.qtd=q-m;else{inv.splice(i,1);i--}}if(r>0)throw new Error('O TM Voucher não está mais na Bag.');gasto-=vd}
   const dsc=cupDesc(gasto);gasto-=dsc;
   if(dsc>0&&CUP&&CUP.item){const i=inv.findIndex(x=>x&&dcNk(x.nome)&&dcPct(x)===CUP.valor);if(i<0)throw new Error('O Discount Coupon de '+CUP.valor+'% não está mais na Bag.');const q=parseInt(inv[i].qtd)||1;if(q>1)inv[i].qtd=q-1;else inv.splice(i,1)}
   if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente (o dinheiro da ficha mudou).');
@@ -664,7 +680,7 @@ async function finaliza(){
   const j=await salvarFicha({slug:fr.slug,nome:fr.nome,foto:fr.foto,banner:fr.banner,thumb:fr.thumb,player_id:fr.player_id,d:fr.d});
   if(j){fr.foto=j.foto;fr.banner=j.banner;fr.thumb=j.thumb;fr.atualizado_em=j.atualizado_em}
   if(dsc>0&&CUP&&!CUP.item)try{await irpc('pokemart_cupom_usar',{p_codigo:CUP.codigo})}catch{}
-  F=fr;CB={};CS={};CUP=null;busy=false;toast('Transação concluída');toggleCart(false);render()
+  F=fr;CB={};CS={};CUP=null;VCH={};busy=false;toast('Transação concluída');toggleCart(false);render()
  }catch(e){busy=false;alert(e.message);try{await pick(F.slug)}catch{}}}
 
 function pmSc(){const h=document.querySelector('.pmh');if(!h)return;const y=scrollY;if(y>90)h.classList.add('sm');else if(y<15)h.classList.remove('sm')}
