@@ -766,6 +766,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
         <button class="btn btn-outline btn-sm" id="it-berry-btn" style="display:none" onclick="migrarBerryParaForage()" title="Troca a categoria Berry por Forage em todos os itens que ainda estão com Berry">🔁 Berry → Forage</button>
         <button class="btn btn-outline btn-sm" id="it-alpha-evt-btn" onclick="alphaItemsParaEvento()" title="Marca como Evento (flag + prefixo EVENTO na descrição) todos os itens da categoria Alpha Items">⭐ Alpha → Evento</button>
+        <button class="btn btn-outline btn-sm" id="it-megadesc-btn" onclick="atualizarDescMegaStones()" title="Troca a frase padrão da descrição das Mega Stones por uma nova, em todos os itens que a contêm (mantém o resto do texto, ex.: EVENTO.).">📝 Descrição Mega Stones</button>
         <button class="btn btn-outline btn-sm" id="it-empod-btn" onclick="importarEmpoderadoresAgora()" title="Cria os 20 itens empoderadores (Hold Items que aumentam em 20% o poder de movimentos de um tipo). Itens que já existem são ignorados.">💎 Itens Empoderadores</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
@@ -2649,6 +2650,50 @@ async function importarTMsAgora() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
+}
+
+/* ══════════════════════════════════════════
+   TROCAR TEXTO NA DESCRIÇÃO DE VÁRIOS ITENS
+   Procura a frase em item_desc de TODOS os itens (ignora maiúsculas e
+   diferenças de espaço) e troca só ela, mantendo o resto do texto
+   (prefixos como "EVENTO." e frases extras). Para trocar outro texto no
+   futuro, é só ajustar as duas constantes abaixo.
+══════════════════════════════════════════ */
+const MEGA_DESC_ANTIGA = 'Se determinado Pokémon a segurar, esta pedra permitirá que o mesmo Mega Evolua.';
+const MEGA_DESC_NOVA = 'Quando segurada por determinado Pokémon, esta pedra permite que ele Mega Evolua.';
+
+async function substituirTextoDescricoes(velho, novo, btnId) {
+  const esc = velho.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const re = new RegExp(esc, 'i');
+  const alvos = S.it.all.filter(i => re.test(String(i.item_desc || '')));
+  if (!alvos.length) { toast('Nenhuma descrição contém essa frase (ou já foi atualizada).', 'ok'); return; }
+  if (!confirm(`Trocar a frase na descrição de ${alvos.length} item(ns)?\n\nDe: ${velho}\nPara: ${novo}\n\n` + alvos.slice(0, 30).map(i => '• ' + i.name).join('\n') + (alvos.length > 30 ? `\n… e mais ${alvos.length - 30}` : ''))) return;
+  const btn = btnId ? document.getElementById(btnId) : null;
+  const orig = btn?.innerHTML;
+  if (btn) btn.disabled = true;
+  let ok = 0;
+  const falhas = [];
+  try {
+    for (const it of alvos) {
+      if (btn) btn.innerHTML = `⏳ ${ok}/${alvos.length}…`;
+      try {
+        const row = { ...it, item_desc: String(it.item_desc).replace(re, () => novo), updated_at: new Date().toISOString() };
+        await sbUpsert('items', row);
+        S.it.dbMap[it.name] = row;
+        const idx = S.it.all.findIndex(x => x.name === it.name); if (idx >= 0) S.it.all[idx] = row;
+        ok++;
+      } catch (e) { console.warn('trocar texto falhou:', it.name, e); falhas.push(it.name); }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+  closeItemDetail();
+  applyItFilter();
+  toast(`📝 ${ok} descrição(ões) atualizada(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + ' Lembre de clicar em "Commitar items.json".', falhas.length ? 'err' : 'ok');
+}
+
+function atualizarDescMegaStones() {
+  return substituirTextoDescricoes(MEGA_DESC_ANTIGA, MEGA_DESC_NOVA, 'it-megadesc-btn');
 }
 
 /* ══════════════════════════════════════════
