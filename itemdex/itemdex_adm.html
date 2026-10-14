@@ -681,7 +681,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;margin-top:6px">
           <input type="checkbox" id="nit-bulk-samedesc" checked style="margin:0"> Mesma descrição para todos <span style="font-weight:400;color:var(--muted)">(usa o campo Descrição abaixo; desmarque para dar uma descrição por linha)</span>
         </label>
-        <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Categoria e flags (Consumível, Evento, PokéMart/preço, Conquista) valem para todos. Com "Mesma descrição" desmarcado, use <b>Nome | descrição</b> em cada linha; linhas sem descrição usam o campo Descrição. O ícone de cada um é buscado pelo nome em sprites/items do GitHub (se não achar, fica sem ícone — depois use 🖼️ Atualizar imagens do GitHub). Pickup não vale no modo em lote.</p>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Categoria e flags (Consumível, Evento, PokéMart/preço, Conquista) valem para todos. Com "Mesma descrição" desmarcado, use <b>Nome | descrição</b> em cada linha; linhas sem descrição usam o campo Descrição. O ícone de cada um é buscado pelo nome em sprites/items do GitHub (se não achar, fica sem ícone — depois use 🖼️ IMGs GIT). Pickup não vale no modo em lote.</p>
       </div>
       <div>
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
@@ -761,13 +761,11 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
         <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
-        <button class="btn btn-outline btn-sm" id="it-tm-btn" onclick="importarTMsAgora()" title="Cadastra de uma vez as 231 TMs (TM001–TM231) na categoria TM, com preço 5000 e Pokémart ativo. TMs que já existem são ignoradas.">💿 Importar TMs</button>
-        <button class="btn btn-outline btn-sm" id="it-tmspr-btn" onclick="aplicarSpritesTMsPorTipo()" title="Lê o movedex/moves.json no GitHub, descobre o tipo do movimento de cada TM e troca o sprite pelo de sprites/items/tms/tm-<tipo>.png">🎨 Sprites das TMs por tipo</button>
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
-        <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ Atualizar imagens do GitHub</button>
-        <button class="btn btn-outline btn-sm" id="it-caps-btn" style="display:none" onclick="padronizarNomesItens()" title="Padroniza nomes como GREEN APRICORN ou Green apricorn para Green Apricorn (nomes com -type não são alterados)">Aa Padronizar nomes</button>
+        <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
         <button class="btn btn-outline btn-sm" id="it-berry-btn" style="display:none" onclick="migrarBerryParaForage()" title="Troca a categoria Berry por Forage em todos os itens que ainda estão com Berry">🔁 Berry → Forage</button>
+        <button class="btn btn-outline btn-sm" id="it-alpha-evt-btn" onclick="alphaItemsParaEvento()" title="Marca como Evento (flag + prefixo EVENTO na descrição) todos os itens da categoria Alpha Items">⭐ Alpha → Evento</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1244,7 +1242,6 @@ function populateItemCategoryFilter() {
   // ainda esteja salvo em itens antigos.
   const dbCats = [...new Set(S.it.all.map(i => i.category).filter(Boolean))];
   const cats = [...new Set([...ITEM_CATEGORIES, ...dbCats])];
-  { const cb = document.getElementById('it-caps-btn'); if (cb) { const n = S.it.all.filter(i => i.name && titleCap(i.name) !== i.name).length; cb.style.display = n ? '' : 'none'; cb.textContent = `Aa Padronizar nomes (${n})`; } }
   { const mb = document.getElementById('it-berry-btn'); if (mb) { const n = S.it.all.filter(i => String(i.category || '').toLowerCase() === 'berry').length; mb.style.display = n ? '' : 'none'; mb.textContent = `🔁 Berry → Forage (${n})`; } }
   const sel = document.getElementById('it-f-cat');
   const cur = sel.value;
@@ -2543,6 +2540,38 @@ async function padronizarNomesItens() {
   toast(`${ok}/${ok_.length} nome(s) padronizado(s).` + (ok < ok_.length ? ' Alguns falharam — veja o console.' : ' Lembre de commitar o items.json.'), ok === ok_.length ? 'ok' : 'err');
 }
 
+async function alphaItemsParaEvento() {
+  const lista = S.it.all.filter(i => String(i.category || '').trim().toLowerCase() === 'alpha items');
+  if (!lista.length) { toast('Nenhum item na categoria Alpha Items.', 'ok'); return; }
+  const pendentes = lista.filter(i => !i.flags?.evento?.enabled || !descStartsWithEvento(i.item_desc));
+  if (!pendentes.length) { toast(`Os ${lista.length} itens de Alpha Items já são de evento.`, 'ok'); return; }
+  if (!confirm(`Marcar ${pendentes.length} item(ns) de Alpha Items como Evento?\n\nIsso liga a flag Evento e insere "EVENTO." no início da descrição.`)) return;
+  const btn = document.getElementById('it-alpha-evt-btn');
+  const orig = btn?.innerHTML;
+  if (btn) btn.disabled = true;
+  let ok = 0;
+  try {
+    for (const it of pendentes) {
+      if (btn) btn.innerHTML = `⏳ ${ok}/${pendentes.length}…`;
+      try {
+        const cur = it.item_desc || '';
+        const desc = descStartsWithEvento(cur) ? cur : (cur ? `EVENTO. ${cur}` : 'EVENTO.');
+        const flags = { ...(it.flags || {}), evento: { ...(it.flags?.evento || {}), enabled: true } };
+        const row = { ...it, item_desc: desc, flags, updated_at: new Date().toISOString() };
+        await sbUpsert('items', row);
+        S.it.dbMap[it.name] = row;
+        const idx = S.it.all.findIndex(x => x.name === it.name); if (idx >= 0) S.it.all[idx] = row;
+        ok++;
+      } catch (e) { console.warn('alpha → evento falhou:', it.name, e); }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+  closeItemDetail();
+  applyItFilter();
+  toast(`${ok}/${pendentes.length} item(ns) de Alpha Items marcados como Evento.` + (ok < pendentes.length ? ' Alguns falharam — veja o console.' : ' Lembre de commitar o items.json.'), ok === pendentes.length ? 'ok' : 'err');
+}
+
 async function migrarBerryParaForage() {
   const lista = S.it.all.filter(i => String(i.category || '').toLowerCase() === 'berry');
   if (!lista.length) { toast('Nenhum item com categoria Berry.', 'ok'); return; }
@@ -2655,7 +2684,7 @@ async function aplicarSpritesTMsPorTipo() {
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lendo moves.json…'; }
   try {
     const tms = S.it.all.filter(it => it.category === 'TM' || /^TM\s?\d+/i.test(it.name || ''));
-    if (!tms.length) { toast('Nenhuma TM cadastrada. Use "Importar TMs" primeiro.', 'err'); return; }
+    if (!tms.length) { toast('Nenhuma TM cadastrada.', 'err'); return; }
 
     const moves = await carregarMovesJson();
     const slug = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
