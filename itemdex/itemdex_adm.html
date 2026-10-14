@@ -766,6 +766,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
         <button class="btn btn-outline btn-sm" id="it-berry-btn" style="display:none" onclick="migrarBerryParaForage()" title="Troca a categoria Berry por Forage em todos os itens que ainda estão com Berry">🔁 Berry → Forage</button>
         <button class="btn btn-outline btn-sm" id="it-alpha-evt-btn" onclick="alphaItemsParaEvento()" title="Marca como Evento (flag + prefixo EVENTO na descrição) todos os itens da categoria Alpha Items">⭐ Alpha → Evento</button>
+        <button class="btn btn-outline btn-sm" id="it-empod-btn" onclick="importarEmpoderadoresAgora()" title="Cria os 20 itens empoderadores (Hold Items que aumentam em 20% o poder de movimentos de um tipo). Itens que já existem são ignorados.">💎 Itens Empoderadores</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -2645,6 +2646,83 @@ async function importarTMsAgora() {
     populateItemCategoryFilter();
     applyItFilter();
     toast(`💿 ${salvas} TM(s) importada(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + ' Lembre de clicar em "Commitar items.json".', falhas.length ? 'err' : 'ok');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
+}
+
+/* ══════════════════════════════════════════
+   IMPORTAR ITENS EMPODERADORES — upload em lote
+   Hold Items que aumentam em 20% o poder de movimentos de um tipo.
+   Itens que já existem no banco são ignorados (comparação sem diferenciar
+   maiúsculas), então rodar de novo é seguro e não sobrescreve edições.
+   O sprite é procurado em sprites/items no GitHub; se não achar, tenta o
+   ícone oficial na PokeAPI e commita no GitHub (se o commit falhar, usa o
+   Supabase Storage); se também não achar, o item é criado sem sprite.
+══════════════════════════════════════════ */
+const EMPODERADORES_IMPORT = [
+  ["Silver Powder", "Bug"], ["Black Glasses", "Dark"], ["Dragon Fang", "Dragon"],
+  ["Magnet", "Electric"], ["Fairy Feather", "Fairy"], ["Black Belt", "Fight"],
+  ["Charcoal", "Fire"], ["Sharp Beak", "Flying"], ["Spell Tag", "Ghost"],
+  ["Miracle Seed", "Grass"], ["Soft Sand", "Ground"], ["Never-Melt Ice", "Ice"],
+  ["Silk Scarf", "Normal"], ["Poison Barb", "Poison"], ["Twisted Spoon", "Psychic"],
+  ["Hard Stone", "Rock"], ["Metal Coat", "Steel"], ["Mystic Water", "Water"],
+  ["Prism Shard", "Light"], ["Fragrant Petal", "Scent"],
+];
+const EMPODERADOR_DESC = tipo => `Um item para ser entregue a um pokémon. É um item que aumenta o poder de movimentos ${tipo}-type em 20%.`;
+
+// Plano B do sprite: ícone oficial do item na PokeAPI (/item/{slug}) → commit no
+// GitHub (sprites/items/hold-items), igual ao fluxo manual; se o commit falhar,
+// cai no Supabase Storage. Devolve {sprite, github} ou lança erro se não existir.
+async function spriteEmpoderadorPokeapi(name) {
+  const slug = toSlugBase(name);
+  if (!slug) throw new Error('slug vazio');
+  const res = await fetch(`https://pokeapi.co/api/v2/item/${slug}`);
+  if (!res.ok) throw new Error(res.status === 404 ? `"${slug}" não existe na PokeAPI` : `PokeAPI erro ${res.status}`);
+  const spriteUrl = (await res.json()).sprites?.default;
+  if (!spriteUrl) throw new Error(`"${slug}" não tem ícone na PokeAPI`);
+  const imgRes = await fetch(spriteUrl);
+  if (!imgRes.ok) throw new Error('não consegui baixar o ícone da PokeAPI');
+  let out = await blobToDataURL(await imgRes.blob());
+  try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+  return await uploadItemImage(out, slug, 'Hold Items', null);
+}
+
+async function importarEmpoderadoresAgora() {
+  const btn = document.getElementById('it-empod-btn');
+  const origLabel = btn?.innerHTML;
+  const existentes = new Set(Object.keys(S.it.dbMap).map(n => n.toLowerCase()));
+  const novos = EMPODERADORES_IMPORT.filter(([n]) => !existentes.has(n.toLowerCase()));
+  const jaExistem = EMPODERADORES_IMPORT.length - novos.length;
+  if (!novos.length) { toast(`Os ${EMPODERADORES_IMPORT.length} itens empoderadores já estão no banco.`, 'ok'); return; }
+  if (!confirm(`Importar ${novos.length} item(ns) empoderador(es) de ${EMPODERADORES_IMPORT.length}?\n\n• Categoria: Hold Items\n• Descrição: aumenta em 20% o poder de movimentos do tipo do item\n• Sprite: procurado no GitHub (sprites/items) e, se não achar, na PokeAPI\n\n` + novos.map(([n, t]) => `• ${n} (${t})`).join('\n') + (jaExistem ? `\n\n${jaExistem} já existem e serão ignorados.` : ''))) return;
+  if (btn) btn.disabled = true;
+  const flags = mergeItemFlags(null, false, false, false, false, [], false, 'insignia');
+  const salvos = [], falhas = [], semIcone = [], doPokeapi = [], soStorage = [];
+  try {
+    for (let n = 0; n < novos.length; n++) {
+      const [name, tipo] = novos[n];
+      if (btn) btn.innerHTML = `⏳ ${n + 1}/${novos.length}…`;
+      let sprite = null;
+      try { sprite = (await acharSpriteGithub([name], null, 'Hold Items', false)).sprite; }
+      catch (e) {
+        try { const r = await spriteEmpoderadorPokeapi(name); sprite = r.sprite; doPokeapi.push(name); if (!r.github) soStorage.push(name); }
+        catch (e2) { semIcone.push(name); }
+      }
+      const row = { name, category: 'Hold Items', item_desc: EMPODERADOR_DESC(tipo), sprite, flags, price: null, updated_at: new Date().toISOString() };
+      try {
+        await sbUpsert('items', row);
+        S.it.dbMap[name] = row; S.it.all.push(row); salvos.push(name);
+      } catch (e) {
+        console.error('[importarEmpoderadores] falhou:', name, e);
+        falhas.push(name);
+      }
+    }
+    S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    S.it.sizeFamilies = null;
+    populateItemCategoryFilter();
+    applyItFilter();
+    toast(`💎 ${salvos.length} item(ns) empoderador(es) importado(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + (doPokeapi.length ? ` Ícone da PokeAPI: ${doPokeapi.join(', ')}.` : '') + (soStorage.length ? ` Commit no GitHub falhou (ficou só no Supabase): ${soStorage.join(', ')}.` : '') + (semIcone.length ? ` Sem ícone (GitHub e PokeAPI): ${semIcone.join(', ')}.` : '') + ' Lembre de clicar em "Commitar items.json".', falhas.length ? 'err' : 'ok');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
