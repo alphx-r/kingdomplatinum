@@ -551,8 +551,8 @@ dialog#kcr{width:min(440px,94vw);padding:14px 14px 12px;text-align:left}
 .al-b .al-h{background:var(--pri);color:var(--on-pri,#fff);padding:7px 12px;margin:0;text-align:center;font:700 13px var(--ft);letter-spacing:.9px;text-transform:uppercase}
 .al-b .al-h i{font-style:italic;font-weight:700}
 .al-b .inv{grid-template-columns:minmax(0,1fr);gap:2px;padding:6px 8px 8px}
-@media(max-width:700px){.al{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:480px){.al{grid-template-columns:minmax(0,1fr)}}
+.al-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+@media(max-width:700px){.al{grid-template-columns:minmax(0,1fr)}.al-col{display:contents}}
 .inv-tabs{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:10px 12px 4px}.inv-tabs button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bd);background:var(--sf);color:var(--tx);border-radius:999px;padding:5px 11px 5px 6px;font:800 12px var(--fb);cursor:pointer}.inv-tabs button i{font-style:normal;font-weight:700;opacity:.6}.inv-tabs button.on{background:var(--pri);border-color:transparent;color:var(--on-pri,#fff)}.inv-tabs button.on i{opacity:.85}
 .inv-tabs .it-i{width:20px;height:20px;padding:3px;border-radius:50%;background:var(--pri);display:inline-flex;flex:none}.inv-tabs button.on .it-i{background:rgba(255,255,255,.2)}.inv-tabs .it-i img{display:block;width:100%;height:100%;object-fit:contain}
 .inv-bg .dcw{display:inline-flex;align-items:center;gap:4px;margin-left:auto;font:700 11px var(--font-body)}.inv-bg .dcw .in{width:52px;height:24px;margin:0;padding:2px 6px;font-size:12px}
@@ -828,11 +828,12 @@ const ALFA_IC='<svg class="fsi" viewBox="0 0 24 24" aria-hidden="true"><path d="
 async function alfaAdd(n){const it=(await ITL()).get(nk(n)),a=f.d.inventario=f.d.inventario||[],e=a.find(x=>x&&nk(x.nome)===nk(n)&&bg(x)==='alpha');if(e)e.qtd=(parseInt(e.qtd)||1)+1;else a.push({nome:n,qtd:1,bag:'alpha',kind:alfaKind((it?.category||'')+' '+n,n)});invm.close();render();toast('Item adicionado')}
 const alfaHtml=()=>{const A=bagItems('alpha'),used=new Set(),kd=x=>x.kind||alfaKind(x.nome,x.nome),
  row=x=>`<div class="inv-c inv-v" data-it="${esc(x.nome)}" data-fm="${esc(x.forma||'')}"><div class="inv-h"><img class="inv-i" alt="" style="display:none"><div class="inv-t"><span class="inv-n">${esc(invNm(x))}</span>${vnc(x)} <i>x${esc(x.qtd)||1}</i></div></div><div class="inv-d">${esc(x.desc)}</div></div>`,
- ph=l=>`<div class="al-c"><span class="al-ph"></span><div class="al-t"><span class="al-l">${esc(l)}</span></div></div>`,
- grp=g=>{const it=A.filter(x=>!used.has(x)&&kd(x)===g.kind&&(!g.stat||keyStat(x.nome)===g.stat));it.forEach(x=>used.add(x));return it.map(row).join('')+Array.from({length:Math.max(0,(g.min||0)-it.length)},()=>ph(g.label)).join('')},
+ grp=g=>{const it=A.filter(x=>!used.has(x)&&kd(x)===g.kind&&(!g.stat||keyStat(x.nome)===g.stat));it.forEach(x=>used.add(x));return it.map(row).join('')},
  box=(h,l)=>`<div class="al-b"><div class="al-h">${h}</div><div class="inv">${l}</div></div>`,
- bx=ALFA.map(b=>box(`${b.a}<i>${b.b}</i>`,b.g.map(grp).join(''))).join(''),rest=A.filter(x=>!used.has(x));
- return`<div class="al">${bx}${rest.length?box('OUTROS',rest.map(row).join('')):''}</div>`};
+ bx=ALFA.map(b=>box(`${b.a}<i>${b.b}</i>`,b.g.map(grp).join(''))),rest=A.filter(x=>!used.has(x)),
+ cols=[[0,3],[1,4],[2,5]].map(c=>c.map(i=>bx[i]).join(''));
+ if(rest.length)cols[2]+=box('OUTROS',rest.map(row).join(''));
+ return`<div class="al">${cols.map(c=>`<div class="al-col">${c}</div>`).join('')}</div>`};
 /* reordenar itens da Bag: arrastar o cabeçalho do item; o item é inserido na nova posição e os demais deslocam */
 let bgDrag=-1;
 function bgMv(i,j){const a=f?.d?.inventario;if(!a||i===j||!(i>=0&&i<a.length)||!(j>=0&&j<a.length))return;const tb=bg(a[j]||{}),t=a.splice(i,1)[0];if(t&&t.nome)t.bag=tb;a.splice(j,0,t);render();toast('Bag reordenada')}
