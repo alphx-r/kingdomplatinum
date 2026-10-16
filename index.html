@@ -10830,12 +10830,95 @@ async function provasDeValorDoPersonagem(nome, forcar){
   return v;
 }
 
-// Sorteia o nível de cada Pokémon entre 1 e o máximo do personagem. Nunca lança erro.
+/* ══════════════════════════════════════════
+   ██ EVOLUÇÃO POR NÍVEL NA ROLAGEM
+   Depois de sortear o nível, consulta a cadeia evolutiva do Pokémon
+   (campo `evolucoes` do pokemon.json / tabela "pokemons" — o mesmo dado que o
+   PK já carrega; quando o Supabase cai, é literalmente o pokemon.json) e, se o
+   nível sorteado já alcança o nível de evolução, a rolagem sai JÁ EVOLUÍDA.
+   Regras:
+   • só evolução por nível conta: "Lv 16", "lvl 16" ou só "16". Pedra, troca,
+     amizade, item, "Level up" (sem número) etc. NÃO evoluem na rolagem;
+   • evolui em cadeia o quanto o nível permitir (Charmander Lv 40 → Charizard);
+   • se mais de uma evolução por nível estiver liberada, sorteia entre elas;
+   • não depende do ranking do personagem (isso só filtra quem entra no pool);
+   • Pokémon forçados pelo ADM (pk._forcado) e formas alternativas ficam como estão.
+══════════════════════════════════════════ */
+// "Lv 16" | "lvl 16" | "Level 16" | "16" → 16; qualquer outra coisa → null
+function pkNivelDeEvolucao(method){
+  const m = String(method==null?'':method).trim().match(/^(?:lv|lvl|level)?\s*\.?\s*(\d+)$/i);
+  return m ? parseInt(m[1],10) : null;
+}
+// Dado o Pokémon sorteado (registro do pokemonDB) e o nível, devolve o registro
+// do pokemonDB da forma final que esse nível já permite, ou null se não evolui.
+function pkEvoluidoPorNivel(base, nivel){
+  const chain = base && base.evolucoes;
+  if(!Array.isArray(chain) || chain.length<2 || !(nivel>=1)) return null;
+  let idx = chain.findIndex(e=>String(e.id)===String(base.id));
+  if(idx===-1) return null;
+  let atual = base;
+  const visitados = new Set([String(base.id)]);
+  for(let passo=0; passo<6; passo++){
+    // filhos diretos do estágio atual (ponteiro "from" é 1-based)
+    const candidatos = [];
+    chain.forEach((e,i)=>{
+      if(e.from!==idx+1) return;
+      const req = pkNivelDeEvolucao(e.method);
+      if(req===null || req>nivel) return;
+      const eid = String(e.id==null?'':e.id);
+      if(!eid || visitados.has(eid)) return;
+      const reg = pokemonDB.find(p=>String(p.id)===eid);
+      if(reg) candidatos.push({i, reg});
+    });
+    if(!candidatos.length) break;
+    const esc = candidatos[Math.floor(Math.random()*candidatos.length)];
+    atual = esc.reg; idx = esc.i; visitados.add(String(esc.reg.id));
+  }
+  return atual===base ? null : atual;
+}
+// Gênero do evoluído: só troca se a espécie nova exigir (fixo ou sem gênero)
+function pkGeneroDoEvoluido(pk, genero){
+  const g = String(genero==null?'':genero);
+  if(g==='genderless') return rollGender('genderless');
+  if(g==='macho' || g==='100,0') return rollGender('macho');
+  if(g==='femea' || g==='0,100') return rollGender('femea');
+  if(pk.genderS==='\u263c') return rollGender(g); // base sem gênero → evoluído tem
+  return null; // mantém o gênero já sorteado
+}
+// Troca, no card sorteado, a espécie pela forma evoluída (mantém nível, natureza,
+// shiny, raridade, condição de captura e honey; troca sprite/tipos/habilidade).
+function pkAplicarEvolucaoPorNivel(pk){
+  try{
+    if(!pk || pk.nome==='???' || pk._forcado || pk.nivel==null) return false;
+    const base = pokemonDB.find(p=>(p.name||p.nome)===pk.nome);
+    if(!base) return false; // forma alternativa / fakemon fora do DB: não mexe
+    const ev = pkEvoluidoPorNivel(base, pk.nivel);
+    if(!ev) return false;
+    pk.nome = ev.name||ev.nome;
+    pk.tipos = [ev.tipo1, ev.tipo2].filter(Boolean);
+    pk.emoji = ev.emoji||pk.emoji||'❓';
+    pk.sprite = ev.sprite||null;
+    pk.sprite_shiny = ev.sprite_shiny||null;
+    pk.habilidade = rollAbility(ev.habilidade1, ev.habilidade2);
+    const g = pkGeneroDoEvoluido(pk, ev.genero);
+    if(g){ pk.genderS = g.s; pk.genderC = g.c; }
+    return true;
+  }catch(e){ console.warn('[evolucao-por-nivel]', e); return false; }
+}
+
+// Sorteia o nível de cada Pokémon entre 1 e o máximo do personagem e, se o nível
+// já alcança a evolução por nível da espécie, devolve o Pokémon já evoluído.
+// Nunca lança erro.
 async function aplicarNiveisAosPokes(pokes, personagem){
   try{
     const v = await provasDeValorDoPersonagem(personagem);
     const max = v ? v.nivelMax : NIVEL_BASE_MAX;
-    (pokes||[]).forEach(pk=>{ if(pk && pk.nome!=='???') pk.nivel = NIVEL_MIN + Math.floor(Math.random()*(max-NIVEL_MIN+1)); });
+    (pokes||[]).forEach(pk=>{
+      if(pk && pk.nome!=='???'){
+        pk.nivel = NIVEL_MIN + Math.floor(Math.random()*(max-NIVEL_MIN+1));
+        pkAplicarEvolucaoPorNivel(pk);
+      }
+    });
     return v;
   }catch(e){ console.warn('[niveis]', e); return null; }
 }
@@ -11084,7 +11167,8 @@ async function locEncRolar() {
           genderS: customGender.s, genderC: customGender.c,
           nature: frcEntry.nature || rollNature(),
           isShiny: locEncRollShiny(),
-          isHoney: honeyMarcado && i >= nEncontrarBase
+          isHoney: honeyMarcado && i >= nEncontrarBase,
+          _forcado: true
         });
         continue;
       }
@@ -11459,7 +11543,7 @@ async function rolarEncontro(){
           const customTipos     = frcEntry.tipos      || [pkData.tipo1,pkData.tipo2].filter(Boolean);
           const customGender = frcEntry.gender ? rollGender(frcEntry.gender) : gender;
           const customNature = frcEntry.nature || rollNature();
-          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:customNature,isShiny:rollShiny(),isHoney:honeyAtivoNestaRolagem&&i>=nEncontrarBase});
+          pokes.push({nome:customNome,tipos:customTipos,emoji:pkData.emoji||'❓',sprite:customSprite||null,habilidade:customHab,rarity:customRaridade,genderS:customGender.s,genderC:customGender.c,nature:customNature,isShiny:rollShiny(),isHoney:honeyAtivoNestaRolagem&&i>=nEncontrarBase,_forcado:true});
           continue;
         }
       }
