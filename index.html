@@ -2451,6 +2451,11 @@ function calcSyncSelects(){
   const NIVEL_MULT_MIN = 0.25; // trava inferior do multiplicador
   const NIVEL_MULT_MAX = 2.0;  // trava superior do multiplicador (teto ×2,0)
 
+  // Stats por nível: os campos Atk/Def/Sp.Atk/Sp.Def guardam o valor do Lv 100 (máximo sem intensificadores).
+  // Para níveis menores o valor efetivo = base × multStat(nível). Todo nível conta (curva contínua).
+  const STAT_MULT_LV1   = 0.20; // multiplicador no Lv 1 (no Lv 100 é sempre ×1,00)
+  const STAT_MULT_CURVA = 1;    // 1 = linear (≈ +0,81% por nível) · >1 = cresce mais no fim · <1 = cresce mais no início
+
   // Slots de golpe: 1–8 = golpes do Pokémon (padrão do RPG) · 9 = golpe extra liberado pela Pokébola.
   const SLOTS = [1,2,3,4,5,6,7,8,9];
   const SLOT_BOLA = 9;
@@ -2473,6 +2478,15 @@ function calcSyncSelects(){
     const fd = fatorNivel(Ld == null ? NIVEL_REF : Ld);
     return clamp(Math.pow(fa/fd, NIVEL_EXPOENTE), NIVEL_MULT_MIN, NIVEL_MULT_MAX);
   }
+
+  // Multiplicador de Atk/Def/Sp.Atk/Sp.Def por nível. Nível vazio = Lv 100 (×1,00).
+  function multStat(L){
+    if(L == null) return 1;
+    const t = clamp((L - 1) / 99, 0, 1);
+    return STAT_MULT_LV1 + (1 - STAT_MULT_LV1) * Math.pow(t, STAT_MULT_CURVA);
+  }
+  // arredonda para baixo (+1e-9 evita 35,9999… quando o valor digitado volta ao mesmo número)
+  const statEf = (v, L) => v == null ? null : Math.max(1, Math.floor(v * multStat(L) + 1e-9));
 
   // Tabela de tipos (atacante → defensor). Pares ausentes = ×1.
   // Tipos fora desta tabela (light, scent…) viram "ajuste manual".
@@ -2538,6 +2552,12 @@ function calcSyncSelects(){
     const c = x => !!g(x)?.checked;
     const L = parseInt(g('nivel')?.value);
     const e = x => parseInt(g(x)?.value) || 0;
+    // Atk/Def/Sp.Atk/Sp.Def: o campo mostra o valor do nível atual; o valor-base (Lv 100) fica em data-base.
+    const b = x => {
+      const el = g(x); if(!el) return null;
+      const d = parseFloat(el.dataset.base); if(Number.isFinite(d)) return d;
+      const v = parseFloat(el.value); return Number.isFinite(v) ? v / multStat(Number.isFinite(L) && L >= 1 ? Math.min(L,100) : null) : null;
+    };
     const golpes = SLOTS.map(i => ({
       i, nome: (g('m'+i+'-nome')?.value || '').trim(), tipo: g('m'+i+'-tipo')?.value || '',
       cat: g('m'+i+'-cat')?.value || 'fis', poder: n('m'+i+'-poder'), sem: c('m'+i+'-sem'), crit: c('m'+i+'-crit'),
@@ -2547,8 +2567,8 @@ function calcSyncSelects(){
       s, bola: g('bola')?.value || '', nome: (g('nome')?.value || '').trim(),
       nivel: (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null,
       tipos: [g('t1')?.value, g('t2')?.value].filter(Boolean),
-      hp: n('hp'), hpAtual: n('hpatual'), atk: n('atk'), def: n('def'), spa: n('spa'), spd: n('spd'),
-      st: {atk: e('eatk'), def: e('edef'), spa: e('espa'), spd: e('espd')},
+      hp: n('hp'), hpAtual: n('hpatual'), atk: b('atk'), def: b('def'), spa: b('spa'), spd: b('spd'), spe: b('spe'),
+      st: {atk: e('eatk'), def: e('edef'), spa: e('espa'), spd: e('espd'), spe: e('espe')},
       mega: c('mega'), dyn: c('dyn'), adapt: c('adapt'),
       tera: {on: c('tera'), tipo: g('teratipo')?.value || ''},
       golpes, ativo: parseInt(document.querySelector('input[name="cpk-'+s+'-ativo"]:checked')?.value) || 1
@@ -2593,8 +2613,9 @@ function calcSyncSelects(){
       }
     }
     // Diferença de Base Stats
-    r.a = cat === 'esp' ? A.spa : A.atk;
-    r.d = cat === 'esp' ? D.spd : D.def;
+    // (valores do campo = Lv 100; aqui entram já ajustados ao nível de cada lado)
+    r.a = statEf(cat === 'esp' ? A.spa : A.atk, A.nivel);
+    r.d = statEf(cat === 'esp' ? D.spd : D.def, D.nivel);
     r.ts = (r.a != null && r.d != null) ? tierStats(r.a, r.d) : null;
     // Estágios (Mega = +1 em todos)
     const ka = cat === 'esp' ? 'spa' : 'atk', kd = cat === 'esp' ? 'spd' : 'def';
@@ -2668,6 +2689,20 @@ function calcSyncSelects(){
     _principal = r;
     renderResumo(r);
   };
+  // Speed efetiva = valor no nível × multiplicador de estágio (+1 de Mega). Quem tem mais Speed age primeiro.
+  const multEstagioSpe = st => st >= 0 ? (2 + st) / 2 : 2 / (2 - st);
+  function speedEfetiva(P){
+    const v = statEf(P.spe, P.nivel); if(v == null) return null;
+    const est = clamp(P.st.spe + (P.mega ? 1 : 0), -6, 6);
+    return Math.floor(v * multEstagioSpe(est));
+  }
+  function velocidades(A, D){
+    const a = speedEfetiva(A), d = speedEfetiva(D);
+    if(a == null || d == null) return '';
+    const nA = A.nome || 'Atacante', nD = D.nome || 'Defensor';
+    const quem = a > d ? '<b>'+nA+'</b> age primeiro' : d > a ? '<b>'+nD+'</b> age primeiro' : '<b>empate</b> de Speed';
+    return '⚡ Speed '+a+' vs '+d+' → '+quem;
+  }
   function renderResumo(r){
     const out = $('calc-pk-resumo'); if(!out || !painelAtivo()) return;
     const {A, D} = papeis();
@@ -2693,6 +2728,8 @@ function calcSyncSelects(){
       else if(r.danoMax >= hpAtual) partes.push('<b>possível nocaute em 1 golpe</b>');
       else partes.push('nocaute em <b>'+Math.ceil(hpAtual/r.danoMax)+'–'+Math.ceil(hpAtual/Math.max(1, r.danoMin))+'</b> golpes');
     }
+    const vel = velocidades(A, D);
+    if(vel) partes.push(vel);
     if(!partes.length){ out.style.display = 'none'; out.innerHTML = ''; return; }
     out.style.display = 'block';
     out.innerHTML = '🎯 <b>'+nomeA+'</b> — '+golpe+' → <b>'+nomeD+'</b>: '+partes.join(' · ');
@@ -2748,6 +2785,7 @@ function calcSyncSelects(){
 
   function atualizar(){
     if(!painelAtivo()) return;
+    sincronizarStats();
     const {A, D} = papeis();
     const m = A.golpes[A.ativo-1];
     const hints = [];
@@ -2770,7 +2808,7 @@ function calcSyncSelects(){
       ok = false;
       if(r.ts != null){
         ok = setSelTier('calc-stats', r.ts);
-        if(ok) hints.push((m.cat==='esp'?'Sp.Atk ':'Atk ')+r.a+' vs '+(m.cat==='esp'?'Sp.Def ':'Def ')+r.d+' → <b>'+(r.ts>0?'+':'')+r.ts+'</b>');
+        if(ok) hints.push((m.cat==='esp'?'Sp.Atk ':'Atk ')+r.a+(A.nivel != null ? ' (Lv '+A.nivel+')' : '')+' vs '+(m.cat==='esp'?'Sp.Def ':'Def ')+r.d+(D.nivel != null ? ' (Lv '+D.nivel+')' : '')+' → <b>'+(r.ts>0?'+':'')+r.ts+'</b>');
       }
       marcar('stats', ok);
 
@@ -2785,6 +2823,14 @@ function calcSyncSelects(){
       else if(_tocados.has('stage')){ ajustarEstagio(0); _tocados.delete('stage'); }
     }
 
+    // Stats efetivos por nível, mostrados abaixo dos campos de cada lado
+    [A, D].forEach(P => {
+      const el = $('cpk-'+P.s+'-efetivo'); if(!el) return;
+      if(P.nivel == null || [P.atk, P.def, P.spa, P.spd, P.spe].every(v => v == null)){ el.textContent = ''; return; }
+      const k = multStat(P.nivel);
+      const r0 = v => v == null ? '–' : Math.round(v);
+      el.innerHTML = 'Lv '+P.nivel+' → stats <b>×'+k.toFixed(2)+'</b> · no Lv 100: Atk '+r0(P.atk)+' · Def '+r0(P.def)+' · Sp.Atk '+r0(P.spa)+' · Sp.Def '+r0(P.spd)+' · Speed '+r0(P.spe);
+    });
     const mult = multNiveis(A.nivel, D.nivel);
     const info = $('cpk-nivel-info');
     if(info){
@@ -2826,7 +2872,8 @@ function calcSyncSelects(){
       atk: pick('atk','attack'),
       def: pick('def','defense'),
       spa: pick('spa','spatk','spatk','sp_atk','specialattack','special_attack'),
-      spd: pick('spd','spdef','sp_def','specialdefense','special_defense')
+      spd: pick('spd','spdef','sp_def','specialdefense','special_defense'),
+      spe: pick('spe','speed','vel','velocidade')
     };
     return (st.atk != null && st.def != null && st.spa != null && st.spd != null) ? st : null;
   }
@@ -2846,7 +2893,26 @@ function calcSyncSelects(){
       hp: st['hp'], atk: st['attack'], def: st['defense'], spa: st['special-attack'], spd: st['special-defense']
     };
   }
-  const setV = (id, v) => { const el = $(id); if(el) el.value = (v == null ? '' : v); };
+  const STAT_ID = /^cpk-p[12]-(atk|def|spa|spd|spe)$/;
+  const setV = (id, v) => {
+    const el = $(id); if(!el) return;
+    el.value = (v == null ? '' : v);
+    if(STAT_ID.test(id)){ if(v == null || v === '') delete el.dataset.base; else el.dataset.base = v; } // v = valor do Lv 100
+  };
+  // Mostra nos campos o valor do nível atual, a partir do valor-base lembrado (não mexe no campo em edição).
+  function sincronizarStats(){
+    ['p1','p2'].forEach(s => {
+      const L = parseInt($('cpk-'+s+'-nivel')?.value);
+      const nv = (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null;
+      ['atk','def','spa','spd','spe'].forEach(k => {
+        const el = $('cpk-'+s+'-'+k); if(!el) return;
+        if(el.value === ''){ delete el.dataset.base; return; }
+        if(document.activeElement === el) return;
+        const b = parseFloat(el.dataset.base);
+        if(Number.isFinite(b)) el.value = statEf(b, nv);
+      });
+    });
+  }
   function setTipos(s, ts){
     const l = (ts||[]).filter(Boolean).map(t => String(t).toLowerCase());
     setV('cpk-'+s+'-t1', l[0] || ''); setV('cpk-'+s+'-t2', l[1] || '');
@@ -2856,7 +2922,7 @@ function calcSyncSelects(){
     const nome = ($('cpk-'+s+'-nome')?.value || '').trim();
     const status = $('cpk-'+s+'-status');
     _ultimo[s] = nome.toLowerCase();
-    ['hp','hpatual','atk','def','spa','spd'].forEach(k => setV('cpk-'+s+'-'+k, '')); // evita stats "fantasma"
+    ['hp','hpatual','atk','def','spa','spd','spe'].forEach(k => setV('cpk-'+s+'-'+k, '')); // evita stats "fantasma"
     if(!nome){ setTipos(s, []); if(status) status.textContent = ''; atualizar(); return; }
     if(status) status.textContent = 'Buscando…';
     // garante que o pokemon.json / tabela pokemons já foi carregado
@@ -2867,7 +2933,7 @@ function calcSyncSelects(){
     const st = statsDoRegistro(reg);
     if(st){
       setV('cpk-'+s+'-atk', st.atk); setV('cpk-'+s+'-def', st.def);
-      setV('cpk-'+s+'-spa', st.spa); setV('cpk-'+s+'-spd', st.spd);
+      setV('cpk-'+s+'-spa', st.spa); setV('cpk-'+s+'-spd', st.spd); setV('cpk-'+s+'-spe', st.spe);
       setV('cpk-'+s+'-hp', st.hp > 100 ? st.hp : 100); // regra: HP base > 100 vale como HP máximo; senão 100
       _statsOk[s] = true;
       if(status) status.textContent = 'Stats base carregados (pokemon.json)';
@@ -3012,23 +3078,29 @@ function calcSyncSelects(){
     .cpk-btn{font-size:11px;padding:5px 10px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-weight:700}
     .cpk-btn.mut{color:var(--muted);font-weight:600}
     .cpk-auto{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer}
-    .cpk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-bottom:12px}
-    .cpk-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:12px}
+    .cpk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:12px;margin-bottom:12px}
+    .cpk-panel,.cpk-body,.cpk-grid{min-width:0;max-width:100%;box-sizing:border-box}
+    .cpk-card{min-width:0;box-sizing:border-box;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:12px}
     .cpk-card h4{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.5px}
-    .cpk-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-    .cpk-row.n{grid-template-columns:1fr 78px}
+    .cpk-row > *{min-width:0}
+    .cpk-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-bottom:8px}
+    .cpk-row.n{grid-template-columns:minmax(0,1fr) 78px}
     .cpk-f label.l{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
     .cpk-card input[type=text],.cpk-card input[type=number],.cpk-card select{width:100%;box-sizing:border-box;padding:6px 8px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)}
     .cpk-stats{display:grid;gap:5px;margin:4px 0 8px}
-    .cpk-stat{display:grid;grid-template-columns:54px 1fr 66px;gap:6px;align-items:center}
+    .cpk-stat > *{min-width:0}
+    .cpk-stat{display:grid;grid-template-columns:54px minmax(0,1fr) 66px;gap:6px;align-items:center}
     .cpk-stat span{font-size:11px;font-weight:700;color:var(--muted)}
-    .cpk-stat.hp{grid-template-columns:54px 1fr 40px 1fr}
+    .cpk-stat.hp{grid-template-columns:54px minmax(0,1fr) 40px minmax(0,1fr)}
     .cpk-flags{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text)}
     .cpk-flags label{display:flex;align-items:center;gap:5px;cursor:pointer}
     .cpk-card .cpk-flags select{width:auto;padding:3px 6px;font-size:12px}
+    .cpk-efetivo{font-size:11px;color:var(--muted);line-height:1.5;margin:-2px 0 8px;min-height:2px}
+    .cpk-efetivo b{color:var(--brand)}
     .cpk-status{font-size:10px;color:var(--muted);min-height:13px;font-style:italic;margin-bottom:6px}
     .cpk-moves{border-top:1.5px dashed var(--border);padding-top:8px;display:grid;gap:8px}
-    .cpk-mv{display:grid;grid-template-columns:auto 1fr 84px 66px 58px;gap:5px 6px;align-items:center}
+    .cpk-mv > *{min-width:0}
+    .cpk-mv{display:grid;grid-template-columns:auto minmax(0,1fr) 84px 66px 58px;gap:5px 6px;align-items:center}
     .cpk-mv2{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:11px;color:var(--muted)}
     .cpk-mv2 label{display:flex;align-items:center;gap:4px;cursor:pointer}
     .cpk-card .cpk-mv2 input{width:auto}
@@ -3037,6 +3109,15 @@ function calcSyncSelects(){
     .cpk-addmv{justify-self:start}
     .cpk-res{font-weight:800;color:var(--brand);font-size:12px;margin-left:auto}
     .cpk-info{font-size:12px;color:var(--text);line-height:1.6}
+    @media (max-width:520px){
+      .cpk-body{padding:2px 10px 12px}
+      .cpk-card{padding:10px}
+      .cpk-stat{grid-template-columns:44px minmax(0,1fr) 58px;gap:5px}
+      .cpk-stat.hp{grid-template-columns:44px minmax(0,1fr) 38px minmax(0,1fr)}
+      .cpk-mv{grid-template-columns:auto minmax(0,1fr) 76px 58px 52px;gap:5px}
+      .cpk-card input[type=text],.cpk-card input[type=number],.cpk-card select{padding:6px;font-size:13px}
+      .cpk-efetivo{font-size:10px}
+    }
     .cpk-hints{font-size:11px;color:var(--muted);line-height:1.6;margin-top:4px}
     #calc-pk-resumo{display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1.5px solid var(--border);font-size:13px;color:var(--text);line-height:1.6}`;
     document.head.appendChild(st);
@@ -3080,8 +3161,9 @@ function calcSyncSelects(){
         </div>
         <div class="cpk-stats">
           <div class="cpk-stat hp"><span>HP</span><input id="${id('hp')}" type="number" min="1" placeholder="máx."/><span>Atual</span><input id="${id('hpatual')}" type="number" min="0" placeholder="= máx."/></div>
-          ${stat('atk','Atk')}${stat('def','Def')}${stat('spa','Sp.Atk')}${stat('spd','Sp.Def')}
+          ${stat('atk','Atk')}${stat('def','Def')}${stat('spa','Sp.Atk')}${stat('spd','Sp.Def')}${stat('spe','Speed')}
         </div>
+        <div class="cpk-efetivo" id="${id('efetivo')}"></div>
         <div class="cpk-flags">
           <label><input type="checkbox" id="${id('mega')}"/> Mega (+1 estágio)</label>
           <label><input type="checkbox" id="${id('dyn')}"/> Dynamax (HP ×2)</label>
@@ -3094,7 +3176,7 @@ function calcSyncSelects(){
       </div>`;
   }
 
-  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','eatk','edef','espa','espd','mega','dyn','adapt','tera','teratipo','bola','ficha'];
+  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','spe','eatk','edef','espa','espd','espe','mega','dyn','adapt','tera','teratipo','bola','ficha'];
   const MOVS = ['nome','tipo','cat','poder','sem','crit','usado'];
 
   // Mostra só os slots necessários: 4 de início, até 8 conforme o preenchimento (ou o "+ golpe"),
@@ -3124,7 +3206,12 @@ function calcSyncSelects(){
     const troca = (a, b) => {
       const ea = $(a), eb = $(b); if(!ea || !eb) return;
       if(ea.type === 'checkbox'){ const t = ea.checked; ea.checked = eb.checked; eb.checked = t; }
-      else { const t = ea.value; ea.value = eb.value; eb.value = t; }
+      else {
+        const t = ea.value; ea.value = eb.value; eb.value = t;
+        const bt = ea.dataset.base; // acompanha o valor-base dos stats
+        if(eb.dataset.base != null) ea.dataset.base = eb.dataset.base; else delete ea.dataset.base;
+        if(bt != null) eb.dataset.base = bt; else delete eb.dataset.base;
+      }
     };
     CAMPOS.forEach(k => troca('cpk-p1-'+k, 'cpk-p2-'+k));
     SLOTS.forEach(i => MOVS.forEach(k => troca('cpk-p1-m'+i+'-'+k, 'cpk-p2-m'+i+'-'+k)));
@@ -3193,6 +3280,13 @@ function calcSyncSelects(){
         if(fc.k === 'ficha' && e.target.value.trim().toLowerCase() !== _fichaUlt[fc.s] && _fichasLista &&
            _fichasLista.some(x => String(x.nome).trim().toLowerCase() === e.target.value.trim().toLowerCase())) carregarFicha(fc.s);
         return;
+      }
+      const ms = /^cpk-(p[12])-(atk|def|spa|spd|spe)$/.exec(e.target.id || '');
+      if(ms){ // o que se digita é o valor no nível atual → guarda o equivalente no Lv 100
+        const v = parseFloat(e.target.value);
+        const L = parseInt($('cpk-'+ms[1]+'-nivel')?.value);
+        if(Number.isFinite(v)) e.target.dataset.base = v / multStat((Number.isFinite(L) && L >= 1) ? Math.min(L,100) : null);
+        else delete e.target.dataset.base;
       }
       const s = ladoDe(e.target.id);
       if(s){ // escolher um nome exato da lista já carrega; digitação livre espera o change
