@@ -2437,7 +2437,8 @@ function calcSyncSelects(){
 //   e o do defensor, usando o termo de nível do Showdown,
 //   floor(2·L/5)+2, suavizado por um expoente. Níveis iguais = ×1,00.
 //   Nível em branco conta como NIVEL_REF.
-// • Cada lado tem 4 golpes; o golpe "ativo" do atacante alimenta os
+// • Cada lado tem até 8 golpes (+1 slot extra da Net Ball / Dive Ball,
+//   que pode ser carregado direto da ficha); o golpe "ativo" do atacante alimenta os
 //   campos da calculadora (Poder, Efetividade, Base Stats, STAB,
 //   Crítico e Estágios). Os demais golpes são calculados na hora.
 // • Com "Preencher automaticamente" desligado, tudo continua
@@ -2449,6 +2450,17 @@ function calcSyncSelects(){
   const NIVEL_EXPOENTE = 0.5;  // 1 = Showdown puro · menor = curva mais suave
   const NIVEL_MULT_MIN = 0.25; // trava inferior do multiplicador
   const NIVEL_MULT_MAX = 2.0;  // trava superior do multiplicador (teto ×2,0)
+
+  // Slots de golpe: 1–8 = golpes do Pokémon (padrão do RPG) · 9 = golpe extra liberado pela Pokébola.
+  const SLOTS = [1,2,3,4,5,6,7,8,9];
+  const SLOT_BOLA = 9;
+  const GOLPES_MAX = 8;
+  const GOLPES_INICIAIS = 4;  // quantos slots aparecem de início (o "+ golpe" libera até 8)
+  const BOLAS = {
+    net:  {label:'Net Ball',  nome:'String Shot', tipo:'bug',   cat:'fis', poder:null, uso:'livre'},
+    dive: {label:'Dive Ball', nome:'Dive',        tipo:'water', cat:'fis', poder:80,   uso:'1x por batalha'}
+  };
+  const BOLA_FICHA = {netball:'net', diveball:'dive'}; // valor de `ball` na ficha → chave de BOLAS
 
   const $ = id => document.getElementById(id);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -2524,12 +2536,13 @@ function calcSyncSelects(){
     const c = x => !!g(x)?.checked;
     const L = parseInt(g('nivel')?.value);
     const e = x => parseInt(g(x)?.value) || 0;
-    const golpes = [1,2,3,4].map(i => ({
+    const golpes = SLOTS.map(i => ({
       i, nome: (g('m'+i+'-nome')?.value || '').trim(), tipo: g('m'+i+'-tipo')?.value || '',
-      cat: g('m'+i+'-cat')?.value || 'fis', poder: n('m'+i+'-poder'), sem: c('m'+i+'-sem'), crit: c('m'+i+'-crit')
+      cat: g('m'+i+'-cat')?.value || 'fis', poder: n('m'+i+'-poder'), sem: c('m'+i+'-sem'), crit: c('m'+i+'-crit'),
+      usado: i === SLOT_BOLA && c('m'+i+'-usado')
     }));
     return {
-      s, nome: (g('nome')?.value || '').trim(),
+      s, bola: g('bola')?.value || '', nome: (g('nome')?.value || '').trim(),
       nivel: (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null,
       tipos: [g('t1')?.value, g('t2')?.value].filter(Boolean),
       hp: n('hp'), hpAtual: n('hpatual'), atk: n('atk'), def: n('def'), spa: n('spa'), spd: n('spd'),
@@ -2690,7 +2703,8 @@ function calcSyncSelects(){
       X.golpes.forEach(m => {
         const el = $('cpk-'+X.s+'-m'+m.i+'-res'); if(!el) return;
         let txt = '';
-        if(X.s === A.s && m.i === A.ativo && _principal){
+        if(m.usado) txt = '✔ já usado nesta batalha';
+        else if(X.s === A.s && m.i === A.ativo && _principal){
           const nv = _principal.nv || {};
           txt = textoResultado({tier:_principal.tierFinal, min:_principal.danoMin, max:_principal.danoMax, imune:!!nv.imune, manual:derivar(X, Y, m).efetManual}, Y);
         } else txt = textoResultado(calcMov(X, Y, m), Y);
@@ -2735,6 +2749,7 @@ function calcSyncSelects(){
     const {A, D} = papeis();
     const m = A.golpes[A.ativo-1];
     const hints = [];
+    if(m.usado) hints.push('⚠️ <b>'+(m.nome || 'Golpe da bola')+'</b> já foi usado nesta batalha (desmarque "já usado" para calcular)');
 
     if($('cpk-auto')?.checked){
       const r = derivar(A, D, m);
@@ -2837,12 +2852,124 @@ function calcSyncSelects(){
     atualizar();
   }
 
+  // ── Busca pela ficha (/api/ficha-salvar) ─────────────────
+  // lista: GET ?lista=1 → [{slug, nome, ...}] · ficha: GET ?slug=… → {d:{time:[…], box:[…], …}}
+  // Pokémon da ficha: {nome, apelido, level, ball, moves:[{n,o}×8], tipo1?, tipo2?, …}
+  let _fichasLista = null;
+  const _fichasCache = {}, _fichaPk = {p1:[], p2:[]}, _fichaUlt = {p1:'', p2:''}, _ftok = {p1:0, p2:0}, _fptok = {p1:0, p2:0};
+  async function listaFichas(){
+    if(_fichasLista) return _fichasLista;
+    const r = await fetch('/api/ficha-salvar?lista=1', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const lista = (Array.isArray(j) ? j : []).filter(x => x && x.slug && x.nome && !x.desativada);
+    const dl = $('cpk-fichas');
+    if(dl) dl.innerHTML = lista.map(x => '<option value="'+String(x.nome).replace(/"/g,'&quot;')+'"></option>').join('');
+    return _fichasLista = lista;
+  }
+  const rotuloPk = p => (p.apelido ? p.apelido+' ('+p.nome+')' : p.nome) + (p.level ? ' · Lv '+p.level : '');
+  async function carregarFicha(s){
+    const inp = $('cpk-'+s+'-ficha'), sel = $('cpk-'+s+'-fpk'), status = $('cpk-'+s+'-status');
+    if(!inp || !sel) return;
+    const v = inp.value.trim().toLowerCase(), tok = ++_ftok[s];
+    _fichaUlt[s] = v; _fichaPk[s] = [];
+    sel.innerHTML = '<option value="">—</option>';
+    if(!v) return;
+    if(status) status.textContent = 'Buscando ficha…';
+    try{
+      const lista = await listaFichas();
+      if(tok !== _ftok[s]) return;
+      const e = lista.find(x => String(x.nome).trim().toLowerCase() === v);
+      if(!e){ if(status) status.textContent = 'Ficha não encontrada'; return; }
+      let f = _fichasCache[e.slug];
+      if(!f){
+        const r = await fetch('/api/ficha-salvar?slug='+encodeURIComponent(e.slug), {cache:'no-store'});
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        f = _fichasCache[e.slug] = await r.json();
+      }
+      if(tok !== _ftok[s]) return;
+      const d = (f && f.d) || f || {};
+      const grupos = [['Time', d.time], ['Box', d.box]];
+      let html = '<option value="">— escolha —</option>';
+      grupos.forEach(([nome, arr]) => {
+        const itens = [];
+        (Array.isArray(arr) ? arr : []).forEach(p => {
+          if(p && p.nome){ _fichaPk[s].push(p); itens.push('<option value="'+(_fichaPk[s].length-1)+'">'+rotuloPk(p).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>'); }
+        });
+        if(itens.length) html += '<optgroup label="'+nome+'">'+itens.join('')+'</optgroup>';
+      });
+      sel.innerHTML = html;
+      if(status) status.textContent = _fichaPk[s].length ? 'Ficha de '+e.nome+' · '+_fichaPk[s].length+' Pokémon' : 'Ficha sem Pokémon cadastrados';
+      if(_fichaPk[s].length === 1){ sel.value = '0'; aplicarPokemonFicha(s); }
+    }catch(err){
+      if(tok !== _ftok[s]) return;
+      console.warn('[calc ficha]', err);
+      if(status) status.textContent = 'Não foi possível ler a ficha — preencha à mão';
+    }
+  }
+
+  // Tipo / categoria / poder do golpe via PokeAPI (a ficha só guarda o nome).
+  const _mcache = {};
+  async function dadosGolpe(nome){
+    const slug = slugLocal(nome).replace(/-+/g,'-');
+    if(_mcache[slug] !== undefined) return _mcache[slug];
+    try{
+      const r = await fetch('https://pokeapi.co/api/v2/move/' + encodeURIComponent(slug));
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      return _mcache[slug] = {tipo: d.type.name, cat: d.damage_class.name === 'special' ? 'esp' : 'fis', poder: d.power};
+    }catch(e){ return _mcache[slug] = null; }
+  }
+
+  async function aplicarPokemonFicha(s){
+    const p = _fichaPk[s][parseInt($('cpk-'+s+'-fpk')?.value)];
+    if(!p) return;
+    const tok = ++_fptok[s];
+    // limpa golpes e bola do lado
+    SLOTS.forEach(i => {
+      ['nome','poder'].forEach(k => setV('cpk-'+s+'-m'+i+'-'+k, ''));
+      setV('cpk-'+s+'-m'+i+'-tipo', ''); setV('cpk-'+s+'-m'+i+'-cat', 'fis');
+      ['sem','crit','usado'].forEach(k => { const el = $('cpk-'+s+'-m'+i+'-'+k); if(el) el.checked = false; });
+    });
+    const r1 = document.querySelector('input[name="cpk-'+s+'-ativo"][value="1"]'); if(r1) r1.checked = true;
+    // Pokémon + nível
+    setV('cpk-'+s+'-nome', p.nome);
+    const lv = parseInt(p.level); setV('cpk-'+s+'-nivel', Number.isFinite(lv) ? clamp(lv, 1, 100) : '');
+    // golpes (só as posições preenchidas, até 8)
+    const nomes = (Array.isArray(p.moves) ? p.moves : []).map(m => String((m && m.n) || '').trim()).filter(Boolean).slice(0, GOLPES_MAX);
+    nomes.forEach((n, k) => setV('cpk-'+s+'-m'+(k+1)+'-nome', n));
+    const box = $('cpk-'+s+'-moves'); if(box) box.dataset.n = Math.max(GOLPES_INICIAIS, nomes.length);
+    // Pokébola → golpe extra
+    setV('cpk-'+s+'-bola', BOLA_FICHA[String(p.ball || '').toLowerCase()] || '');
+    aplicarBola(s);
+    // stats base / tipos (banco + PokeAPI); tipos da ficha, quando existem, prevalecem
+    await carregarLado(s);
+    if(tok !== _fptok[s]) return;
+    if(p.tipo1) setTipos(s, [p.tipo1, p.tipo2]);
+    const status = $('cpk-'+s+'-status');
+    if(status) status.textContent = 'Ficha: '+rotuloPk(p)+' · '+nomes.length+' golpe(s)'+(BOLAS[$('cpk-'+s+'-bola')?.value] ? ' + '+BOLAS[$('cpk-'+s+'-bola').value].nome+' ('+BOLAS[$('cpk-'+s+'-bola').value].label+')' : '');
+    atualizar();
+    // tipo / categoria / poder de cada golpe
+    await Promise.all(nomes.map(async (n, k) => {
+      const d = await dadosGolpe(n);
+      if(!d || tok !== _fptok[s]) return;
+      const i = k+1;
+      setV('cpk-'+s+'-m'+i+'-tipo', d.tipo); setV('cpk-'+s+'-m'+i+'-cat', d.cat); setV('cpk-'+s+'-m'+i+'-poder', d.poder);
+    }));
+    if(tok === _fptok[s]) atualizar();
+  }
+
   // ── Montagem do painel ───────────────────────────────────
   function css(){
     if($('calc-pk-style')) return;
     const st = document.createElement('style'); st.id = 'calc-pk-style';
     st.textContent = `
-    .cpk-panel{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px}
+    .cpk-panel{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:0;margin-bottom:16px}
+    .cpk-sum{list-style:none;display:flex;align-items:center;gap:8px;padding:13px 16px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+    .cpk-sum::-webkit-details-marker{display:none}
+    .cpk-sum::after{content:'▾';margin-left:auto;font-size:15px;color:var(--brand-mid);transition:transform .2s}
+    .cpk-panel:not([open]) .cpk-sum::after{transform:rotate(-90deg)}
+    .cpk-body{padding:2px 16px 14px}
     .cpk-bar{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;margin-bottom:12px}
     .cpk-title{font-size:11px;font-weight:800;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;margin-right:auto}
     .cpk-seg{display:inline-flex;border:1.5px solid var(--border);border-radius:8px;overflow:hidden}
@@ -2873,6 +3000,9 @@ function calcSyncSelects(){
     .cpk-mv2{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:11px;color:var(--muted)}
     .cpk-mv2 label{display:flex;align-items:center;gap:4px;cursor:pointer}
     .cpk-card .cpk-mv2 input{width:auto}
+    .cpk-ficha{border-bottom:1.5px dashed var(--border);margin-bottom:10px;padding-bottom:2px}
+    .cpk-mv.bola{background:var(--brand-light);border-radius:8px;padding:6px}
+    .cpk-addmv{justify-self:start}
     .cpk-res{font-weight:800;color:var(--brand);font-size:12px;margin-left:auto}
     .cpk-info{font-size:12px;color:var(--text);line-height:1.6}
     .cpk-hints{font-size:11px;color:var(--muted);line-height:1.6;margin-top:4px}
@@ -2886,21 +3016,28 @@ function calcSyncSelects(){
     const id = x => 'cpk-'+s+'-'+x;
     const stat = (k, rot) => '<div class="cpk-stat"><span>'+rot+'</span><input id="'+id(k)+'" type="number" min="1" max="255" placeholder="base"/>'+stageSel(id('e'+k))+'</div>';
     const mv = i => `
-      <div class="cpk-mv">
+      <div class="cpk-mv${i===SLOT_BOLA?' bola':''}" id="${id('row'+i)}"${i>GOLPES_INICIAIS?' style="display:none"':''}>
         <input type="radio" name="cpk-${s}-ativo" value="${i}" ${i===1?'checked':''} title="Golpe ativo (alimenta a calculadora quando este lado ataca)"/>
-        <input id="${id('m'+i+'-nome')}" type="text" placeholder="Golpe ${i}" autocomplete="off"/>
+        <input id="${id('m'+i+'-nome')}" type="text" placeholder="${i===SLOT_BOLA?'🎱 Golpe da Pokébola':'Golpe '+i}" autocomplete="off"/>
         <select id="${id('m'+i+'-tipo')}">${optTipos('Tipo')}</select>
         <select id="${id('m'+i+'-cat')}"><option value="fis">Fís.</option><option value="esp">Esp.</option></select>
         <input id="${id('m'+i+'-poder')}" type="number" min="0" max="300" placeholder="Poder"/>
         <div class="cpk-mv2">
           <label><input type="checkbox" id="${id('m'+i+'-sem')}"/> s/ efeito</label>
           <label><input type="checkbox" id="${id('m'+i+'-crit')}"/> Crit</label>
+          ${i===SLOT_BOLA ? `<label title="Dive Ball: 1× por batalha"><input type="checkbox" id="${id('m'+i+'-usado')}"/> já usado</label>` : ''}
           <span class="cpk-res" id="${id('m'+i+'-res')}"></span>
         </div>
       </div>`;
     return `
       <div class="cpk-card">
         <h4>${titulo}</h4>
+        <div class="cpk-ficha">
+          <div class="cpk-row">
+            <div class="cpk-f"><label class="l" for="${id('ficha')}">Ficha (personagem)</label><input id="${id('ficha')}" type="text" list="cpk-fichas" autocomplete="off" placeholder="Buscar ficha…"/></div>
+            <div class="cpk-f"><label class="l" for="${id('fpk')}">Pokémon da ficha</label><select id="${id('fpk')}"><option value="">—</option></select></div>
+          </div>
+        </div>
         <div class="cpk-row n">
           <div class="cpk-f"><label class="l" for="${id('nome')}">Pokémon</label><input id="${id('nome')}" type="text" list="cpk-nomes" autocomplete="off" placeholder="Buscar…"/></div>
           <div class="cpk-f"><label class="l" for="${id('nivel')}">Nível</label><input id="${id('nivel')}" type="number" min="1" max="100" placeholder="Lv"/></div>
@@ -2918,14 +3055,39 @@ function calcSyncSelects(){
           <label><input type="checkbox" id="${id('dyn')}"/> Dynamax (HP ×2)</label>
           <label><input type="checkbox" id="${id('adapt')}"/> Adaptability</label>
           <label><input type="checkbox" id="${id('tera')}"/> Tera <select id="${id('teratipo')}">${optTipos('tipo')}</select></label>
+          <label title="Net Ball libera String Shot · Dive Ball libera Dive (1× por batalha)">🎱 Bola <select id="${id('bola')}"><option value="">—</option>${Object.keys(BOLAS).map(k => '<option value="'+k+'">'+BOLAS[k].label+'</option>').join('')}</select></label>
         </div>
         <div class="cpk-status" id="${id('status')}"></div>
-        <div class="cpk-moves">${[1,2,3,4].map(mv).join('')}</div>
+        <div class="cpk-moves" id="${id('moves')}" data-n="${GOLPES_INICIAIS}">${SLOTS.map(mv).join('')}<button type="button" class="cpk-btn mut cpk-addmv" data-s="${s}" id="${id('addmv')}">+ golpe (até ${GOLPES_MAX})</button></div>
       </div>`;
   }
 
-  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','eatk','edef','espa','espd','mega','dyn','adapt','tera','teratipo'];
-  const MOVS = ['nome','tipo','cat','poder','sem','crit'];
+  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','eatk','edef','espa','espd','mega','dyn','adapt','tera','teratipo','bola','ficha'];
+  const MOVS = ['nome','tipo','cat','poder','sem','crit','usado'];
+
+  // Mostra só os slots necessários: 4 de início, até 8 conforme o preenchimento (ou o "+ golpe"),
+  // e o slot 9 apenas quando há Net Ball / Dive Ball selecionada.
+  function mostrarSlots(s){
+    const box = $('cpk-'+s+'-moves'); if(!box) return;
+    let n = clamp(parseInt(box.dataset.n) || GOLPES_INICIAIS, GOLPES_INICIAIS, GOLPES_MAX);
+    for(let i = GOLPES_INICIAIS+1; i <= GOLPES_MAX; i++) if(($('cpk-'+s+'-m'+i+'-nome')?.value || '').trim()) n = Math.max(n, i);
+    box.dataset.n = n;
+    for(let i = GOLPES_INICIAIS+1; i <= GOLPES_MAX; i++){ const r = $('cpk-'+s+'-row'+i); if(r) r.style.display = i <= n ? '' : 'none'; }
+    const r9 = $('cpk-'+s+'-row'+SLOT_BOLA); if(r9) r9.style.display = ($('cpk-'+s+'-bola')?.value ? '' : 'none');
+    const add = $('cpk-'+s+'-addmv'); if(add) add.style.display = n >= GOLPES_MAX ? 'none' : '';
+  }
+  // Troca da Pokébola: preenche (ou limpa) o golpe extra do slot 9.
+  function aplicarBola(s){
+    const b = BOLAS[$('cpk-'+s+'-bola')?.value];
+    const set = (k, v) => setV('cpk-'+s+'-m'+SLOT_BOLA+'-'+k, v);
+    set('nome', b ? b.nome : ''); set('tipo', b ? b.tipo : ''); set('cat', b ? b.cat : 'fis'); set('poder', b ? b.poder : '');
+    ['usado','sem','crit'].forEach(k => { const el = $('cpk-'+s+'-m'+SLOT_BOLA+'-'+k); if(el) el.checked = false; });
+    if(!b){
+      const r = document.querySelector('input[name="cpk-'+s+'-ativo"]:checked');
+      if(r && parseInt(r.value) === SLOT_BOLA){ const r1 = document.querySelector('input[name="cpk-'+s+'-ativo"][value="1"]'); if(r1) r1.checked = true; }
+    }
+    mostrarSlots(s);
+  }
   function trocarLados(){
     const troca = (a, b) => {
       const ea = $(a), eb = $(b); if(!ea || !eb) return;
@@ -2933,7 +3095,15 @@ function calcSyncSelects(){
       else { const t = ea.value; ea.value = eb.value; eb.value = t; }
     };
     CAMPOS.forEach(k => troca('cpk-p1-'+k, 'cpk-p2-'+k));
-    [1,2,3,4].forEach(i => MOVS.forEach(k => troca('cpk-p1-m'+i+'-'+k, 'cpk-p2-m'+i+'-'+k)));
+    SLOTS.forEach(i => MOVS.forEach(k => troca('cpk-p1-m'+i+'-'+k, 'cpk-p2-m'+i+'-'+k)));
+    { // lista de Pokémon da ficha + nº de slots visíveis acompanham o lado
+      const f1 = $('cpk-p1-fpk'), f2 = $('cpk-p2-fpk'), b1 = $('cpk-p1-moves'), b2 = $('cpk-p2-moves');
+      if(f1 && f2){ const h = f1.innerHTML, v = f1.value; f1.innerHTML = f2.innerHTML; f1.value = f2.value; f2.innerHTML = h; f2.value = v; }
+      if(b1 && b2){ const t = b1.dataset.n; b1.dataset.n = b2.dataset.n; b2.dataset.n = t; }
+      const tp = _fichaPk.p1; _fichaPk.p1 = _fichaPk.p2; _fichaPk.p2 = tp;
+      const tu = _fichaUlt.p1; _fichaUlt.p1 = _fichaUlt.p2; _fichaUlt.p2 = tu;
+      mostrarSlots('p1'); mostrarSlots('p2');
+    }
     const r1 = document.querySelector('input[name="cpk-p1-ativo"]:checked')?.value || '1';
     const r2 = document.querySelector('input[name="cpk-p2-ativo"]:checked')?.value || '1';
     const pr = (s, v) => { const r = document.querySelector('input[name="cpk-'+s+'-ativo"][value="'+v+'"]'); if(r) r.checked = true; };
@@ -2944,13 +3114,16 @@ function calcSyncSelects(){
     atualizar();
   }
 
+  let _painelAberto = false;
   function montarPainel(box){
     css();
-    const panel = document.createElement('div');
+    const panel = document.createElement('details');
     panel.id = 'calc-pk-panel'; panel.className = 'cpk-panel';
+    panel.open = _painelAberto;
     panel.innerHTML = `
+      <summary class="cpk-sum"><span class="cpk-title">🧬 Pokémon em batalha <span style="font-weight:600;opacity:.7;text-transform:none;letter-spacing:0">(opcional)</span></span></summary>
+      <div class="cpk-body">
       <div class="cpk-bar">
-        <span class="cpk-title">🧬 Pokémon em batalha <span style="font-weight:600;opacity:.7;text-transform:none;letter-spacing:0">(opcional)</span></span>
         <div class="cpk-seg" title="Quem ataca">
           <label><input type="radio" name="cpk-dir" value="12" checked/><span>Pokémon 1 ➜ 2</span></label>
           <label><input type="radio" name="cpk-dir" value="21"/><span>Pokémon 2 ➜ 1</span></label>
@@ -2966,7 +3139,11 @@ function calcSyncSelects(){
       <div class="cpk-grid">${cardHtml('p1','⚔️ Pokémon 1')}${cardHtml('p2','🛡️ Pokémon 2')}</div>
       <div class="cpk-info" id="cpk-nivel-info"></div>
       <div class="cpk-hints" id="cpk-hints"></div>
-      <datalist id="cpk-nomes"></datalist>`;
+      <datalist id="cpk-nomes"></datalist>
+      <datalist id="cpk-fichas"></datalist>
+      </div>`;
+    panel.addEventListener('toggle', () => { _painelAberto = panel.open; if(panel.open) listaFichas().catch(()=>{}); });
+    if(panel.open) listaFichas().catch(()=>{});
 
     const ref = box.children[1];
     if(ref) ref.insertAdjacentElement('afterend', panel); else box.appendChild(panel);
@@ -2977,7 +3154,14 @@ function calcSyncSelects(){
     }
 
     const ladoDe = id => id === 'cpk-p1-nome' ? 'p1' : id === 'cpk-p2-nome' ? 'p2' : null;
+    const fichaCampo = id => { const m = /^cpk-(p[12])-(ficha|fpk|bola)$/.exec(id || ''); return m ? {s: m[1], k: m[2]} : null; };
     panel.addEventListener('input', e => {
+      const fc = fichaCampo(e.target.id);
+      if(fc){ // escolher uma ficha da lista (datalist) já carrega
+        if(fc.k === 'ficha' && e.target.value.trim().toLowerCase() !== _fichaUlt[fc.s] && _fichasLista &&
+           _fichasLista.some(x => String(x.nome).trim().toLowerCase() === e.target.value.trim().toLowerCase())) carregarFicha(fc.s);
+        return;
+      }
       const s = ladoDe(e.target.id);
       if(s){ // escolher um nome exato da lista já carrega; digitação livre espera o change
         const v = e.target.value.trim().toLowerCase();
@@ -2986,7 +3170,20 @@ function calcSyncSelects(){
       }
       atualizar();
     });
+    panel.addEventListener('click', e => {
+      const b = e.target.closest?.('.cpk-addmv'); if(!b) return;
+      const box = $('cpk-'+b.dataset.s+'-moves'); if(!box) return;
+      box.dataset.n = Math.min(GOLPES_MAX, (parseInt(box.dataset.n) || GOLPES_INICIAIS) + 1);
+      mostrarSlots(b.dataset.s);
+    });
     panel.addEventListener('change', e => {
+      const fc = fichaCampo(e.target.id);
+      if(fc){
+        if(fc.k === 'ficha'){ if(e.target.value.trim().toLowerCase() !== _fichaUlt[fc.s]) carregarFicha(fc.s); }
+        else if(fc.k === 'fpk') aplicarPokemonFicha(fc.s);
+        else { aplicarBola(fc.s); atualizar(); }
+        return;
+      }
       const s = ladoDe(e.target.id);
       if(s){
         if(e.target.value.trim().toLowerCase() === _ultimo[s]) return; // já carregado
@@ -3005,6 +3202,12 @@ function calcSyncSelects(){
       panel.querySelectorAll('input[type=checkbox]:not(#cpk-auto)').forEach(el => { el.checked = false; });
       ['cpk-p1-ativo','cpk-p2-ativo'].forEach(n => { const r = document.querySelector('input[name="'+n+'"][value="1"]'); if(r) r.checked = true; });
       panel.querySelectorAll('.cpk-status').forEach(el => { el.textContent = ''; });
+      ['p1','p2'].forEach(s => {
+        const sel = $('cpk-'+s+'-fpk'); if(sel) sel.innerHTML = '<option value="">—</option>';
+        const box = $('cpk-'+s+'-moves'); if(box) box.dataset.n = GOLPES_INICIAIS;
+        _fichaPk[s] = []; _fichaUlt[s] = ''; _ftok[s]++; _fptok[s]++;
+        mostrarSlots(s);
+      });
       _tok.p1++; _tok.p2++; _ultimo.p1 = ''; _ultimo.p2 = '';
       _tocados.forEach(c => { if(c === 'stage') ajustarEstagio(0); else NEUTRO[c](); }); _tocados.clear();
       atualizar();
