@@ -2322,6 +2322,7 @@ function calcSyncSelects(){
 (function(){
   const _origCalcDano = window.calcDano;
   window.calcDano = function(){
+    const nv = (typeof window.calcNivelInfo === 'function') ? window.calcNivelInfo() : null;
     const getVal = id => {
       const el = document.getElementById(id);
       if(!el) return 0;
@@ -2339,6 +2340,7 @@ function calcSyncSelects(){
     let situVal = parseInt(situVal_raw.split('_')[0]) || 0;
     // If it was "2" tier (alvo desprevenido) and crit-stab checked → 3
     if(parseInt(situVal_raw.split('_')[0]) === 2 && critStab) situVal = 3;
+    if(nv && nv.situ != null) situVal = nv.situ;
 
     const stageDmg_raw = parseInt(document.getElementById('calc-stage-val')?.textContent || 0) || 0;
     const stageDmg = stageDmg_raw * 4;
@@ -2364,11 +2366,11 @@ function calcSyncSelects(){
 
     danoMin += stageDmg; danoMax += stageDmg;
 
-    // Escala por nível do atacante (painel "Pokémon em batalha")
-    const nv = (typeof window.calcNivelInfo === 'function') ? window.calcNivelInfo() : null;
+    // Escala por nível (painel "Pokémon em batalha")
     if(nv && nv.mult !== 1){ danoMin = Math.round(danoMin*nv.mult); danoMax = Math.round(danoMax*nv.mult); }
 
-    const stabVal = parseFloat(document.querySelector('input[name="calc-stab"]:checked')?.value || 0);
+    let stabVal = parseFloat(document.querySelector('input[name="calc-stab"]:checked')?.value || 0);
+    if(nv && nv.stab != null) stabVal = nv.stab;
     if(stabVal > 0){ danoMin = Math.round(danoMin*(1+stabVal)); danoMax = Math.round(danoMax*(1+stabVal)); }
 
     // Apply dynamic bonus checkboxes
@@ -2400,8 +2402,8 @@ function calcSyncSelects(){
     if(situVal   !== 0) lines.push('Situação: '+(situVal>0?'+':'')+situVal);
     lines.push('→ Tier '+tierFinal+(somaTiers<1?' (mín. 1)':' (soma '+somaTiers+')'));
     if(stageDmg  !== 0) lines.push('Estágios: '+(stageDmg>0?'+':'')+stageDmg+' dano');
-    if(stabVal   >  0)  lines.push('STAB: +'+(stabVal*100)+'%');
-    if(nv && nv.nivel != null && nv.mult !== 1) lines.push('Nível '+nv.nivel+': ×'+nv.mult.toFixed(2));
+    if(stabVal   >  0)  lines.push('STAB: +'+Math.round(stabVal*100)+'%');
+    if(nv && nv.mult !== 1) lines.push('Nível ('+nv.rotulo+'): ×'+nv.mult.toFixed(2));
     bonusApplied.forEach(b => lines.push(b.label+': +'+b.pct+'%'));
 
     const bgs = ['','linear-gradient(135deg,#1a7a1a,#2e9e50)','linear-gradient(135deg,#1a4a8a,#2563a8)','linear-gradient(135deg,#7a4a00,#c07a00)','linear-gradient(135deg,#8a1a1a,#c03030)','linear-gradient(135deg,#5a1a9a,#8a30d8)','linear-gradient(135deg,#0f1a3a,#1a3a6a)'];
@@ -2409,7 +2411,7 @@ function calcSyncSelects(){
 
     const mods = [];
     if(stageDmg !== 0) mods.push('estágios '+(stageDmg>0?'+':'')+stageDmg);
-    if(stabVal > 0) mods.push('STAB +'+(stabVal*100)+'%');
+    if(stabVal > 0) mods.push('STAB +'+Math.round(stabVal*100)+'%');
     if(nv && nv.mult !== 1) mods.push('nível ×'+nv.mult.toFixed(2));
     bonusApplied.forEach(b => mods.push(b.label+' +'+b.pct+'%'));
 
@@ -2427,34 +2429,39 @@ function calcSyncSelects(){
 
 <script>
 // ══════════════════════════════════════════════════════════
-// CALCULADORA DE DANO — Pokémon em batalha + escala por nível
-// (inspirado, em parte, na calculadora de dano do Showdown)
+// CALCULADORA DE DANO — painel "Pokémon 1 × Pokémon 2"
+// (inspirado, em parte, na calculadora de dano do Showdown,
+//  mas calculando pelos Tiers do sistema de batalhas)
 //
-// • O NÍVEL DO ATACANTE multiplica a faixa de dano do Tier.
-//   Usa o termo de nível do Showdown, floor(2·L/5)+2, normalizado
-//   no nível de referência (NIVEL_REF = ×1.00) e suavizado por um
-//   expoente (0.5 = raiz quadrada), já que aqui o HP não escala
-//   com o nível como no jogo original.
-// • Os campos de Pokémon preenchem sozinhos Poder, Efetividade,
-//   Diferença de Base Stats e STAB (dá pra desligar o automático
-//   e continuar usando os selects à mão).
+// • NÍVEL: o dano é multiplicado pela razão entre o nível do atacante
+//   e o do defensor, usando o termo de nível do Showdown,
+//   floor(2·L/5)+2, suavizado por um expoente. Níveis iguais = ×1,00.
+//   Nível em branco conta como NIVEL_REF.
+// • Cada lado tem 4 golpes; o golpe "ativo" do atacante alimenta os
+//   campos da calculadora (Poder, Efetividade, Base Stats, STAB,
+//   Crítico e Estágios). Os demais golpes são calculados na hora.
+// • Com "Preencher automaticamente" desligado, tudo continua
+//   funcionando só pelos selects originais (+ o multiplicador de nível).
 // ══════════════════════════════════════════════════════════
 (function(){
   // ── AJUSTES (mexa só aqui) ───────────────────────────────
-  const NIVEL_REF      = 50;   // nível em que a tabela de Tiers vale 1:1 (×1.00)
+  const NIVEL_REF      = 50;   // nível assumido quando um dos campos de nível está vazio
   const NIVEL_EXPOENTE = 0.5;  // 1 = Showdown puro · menor = curva mais suave
-  const NIVEL_MULT_MIN = 0.25; // travas de segurança do multiplicador
-  const NIVEL_MULT_MAX = 1.5;
+  const NIVEL_MULT_MIN = 0.25; // trava inferior do multiplicador
+  const NIVEL_MULT_MAX = 2.0;  // trava superior do multiplicador (teto ×2,0)
 
   const $ = id => document.getElementById(id);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const fatorNivel = L => Math.floor(2*L/5) + 2;
-  const multNivel  = L => {
-    const m = Math.pow(fatorNivel(L)/fatorNivel(NIVEL_REF), NIVEL_EXPOENTE);
-    return Math.min(NIVEL_MULT_MAX, Math.max(NIVEL_MULT_MIN, m));
-  };
+  function multNiveis(La, Ld){
+    if(La == null && Ld == null) return 1;
+    const fa = fatorNivel(La == null ? NIVEL_REF : La);
+    const fd = fatorNivel(Ld == null ? NIVEL_REF : Ld);
+    return clamp(Math.pow(fa/fd, NIVEL_EXPOENTE), NIVEL_MULT_MIN, NIVEL_MULT_MAX);
+  }
 
   // Tabela de tipos (atacante → defensor). Pares ausentes = ×1.
-  // Tipos fora desta tabela (light, scent…) são tratados como "ajuste manual".
+  // Tipos fora desta tabela (light, scent…) viram "ajuste manual".
   const CHART = {
     normal:{rock:.5,ghost:0,steel:.5},
     fire:{fire:.5,water:.5,grass:2,ice:2,bug:2,rock:.5,dragon:.5,steel:2},
@@ -2477,6 +2484,7 @@ function calcSyncSelects(){
   };
   const TIPOS = ['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy','light','scent'];
   const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const DEFAULT_TIERS = [{num:1,min:2,max:8},{num:2,min:9,max:16},{num:3,min:17,max:24},{num:4,min:25,max:32},{num:5,min:33,max:40},{num:6,min:41,max:48}];
 
   // ── Regras → Tiers ───────────────────────────────────────
   function tierPoder(p, semEfeito){
@@ -2493,43 +2501,290 @@ function calcSyncSelects(){
     return d >= 0 ? t : -t;
   }
   function tierEfet(mult){
-    if(mult === 0) return null;     // imune
     if(mult <= .25) return -3;
     if(mult <= .5)  return -1;
     if(mult >= 4)   return 3;
     if(mult >= 2)   return 1;
     return 0;
   }
+  function faixa(tier){ // mesma lógica do calcDano
+    const td = window._calcTiersData || DEFAULT_TIERS;
+    const e = td.find(t => t.num === tier);
+    if(e) return [e.min, e.max];
+    const sorted = [...td].sort((a,b) => a.num - b.num);
+    const last = sorted[sorted.length-1] || {num:6,min:41,max:48};
+    const step = (last.max - last.min + 1) || 8, extra = tier - last.num;
+    return [last.min + extra*step, last.max + extra*step];
+  }
 
-  // ── Helpers de DOM ───────────────────────────────────────
-  const num = id => { const v = parseFloat($(id)?.value); return Number.isFinite(v) ? v : null; };
-  const tiposDe = lado => [$('cpk-'+lado+'-t1')?.value, $('cpk-'+lado+'-t2')?.value].filter(Boolean);
+  // ── Leitura dos campos ───────────────────────────────────
+  function lerLado(s){
+    const g = x => $('cpk-'+s+'-'+x);
+    const n = x => { const v = parseFloat(g(x)?.value); return Number.isFinite(v) ? v : null; };
+    const c = x => !!g(x)?.checked;
+    const L = parseInt(g('nivel')?.value);
+    const e = x => parseInt(g(x)?.value) || 0;
+    const golpes = [1,2,3,4].map(i => ({
+      i, nome: (g('m'+i+'-nome')?.value || '').trim(), tipo: g('m'+i+'-tipo')?.value || '',
+      cat: g('m'+i+'-cat')?.value || 'fis', poder: n('m'+i+'-poder'), sem: c('m'+i+'-sem'), crit: c('m'+i+'-crit')
+    }));
+    return {
+      s, nome: (g('nome')?.value || '').trim(),
+      nivel: (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null,
+      tipos: [g('t1')?.value, g('t2')?.value].filter(Boolean),
+      hp: n('hp'), hpAtual: n('hpatual'), atk: n('atk'), def: n('def'), spa: n('spa'), spd: n('spd'),
+      st: {atk: e('eatk'), def: e('edef'), spa: e('espa'), spd: e('espd')},
+      mega: c('mega'), dyn: c('dyn'), adapt: c('adapt'),
+      tera: {on: c('tera'), tipo: g('teratipo')?.value || ''},
+      golpes, ativo: parseInt(document.querySelector('input[name="cpk-'+s+'-ativo"]:checked')?.value) || 1
+    };
+  }
+  function papeis(){
+    const dir = document.querySelector('input[name="cpk-dir"]:checked')?.value || '12';
+    const p1 = lerLado('p1'), p2 = lerLado('p2');
+    return dir === '21' ? {A:p2, D:p1} : {A:p1, D:p2};
+  }
+  const painelAtivo = () => !!$('cpk-p1-nome');
+  const hpEfetivo = P => P.hp > 0 ? P.hp * (P.dyn ? 2 : 1) : null;
 
-  // Seleciona no <select> a opção cujo prefixo numérico do value == tier
+  // ── Derivação (info dos Pokémon → Tiers) ─────────────────
+  function derivar(A, D, m){
+    const r = {notas: []};
+    const tipo = m.tipo, cat = m.cat;
+    let poder = m.poder;
+    if(A.tera.on && A.tera.tipo && tipo && tipo === A.tera.tipo && poder > 0 && poder < 60){
+      r.notas.push('Tera: poder '+poder+' → 60'); poder = 60;
+    }
+    r.poder = poder;
+    r.semAplica = !!(m.sem && poder >= 100 && poder <= 120);
+    r.tp = tierPoder(poder, m.sem);
+    // STAB (regra: Tera dá STAB no novo tipo sem perder o original; mesmo tipo = +40%, +80% c/ Adaptability)
+    r.stab = null;
+    if(tipo && A.tipos.length){
+      const base = A.adapt ? .4 : .2, dobro = A.adapt ? .8 : .4;
+      if(A.tera.on && A.tera.tipo){
+        if(tipo === A.tera.tipo) r.stab = A.tipos.includes(tipo) ? dobro : base;
+        else r.stab = A.tipos.includes(tipo) ? base : 0;
+      } else r.stab = A.tipos.includes(tipo) ? base : 0;
+    }
+    // Efetividade
+    r.te = null; r.mult = null; r.imune = false; r.efetManual = false;
+    if(tipo && D.tipos.length){
+      if(!CHART[tipo] || D.tipos.some(t => !CHART[t])) r.efetManual = true;
+      else {
+        let mm = 1; D.tipos.forEach(t => { mm *= (CHART[tipo][t] ?? 1); });
+        r.mult = mm;
+        if(mm === 0) r.imune = true; else r.te = tierEfet(mm);
+      }
+    }
+    // Diferença de Base Stats
+    r.a = cat === 'esp' ? A.spa : A.atk;
+    r.d = cat === 'esp' ? D.spd : D.def;
+    r.ts = (r.a != null && r.d != null) ? tierStats(r.a, r.d) : null;
+    // Estágios (Mega = +1 em todos)
+    const ka = cat === 'esp' ? 'spa' : 'atk', kd = cat === 'esp' ? 'spd' : 'def';
+    const ea = clamp(A.st[ka] + (A.mega ? 1 : 0), -6, 6), ed = clamp(D.st[kd] + (D.mega ? 1 : 0), -6, 6);
+    r.stage = clamp(ea - ed, -6, 6);
+    r.crit = !!m.crit;
+    return r;
+  }
+
+  // ── Cálculo puro (golpes que não alimentam o resultado principal) ──
+  const getSel = id => parseInt(String($(id)?.value || '0').split('_')[0]) || 0;
+  function situSelect(){
+    let v = getSel('calc-situacao');
+    if(v === 2 && $('calc-crit-stab')?.checked) v = 3;
+    return v;
+  }
+  function bonusPct(mn, mx){
+    let data = [];
+    try{ data = window._calcBonusData || (typeof CALC_DEFAULTS !== 'undefined' ? CALC_DEFAULTS.bonus : []) || []; }catch(e){}
+    data.forEach(b => {
+      const el = $(b.id);
+      if(!el || !el.checked || b.especial === 'crit3' || !(b.pct > 0)) return;
+      const k = 1 + b.pct/100; mn = Math.round(mn*k); mx = Math.round(mx*k);
+    });
+    if(!data.find(b => b.id === 'calc-charge') && $('calc-charge')?.checked){ mn = Math.round(mn*1.25); mx = Math.round(mx*1.25); }
+    return [mn, mx];
+  }
+  function stabRadio(){ return parseFloat(document.querySelector('input[name="calc-stab"]:checked')?.value || 0) || 0; }
+  function calcMov(A, D, m){
+    if(m.poder == null && !m.tipo) return null;
+    const r = derivar(A, D, m);
+    const te = r.imune ? 0 : (r.efetManual ? getSel('calc-efet') : (r.te ?? 0));
+    const soma = (r.tp ?? 0) + te + (r.ts ?? 0) + (r.crit ? 3 : situSelect());
+    const tier = Math.max(1, soma);
+    let [mn, mx] = faixa(tier);
+    mn += r.stage*4; mx += r.stage*4;
+    const mult = multNiveis(A.nivel, D.nivel);
+    if(mult !== 1){ mn = Math.round(mn*mult); mx = Math.round(mx*mult); }
+    const stab = r.stab != null ? r.stab : stabRadio();
+    if(stab > 0){ mn = Math.round(mn*(1+stab)); mx = Math.round(mx*(1+stab)); }
+    [mn, mx] = bonusPct(mn, mx);
+    if(r.imune){ mn = 0; mx = 0; } else { mn = Math.max(1, mn); mx = Math.max(1, mx); }
+    return {tier, min: mn, max: mx, imune: r.imune, manual: r.efetManual};
+  }
+  function textoResultado(res, D){
+    if(!res) return '';
+    if(res.imune) return '🚫 Imune';
+    const hp = hpEfetivo(D);
+    const pct = hp ? ' ('+(Math.round(res.min/hp*1000)/10)+'–'+(Math.round(res.max/hp*1000)/10)+'%)' : '';
+    return res.min+'–'+res.max+pct+' · T'+res.tier+(res.manual ? ' ⚠️' : '');
+  }
+
+  // ── API usada pelo calcDano ──────────────────────────────
+  window.calcNivelInfo = function(){
+    if(!painelAtivo()) return {nivel:null, mult:1, imune:false, stab:null, situ:null, rotulo:''};
+    const {A, D} = papeis();
+    const m = A.golpes[A.ativo-1];
+    const mult = multNiveis(A.nivel, D.nivel);
+    const auto = !!$('cpk-auto')?.checked;
+    const r = derivar(A, D, m);
+    return {
+      nivel: A.nivel, mult,
+      imune: auto && r.imune,
+      stab: auto ? r.stab : null,
+      situ: (auto && r.crit) ? 3 : null,
+      rotulo: (A.nivel != null ? 'Lv '+A.nivel : 'Lv ?') + ' → ' + (D.nivel != null ? 'Lv '+D.nivel : 'Lv ?')
+    };
+  };
+  let _principal = null;
+  window.calcPosCalculo = function(r){
+    _principal = r;
+    renderResumo(r);
+  };
+  function renderResumo(r){
+    const out = $('calc-pk-resumo'); if(!out || !painelAtivo()) return;
+    const {A, D} = papeis();
+    const m = A.golpes[A.ativo-1];
+    const nomeA = (A.nome || 'Atacante') + (A.nivel != null ? ' Lv.'+A.nivel : '');
+    const nomeD = (D.nome || 'Defensor') + (D.nivel != null ? ' Lv.'+D.nivel : '');
+    const golpe = m.nome || ('golpe '+A.ativo);
+    const nv = r.nv || {};
+    if(nv.imune){
+      const rangeEl = $('calc-dano-range'); if(rangeEl) rangeEl.textContent = 'Imune';
+      out.style.display = 'block';
+      out.innerHTML = '🚫 <b>'+nomeA+'</b> — '+golpe+' → <b>'+nomeD+'</b>: o alvo é imune a esse tipo de golpe (dano 0).';
+      return;
+    }
+    const partes = [];
+    const hpMax = hpEfetivo(D);
+    if(hpMax > 0){
+      let hpAtual = D.hpAtual > 0 ? D.hpAtual * (D.dyn ? 2 : 1) : hpMax;
+      hpAtual = Math.min(hpAtual, hpMax);
+      const pMin = Math.round(r.danoMin/hpMax*1000)/10, pMax = Math.round(r.danoMax/hpMax*1000)/10;
+      partes.push('<b>'+r.danoMin+'–'+r.danoMax+'</b> de '+hpAtual+(hpAtual !== hpMax ? '/'+hpMax : '')+' HP ('+pMin+'–'+pMax+'% do HP máx.)');
+      if(r.danoMin >= hpAtual) partes.push('<b>nocaute garantido em 1 golpe</b>');
+      else if(r.danoMax >= hpAtual) partes.push('<b>possível nocaute em 1 golpe</b>');
+      else partes.push('nocaute em <b>'+Math.ceil(hpAtual/r.danoMax)+'–'+Math.ceil(hpAtual/Math.max(1, r.danoMin))+'</b> golpes');
+    }
+    if(!partes.length){ out.style.display = 'none'; out.innerHTML = ''; return; }
+    out.style.display = 'block';
+    out.innerHTML = '🎯 <b>'+nomeA+'</b> — '+golpe+' → <b>'+nomeD+'</b>: '+partes.join(' · ');
+  }
+  function renderLinhas(){
+    if(!painelAtivo()) return;
+    const {A} = papeis();
+    const p1 = lerLado('p1'), p2 = lerLado('p2');
+    [[p1, p2], [p2, p1]].forEach(([X, Y]) => {
+      X.golpes.forEach(m => {
+        const el = $('cpk-'+X.s+'-m'+m.i+'-res'); if(!el) return;
+        let txt = '';
+        if(X.s === A.s && m.i === A.ativo && _principal){
+          const nv = _principal.nv || {};
+          txt = textoResultado({tier:_principal.tierFinal, min:_principal.danoMin, max:_principal.danoMax, imune:!!nv.imune, manual:derivar(X, Y, m).efetManual}, Y);
+        } else txt = textoResultado(calcMov(X, Y, m), Y);
+        el.textContent = txt;
+      });
+    });
+  }
+
+  // ── Preenchimento automático dos campos originais ────────
   function setSelTier(id, tier, semEfeito){
     const sel = $(id); if(!sel) return false;
-    let c = [...sel.options].filter(o => parseInt(String(o.value).split('_')[0]) === tier);
+    const c = [...sel.options].filter(o => parseInt(String(o.value).split('_')[0]) === tier);
     if(!c.length) return false;
     const re = /sem efeito/i;
     const pref = c.filter(o => semEfeito ? re.test(o.textContent) : !re.test(o.textContent));
     sel.value = (pref[0] || c[0]).value;
     return true;
   }
-  function aplicarStab(tem){
+  function syncStabRadio(v){
     const radios = [...document.querySelectorAll('input[name="calc-stab"]')];
-    if(!radios.length) return;
-    const v = parseFloat(radios.find(r => r.checked)?.value || 0);
-    if(!tem){
-      const zero = radios.find(r => parseFloat(r.value) === 0);
-      if(zero) zero.checked = true;
-    } else if(!(v > 0)){
-      const normal = radios.find(r => Math.abs(parseFloat(r.value) - .2) < 1e-9) || radios.find(r => parseFloat(r.value) > 0);
-      if(normal) normal.checked = true;
-    }
+    const alvo = radios.find(r => Math.abs(parseFloat(r.value) - v) < 1e-9);
+    if(alvo) alvo.checked = true;
+  }
+  const _tocados = new Set();
+  const NEUTRO = {
+    poder: () => setSelTier('calc-poder', 0),
+    efet:  () => setSelTier('calc-efet', 0),
+    stats: () => setSelTier('calc-stats', 0),
+    stab:  () => syncStabRadio(0)
+  };
+  function marcar(campo, aplicou){
+    if(aplicou) _tocados.add(campo);
+    else if(_tocados.has(campo)){ NEUTRO[campo](); _tocados.delete(campo); }
+  }
+  function ajustarEstagio(alvo){
+    const cur = parseInt($('calc-stage-val')?.textContent) || 0;
+    if(cur !== alvo && typeof window.calcStageAdj === 'function') window.calcStageAdj(alvo - cur);
   }
 
-  // ── Dados dos Pokémon ────────────────────────────────────
-  const _cache = {}, _tok = {atk:0, def:0}, _ultimo = {atk:'', def:''};
+  function atualizar(){
+    if(!painelAtivo()) return;
+    const {A, D} = papeis();
+    const m = A.golpes[A.ativo-1];
+    const hints = [];
+
+    if($('cpk-auto')?.checked){
+      const r = derivar(A, D, m);
+      r.notas.forEach(n => hints.push(n));
+
+      let ok = false;
+      if(r.tp != null){ ok = setSelTier('calc-poder', r.tp, r.semAplica); if(ok) hints.push('Poder '+r.poder+' → <b>+'+r.tp+'</b>'); }
+      marcar('poder', ok);
+
+      ok = false;
+      if(r.efetManual) hints.push('⚠️ Tipo sem tabela (Light/Scent): ajuste a <b>Efetividade</b> à mão');
+      else if(r.imune) hints.push('Efetividade ×0 → <b>imune</b>');
+      else if(r.te != null){ ok = setSelTier('calc-efet', r.te); if(ok) hints.push('Efetividade ×'+r.mult+' → <b>'+(r.te>0?'+':'')+r.te+'</b>'); }
+      if(r.efetManual) _tocados.delete('efet'); else marcar('efet', ok);
+
+      ok = false;
+      if(r.ts != null){
+        ok = setSelTier('calc-stats', r.ts);
+        if(ok) hints.push((m.cat==='esp'?'Sp.Atk ':'Atk ')+r.a+' vs '+(m.cat==='esp'?'Sp.Def ':'Def ')+r.d+' → <b>'+(r.ts>0?'+':'')+r.ts+'</b>');
+      }
+      marcar('stats', ok);
+
+      if(r.stab != null){
+        syncStabRadio(r.stab); _tocados.add('stab');
+        hints.push(r.stab > 0 ? 'STAB <b>+'+Math.round(r.stab*100)+'%</b>' : 'Sem STAB');
+      } else marcar('stab', false);
+
+      if(r.crit) hints.push('Crítico → situação <b>+3</b>');
+
+      if(r.stage !== 0){ ajustarEstagio(r.stage); _tocados.add('stage'); hints.push('Estágios: <b>'+(r.stage>0?'+':'')+r.stage+'</b> ('+(r.stage>0?'+':'')+(r.stage*4)+' dano)'); }
+      else if(_tocados.has('stage')){ ajustarEstagio(0); _tocados.delete('stage'); }
+    }
+
+    const mult = multNiveis(A.nivel, D.nivel);
+    const info = $('cpk-nivel-info');
+    if(info){
+      const ex = [[5,5],[20,20],[5,50],[50,5],[60,5]].map(([a,d]) => 'Lv '+a+'×Lv '+d+' = ×'+multNiveis(a,d).toFixed(2)).join(' · ');
+      const quem = (A.nivel == null && D.nivel == null)
+        ? 'Sem níveis informados → ×1,00 (a tabela vale como está). '
+        : 'Atacante '+(A.nivel != null ? 'Lv '+A.nivel : 'Lv '+NIVEL_REF+' (padrão)')+' × Defensor '+(D.nivel != null ? 'Lv '+D.nivel : 'Lv '+NIVEL_REF+' (padrão)')+' → dano <b>×'+mult.toFixed(2)+'</b>. ';
+      info.innerHTML = quem + '<span style="opacity:.8">Ex.: '+ex+' (teto ×'+NIVEL_MULT_MAX.toFixed(1)+')</span>';
+    }
+    const h = $('cpk-hints'); if(h) h.innerHTML = hints.join(' · ');
+
+    if(typeof window.calcDano === 'function') window.calcDano();   // → calcPosCalculo → resumo
+    renderLinhas();
+  }
+
+  // ── Dados dos Pokémon (banco + PokeAPI) ──────────────────
+  const _cache = {}, _tok = {p1:0, p2:0}, _ultimo = {p1:'', p2:''};
   function achar(nome){
     try{
       const n = nome.trim().toLowerCase();
@@ -2553,157 +2808,33 @@ function calcSyncSelects(){
     };
   }
   const setV = (id, v) => { const el = $(id); if(el) el.value = (v == null ? '' : v); };
-  function setTipos(lado, ts){
+  function setTipos(s, ts){
     const l = (ts||[]).filter(Boolean).map(t => String(t).toLowerCase());
-    setV('cpk-'+lado+'-t1', l[0] || '');
-    setV('cpk-'+lado+'-t2', l[1] || '');
+    setV('cpk-'+s+'-t1', l[0] || ''); setV('cpk-'+s+'-t2', l[1] || '');
   }
-  async function carregarLado(lado){
-    const token = ++_tok[lado];
-    const nome = ($('cpk-'+lado+'-nome')?.value || '').trim();
-    const status = $('cpk-'+lado+'-status');
-    _ultimo[lado] = nome.toLowerCase();
-    // limpa os dados do Pokémon anterior (evita stats "fantasma")
-    if(lado === 'atk'){ setV('cpk-atk-atk',''); setV('cpk-atk-spa',''); }
-    else { setV('cpk-def-def',''); setV('cpk-def-spd',''); setV('cpk-def-hp',''); setV('cpk-def-hpatual',''); }
-    if(!nome){ setTipos(lado, []); if(status) status.textContent = ''; atualizar(); return; }
+  async function carregarLado(s){
+    const token = ++_tok[s];
+    const nome = ($('cpk-'+s+'-nome')?.value || '').trim();
+    const status = $('cpk-'+s+'-status');
+    _ultimo[s] = nome.toLowerCase();
+    ['hp','hpatual','atk','def','spa','spd'].forEach(k => setV('cpk-'+s+'-'+k, '')); // evita stats "fantasma"
+    if(!nome){ setTipos(s, []); if(status) status.textContent = ''; atualizar(); return; }
     if(status) status.textContent = 'Buscando…';
     const reg = achar(nome);
-    setTipos(lado, reg ? [reg.tipo1, reg.tipo2] : []);
+    setTipos(s, reg ? [reg.tipo1, reg.tipo2] : []);
     try{
       const d = await pokeapi(reg ? (reg.name||reg.nome) : nome);
-      if(token !== _tok[lado]) return;
-      if(!reg) setTipos(lado, d.tipos);
-      if(lado === 'atk'){ setV('cpk-atk-atk', d.atk); setV('cpk-atk-spa', d.spa); }
-      else {
-        setV('cpk-def-def', d.def); setV('cpk-def-spd', d.spd);
-        setV('cpk-def-hp', d.hp > 100 ? d.hp : 100); // regra: HP base > 100 vale como HP máximo
-        setV('cpk-def-hpatual', '');
-      }
+      if(token !== _tok[s]) return;
+      if(!reg) setTipos(s, d.tipos);
+      setV('cpk-'+s+'-atk', d.atk); setV('cpk-'+s+'-def', d.def);
+      setV('cpk-'+s+'-spa', d.spa); setV('cpk-'+s+'-spd', d.spd);
+      setV('cpk-'+s+'-hp', d.hp > 100 ? d.hp : 100); // regra: HP base > 100 vale como HP máximo; senão 100
       if(status) status.textContent = 'Stats base carregados (PokeAPI)';
     }catch(e){
-      if(token !== _tok[lado]) return;
+      if(token !== _tok[s]) return;
       if(status) status.textContent = reg ? 'Tipos carregados · stats base não encontrados, preencha à mão' : 'Não encontrado — preencha à mão';
     }
     atualizar();
-  }
-
-  // ── API usada pelo calcDano ──────────────────────────────
-  window.calcNivelInfo = function(){
-    const L = parseInt($('cpk-atk-nivel')?.value);
-    const nivel = (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null;
-    return { nivel, mult: nivel == null ? 1 : multNivel(nivel), imune: !!window._cpkImune };
-  };
-  window.calcPosCalculo = function(r){
-    const out = $('calc-pk-resumo'); if(!out) return;
-    const nv = r.nv || {};
-    const partes = [];
-    const rangeEl = $('calc-dano-range');
-    if(nv.imune){
-      if(rangeEl) rangeEl.textContent = 'Imune';
-      out.style.display = 'block';
-      out.textContent = '🚫 O alvo é imune a este tipo de golpe — dano 0.';
-      return;
-    }
-    const hpMax = num('cpk-def-hp');
-    if(hpMax > 0){
-      let hpAtual = num('cpk-def-hpatual'); if(!(hpAtual > 0)) hpAtual = hpMax;
-      hpAtual = Math.min(hpAtual, hpMax);
-      const pMin = Math.round(r.danoMin/hpMax*1000)/10, pMax = Math.round(r.danoMax/hpMax*1000)/10;
-      partes.push('<b>'+r.danoMin+'–'+r.danoMax+'</b> de '+hpAtual+(hpAtual!==hpMax?'/'+hpMax:'')+' HP ('+pMin+'–'+pMax+'% do HP máx.)');
-      if(r.danoMin >= hpAtual) partes.push('<b>nocaute garantido em 1 golpe</b>');
-      else if(r.danoMax >= hpAtual) partes.push('<b>possível nocaute em 1 golpe</b>');
-      else partes.push('nocaute em <b>'+Math.ceil(hpAtual/r.danoMax)+'–'+Math.ceil(hpAtual/Math.max(1,r.danoMin))+'</b> golpes');
-    }
-    if(!partes.length){ out.style.display = 'none'; out.innerHTML = ''; return; }
-    out.style.display = 'block';
-    out.innerHTML = '🎯 ' + partes.join(' · ');
-  };
-
-  // ── Atualização (info dos Pokémon → campos da calculadora) ──
-  // Campos que o preenchimento automático alterou; se o dado some, voltam ao neutro.
-  const _tocados = new Set();
-  const NEUTRO = {
-    poder: () => setSelTier('calc-poder', 0),
-    efet:  () => setSelTier('calc-efet', 0),
-    stats: () => setSelTier('calc-stats', 0),
-    stab:  () => aplicarStab(false)
-  };
-  function marcar(campo, aplicou){
-    if(aplicou) _tocados.add(campo);
-    else if(_tocados.has(campo)){ NEUTRO[campo](); _tocados.delete(campo); }
-  }
-  function atualizar(){
-    const hints = [];
-    window._cpkImune = false;
-
-    // Nível
-    const nv = window.calcNivelInfo();
-    const info = $('cpk-nivel-info');
-    if(info){
-      const ex = [5, 20, NIVEL_REF, 60].filter((v,i,a) => a.indexOf(v) === i).sort((a,b)=>a-b)
-        .map(L => 'Lv '+L+' ×'+multNivel(L).toFixed(2)).join(' · ');
-      info.innerHTML = (nv.nivel != null
-        ? 'Nível <b>'+nv.nivel+'</b> → dano <b>×'+nv.mult.toFixed(2)+'</b>. '
-        : 'Sem nível informado → dano ×1.00 (a tabela vale como está). ')
-        + '<span style="opacity:.8">Referência: '+ex+'</span>';
-    }
-
-    if($('cpk-auto')?.checked){
-      const tipoGolpe = $('cpk-mv-tipo')?.value || '';
-      const cat = $('cpk-mv-cat')?.value || 'fis';
-      const tAtk = tiposDe('atk'), tDef = tiposDe('def');
-
-      // Poder
-      const p = num('cpk-mv-poder');
-      const semEf = !!$('cpk-mv-sem')?.checked;
-      const tp = tierPoder(p, semEf);
-      const poderOk = tp != null && setSelTier('calc-poder', tp, semEf && p >= 100 && p <= 120);
-      if(poderOk) hints.push('Poder '+p+' → <b>+'+tp+'</b>');
-      marcar('poder', poderOk);
-
-      // STAB
-      const stabOk = !!(tipoGolpe && tAtk.length);
-      if(stabOk){
-        const tem = tAtk.includes(tipoGolpe);
-        aplicarStab(tem);
-        hints.push(tem ? 'STAB aplicado' : 'Sem STAB');
-      }
-      marcar('stab', stabOk);
-
-      // Efetividade
-      let efetOk = false, efetManual = false;
-      if(tipoGolpe && tDef.length){
-        if(!CHART[tipoGolpe] || tDef.some(t => !CHART[t])){
-          efetManual = true;
-          hints.push('⚠️ Tipo sem tabela (Light/Scent): ajuste a <b>Efetividade</b> à mão');
-        } else {
-          let m = 1; tDef.forEach(t => { m *= (CHART[tipoGolpe][t] ?? 1); });
-          if(m === 0){ window._cpkImune = true; hints.push('Efetividade ×0 → <b>imune</b>'); }
-          else {
-            const te = tierEfet(m);
-            efetOk = setSelTier('calc-efet', te);
-            if(efetOk) hints.push('Efetividade ×'+m+' → <b>'+(te>0?'+':'')+te+'</b>');
-          }
-        }
-      }
-      if(efetManual) _tocados.delete('efet'); else marcar('efet', efetOk);
-
-      // Diferença de Base Stats
-      const a = num(cat === 'esp' ? 'cpk-atk-spa' : 'cpk-atk-atk');
-      const d = num(cat === 'esp' ? 'cpk-def-spd' : 'cpk-def-def');
-      let statsOk = false;
-      if(a != null && d != null){
-        const ts = tierStats(a, d);
-        statsOk = setSelTier('calc-stats', ts);
-        if(statsOk) hints.push((cat==='esp'?'Sp.Atk ':'Atk ')+a+' vs '+(cat==='esp'?'Sp.Def ':'Def ')+d+' → <b>'+(ts>0?'+':'')+ts+'</b>');
-      }
-      marcar('stats', statsOk);
-    }
-
-    const h = $('cpk-hints');
-    if(h) h.innerHTML = hints.length ? hints.join(' · ') : '';
-    if(typeof window.calcDano === 'function') window.calcDano();
   }
 
   // ── Montagem do painel ───────────────────────────────────
@@ -2712,86 +2843,131 @@ function calcSyncSelects(){
     const st = document.createElement('style'); st.id = 'calc-pk-style';
     st.textContent = `
     .cpk-panel{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px}
-    .cpk-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .cpk-bar{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;margin-bottom:12px}
     .cpk-title{font-size:11px;font-weight:800;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;margin-right:auto}
+    .cpk-seg{display:inline-flex;border:1.5px solid var(--border);border-radius:8px;overflow:hidden}
+    .cpk-seg label{font-size:11px;padding:5px 10px;cursor:pointer;background:var(--surface);color:var(--muted);font-weight:700;border-right:1px solid var(--border)}
+    .cpk-seg label:last-child{border-right:0}
+    .cpk-seg input{display:none}
+    .cpk-seg label:has(input:checked){background:var(--brand);color:#fff}
+    .cpk-btn{font-size:11px;padding:5px 10px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-weight:700}
+    .cpk-btn.mut{color:var(--muted);font-weight:600}
     .cpk-auto{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer}
-    .cpk-clear{font-size:11px;padding:4px 10px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer}
-    .cpk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px}
+    .cpk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-bottom:12px}
     .cpk-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:12px}
     .cpk-card h4{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.5px}
     .cpk-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-    .cpk-row.one{grid-template-columns:1fr}
-    .cpk-f label{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
-    .cpk-f input,.cpk-f select{width:100%;box-sizing:border-box;padding:7px 9px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)}
-    .cpk-status{font-size:10px;color:var(--muted);min-height:13px;font-style:italic}
-    .cpk-move{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;margin-bottom:10px}
-    .cpk-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);padding-bottom:8px;cursor:pointer}
+    .cpk-row.n{grid-template-columns:1fr 78px}
+    .cpk-f label.l{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+    .cpk-card input[type=text],.cpk-card input[type=number],.cpk-card select{width:100%;box-sizing:border-box;padding:6px 8px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;color:var(--text)}
+    .cpk-stats{display:grid;gap:5px;margin:4px 0 8px}
+    .cpk-stat{display:grid;grid-template-columns:54px 1fr 66px;gap:6px;align-items:center}
+    .cpk-stat span{font-size:11px;font-weight:700;color:var(--muted)}
+    .cpk-stat.hp{grid-template-columns:54px 1fr 40px 1fr}
+    .cpk-flags{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text)}
+    .cpk-flags label{display:flex;align-items:center;gap:5px;cursor:pointer}
+    .cpk-card .cpk-flags select{width:auto;padding:3px 6px;font-size:12px}
+    .cpk-status{font-size:10px;color:var(--muted);min-height:13px;font-style:italic;margin-bottom:6px}
+    .cpk-moves{border-top:1.5px dashed var(--border);padding-top:8px;display:grid;gap:8px}
+    .cpk-mv{display:grid;grid-template-columns:auto 1fr 84px 66px 58px;gap:5px 6px;align-items:center}
+    .cpk-mv2{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:11px;color:var(--muted)}
+    .cpk-mv2 label{display:flex;align-items:center;gap:4px;cursor:pointer}
+    .cpk-card .cpk-mv2 input{width:auto}
+    .cpk-res{font-weight:800;color:var(--brand);font-size:12px;margin-left:auto}
     .cpk-info{font-size:12px;color:var(--text);line-height:1.6}
     .cpk-hints{font-size:11px;color:var(--muted);line-height:1.6;margin-top:4px}
     #calc-pk-resumo{display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1.5px solid var(--border);font-size:13px;color:var(--text);line-height:1.6}`;
     document.head.appendChild(st);
   }
   const optTipos = ph => '<option value="">'+ph+'</option>' + TIPOS.map(t => '<option value="'+t+'">'+cap(t)+'</option>').join('');
-  const campo = (id, rotulo, tipo, extra) => '<div class="cpk-f"><label for="'+id+'">'+rotulo+'</label><input id="'+id+'" type="'+(tipo||'number')+'" '+(extra||'')+'/></div>';
+  const stageSel = id => '<select id="'+id+'" class="cpk-st" title="Estágio">'+[6,5,4,3,2,1,0,-1,-2,-3,-4,-5,-6].map(v => '<option value="'+v+'"'+(v===0?' selected':'')+'>'+(v>0?'+':'')+v+'</option>').join('')+'</select>';
+
+  function cardHtml(s, titulo){
+    const id = x => 'cpk-'+s+'-'+x;
+    const stat = (k, rot) => '<div class="cpk-stat"><span>'+rot+'</span><input id="'+id(k)+'" type="number" min="1" max="255" placeholder="base"/>'+stageSel(id('e'+k))+'</div>';
+    const mv = i => `
+      <div class="cpk-mv">
+        <input type="radio" name="cpk-${s}-ativo" value="${i}" ${i===1?'checked':''} title="Golpe ativo (alimenta a calculadora quando este lado ataca)"/>
+        <input id="${id('m'+i+'-nome')}" type="text" placeholder="Golpe ${i}" autocomplete="off"/>
+        <select id="${id('m'+i+'-tipo')}">${optTipos('Tipo')}</select>
+        <select id="${id('m'+i+'-cat')}"><option value="fis">Fís.</option><option value="esp">Esp.</option></select>
+        <input id="${id('m'+i+'-poder')}" type="number" min="0" max="300" placeholder="Poder"/>
+        <div class="cpk-mv2">
+          <label><input type="checkbox" id="${id('m'+i+'-sem')}"/> s/ efeito</label>
+          <label><input type="checkbox" id="${id('m'+i+'-crit')}"/> Crit</label>
+          <span class="cpk-res" id="${id('m'+i+'-res')}"></span>
+        </div>
+      </div>`;
+    return `
+      <div class="cpk-card">
+        <h4>${titulo}</h4>
+        <div class="cpk-row n">
+          <div class="cpk-f"><label class="l" for="${id('nome')}">Pokémon</label><input id="${id('nome')}" type="text" list="cpk-nomes" autocomplete="off" placeholder="Buscar…"/></div>
+          <div class="cpk-f"><label class="l" for="${id('nivel')}">Nível</label><input id="${id('nivel')}" type="number" min="1" max="100" placeholder="Lv"/></div>
+        </div>
+        <div class="cpk-row">
+          <div class="cpk-f"><label class="l" for="${id('t1')}">Tipo 1</label><select id="${id('t1')}">${optTipos('—')}</select></div>
+          <div class="cpk-f"><label class="l" for="${id('t2')}">Tipo 2</label><select id="${id('t2')}">${optTipos('—')}</select></div>
+        </div>
+        <div class="cpk-stats">
+          <div class="cpk-stat hp"><span>HP</span><input id="${id('hp')}" type="number" min="1" placeholder="máx."/><span>Atual</span><input id="${id('hpatual')}" type="number" min="0" placeholder="= máx."/></div>
+          ${stat('atk','Atk')}${stat('def','Def')}${stat('spa','Sp.Atk')}${stat('spd','Sp.Def')}
+        </div>
+        <div class="cpk-flags">
+          <label><input type="checkbox" id="${id('mega')}"/> Mega (+1 estágio)</label>
+          <label><input type="checkbox" id="${id('dyn')}"/> Dynamax (HP ×2)</label>
+          <label><input type="checkbox" id="${id('adapt')}"/> Adaptability</label>
+          <label><input type="checkbox" id="${id('tera')}"/> Tera <select id="${id('teratipo')}">${optTipos('tipo')}</select></label>
+        </div>
+        <div class="cpk-status" id="${id('status')}"></div>
+        <div class="cpk-moves">${[1,2,3,4].map(mv).join('')}</div>
+      </div>`;
+  }
+
+  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','eatk','edef','espa','espd','mega','dyn','adapt','tera','teratipo'];
+  const MOVS = ['nome','tipo','cat','poder','sem','crit'];
+  function trocarLados(){
+    const troca = (a, b) => {
+      const ea = $(a), eb = $(b); if(!ea || !eb) return;
+      if(ea.type === 'checkbox'){ const t = ea.checked; ea.checked = eb.checked; eb.checked = t; }
+      else { const t = ea.value; ea.value = eb.value; eb.value = t; }
+    };
+    CAMPOS.forEach(k => troca('cpk-p1-'+k, 'cpk-p2-'+k));
+    [1,2,3,4].forEach(i => MOVS.forEach(k => troca('cpk-p1-m'+i+'-'+k, 'cpk-p2-m'+i+'-'+k)));
+    const r1 = document.querySelector('input[name="cpk-p1-ativo"]:checked')?.value || '1';
+    const r2 = document.querySelector('input[name="cpk-p2-ativo"]:checked')?.value || '1';
+    const pr = (s, v) => { const r = document.querySelector('input[name="cpk-'+s+'-ativo"][value="'+v+'"]'); if(r) r.checked = true; };
+    pr('p1', r2); pr('p2', r1);
+    const s1 = $('cpk-p1-status'), s2 = $('cpk-p2-status');
+    if(s1 && s2){ const t = s1.textContent; s1.textContent = s2.textContent; s2.textContent = t; }
+    const u = _ultimo.p1; _ultimo.p1 = _ultimo.p2; _ultimo.p2 = u;
+    atualizar();
+  }
 
   function montarPainel(box){
     css();
     const panel = document.createElement('div');
     panel.id = 'calc-pk-panel'; panel.className = 'cpk-panel';
     panel.innerHTML = `
-      <div class="cpk-head">
+      <div class="cpk-bar">
         <span class="cpk-title">🧬 Pokémon em batalha <span style="font-weight:600;opacity:.7;text-transform:none;letter-spacing:0">(opcional)</span></span>
-        <label class="cpk-auto"><input type="checkbox" id="cpk-auto" checked/> Preencher os campos abaixo automaticamente</label>
-        <button type="button" class="cpk-clear" id="cpk-clear">Limpar</button>
-      </div>
-      <div class="cpk-grid">
-        <div class="cpk-card">
-          <h4>⚔️ Atacante</h4>
-          <div class="cpk-row">
-            ${campo('cpk-atk-nome','Pokémon','text','list="cpk-nomes" autocomplete="off" placeholder="Buscar…"')}
-            ${campo('cpk-atk-nivel','Nível','number','min="1" max="100" placeholder="Lv '+NIVEL_REF+'"')}
-          </div>
-          <div class="cpk-row">
-            <div class="cpk-f"><label for="cpk-atk-t1">Tipo 1</label><select id="cpk-atk-t1">${optTipos('—')}</select></div>
-            <div class="cpk-f"><label for="cpk-atk-t2">Tipo 2</label><select id="cpk-atk-t2">${optTipos('—')}</select></div>
-          </div>
-          <div class="cpk-row">
-            ${campo('cpk-atk-atk','Atk base','number','min="1" max="255"')}
-            ${campo('cpk-atk-spa','Sp.Atk base','number','min="1" max="255"')}
-          </div>
-          <div class="cpk-status" id="cpk-atk-status"></div>
+        <div class="cpk-seg" title="Quem ataca">
+          <label><input type="radio" name="cpk-dir" value="12" checked/><span>Pokémon 1 ➜ 2</span></label>
+          <label><input type="radio" name="cpk-dir" value="21"/><span>Pokémon 2 ➜ 1</span></label>
         </div>
-        <div class="cpk-card">
-          <h4>🛡️ Defensor</h4>
-          <div class="cpk-row one">
-            ${campo('cpk-def-nome','Pokémon','text','list="cpk-nomes" autocomplete="off" placeholder="Buscar…"')}
-          </div>
-          <div class="cpk-row">
-            <div class="cpk-f"><label for="cpk-def-t1">Tipo 1</label><select id="cpk-def-t1">${optTipos('—')}</select></div>
-            <div class="cpk-f"><label for="cpk-def-t2">Tipo 2</label><select id="cpk-def-t2">${optTipos('—')}</select></div>
-          </div>
-          <div class="cpk-row">
-            ${campo('cpk-def-def','Def base','number','min="1" max="255"')}
-            ${campo('cpk-def-spd','Sp.Def base','number','min="1" max="255"')}
-          </div>
-          <div class="cpk-row">
-            ${campo('cpk-def-hp','HP máximo','number','min="1" placeholder="ex.: 100"')}
-            ${campo('cpk-def-hpatual','HP atual','number','min="0" placeholder="= máximo"')}
-          </div>
-          <div class="cpk-status" id="cpk-def-status"></div>
-        </div>
+        <button type="button" class="cpk-btn" id="cpk-swap" title="Troca todos os dados entre Pokémon 1 e 2">⇄ Trocar</button>
       </div>
-      <div class="cpk-move">
-        <div class="cpk-f"><label for="cpk-mv-tipo">Tipo do golpe</label><select id="cpk-mv-tipo">${optTipos('— Não informar')}</select></div>
-        <div class="cpk-f"><label for="cpk-mv-cat">Categoria</label><select id="cpk-mv-cat"><option value="fis">Físico (Atk × Def)</option><option value="esp">Especial (Sp.Atk × Sp.Def)</option></select></div>
-        ${campo('cpk-mv-poder','Poder do golpe','number','min="0" max="300" placeholder="ex.: 40"')}
-        <label class="cpk-chk"><input type="checkbox" id="cpk-mv-sem"/> Sem efeito secundário</label>
+      <div class="cpk-bar">
+        <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Nível dos dois:</span>
+        ${[5,20,50,60].map(L => '<button type="button" class="cpk-btn cpk-lv" data-lv="'+L+'">Lv '+L+'</button>').join('')}
+        <label class="cpk-auto" style="margin-left:auto"><input type="checkbox" id="cpk-auto" checked/> Preencher os campos abaixo automaticamente</label>
+        <button type="button" class="cpk-btn mut" id="cpk-clear">Limpar</button>
       </div>
+      <div class="cpk-grid">${cardHtml('p1','⚔️ Pokémon 1')}${cardHtml('p2','🛡️ Pokémon 2')}</div>
       <div class="cpk-info" id="cpk-nivel-info"></div>
       <div class="cpk-hints" id="cpk-hints"></div>
       <datalist id="cpk-nomes"></datalist>`;
 
-    // Painel logo abaixo do subtítulo; resumo de HP logo abaixo do resultado
     const ref = box.children[1];
     if(ref) ref.insertAdjacentElement('afterend', panel); else box.appendChild(panel);
     if(!$('calc-pk-resumo')){
@@ -2800,35 +2976,40 @@ function calcSyncSelects(){
       if(res) res.insertAdjacentElement('afterend', resumo); else box.appendChild(resumo);
     }
 
-    // Eventos
-    const ladoDe = id => id === 'cpk-atk-nome' ? 'atk' : id === 'cpk-def-nome' ? 'def' : null;
+    const ladoDe = id => id === 'cpk-p1-nome' ? 'p1' : id === 'cpk-p2-nome' ? 'p2' : null;
     panel.addEventListener('input', e => {
-      const lado = ladoDe(e.target.id);
-      if(lado){ // ao escolher um nome exato da lista já carrega; digitação livre espera o change
+      const s = ladoDe(e.target.id);
+      if(s){ // escolher um nome exato da lista já carrega; digitação livre espera o change
         const v = e.target.value.trim().toLowerCase();
-        if(v && v !== _ultimo[lado] && achar(v)) carregarLado(lado);
+        if(v && v !== _ultimo[s] && achar(v)) carregarLado(s);
         return;
       }
       atualizar();
     });
     panel.addEventListener('change', e => {
-      const lado = ladoDe(e.target.id);
-      if(lado){
-        if(e.target.value.trim().toLowerCase() === _ultimo[lado]) return; // já carregado
-        return carregarLado(lado);
+      const s = ladoDe(e.target.id);
+      if(s){
+        if(e.target.value.trim().toLowerCase() === _ultimo[s]) return; // já carregado
+        return carregarLado(s);
       }
       atualizar();
     });
+    panel.querySelectorAll('.cpk-lv').forEach(b => b.addEventListener('click', () => {
+      setV('cpk-p1-nivel', b.dataset.lv); setV('cpk-p2-nivel', b.dataset.lv); atualizar();
+    }));
+    $('cpk-swap').addEventListener('click', trocarLados);
     $('cpk-clear').addEventListener('click', () => {
-      panel.querySelectorAll('input[type=text],input[type=number],select').forEach(el => { el.value = ''; });
-      $('cpk-mv-cat').value = 'fis'; $('cpk-mv-sem').checked = false;
-      $('cpk-atk-status').textContent = ''; $('cpk-def-status').textContent = '';
-      _tok.atk++; _tok.def++; _ultimo.atk = ''; _ultimo.def = '';
-      _tocados.forEach(c => NEUTRO[c]()); _tocados.clear();
+      panel.querySelectorAll('input[type=text],input[type=number]').forEach(el => { el.value = ''; });
+      panel.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
+      panel.querySelectorAll('select.cpk-st').forEach(el => { el.value = '0'; });
+      panel.querySelectorAll('input[type=checkbox]:not(#cpk-auto)').forEach(el => { el.checked = false; });
+      ['cpk-p1-ativo','cpk-p2-ativo'].forEach(n => { const r = document.querySelector('input[name="'+n+'"][value="1"]'); if(r) r.checked = true; });
+      panel.querySelectorAll('.cpk-status').forEach(el => { el.textContent = ''; });
+      _tok.p1++; _tok.p2++; _ultimo.p1 = ''; _ultimo.p2 = '';
+      _tocados.forEach(c => { if(c === 'stage') ajustarEstagio(0); else NEUTRO[c](); }); _tocados.clear();
       atualizar();
     });
 
-    // Lista de nomes (autocomplete)
     const preencherNomes = () => {
       try{
         const dl = $('cpk-nomes'); if(!dl || typeof pokemonDB === 'undefined') return false;
