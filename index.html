@@ -2460,7 +2460,9 @@ function calcSyncSelects(){
     net:  {label:'Net Ball',  nome:'String Shot', tipo:'bug',   cat:'fis', poder:null, uso:'livre'},
     dive: {label:'Dive Ball', nome:'Dive',        tipo:'water', cat:'fis', poder:80,   uso:'1x por batalha'}
   };
-  const BOLA_FICHA = {netball:'net', diveball:'dive'}; // valor de `ball` na ficha → chave de BOLAS
+  const BOLAS_SEM_GOLPE = ['pokeball','greatball','ultraball','masterball','premierball','luxuryball','lureball','strangeball','cherishball','heavyball','duskball','loveball','fastball','friendball','healball','levelball','moonball','nestball','quickball','timerball','repeatball','safariball','sportball','beastball','dreamball'];
+  const rotuloBola = k => (BOLAS[k] ? BOLAS[k].label : String(k).replace(/ball$/,' ball').replace(/\b\w/g, c => c.toUpperCase()));
+  const BOLA_FICHA = {netball:'net', net:'net', diveball:'dive', dive:'dive'}; // valor de `ball` na ficha → chave de BOLAS
 
   const $ = id => document.getElementById(id);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -2799,12 +2801,34 @@ function calcSyncSelects(){
   }
 
   // ── Dados dos Pokémon (banco + PokeAPI) ──────────────────
-  const _cache = {}, _tok = {p1:0, p2:0}, _ultimo = {p1:'', p2:''};
+  const _cache = {}, _tok = {p1:0, p2:0}, _ultimo = {p1:'', p2:''}, _statsOk = {p1:true, p2:true};
+  const normNome = x => String(x||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   function achar(nome){
     try{
-      const n = nome.trim().toLowerCase();
-      return (typeof pokemonDB !== 'undefined' ? pokemonDB : []).find(p => String(p.name||p.nome||'').toLowerCase() === n) || null;
+      const n = normNome(nome);
+      return (typeof pokemonDB !== 'undefined' ? pokemonDB : []).find(p => normNome(p.name||p.nome) === n) || null;
     }catch(e){ return null; }
+  }
+  // Stats base vindos do registro do pokemon.json / tabela `pokemons` (sem PokeAPI).
+  // Aceita campos soltos (hp, atk, def, spa, spd), objeto `stats`/`base_stats`, ou lista [{name,value}].
+  function statsDoRegistro(reg){
+    if(!reg) return null;
+    const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+    let src = reg.base_stats || reg.stats || reg;
+    if(Array.isArray(src)){
+      const o = {};
+      src.forEach(x => { const k = String(x.name||x.stat||x.key||'').toLowerCase().replace(/[^a-z]/g,''); o[k] = x.value ?? x.base_stat ?? x.base; });
+      src = o;
+    }
+    const pick = (...ks) => { for(const k of ks){ const v = num(src[k] ?? src[k.toUpperCase()]); if(v != null) return v; } return null; };
+    const st = {
+      hp:  pick('hp'),
+      atk: pick('atk','attack'),
+      def: pick('def','defense'),
+      spa: pick('spa','spatk','spatk','sp_atk','specialattack','special_attack'),
+      spd: pick('spd','spdef','sp_def','specialdefense','special_defense')
+    };
+    return (st.atk != null && st.def != null && st.spa != null && st.spd != null) ? st : null;
   }
   function slugLocal(s){
     return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
@@ -2835,19 +2859,21 @@ function calcSyncSelects(){
     ['hp','hpatual','atk','def','spa','spd'].forEach(k => setV('cpk-'+s+'-'+k, '')); // evita stats "fantasma"
     if(!nome){ setTipos(s, []); if(status) status.textContent = ''; atualizar(); return; }
     if(status) status.textContent = 'Buscando…';
+    // garante que o pokemon.json / tabela pokemons já foi carregado
+    try{ if(typeof pokemonDB !== 'undefined' && !pokemonDB.length && typeof PK !== 'undefined'){ const d = await PK.load(); if(Array.isArray(d)) pokemonDB = d; } }catch(e){}
+    if(token !== _tok[s]) return;
     const reg = achar(nome);
     setTipos(s, reg ? [reg.tipo1, reg.tipo2] : []);
-    try{
-      const d = await pokeapi(reg ? (reg.name||reg.nome) : nome);
-      if(token !== _tok[s]) return;
-      if(!reg) setTipos(s, d.tipos);
-      setV('cpk-'+s+'-atk', d.atk); setV('cpk-'+s+'-def', d.def);
-      setV('cpk-'+s+'-spa', d.spa); setV('cpk-'+s+'-spd', d.spd);
-      setV('cpk-'+s+'-hp', d.hp > 100 ? d.hp : 100); // regra: HP base > 100 vale como HP máximo; senão 100
-      if(status) status.textContent = 'Stats base carregados (PokeAPI)';
-    }catch(e){
-      if(token !== _tok[s]) return;
-      if(status) status.textContent = reg ? 'Tipos carregados · stats base não encontrados, preencha à mão' : 'Não encontrado — preencha à mão';
+    const st = statsDoRegistro(reg);
+    if(st){
+      setV('cpk-'+s+'-atk', st.atk); setV('cpk-'+s+'-def', st.def);
+      setV('cpk-'+s+'-spa', st.spa); setV('cpk-'+s+'-spd', st.spd);
+      setV('cpk-'+s+'-hp', st.hp > 100 ? st.hp : 100); // regra: HP base > 100 vale como HP máximo; senão 100
+      _statsOk[s] = true;
+      if(status) status.textContent = 'Stats base carregados (pokemon.json)';
+    }else{
+      _statsOk[s] = false;
+      if(status) status.textContent = reg ? 'Tipos carregados · este Pokémon não tem stats base no pokemon.json, preencha à mão' : 'Pokémon não encontrado no pokemon.json — preencha à mão';
     }
     atualizar();
   }
@@ -2940,14 +2966,20 @@ function calcSyncSelects(){
     nomes.forEach((n, k) => setV('cpk-'+s+'-m'+(k+1)+'-nome', n));
     const box = $('cpk-'+s+'-moves'); if(box) box.dataset.n = Math.max(GOLPES_INICIAIS, nomes.length);
     // Pokébola → golpe extra
-    setV('cpk-'+s+'-bola', BOLA_FICHA[String(p.ball || '').toLowerCase()] || '');
+    { const bk = String(p.ball || '').toLowerCase().replace(/[^a-z]/g,'');
+      const chave = bk ? (BOLA_FICHA[bk] || bk) : '';
+      const selB = $('cpk-'+s+'-bola');
+      if(selB && chave && ![...selB.options].some(o => o.value === chave)){
+        const o = document.createElement('option'); o.value = chave; o.textContent = rotuloBola(chave); selB.appendChild(o);
+      }
+      setV('cpk-'+s+'-bola', chave); }
     aplicarBola(s);
     // stats base / tipos (banco + PokeAPI); tipos da ficha, quando existem, prevalecem
     await carregarLado(s);
     if(tok !== _fptok[s]) return;
     if(p.tipo1) setTipos(s, [p.tipo1, p.tipo2]);
     const status = $('cpk-'+s+'-status');
-    if(status) status.textContent = 'Ficha: '+rotuloPk(p)+' · '+nomes.length+' golpe(s)'+(BOLAS[$('cpk-'+s+'-bola')?.value] ? ' + '+BOLAS[$('cpk-'+s+'-bola').value].nome+' ('+BOLAS[$('cpk-'+s+'-bola').value].label+')' : '');
+    if(status) status.textContent = (_statsOk[s] ? '' : '⚠️ sem stats base no pokemon.json — preencha à mão · ')+'Ficha: '+rotuloPk(p)+' · '+nomes.length+' golpe(s)'+(BOLAS[$('cpk-'+s+'-bola')?.value] ? ' + '+BOLAS[$('cpk-'+s+'-bola').value].nome+' ('+BOLAS[$('cpk-'+s+'-bola').value].label+')' : '');
     atualizar();
     // tipo / categoria / poder de cada golpe
     await Promise.all(nomes.map(async (n, k) => {
@@ -3055,7 +3087,7 @@ function calcSyncSelects(){
           <label><input type="checkbox" id="${id('dyn')}"/> Dynamax (HP ×2)</label>
           <label><input type="checkbox" id="${id('adapt')}"/> Adaptability</label>
           <label><input type="checkbox" id="${id('tera')}"/> Tera <select id="${id('teratipo')}">${optTipos('tipo')}</select></label>
-          <label title="Net Ball libera String Shot · Dive Ball libera Dive (1× por batalha)">🎱 Bola <select id="${id('bola')}"><option value="">—</option>${Object.keys(BOLAS).map(k => '<option value="'+k+'">'+BOLAS[k].label+'</option>').join('')}</select></label>
+          <label title="Net Ball libera String Shot · Dive Ball libera Dive (1× por batalha)">🎱 Bola <select id="${id('bola')}"><option value="">—</option>${[...Object.keys(BOLAS), ...BOLAS_SEM_GOLPE].map(k => '<option value="'+k+'">'+rotuloBola(k)+'</option>').join('')}</select></label>
         </div>
         <div class="cpk-status" id="${id('status')}"></div>
         <div class="cpk-moves" id="${id('moves')}" data-n="${GOLPES_INICIAIS}">${SLOTS.map(mv).join('')}<button type="button" class="cpk-btn mut cpk-addmv" data-s="${s}" id="${id('addmv')}">+ golpe (até ${GOLPES_MAX})</button></div>
@@ -3073,7 +3105,7 @@ function calcSyncSelects(){
     for(let i = GOLPES_INICIAIS+1; i <= GOLPES_MAX; i++) if(($('cpk-'+s+'-m'+i+'-nome')?.value || '').trim()) n = Math.max(n, i);
     box.dataset.n = n;
     for(let i = GOLPES_INICIAIS+1; i <= GOLPES_MAX; i++){ const r = $('cpk-'+s+'-row'+i); if(r) r.style.display = i <= n ? '' : 'none'; }
-    const r9 = $('cpk-'+s+'-row'+SLOT_BOLA); if(r9) r9.style.display = ($('cpk-'+s+'-bola')?.value ? '' : 'none');
+    const r9 = $('cpk-'+s+'-row'+SLOT_BOLA); if(r9) r9.style.display = (BOLAS[$('cpk-'+s+'-bola')?.value] ? '' : 'none');
     const add = $('cpk-'+s+'-addmv'); if(add) add.style.display = n >= GOLPES_MAX ? 'none' : '';
   }
   // Troca da Pokébola: preenche (ou limpa) o golpe extra do slot 9.
