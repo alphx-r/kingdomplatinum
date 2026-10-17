@@ -1095,6 +1095,26 @@ async function uploadImgStorage(b64, bucket, path) {
 ══════════════════════════════════════════ */
 const ITEM_CATEGORIES = ['PokéBall', 'Trainer Items', 'Treasure Items', 'Alpha Items', 'Evolutionary Items', 'Hold Items', 'Forage', 'Snacks', 'Rewards', 'TM'];
 
+// Categorias criadas pelo botão "＋ Categoria" ficam salvas neste navegador
+// (localStorage) pra continuarem aparecendo no formulário de novo item mesmo
+// depois de recarregar a página, antes de existir algum item usando-as.
+const IT_CUSTOM_CATS_KEY = 'it_custom_cats';
+function loadCustomItemCategories() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(IT_CUSTOM_CATS_KEY) || '[]');
+    if (Array.isArray(arr)) arr.forEach(c => {
+      if (typeof c === 'string' && c.trim() && !ITEM_CATEGORIES.some(x => x.toLowerCase() === c.trim().toLowerCase())) ITEM_CATEGORIES.push(c.trim());
+    });
+  } catch (e) {}
+}
+function saveCustomItemCategory(name) {
+  try {
+    const arr = JSON.parse(localStorage.getItem(IT_CUSTOM_CATS_KEY) || '[]');
+    if (!arr.includes(name)) { arr.push(name); localStorage.setItem(IT_CUSTOM_CATS_KEY, JSON.stringify(arr)); }
+  } catch (e) {}
+}
+loadCustomItemCategories();
+
 // Remove o prefixo de tamanho do nome pra achar o "item base" (ex: "Big
 // Nugget" e "Small Nugget" -> "nugget").
 function stripSizePrefix(name) {
@@ -1138,8 +1158,13 @@ function itemIconSizeStyle(name, base) {
 // perder o dado — mas some assim que o usuário trocar pra uma categoria oficial.
 function categoryOptionsHtml(current) {
   const opts = ['<option value="">Sem categoria</option>'];
-  const legacy = current && !ITEM_CATEGORIES.includes(current);
-  ITEM_CATEGORIES.forEach(c => opts.push(`<option value="${c}"${current === c ? ' selected' : ''}>${c}</option>`));
+  // Fixas + criadas com "＋ Categoria" (ITEM_CATEGORIES) + qualquer categoria
+  // que já exista salva nos itens do banco — assim o formulário sempre mostra
+  // as mesmas categorias do filtro do topo.
+  const dbCats = (typeof S !== 'undefined' && S.it && S.it.all) ? S.it.all.map(i => i.category).filter(Boolean) : [];
+  const all = [...new Set([...ITEM_CATEGORIES, ...dbCats])];
+  const legacy = current && !all.includes(current);
+  all.forEach(c => opts.push(`<option value="${c}"${current === c ? ' selected' : ''}>${c}</option>`));
   if (legacy) opts.push(`<option value="${current}" selected>${current} (legado)</option>`);
   return opts.join('');
 }
@@ -1259,21 +1284,27 @@ function populateItemCategoryFilter() {
   }
 }
 
-// Cria uma categoria nova "avulsa": ela entra na lista em memória (ITEM_CATEGORIES)
-// e passa a aparecer em todos os seletores de categoria imediatamente. Como não
-// existe uma tabela própria de categorias no Supabase, ela só fica salva de
-// verdade quando algum item for criado/editado usando essa categoria — até lá,
-// some se a página for recarregada sem nenhum item usá-la (igual já acontece
-// hoje com categorias "legado").
+// Cria uma categoria nova: entra em ITEM_CATEGORIES, é salva no navegador
+// (localStorage) e aparece na hora no filtro, no formulário de novo item e nos
+// cards de edição — inclusive depois de recarregar a página.
 function addNewCategory() {
   const raw = prompt('Nome da nova categoria de itens:');
   if (raw == null) return;
   const name = raw.trim();
   if (!name) { toast('Nome da categoria não pode ser vazio.', 'err'); return; }
-  if (ITEM_CATEGORIES.some(c => c.toLowerCase() === name.toLowerCase())) { toast('Essa categoria já existe.', 'err'); return; }
+  const dbCats = S.it.all.map(i => i.category).filter(Boolean);
+  if ([...ITEM_CATEGORIES, ...dbCats].some(c => c.toLowerCase() === name.toLowerCase())) { toast('Essa categoria já existe.', 'err'); return; }
   ITEM_CATEGORIES.push(name);
-  populateItemCategoryFilter();
-  toast(`Categoria "${name}" criada! Crie ou edite um item com ela pra ficar salva permanentemente.`, 'ok');
+  saveCustomItemCategory(name);
+  populateItemCategoryFilter(); // refaz o filtro e o select do formulário de novo item
+  // Também adiciona a opção nos selects dos cards de itens já abertos na lista
+  document.querySelectorAll('select[id^="it-category-"]').forEach(sel => {
+    if (![...sel.options].some(o => o.value === name)) sel.add(new Option(name, name));
+  });
+  // Já deixa a nova categoria selecionada no formulário de novo item
+  const nitSel = document.getElementById('nit-category');
+  if (nitSel && [...nitSel.options].some(o => o.value === name)) nitSel.value = name;
+  toast(`Categoria "${name}" criada! Ela já aparece ao criar/editar itens.`, 'ok');
 }
 
 function filterIt() { applyItFilter(); }
