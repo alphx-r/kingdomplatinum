@@ -1869,6 +1869,33 @@ body.edit-mode .ganhos-example-header{cursor:text}
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-crit-stab" onchange="calcDano()"/> Desprevenido c/ +2 Crit (+3 em vez de +2)</label>
           </div>
         </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Clima do Campo</div>
+          <select id="calc-clima" onchange="window.calcClimaMudou?window.calcClimaMudou():calcDano()" style="width:100%;padding:7px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text)">
+            <option value="">🌤️ Céu limpo</option>
+            <option value="ensolarado">☀️ Ensolarado</option>
+            <option value="nublado">☁️ Nublado</option>
+            <option value="chuvoso">🌧️ Chuvoso</option>
+            <option value="tempestade">⛈️ Tempestade</option>
+            <option value="areia">🏜️ Tempestade de areia</option>
+            <option value="ventania">🌬️ Ventania</option>
+            <option value="nevoeiro">🌫️ Nevoeiro</option>
+            <option value="nevando">❄️ Nevando</option>
+            <option value="granizo">🌨️ Chuva de granizo</option>
+          </select>
+          <div id="calc-clima-info" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Céu limpo — sem efeitos.</div>
+          <div id="calc-clima-man-wrap" style="display:none;margin-top:8px">
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Ajuste manual no golpe</div>
+            <select id="calc-clima-man" onchange="calcDano()" style="width:100%;padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text)">
+              <option value="1">Nenhum</option>
+              <option value="1.5">+50%</option>
+              <option value="1.3">+30%</option>
+              <option value="0.75">−25%</option>
+              <option value="0.5">−50%</option>
+            </select>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">Só vale quando o painel de Pokémon não está definindo o golpe (com ele, o clima é aplicado sozinho pelo tipo do golpe).</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2392,7 +2419,22 @@ function calcSyncSelects(){
     const charge = !chargeInData && document.getElementById('calc-charge')?.checked;
     if(charge){ danoMin = Math.round(danoMin*1.25); danoMax = Math.round(danoMax*1.25); bonusApplied.push({label:'Charge/Recharge', pct:25}); }
 
-    if(nv && nv.imune){ danoMin = 0; danoMax = 0; }
+    // Clima do campo: automático pelo golpe ativo do painel; sem painel, vale o ajuste manual
+    const climaSel = document.getElementById('calc-clima')?.value || '';
+    let climaMult = 1, climaNome = '';
+    if(climaSel){
+      if(nv && nv.clima){ climaMult = nv.clima.mult; climaNome = nv.clima.nome; }
+      else {
+        const man = parseFloat(document.getElementById('calc-clima-man')?.value || '1');
+        if(man && man !== 1){ climaMult = man; climaNome = window.calcClimaNome ? window.calcClimaNome(climaSel) : ''; }
+      }
+    }
+    if(climaMult !== 1){
+      danoMin = Math.round(danoMin*climaMult); danoMax = Math.round(danoMax*climaMult);
+      bonusApplied.push({label: 'Clima'+(climaNome ? ' ('+climaNome+')' : ''), pct: Math.round((climaMult-1)*100)});
+    }
+
+    if(nv && (nv.imune || nv.status)){ danoMin = 0; danoMax = 0; }
     else { danoMin = Math.max(1, danoMin); danoMax = Math.max(1, danoMax); }
 
     const lines = [];
@@ -2404,7 +2446,7 @@ function calcSyncSelects(){
     if(stageDmg  !== 0) lines.push('Estágios: '+(stageDmg>0?'+':'')+stageDmg+' dano');
     if(stabVal   >  0)  lines.push('STAB: +'+Math.round(stabVal*100)+'%');
     if(nv && nv.mult !== 1) lines.push('Nível ('+nv.rotulo+'): ×'+nv.mult.toFixed(2));
-    bonusApplied.forEach(b => lines.push(b.label+': +'+b.pct+'%'));
+    bonusApplied.forEach(b => lines.push(b.label+': '+(b.pct >= 0 ? '+' : '')+b.pct+'%'));
 
     const bgs = ['','linear-gradient(135deg,#1a7a1a,#2e9e50)','linear-gradient(135deg,#1a4a8a,#2563a8)','linear-gradient(135deg,#7a4a00,#c07a00)','linear-gradient(135deg,#8a1a1a,#c03030)','linear-gradient(135deg,#5a1a9a,#8a30d8)','linear-gradient(135deg,#0f1a3a,#1a3a6a)'];
     const bg = tierFinal <= 6 ? bgs[tierFinal] : bgs[6];
@@ -2413,7 +2455,7 @@ function calcSyncSelects(){
     if(stageDmg !== 0) mods.push('estágios '+(stageDmg>0?'+':'')+stageDmg);
     if(stabVal > 0) mods.push('STAB +'+Math.round(stabVal*100)+'%');
     if(nv && nv.mult !== 1) mods.push('nível ×'+nv.mult.toFixed(2));
-    bonusApplied.forEach(b => mods.push(b.label+' +'+b.pct+'%'));
+    bonusApplied.forEach(b => mods.push(b.label+' '+(b.pct >= 0 ? '+' : '')+b.pct+'%'));
 
     const res = document.getElementById('calc-resultado');
     if(res) res.style.background = bg;
@@ -2451,9 +2493,10 @@ function calcSyncSelects(){
   const NIVEL_MULT_MIN = 0.25; // trava inferior do multiplicador
   const NIVEL_MULT_MAX = 2.0;  // trava superior do multiplicador (teto ×2,0)
 
-  // Stats por nível: os campos Atk/Def/Sp.Atk/Sp.Def guardam o valor do Lv 100 (máximo sem intensificadores).
-  // Para níveis menores o valor efetivo = base × multStat(nível). Todo nível conta (curva contínua).
-  const STAT_MULT_LV1   = 0.20; // multiplicador no Lv 1 (no Lv 100 é sempre ×1,00)
+  // Stats por nível: o stat base do pokemon.json representa o Lv 50 (NIVEL_BASE_STATS).
+  // O valor efetivo = base × multStat(nível): ×1,00 no Lv 50, menor abaixo e maior acima. Todo nível conta (curva contínua).
+  const NIVEL_BASE_STATS = 50;  // nível que o stat base representa
+  const STAT_MULT_LV1   = 0.20; // forma da curva: Lv 1 = 0,20 e Lv 100 = 1,00 (antes de reancorar no nível base)
   const STAT_MULT_CURVA = 1;    // 1 = linear (≈ +0,81% por nível) · >1 = cresce mais no fim · <1 = cresce mais no início
 
   // Slots de golpe: 1–8 = golpes do Pokémon (padrão do RPG) · 9 = golpe extra liberado pela Pokébola.
@@ -2462,7 +2505,7 @@ function calcSyncSelects(){
   const GOLPES_MAX = 8;
   const GOLPES_INICIAIS = 4;  // quantos slots aparecem de início (o "+ golpe" libera até 8)
   const BOLAS = {
-    net:  {label:'Net Ball',  nome:'String Shot', tipo:'bug',   cat:'fis', poder:null, uso:'livre'},
+    net:  {label:'Net Ball',  nome:'String Shot', tipo:'bug',   cat:'sta', poder:null, uso:'livre'},
     dive: {label:'Dive Ball', nome:'Dive',        tipo:'water', cat:'fis', poder:80,   uso:'1x por batalha'}
   };
   const BOLAS_SEM_GOLPE = ['pokeball','greatball','ultraball','masterball','premierball','luxuryball','lureball','strangeball','cherishball','heavyball','duskball','loveball','fastball','friendball','healball','levelball','moonball','nestball','quickball','timerball','repeatball','safariball','sportball','beastball','dreamball'];
@@ -2471,6 +2514,44 @@ function calcSyncSelects(){
 
   const $ = id => document.getElementById(id);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  // ── Clima do campo (select #calc-clima) — tabela do servidor ──────────
+  // mult: multiplicador de dano por tipo do golpe · outros: multiplicador p/ todo golpe não-Normal
+  // defEsp/defFis: tipo do defensor que ganha Sp.Def/Def ×1,5 · residual: tipos que NÃO sofrem 1/16 do HP por turno
+  // solar: 'sol' = Solar Beam/Blade sem Charge · 'half' = poder pela metade · explosao: golpes de explosão impossíveis
+  const SOLAR = new Set(['solarbeam','solarblade']);
+  const EXPLOSAO = new Set(['explosion','selfdestruct','mindblown','mistyexplosion']);
+  const CLIMAS = {
+    ensolarado: {nome:'Ensolarado', mult:{fire:1.5, water:.5}, solar:'sol',
+      desc:'Sunny Day: Fire +50% · Water −50% · Solar Beam/Blade sem Charge (sem +25%) · impossível causar Freeze.'},
+    nublado:    {nome:'Nublado', outros:.75,
+      desc:'Reduz em 25% o dano de todos os golpes que não são Normal.'},
+    chuvoso:    {nome:'Chuvoso', mult:{water:1.5, fire:.5}, solar:'half', explosao:true,
+      desc:'Rain: Water +50% · Fire −50% · Solar Beam/Blade com poder pela metade · impossível usar golpes de explosão.'},
+    tempestade: {nome:'Tempestade', mult:{water:1.5, fire:.5, electric:1.3}, solar:'half',
+      desc:'Rain (Water +50% · Fire −50% · Solar Beam/Blade pela metade) + Electric Terrain (Electric +30%, atacante no solo).'},
+    areia:      {nome:'Tempestade de areia', defEsp:'rock', residual:['rock','ground','steel'], solar:'half',
+      desc:'Sandstorm: Rock com Sp.Def ×1,5 · dano residual de 1/16 do HP (exceto Rock/Ground/Steel) · Solar Beam/Blade pela metade.'},
+    ventania:   {nome:'Ventania', ventania:true,
+      desc:'Golpes super efetivos contra Flying causam dano normal.'},
+    nevoeiro:   {nome:'Nevoeiro', mult:{dragon:.5, electric:.5},
+      desc:'Misty Terrain (Dragon ×0,5 contra alvo no solo) + golpes Electric com metade da força.'},
+    nevando:    {nome:'Nevando', lentoNaoIce:true,
+      desc:'Chão escorregadio: −1 Speed para todos que não são Ice e estão no solo (Flying fica de fora).'},
+    granizo:    {nome:'Chuva de granizo', residual:['ice'], solar:'half',
+      desc:'Hail: dano residual de 1/16 do HP (exceto Ice) · Solar Beam/Blade com poder pela metade.'}
+  };
+  const climaAtual = () => ($('calc-clima')?.value || '');
+  window.calcClimaNome = k => (CLIMAS[k] || {}).nome || '';
+  function climaUI(){
+    const k = climaAtual(), cl = CLIMAS[k];
+    const inf = $('calc-clima-info'); if(inf) inf.textContent = cl ? cl.desc : 'Céu limpo — sem efeitos.';
+    const w = $('calc-clima-man-wrap'); if(w) w.style.display = (cl && (cl.mult || cl.outros != null)) ? '' : 'none';
+  }
+  window.calcClimaMudou = function(){
+    climaUI();
+    if(painelAtivo()) atualizar(); else if(typeof window.calcDano === 'function') window.calcDano();
+  };
   const fatorNivel = L => Math.floor(2*L/5) + 2;
   function multNiveis(La, Ld){
     if(La == null && Ld == null) return 1;
@@ -2479,14 +2560,20 @@ function calcSyncSelects(){
     return clamp(Math.pow(fa/fd, NIVEL_EXPOENTE), NIVEL_MULT_MIN, NIVEL_MULT_MAX);
   }
 
-  // Multiplicador de Atk/Def/Sp.Atk/Sp.Def por nível. Nível vazio = Lv 100 (×1,00).
+  // Multiplicador de stats por nível (também HP): Lv 50 = ×1,00, Lv 100 = ×2,00. Nível vazio = ×1,00 (stat base como está).
+  const STAT_MULT_LV100 = 2.0;  // multiplicador no Lv 100 (do Lv 50 ao Lv 100 a subida é linear)
+  const multStatBruto = L => STAT_MULT_LV1 + (1 - STAT_MULT_LV1) * Math.pow(clamp((L - 1) / 99, 0, 1), STAT_MULT_CURVA);
   function multStat(L){
     if(L == null) return 1;
-    const t = clamp((L - 1) / 99, 0, 1);
-    return STAT_MULT_LV1 + (1 - STAT_MULT_LV1) * Math.pow(t, STAT_MULT_CURVA);
+    L = Math.min(L, 100);
+    if(L <= NIVEL_BASE_STATS) return multStatBruto(L) / multStatBruto(NIVEL_BASE_STATS);   // até o Lv 50: curva original reancorada
+    return 1 + (STAT_MULT_LV100 - 1) * (L - NIVEL_BASE_STATS) / (100 - NIVEL_BASE_STATS);   // Lv 50 → Lv 100: ×1,00 → ×2,00
   }
   // arredonda para baixo (+1e-9 evita 35,9999… quando o valor digitado volta ao mesmo número)
   const statEf = (v, L) => v == null ? null : Math.max(1, Math.floor(v * multStat(L) + 1e-9));
+  // HP: base ≤ 100 vale 100 (fixo) · base > 100 cresce com o nível (mesmo multiplicador), nunca abaixo de 100.
+  const HP_MIN = 100;
+  const hpEf = (b, L) => b == null ? null : (b <= HP_MIN ? HP_MIN : Math.max(HP_MIN, Math.floor(b * multStat(L) + 1e-9)));
 
   // Tabela de tipos (atacante → defensor). Pares ausentes = ×1.
   // Tipos fora desta tabela (light, scent…) viram "ajuste manual".
@@ -2552,7 +2639,7 @@ function calcSyncSelects(){
     const c = x => !!g(x)?.checked;
     const L = parseInt(g('nivel')?.value);
     const e = x => parseInt(g(x)?.value) || 0;
-    // Atk/Def/Sp.Atk/Sp.Def: o campo mostra o valor do nível atual; o valor-base (Lv 100) fica em data-base.
+    // Atk/Def/Sp.Atk/Sp.Def: o campo mostra o valor do nível atual; o valor-base (Lv 50) fica em data-base.
     const b = x => {
       const el = g(x); if(!el) return null;
       const d = parseFloat(el.dataset.base); if(Number.isFinite(d)) return d;
@@ -2560,14 +2647,14 @@ function calcSyncSelects(){
     };
     const golpes = SLOTS.map(i => ({
       i, nome: (g('m'+i+'-nome')?.value || '').trim(), tipo: g('m'+i+'-tipo')?.value || '',
-      cat: g('m'+i+'-cat')?.value || 'fis', poder: n('m'+i+'-poder'), sem: c('m'+i+'-sem'), crit: c('m'+i+'-crit'),
+      cat: g('m'+i+'-cat')?.value || 'fis', poder: n('m'+i+'-poder'), sem: c('m'+i+'-sem'), crit: c('m'+i+'-crit'), charge: c('m'+i+'-charge'),
       usado: i === SLOT_BOLA && c('m'+i+'-usado')
     }));
     return {
       s, bola: g('bola')?.value || '', nome: (g('nome')?.value || '').trim(),
       nivel: (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null,
       tipos: [g('t1')?.value, g('t2')?.value].filter(Boolean),
-      hp: n('hp'), hpAtual: n('hpatual'), atk: b('atk'), def: b('def'), spa: b('spa'), spd: b('spd'), spe: b('spe'),
+      hp: n('hp'), hpBase: (() => { const d = parseFloat(g('hp')?.dataset.base); return Number.isFinite(d) ? d : null; })(), hpAtual: n('hpatual'), atk: b('atk'), def: b('def'), spa: b('spa'), spd: b('spd'), spe: b('spe'),
       st: {atk: e('eatk'), def: e('edef'), spa: e('espa'), spd: e('espd'), spe: e('espe')},
       mega: c('mega'), dyn: c('dyn'), adapt: c('adapt'),
       tera: {on: c('tera'), tipo: g('teratipo')?.value || ''},
@@ -2586,10 +2673,25 @@ function calcSyncSelects(){
   function derivar(A, D, m){
     const r = {notas: []};
     const tipo = m.tipo, cat = m.cat;
+    // Golpe de status: reconhecido, mas não causa dano (nenhum bônus se aplica)
+    if(cat === 'sta'){
+      r.status = true; r.poder = null; r.semAplica = false; r.tp = null; r.stab = null;
+      r.te = null; r.mult = null; r.imune = false; r.efetManual = false;
+      r.a = null; r.d = null; r.ts = null; r.stage = 0; r.crit = false; r.climaMult = 1; r.charge = false;
+      return r;
+    }
     let poder = m.poder;
     if(A.tera.on && A.tera.tipo && tipo && tipo === A.tera.tipo && poder > 0 && poder < 60){
       r.notas.push('Tera: poder '+poder+' → 60'); poder = 60;
     }
+    // Clima: Solar Beam/Blade — Sol dispensa o Charge; outros climas cortam o poder pela metade
+    const clima = climaAtual(), cl = CLIMAS[clima] || null;
+    r.semCharge = false;
+    if(cl && SOLAR.has(chaveGolpe(m.nome))){
+      if(cl.solar === 'sol'){ r.semCharge = true; r.notas.push(cl.nome+': '+(m.nome || 'golpe')+' não precisa carregar (sem +25% de Charge)'); }
+      else if(cl.solar === 'half' && poder > 0){ const p0 = poder; poder = Math.floor(poder/2); r.notas.push(cl.nome+': poder '+p0+' → '+poder); }
+    }
+    r.charge = !!m.charge && !r.semCharge;
     r.poder = poder;
     r.semAplica = !!(m.sem && poder >= 100 && poder <= 120);
     r.tp = tierPoder(poder, m.sem);
@@ -2602,20 +2704,41 @@ function calcSyncSelects(){
         else r.stab = A.tipos.includes(tipo) ? base : 0;
       } else r.stab = A.tipos.includes(tipo) ? base : 0;
     }
+    // Clima: bônus/penalidade por tipo do golpe
+    r.climaMult = 1;
+    if(cl && tipo){
+      if(cl.mult && cl.mult[tipo] != null) r.climaMult *= cl.mult[tipo];
+      if(cl.outros != null && tipo !== 'normal') r.climaMult *= cl.outros;
+      if(Math.abs(r.climaMult-1) > 1e-9){
+        const pc = Math.round((r.climaMult-1)*100);
+        r.notas.push('Clima ('+cl.nome+'): golpe '+cap(tipo)+' <b>'+(pc > 0 ? '+' : '−')+Math.abs(pc)+'%</b>');
+      }
+    }
     // Efetividade
     r.te = null; r.mult = null; r.imune = false; r.efetManual = false;
     if(tipo && D.tipos.length){
       if(!CHART[tipo] || D.tipos.some(t => !CHART[t])) r.efetManual = true;
       else {
-        let mm = 1; D.tipos.forEach(t => { mm *= (CHART[tipo][t] ?? 1); });
+        let mm = 1; D.tipos.forEach(t => { let f = CHART[tipo][t] ?? 1; if(cl && cl.ventania && t === 'flying' && f > 1){ f = 1; r.notas.push('Ventania: super efetivo contra Flying causa dano normal'); } mm *= f; });
         r.mult = mm;
         if(mm === 0) r.imune = true; else r.te = tierEfet(mm);
       }
     }
+    // Chuvoso: golpes de explosão são impossíveis
+    r.bloqueado = false;
+    if(cl && cl.explosao && EXPLOSAO.has(chaveGolpe(m.nome))){
+      r.imune = true; r.bloqueado = true;
+      r.notas.push(cl.nome+': golpes de explosão são impossíveis ('+(m.nome || 'golpe')+' bloqueado)');
+    }
     // Diferença de Base Stats
-    // (valores do campo = Lv 100; aqui entram já ajustados ao nível de cada lado)
+    // (valores do campo = Lv 50; aqui entram já ajustados ao nível de cada lado)
     r.a = statEf(cat === 'esp' ? A.spa : A.atk, A.nivel);
-    r.d = statEf(cat === 'esp' ? D.spd : D.def, D.nivel);
+    let defBase = cat === 'esp' ? D.spd : D.def;
+    if(cl && defBase != null && ((cl.defEsp && cat === 'esp' && D.tipos.includes(cl.defEsp)) || (cl.defFis && cat === 'fis' && D.tipos.includes(cl.defFis)))){
+      defBase = defBase * 1.5;
+      r.notas.push('Clima ('+cl.nome+'): defensor '+cap(cl.defEsp || cl.defFis)+' → '+(cat === 'esp' ? 'Sp.Def' : 'Def')+' ×1,5');
+    }
+    r.d = statEf(defBase, D.nivel);
     r.ts = (r.a != null && r.d != null) ? tierStats(r.a, r.d) : null;
     // Estágios (Mega = +1 em todos)
     const ka = cat === 'esp' ? 'spa' : 'atk', kd = cat === 'esp' ? 'spd' : 'def';
@@ -2632,21 +2755,27 @@ function calcSyncSelects(){
     if(v === 2 && $('calc-crit-stab')?.checked) v = 3;
     return v;
   }
-  function bonusPct(mn, mx){
+  function bonusPct(mn, mx, charge){
     let data = [];
     try{ data = window._calcBonusData || (typeof CALC_DEFAULTS !== 'undefined' ? CALC_DEFAULTS.bonus : []) || []; }catch(e){}
     data.forEach(b => {
+      if(b.id === 'calc-charge') return;   // Charge/Recharge é por golpe (parâmetro), não pelo checkbox global
       const el = $(b.id);
       if(!el || !el.checked || b.especial === 'crit3' || !(b.pct > 0)) return;
       const k = 1 + b.pct/100; mn = Math.round(mn*k); mx = Math.round(mx*k);
     });
-    if(!data.find(b => b.id === 'calc-charge') && $('calc-charge')?.checked){ mn = Math.round(mn*1.25); mx = Math.round(mx*1.25); }
+    if(charge){
+      const cb = data.find(b => b.id === 'calc-charge');
+      const k = 1 + ((cb && cb.pct > 0 ? cb.pct : 25) / 100);
+      mn = Math.round(mn*k); mx = Math.round(mx*k);
+    }
     return [mn, mx];
   }
   function stabRadio(){ return parseFloat(document.querySelector('input[name="calc-stab"]:checked')?.value || 0) || 0; }
   function calcMov(A, D, m){
-    if(m.poder == null && !m.tipo) return null;
+    if(m.cat !== 'sta' && m.poder == null && !m.tipo) return null;
     const r = derivar(A, D, m);
+    if(r.status) return {status:true, tier:0, min:0, max:0, imune:false, manual:false};
     const te = r.imune ? 0 : (r.efetManual ? getSel('calc-efet') : (r.te ?? 0));
     const soma = (r.tp ?? 0) + te + (r.ts ?? 0) + (r.crit ? 3 : situSelect());
     const tier = Math.max(1, soma);
@@ -2656,13 +2785,15 @@ function calcSyncSelects(){
     if(mult !== 1){ mn = Math.round(mn*mult); mx = Math.round(mx*mult); }
     const stab = r.stab != null ? r.stab : stabRadio();
     if(stab > 0){ mn = Math.round(mn*(1+stab)); mx = Math.round(mx*(1+stab)); }
-    [mn, mx] = bonusPct(mn, mx);
+    [mn, mx] = bonusPct(mn, mx, r.charge);
+    if(r.climaMult !== 1){ mn = Math.round(mn*r.climaMult); mx = Math.round(mx*r.climaMult); }
     if(r.imune){ mn = 0; mx = 0; } else { mn = Math.max(1, mn); mx = Math.max(1, mx); }
-    return {tier, min: mn, max: mx, imune: r.imune, manual: r.efetManual};
+    return {tier, min: mn, max: mx, imune: r.imune, bloqueado: !!r.bloqueado, manual: r.efetManual};
   }
   function textoResultado(res, D){
     if(!res) return '';
-    if(res.imune) return '🚫 Imune';
+    if(res.status) return '🔄 Status · sem dano';
+    if(res.imune) return res.bloqueado ? '🚫 Bloqueado pelo clima' : '🚫 Imune';
     const hp = hpEfetivo(D);
     const pct = hp ? ' ('+(Math.round(res.min/hp*1000)/10)+'–'+(Math.round(res.max/hp*1000)/10)+'%)' : '';
     return res.min+'–'+res.max+pct+' · T'+res.tier+(res.manual ? ' ⚠️' : '');
@@ -2679,6 +2810,9 @@ function calcSyncSelects(){
     return {
       nivel: A.nivel, mult,
       imune: auto && r.imune,
+      status: auto && !!r.status,
+      bloqueado: auto && !!r.bloqueado,
+      clima: (auto && m.tipo && !r.status) ? {mult: r.climaMult, nome: window.calcClimaNome(climaAtual())} : null,
       stab: auto ? r.stab : null,
       situ: (auto && r.crit) ? 3 : null,
       rotulo: (A.nivel != null ? 'Lv '+A.nivel : 'Lv ?') + ' → ' + (D.nivel != null ? 'Lv '+D.nivel : 'Lv ?')
@@ -2693,7 +2827,10 @@ function calcSyncSelects(){
   const multEstagioSpe = st => st >= 0 ? (2 + st) / 2 : 2 / (2 - st);
   function speedEfetiva(P){
     const v = statEf(P.spe, P.nivel); if(v == null) return null;
-    const est = clamp(P.st.spe + (P.mega ? 1 : 0), -6, 6);
+    let est0 = P.st.spe + (P.mega ? 1 : 0);
+    const clN = CLIMAS[climaAtual()];
+    if(clN && clN.lentoNaoIce && P.tipos.length && !P.tipos.includes('ice') && !P.tipos.includes('flying')) est0 -= 1;
+    const est = clamp(est0, -6, 6);
     return Math.floor(v * multEstagioSpe(est));
   }
   function velocidades(A, D){
@@ -2711,10 +2848,17 @@ function calcSyncSelects(){
     const nomeD = (D.nome || 'Defensor') + (D.nivel != null ? ' Lv.'+D.nivel : '');
     const golpe = m.nome || ('golpe '+A.ativo);
     const nv = r.nv || {};
+    if(nv.status){
+      const rangeEl = $('calc-dano-range'); if(rangeEl) rangeEl.textContent = 'Status';
+      const v0 = velocidades(A, D);
+      out.style.display = 'block';
+      out.innerHTML = '🔄 <b>'+nomeA+'</b> — '+golpe+' é um golpe de <b>status</b>: não causa dano.'+(v0 ? ' · '+v0 : '');
+      return;
+    }
     if(nv.imune){
       const rangeEl = $('calc-dano-range'); if(rangeEl) rangeEl.textContent = 'Imune';
       out.style.display = 'block';
-      out.innerHTML = '🚫 <b>'+nomeA+'</b> — '+golpe+' → <b>'+nomeD+'</b>: o alvo é imune a esse tipo de golpe (dano 0).';
+      out.innerHTML = '🚫 <b>'+nomeA+'</b> — '+golpe+' → <b>'+nomeD+'</b>: '+(nv.bloqueado ? 'o clima atual impede esse golpe (dano 0).' : 'o alvo é imune a esse tipo de golpe (dano 0).');
       return;
     }
     const partes = [];
@@ -2745,7 +2889,7 @@ function calcSyncSelects(){
         if(m.usado) txt = '✔ já usado nesta batalha';
         else if(X.s === A.s && m.i === A.ativo && _principal){
           const nv = _principal.nv || {};
-          txt = textoResultado({tier:_principal.tierFinal, min:_principal.danoMin, max:_principal.danoMax, imune:!!nv.imune, manual:derivar(X, Y, m).efetManual}, Y);
+          txt = (nv.status || m.cat === 'sta') ? textoResultado({status:true}, Y) : textoResultado({tier:_principal.tierFinal, min:_principal.danoMin, max:_principal.danoMax, imune:!!nv.imune, bloqueado:!!nv.bloqueado, manual:derivar(X, Y, m).efetManual}, Y);
         } else txt = textoResultado(calcMov(X, Y, m), Y);
         el.textContent = txt;
       });
@@ -2772,7 +2916,8 @@ function calcSyncSelects(){
     poder: () => setSelTier('calc-poder', 0),
     efet:  () => setSelTier('calc-efet', 0),
     stats: () => setSelTier('calc-stats', 0),
-    stab:  () => syncStabRadio(0)
+    stab:  () => syncStabRadio(0),
+    charge: () => { const ck = $('calc-charge'); if(ck) ck.checked = false; }
   };
   function marcar(campo, aplicou){
     if(aplicou) _tocados.add(campo);
@@ -2786,6 +2931,7 @@ function calcSyncSelects(){
   function atualizar(){
     if(!painelAtivo()) return;
     sincronizarStats();
+    climaUI();
     const {A, D} = papeis();
     const m = A.golpes[A.ativo-1];
     const hints = [];
@@ -2794,6 +2940,7 @@ function calcSyncSelects(){
     if($('cpk-auto')?.checked){
       const r = derivar(A, D, m);
       r.notas.forEach(n => hints.push(n));
+      if(r.status) hints.push('🔄 <b>Golpe de status</b> — não causa dano (nenhum bônus se aplica)');
 
       let ok = false;
       if(r.tp != null){ ok = setSelTier('calc-poder', r.tp, r.semAplica); if(ok) hints.push('Poder '+r.poder+' → <b>+'+r.tp+'</b>'); }
@@ -2821,7 +2968,20 @@ function calcSyncSelects(){
 
       if(r.stage !== 0){ ajustarEstagio(r.stage); _tocados.add('stage'); hints.push('Estágios: <b>'+(r.stage>0?'+':'')+r.stage+'</b> ('+(r.stage>0?'+':'')+(r.stage*4)+' dano)'); }
       else if(_tocados.has('stage')){ ajustarEstagio(0); _tocados.delete('stage'); }
+
+      // Charge/Recharge: marca o checkbox global sozinho conforme o golpe ativo (e desmarca ao trocar de golpe)
+      { const ck = $('calc-charge');
+        if(ck){
+          if(r.charge){ ck.checked = true; _tocados.add('charge'); hints.push('Charge/Recharge <b>detectado</b> → bônus aplicado'); }
+          else if(_tocados.has('charge')){ ck.checked = false; _tocados.delete('charge'); }
+        } }
     }
+
+    // Clima: dano residual no fim do turno
+    { const cl = CLIMAS[climaAtual()];
+      if(cl && cl.residual) [A, D].forEach(P => {
+        if(P.tipos.length && !P.tipos.some(t => cl.residual.includes(t))) hints.push(cl.nome+': <b>'+(P.nome || 'Pokémon')+'</b> perde 1/16 do HP no fim do turno');
+      }); }
 
     // Stats efetivos por nível, mostrados abaixo dos campos de cada lado
     [A, D].forEach(P => {
@@ -2829,7 +2989,7 @@ function calcSyncSelects(){
       if(P.nivel == null || [P.atk, P.def, P.spa, P.spd, P.spe].every(v => v == null)){ el.textContent = ''; return; }
       const k = multStat(P.nivel);
       const r0 = v => v == null ? '–' : Math.round(v);
-      el.innerHTML = 'Lv '+P.nivel+' → stats <b>×'+k.toFixed(2)+'</b> · no Lv 100: Atk '+r0(P.atk)+' · Def '+r0(P.def)+' · Sp.Atk '+r0(P.spa)+' · Sp.Def '+r0(P.spd)+' · Speed '+r0(P.spe);
+      el.innerHTML = 'Lv '+P.nivel+' → stats <b>×'+k.toFixed(2)+'</b> · base (Lv 50): HP '+r0(P.hpBase)+' · Atk '+r0(P.atk)+' · Def '+r0(P.def)+' · Sp.Atk '+r0(P.spa)+' · Sp.Def '+r0(P.spd)+' · Speed '+r0(P.spe);
     });
     const mult = multNiveis(A.nivel, D.nivel);
     const info = $('cpk-nivel-info');
@@ -2893,23 +3053,23 @@ function calcSyncSelects(){
       hp: st['hp'], atk: st['attack'], def: st['defense'], spa: st['special-attack'], spd: st['special-defense']
     };
   }
-  const STAT_ID = /^cpk-p[12]-(atk|def|spa|spd|spe)$/;
+  const STAT_ID = /^cpk-p[12]-(hp|atk|def|spa|spd|spe)$/;
   const setV = (id, v) => {
     const el = $(id); if(!el) return;
     el.value = (v == null ? '' : v);
-    if(STAT_ID.test(id)){ if(v == null || v === '') delete el.dataset.base; else el.dataset.base = v; } // v = valor do Lv 100
+    if(STAT_ID.test(id)){ if(v == null || v === '') delete el.dataset.base; else el.dataset.base = v; } // v = valor-base (Lv 50)
   };
   // Mostra nos campos o valor do nível atual, a partir do valor-base lembrado (não mexe no campo em edição).
   function sincronizarStats(){
     ['p1','p2'].forEach(s => {
       const L = parseInt($('cpk-'+s+'-nivel')?.value);
       const nv = (Number.isFinite(L) && L >= 1) ? Math.min(L, 100) : null;
-      ['atk','def','spa','spd','spe'].forEach(k => {
+      ['hp','atk','def','spa','spd','spe'].forEach(k => {
         const el = $('cpk-'+s+'-'+k); if(!el) return;
         if(el.value === ''){ delete el.dataset.base; return; }
         if(document.activeElement === el) return;
         const b = parseFloat(el.dataset.base);
-        if(Number.isFinite(b)) el.value = statEf(b, nv);
+        if(Number.isFinite(b)) el.value = k === 'hp' ? hpEf(b, nv) : statEf(b, nv);
       });
     });
   }
@@ -3000,17 +3160,50 @@ function calcSyncSelects(){
     }
   }
 
-  // Tipo / categoria / poder do golpe via PokeAPI (a ficha só guarda o nome).
+  // Tipo / categoria / poder / Charge do golpe: moves.json do repositório (principal) e PokeAPI de reserva.
+  const MOVES_JSON_URL = 'https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/movedex/moves.json';
+  const chaveGolpe = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  // Charge/Recharge: pelo texto padronizado de `descricao` + lista fixa de reserva.
+  // Golpes de dois turnos em que o usuário some (Fly, Dig, Dive, Bounce, Phantom/Shadow Force, Sky Drop) NÃO contam.
+  const CHARGE_RE = /foregoes its next turn to recharge|requires a turn to charge|charges for one turn/i;
+  const CHARGE_LISTA = new Set(['Hyper Beam','Giga Impact','Blast Burn','Frenzy Plant','Hydro Cannon','Rock Wrecker','Roar of Time','Eternabeam','Meteor Assault','Prismatic Laser',
+    'Solar Beam','Solar Blade','Razor Wind','Sky Attack','Skull Bash','Freeze Shock','Ice Burn'].map(chaveGolpe));
+  const ehCharge = (nome, desc) => CHARGE_LISTA.has(chaveGolpe(nome)) || CHARGE_RE.test(String(desc || ''));
+  const catDoGolpe = dc => dc === 'special' ? 'esp' : dc === 'status' ? 'sta' : 'fis';
+  let _movesIdx = null, _movesProm = null;
+  function carregarMoves(){
+    if(_movesIdx) return Promise.resolve(_movesIdx);
+    if(_movesProm) return _movesProm;
+    _movesProm = fetch(MOVES_JSON_URL).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(arr => { const idx = {}; (Array.isArray(arr) ? arr : []).forEach(m => { if(m && m.name) idx[chaveGolpe(m.name)] = m; }); return _movesIdx = idx; })
+      .catch(e => { console.warn('[calc] moves.json indisponível, usando PokeAPI', e); _movesProm = null; return null; });
+    return _movesProm;
+  }
   const _mcache = {};
   async function dadosGolpe(nome){
+    const chave = chaveGolpe(nome);
+    if(!chave) return null;
+    if(_mcache[chave] !== undefined) return _mcache[chave];
+    const idx = await carregarMoves();
+    const mv = idx && idx[chave];
+    if(mv) return _mcache[chave] = {tipo: String(mv.type || '').toLowerCase(), cat: catDoGolpe(mv.damage_class), poder: mv.power, charge: ehCharge(mv.name, mv.descricao)};
     const slug = slugLocal(nome).replace(/-+/g,'-');
-    if(_mcache[slug] !== undefined) return _mcache[slug];
     try{
       const r = await fetch('https://pokeapi.co/api/v2/move/' + encodeURIComponent(slug));
       if(!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
-      return _mcache[slug] = {tipo: d.type.name, cat: d.damage_class.name === 'special' ? 'esp' : 'fis', poder: d.power};
-    }catch(e){ return _mcache[slug] = null; }
+      return _mcache[chave] = {tipo: d.type.name, cat: catDoGolpe(d.damage_class.name), poder: d.power, charge: ehCharge(nome, '')};
+    }catch(e){ return _mcache[chave] = null; }
+  }
+  // Ao digitar/escolher o nome de um golpe, preenche tipo, categoria, poder e Charge sozinho.
+  async function preencherGolpe(s, i){
+    const el = $('cpk-'+s+'-m'+i+'-nome'), nome = (el?.value || '').trim();
+    if(!nome || i === SLOT_BOLA){ atualizar(); return; }
+    const d = await dadosGolpe(nome);
+    if(!d || (el.value || '').trim() !== nome){ atualizar(); return; }
+    setV('cpk-'+s+'-m'+i+'-tipo', d.tipo); setV('cpk-'+s+'-m'+i+'-cat', d.cat); setV('cpk-'+s+'-m'+i+'-poder', d.poder);
+    const ck = $('cpk-'+s+'-m'+i+'-charge'); if(ck) ck.checked = !!d.charge;
+    atualizar();
   }
 
   async function aplicarPokemonFicha(s){
@@ -3021,7 +3214,7 @@ function calcSyncSelects(){
     SLOTS.forEach(i => {
       ['nome','poder'].forEach(k => setV('cpk-'+s+'-m'+i+'-'+k, ''));
       setV('cpk-'+s+'-m'+i+'-tipo', ''); setV('cpk-'+s+'-m'+i+'-cat', 'fis');
-      ['sem','crit','usado'].forEach(k => { const el = $('cpk-'+s+'-m'+i+'-'+k); if(el) el.checked = false; });
+      ['sem','crit','usado','charge'].forEach(k => { const el = $('cpk-'+s+'-m'+i+'-'+k); if(el) el.checked = false; });
     });
     const r1 = document.querySelector('input[name="cpk-'+s+'-ativo"][value="1"]'); if(r1) r1.checked = true;
     // Pokémon + nível
@@ -3053,6 +3246,7 @@ function calcSyncSelects(){
       if(!d || tok !== _fptok[s]) return;
       const i = k+1;
       setV('cpk-'+s+'-m'+i+'-tipo', d.tipo); setV('cpk-'+s+'-m'+i+'-cat', d.cat); setV('cpk-'+s+'-m'+i+'-poder', d.poder);
+      const ck = $('cpk-'+s+'-m'+i+'-charge'); if(ck) ck.checked = !!d.charge;
     }));
     if(tok === _fptok[s]) atualizar();
   }
@@ -3100,7 +3294,7 @@ function calcSyncSelects(){
     .cpk-status{font-size:10px;color:var(--muted);min-height:13px;font-style:italic;margin-bottom:6px}
     .cpk-moves{border-top:1.5px dashed var(--border);padding-top:8px;display:grid;gap:8px}
     .cpk-mv > *{min-width:0}
-    .cpk-mv{display:grid;grid-template-columns:auto minmax(0,1fr) 84px 66px 58px;gap:5px 6px;align-items:center}
+    .cpk-mv{display:grid;grid-template-columns:auto minmax(0,1fr) 84px 74px 58px;gap:5px 6px;align-items:center}
     .cpk-mv2{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:11px;color:var(--muted)}
     .cpk-mv2 label{display:flex;align-items:center;gap:4px;cursor:pointer}
     .cpk-card .cpk-mv2 input{width:auto}
@@ -3114,7 +3308,7 @@ function calcSyncSelects(){
       .cpk-card{padding:10px}
       .cpk-stat{grid-template-columns:44px minmax(0,1fr) 58px;gap:5px}
       .cpk-stat.hp{grid-template-columns:44px minmax(0,1fr) 38px minmax(0,1fr)}
-      .cpk-mv{grid-template-columns:auto minmax(0,1fr) 76px 58px 52px;gap:5px}
+      .cpk-mv{grid-template-columns:auto minmax(0,1fr) 76px 66px 52px;gap:5px}
       .cpk-card input[type=text],.cpk-card input[type=number],.cpk-card select{padding:6px;font-size:13px}
       .cpk-efetivo{font-size:10px}
     }
@@ -3131,13 +3325,14 @@ function calcSyncSelects(){
     const mv = i => `
       <div class="cpk-mv${i===SLOT_BOLA?' bola':''}" id="${id('row'+i)}"${i>GOLPES_INICIAIS?' style="display:none"':''}>
         <input type="radio" name="cpk-${s}-ativo" value="${i}" ${i===1?'checked':''} title="Golpe ativo (alimenta a calculadora quando este lado ataca)"/>
-        <input id="${id('m'+i+'-nome')}" type="text" placeholder="${i===SLOT_BOLA?'🎱 Golpe da Pokébola':'Golpe '+i}" autocomplete="off"/>
+        <input id="${id('m'+i+'-nome')}" type="text" list="cpk-golpes" autocomplete="off" placeholder="${i===SLOT_BOLA?'🎱 Golpe da Pokébola':'Golpe '+i}" autocomplete="off"/>
         <select id="${id('m'+i+'-tipo')}">${optTipos('Tipo')}</select>
-        <select id="${id('m'+i+'-cat')}"><option value="fis">Fís.</option><option value="esp">Esp.</option></select>
+        <select id="${id('m'+i+'-cat')}"><option value="fis">Fís.</option><option value="esp">Esp.</option><option value="sta">Status</option></select>
         <input id="${id('m'+i+'-poder')}" type="number" min="0" max="300" placeholder="Poder"/>
         <div class="cpk-mv2">
           <label><input type="checkbox" id="${id('m'+i+'-sem')}"/> s/ efeito</label>
           <label><input type="checkbox" id="${id('m'+i+'-crit')}"/> Crit</label>
+          <label title="Charge/Recharge: +25% de dano (marcado sozinho pelo moves.json)"><input type="checkbox" id="${id('m'+i+'-charge')}"/> Charge</label>
           ${i===SLOT_BOLA ? `<label title="Dive Ball: 1× por batalha"><input type="checkbox" id="${id('m'+i+'-usado')}"/> já usado</label>` : ''}
           <span class="cpk-res" id="${id('m'+i+'-res')}"></span>
         </div>
@@ -3177,7 +3372,7 @@ function calcSyncSelects(){
   }
 
   const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','spe','eatk','edef','espa','espd','espe','mega','dyn','adapt','tera','teratipo','bola','ficha'];
-  const MOVS = ['nome','tipo','cat','poder','sem','crit','usado'];
+  const MOVS = ['nome','tipo','cat','poder','sem','crit','usado','charge'];
 
   // Mostra só os slots necessários: 4 de início, até 8 conforme o preenchimento (ou o "+ golpe"),
   // e o slot 9 apenas quando há Net Ball / Dive Ball selecionada.
@@ -3195,7 +3390,7 @@ function calcSyncSelects(){
     const b = BOLAS[$('cpk-'+s+'-bola')?.value];
     const set = (k, v) => setV('cpk-'+s+'-m'+SLOT_BOLA+'-'+k, v);
     set('nome', b ? b.nome : ''); set('tipo', b ? b.tipo : ''); set('cat', b ? b.cat : 'fis'); set('poder', b ? b.poder : '');
-    ['usado','sem','crit'].forEach(k => { const el = $('cpk-'+s+'-m'+SLOT_BOLA+'-'+k); if(el) el.checked = false; });
+    ['usado','sem','crit','charge'].forEach(k => { const el = $('cpk-'+s+'-m'+SLOT_BOLA+'-'+k); if(el) el.checked = false; });
     if(!b){
       const r = document.querySelector('input[name="cpk-'+s+'-ativo"]:checked');
       if(r && parseInt(r.value) === SLOT_BOLA){ const r1 = document.querySelector('input[name="cpk-'+s+'-ativo"][value="1"]'); if(r1) r1.checked = true; }
@@ -3259,6 +3454,7 @@ function calcSyncSelects(){
       <div class="cpk-info" id="cpk-nivel-info"></div>
       <div class="cpk-hints" id="cpk-hints"></div>
       <datalist id="cpk-nomes"></datalist>
+      <datalist id="cpk-golpes"></datalist>
       <datalist id="cpk-fichas"></datalist>
       </div>`;
     panel.addEventListener('toggle', () => { _painelAberto = panel.open; if(panel.open) listaFichas().catch(()=>{}); });
@@ -3281,11 +3477,11 @@ function calcSyncSelects(){
            _fichasLista.some(x => String(x.nome).trim().toLowerCase() === e.target.value.trim().toLowerCase())) carregarFicha(fc.s);
         return;
       }
-      const ms = /^cpk-(p[12])-(atk|def|spa|spd|spe)$/.exec(e.target.id || '');
-      if(ms){ // o que se digita é o valor no nível atual → guarda o equivalente no Lv 100
+      const ms = /^cpk-(p[12])-(hp|atk|def|spa|spd|spe)$/.exec(e.target.id || '');
+      if(ms){ // o que se digita é o valor no nível atual → guarda o equivalente no Lv 50 (base)
         const v = parseFloat(e.target.value);
         const L = parseInt($('cpk-'+ms[1]+'-nivel')?.value);
-        if(Number.isFinite(v)) e.target.dataset.base = v / multStat((Number.isFinite(L) && L >= 1) ? Math.min(L,100) : null);
+        if(Number.isFinite(v)) e.target.dataset.base = (ms[2] === 'hp' && v <= HP_MIN) ? HP_MIN : v / multStat((Number.isFinite(L) && L >= 1) ? Math.min(L,100) : null);
         else delete e.target.dataset.base;
       }
       const s = ladoDe(e.target.id);
@@ -3303,6 +3499,8 @@ function calcSyncSelects(){
       mostrarSlots(b.dataset.s);
     });
     panel.addEventListener('change', e => {
+      const mn = /^cpk-(p[12])-m(\d)-nome$/.exec(e.target.id || '');
+      if(mn){ preencherGolpe(mn[1], parseInt(mn[2])); return; }
       const fc = fichaCampo(e.target.id);
       if(fc){
         if(fc.k === 'ficha'){ if(e.target.value.trim().toLowerCase() !== _fichaUlt[fc.s]) carregarFicha(fc.s); }
@@ -3348,6 +3546,12 @@ function calcSyncSelects(){
         return true;
       }catch(e){ return false; }
     };
+    carregarMoves().then(idx => {
+      const dl = $('cpk-golpes'); if(!dl || !idx) return;
+      dl.innerHTML = Object.values(idx).filter(m => m.approved !== false)
+        .map(m => String(m.name).split('-').filter(Boolean).map(cap).join(' '))
+        .sort((a,b) => a.localeCompare(b)).map(n => '<option value="'+n.replace(/"/g,'&quot;')+'"></option>').join('');
+    }).catch(()=>{});
     if(!preencherNomes()){
       try{ if(typeof PK !== 'undefined' && PK.load) PK.load().then(d => { if(typeof pokemonDB !== 'undefined' && !pokemonDB.length && Array.isArray(d)) pokemonDB = d; preencherNomes(); }).catch(()=>{}); }catch(e){}
     }
@@ -9738,6 +9942,33 @@ function _ensureCalcDano(){
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-crit-stab" onchange="calcDano()"/> Desprevenido c/ +2 Crit (+3 em vez de +2)</label>
           </div>
         </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Clima do Campo</div>
+          <select id="calc-clima" onchange="window.calcClimaMudou?window.calcClimaMudou():calcDano()" style="width:100%;padding:7px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text)">
+            <option value="">🌤️ Céu limpo</option>
+            <option value="ensolarado">☀️ Ensolarado</option>
+            <option value="nublado">☁️ Nublado</option>
+            <option value="chuvoso">🌧️ Chuvoso</option>
+            <option value="tempestade">⛈️ Tempestade</option>
+            <option value="areia">🏜️ Tempestade de areia</option>
+            <option value="ventania">🌬️ Ventania</option>
+            <option value="nevoeiro">🌫️ Nevoeiro</option>
+            <option value="nevando">❄️ Nevando</option>
+            <option value="granizo">🌨️ Chuva de granizo</option>
+          </select>
+          <div id="calc-clima-info" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Céu limpo — sem efeitos.</div>
+          <div id="calc-clima-man-wrap" style="display:none;margin-top:8px">
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Ajuste manual no golpe</div>
+            <select id="calc-clima-man" onchange="calcDano()" style="width:100%;padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text)">
+              <option value="1">Nenhum</option>
+              <option value="1.5">+50%</option>
+              <option value="1.3">+30%</option>
+              <option value="0.75">−25%</option>
+              <option value="0.5">−50%</option>
+            </select>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">Só vale quando o painel de Pokémon não está definindo o golpe (com ele, o clima é aplicado sozinho pelo tipo do golpe).</div>
+          </div>
+        </div>
       </div>
     </div>
     <div id="calc-resultado" style="background:linear-gradient(135deg,var(--brand),var(--brand-mid));border-radius:12px;padding:20px 24px;color:#fff;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:20px">
@@ -11555,6 +11786,28 @@ function getEncounterUnits(db){
 }
 
 
+// Pokémon "difíceis": só entram em jogo quando a raridade resultante é RARÍSSIMO. Nesse caso o GRUPO todo tem 1% de chance
+// (sai um deles por igual entre os disponíveis no pool Rarissímo do bioma); nos outros 99%, sorteia só entre os Rarissímos normais.
+// Em qualquer outra raridade eles não têm regra especial.
+const ENCONTRO_DIFICIL = {
+  chance: 0.01,
+  nomes: new Set(['Dratini','Larvitar','Bagon','Beldum','Gible','Deino','Goomy','Jangmo-o','Dreepy','Frigibax'].map(n => n.toLowerCase().replace(/[^a-z0-9]/g,'')))
+};
+function pkEhDificil(p){
+  const n = String((p && (p.name || p.nome)) || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  return ENCONTRO_DIFICIL.nomes.has(n);
+}
+// Chance do grupo (dentro do Rarissímo): 1% de sair UM dos difíceis (escolhido por igual entre os da lista), senão null.
+function pkSortearDificil(candidatos){
+  const ds = candidatos.filter(pkEhDificil);
+  if(!ds.length || Math.random() >= ENCONTRO_DIFICIL.chance) return null;
+  return ds[Math.floor(Math.random() * ds.length)];
+}
+// Sorteio uniforme dentro da lista.
+function sortearPonderado(lista){
+  return lista[Math.floor(Math.random() * lista.length)];
+}
+
 function pickFromPool(pool, usedIds, rarity, bioma){
   if(!pool||pool.length===0){
     const gender=rollGender('1d2');
@@ -11564,7 +11817,7 @@ function pickFromPool(pool, usedIds, rarity, bioma){
   let available=pool.filter(p=>!usedIds.has(p.id));
   // se todos já foram usados, reseta (ciclo)
   if(available.length===0){ usedIds.clear(); available=[...pool]; }
-  const p=available[Math.floor(Math.random()*available.length)];
+  const p=sortearPonderado(available);
   usedIds.add(p.id);
   const gender=rollGender(p.genero);
   // Condição de captura é a do bioma sorteado especificamente, não uma global do pokémon
@@ -11581,10 +11834,23 @@ function pickFromPool(pool, usedIds, rarity, bioma){
 function pickFromPoolCascade(poolsObj, usedIdsObj, rarity, bioma){
   const ordem=[rarity, ...['comum','incomum','raro','rarissimo'].filter(r=>r!==rarity)];
   for(const r of ordem){
-    const pool=poolsObj[r];
-    if(pool && pool.length){
-      return pickFromPool(pool, usedIdsObj[r], r, bioma);
+    const pool=poolsObj[r]||[];
+    if(!pool.length) continue;
+    if(r==='rarissimo'){
+      // Dentro do Rarissímo: 1% pro grupo "difícil" (um deles por igual); senão só os Rarissímos normais.
+      const livres=pool.filter(p=>!(usedIdsObj[r] && usedIdsObj[r].has(p.id)));
+      const dif=pkSortearDificil(livres);
+      if(dif) return pickFromPool([dif], usedIdsObj[r], r, bioma);
+      const normais=pool.filter(p=>!pkEhDificil(p));
+      if(normais.length) return pickFromPool(normais, usedIdsObj[r], r, bioma);
+      continue; // pool Rarissímo só tem difíceis: tenta as outras raridades
     }
+    return pickFromPool(pool, usedIdsObj[r], r, bioma);
+  }
+  // Nada nas outras raridades: usa o que tiver (inclui os difíceis)
+  for(const r of ordem){
+    const pool=poolsObj[r];
+    if(pool && pool.length) return pickFromPool(pool, usedIdsObj[r], r, bioma);
   }
   return pickFromPool([], usedIdsObj[rarity], rarity, bioma);
 }
@@ -16210,7 +16476,9 @@ async function rolarEncontroEvento(){
     for(let i=0;i<total;i++){
       const rarity=rollRarityC();
       const pool=pools[rarity].length?pools[rarity]:(pools['comum'].length?pools['comum']:biomaObj.pokemons);
-      const pk=pool[Math.floor(Math.random()*pool.length)];
+      const pkDif=(rarity==='rarissimo' && pools[rarity].length)?pkSortearDificil(pools[rarity]):null;
+      const poolSemDif=(rarity==='rarissimo' && pools[rarity].length)?pool.filter(p=>!pkEhDificil(p)):pool;
+      const pk=pkDif||sortearPonderado(poolSemDif.length?poolSemDif:pool);
       if(pk){
         const gender=rollGender(pk.genero);
         pokes.push({
