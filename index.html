@@ -9845,6 +9845,7 @@ async function salvarPaginaEditada(){
     if(el.classList.contains('ed-drag-handle')) el.remove();
   });
   clone.querySelectorAll('[data-ed-tail]').forEach(el=>el.remove());
+  if(editPageKey==='batalhas_v2') clone.querySelectorAll('#calc-dano-box').forEach(el=>el.remove()); // a calculadora vem sempre do arquivo (_ensureCalcDano), nunca do banco
   clone.querySelectorAll('.ganhos-example-card.open').forEach(el=>el.classList.remove('open')); // blocos recolhíveis sempre salvam fechados
   const html = clone.innerHTML;
   try {
@@ -10024,6 +10025,16 @@ function _ensureCalcDano(){
   window.calcDano && window.calcDano();
 }
 
+// O HTML salvo no banco pode trazer uma cópia antiga da calculadora de dano (sem as células automáticas e sem o Clima).
+// Ela é removida aqui e o _ensureCalcDano injeta a versão atual do arquivo.
+function _semCalcDano(key, html){
+  if(key!=='batalhas_v2' || typeof html!=='string' || html.indexOf('calc-dano-box')<0) return html;
+  const t = document.createElement('div');
+  t.innerHTML = html;
+  t.querySelectorAll('#calc-dano-box').forEach(el=>el.remove());
+  return t.innerHTML;
+}
+
 async function carregarPaginaEditavel(page){
   const pageEl = edGetPageEl(page);
   if(!pageEl) return;
@@ -10046,8 +10057,9 @@ async function carregarPaginaEditavel(page){
     } else {
       const res = await dbGet('config', `chave=eq.${key}`);
       if(res && res[0] && res[0].valor){
-        pageEl.innerHTML = res[0].valor;
-        editOriginalHTML[key] = res[0].valor;
+        const v = _semCalcDano(key, res[0].valor);
+        pageEl.innerHTML = v;
+        editOriginalHTML[key] = v;
       }
     }
   } catch(e){ /* usa HTML padrão */ }
