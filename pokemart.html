@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>PokéMart | Kingdom Platinum</title>
 <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
-<!-- PokéMart (/pokemart): compra e venda de itens da Bag da ficha. Itens vêm do items.json (flags.pokemart.enabled + price).
+<!-- PokéMart (/pokemart): compra e venda de itens da Bag da ficha. Itens vêm do items.json (flags.pokemart.enabled + price; flags.pokemart.enabled = comprável; flags.venda.enabled = vendável; as duas flags são independentes).
      Compra desconta o dinheiro e soma na Bag; venda tira da Bag e soma o dinheiro (SELL_PCT do preço). Salva via /api/ficha-salvar.
      vercel.json: { "source": "/pokemart", "destination": "/pokemart.html" } -->
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -289,6 +289,156 @@ img{image-rendering:auto}
 .tmi small{display:block;font:800 10px var(--font-body);text-transform:uppercase;letter-spacing:.5px;color:var(--mu);margin-bottom:2px}
 .tmi b{font:800 14px var(--font-body)}
 @media(max-width:420px){.tmi{grid-template-columns:repeat(2,1fr)}}
+/* ===== Recycling Machine (embutida na aba Reciclagem; tudo escopado em #rec) ===== */
+#rec{--neon:#3ddc6a;--neon-dim:#1f7a3e;--body-light:#eef0f3;--body-mid:#d3d8de;--body-shadow:#aab0b8;--face-dark:#22252b;--face-darker:#101216;--bg-top:#0e2038;--bg-bottom:#2a4a70}
+#rec .rec-page{display:flex;flex-direction:column;align-items:center;gap:30px;padding:8px 4px 24px}
+#rec .machine-wrap{width:100%;max-width:400px;position:relative}
+#rec .machine{border-radius:26px;overflow:hidden;
+  background:linear-gradient(150deg,var(--body-light),var(--body-mid) 60%,var(--body-shadow));
+  box-shadow:0 34px 60px -20px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.5);
+  position:relative;}
+#rec .machine-header{position:relative;display:flex;align-items:center;justify-content:center;
+  padding:14px 50px 4px;}
+#rec .machine-title{text-align:center;width:100%;
+  font-family:var(--font-title);font-weight:700;color:var(--brand);
+  font-size:14px;letter-spacing:1.2px;}
+#rec .machine-title small{display:block;font-size:9.5px;color:var(--muted);letter-spacing:1.6px;font-weight:700;margin-top:2px;text-transform:uppercase}
+#rec .recipe-btn-round{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  flex-shrink:0;width:34px;height:34px;border-radius:50%;border:none;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,#3a4048,#20242a);color:#eef2f6;
+  cursor:pointer;box-shadow:0 3px 0 #101216, 0 6px 10px rgba(0,0,0,.3);
+  transition:transform .08s, box-shadow .08s;}
+#rec .recipe-btn-round svg{width:16px;height:16px}
+#rec .recipe-btn-round:hover{color:var(--accent)}
+#rec .recipe-btn-round:active{transform:translateY(calc(-50% + 2px));box-shadow:0 1px 0 #101216, 0 2px 6px rgba(0,0,0,.3)}
+#rec .face-dark{margin:12px 12px 0;border-radius:18px 18px 10px 10px;
+  background:linear-gradient(155deg,var(--face-dark),var(--face-darker));
+  padding:22px 18px 34px;position:relative;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), inset 0 -30px 40px -20px rgba(0,0,0,.5);}
+#rec .face-dark::after{content:"";position:absolute;top:14px;right:16px;width:9px;height:9px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#8a8f96,#3a3d42);
+  box-shadow:0 0 0 2px rgba(255,255,255,.08);}
+#rec .face-row{display:flex;align-items:center;gap:16px}
+#rec .port-col{display:flex;flex-direction:column;align-items:center;gap:8px;flex-shrink:0;padding-top:6px}
+#rec .port{width:88px;height:88px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 38% 32%,#3a3f46,#0a0b0d 70%);
+  box-shadow:0 0 0 5px var(--face-darker), 0 0 16px 3px rgba(61,220,106,.55), inset 0 4px 10px rgba(0,0,0,.7);
+  transition:box-shadow .18s;}
+#rec .port::before{content:"";position:absolute;inset:-3px;border-radius:50%;
+  border:2.5px solid var(--neon);opacity:.85;
+  box-shadow:0 0 10px 2px rgba(61,220,106,.5);}
+#rec .port::after{content:"";position:absolute;inset:16px;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,#1b1d21 0deg 14deg,#0a0b0d 14deg 28deg);
+  opacity:.8;}
+#rec .port.pulse{animation:portPulse .5s ease}
+#rec .port-item-anim{position:absolute;top:50%;left:50%;z-index:5;pointer-events:none;
+  transform:translate(-50%,-50%) scale(1.15);opacity:1;
+  filter:drop-shadow(0 0 6px rgba(61,220,106,.85));
+  animation:portItemSuck .42s ease-in forwards;}
+@keyframes portItemSuck{0%{transform:translate(-50%,-50%) scale(1.2);opacity:1}
+  55%{transform:translate(-50%,-50%) scale(.9);opacity:1}
+  100%{transform:translate(-50%,-50%) scale(.1);opacity:0}}
+@keyframes portPulse{0%{box-shadow:0 0 0 5px var(--face-darker), 0 0 16px 3px rgba(61,220,106,.5), inset 0 4px 10px rgba(0,0,0,.7)}
+  40%{box-shadow:0 0 0 5px var(--face-darker), 0 0 30px 10px rgba(61,220,106,.9), inset 0 4px 10px rgba(0,0,0,.7)}
+  100%{box-shadow:0 0 0 5px var(--face-darker), 0 0 16px 3px rgba(61,220,106,.5), inset 0 4px 10px rgba(0,0,0,.7)}}
+#rec .port-label{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px;text-align:center}
+#rec .screen-frame{flex:1;background:#dfe3e8;border-radius:11px;padding:6px;
+  box-shadow:0 3px 10px rgba(0,0,0,.35);}
+#rec .screen-green{background:linear-gradient(160deg,#3fbf5f,#2e9e44);
+  border-radius:7px 7px 0 0;padding:12px 12px 10px;color:#fff;}
+#rec .screen-green .st-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+#rec .screen-green .st{font-size:11.5px;font-weight:800;letter-spacing:.3px}
+#rec .screen-green .st-qty{font-family:var(--font-title);font-weight:900;font-size:14px;flex-shrink:0}
+#rec .screen-chips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:2px;min-height:24px}
+#rec .screen-chip{background:rgba(255,255,255,.18);border-radius:20px;padding:3px 8px;font-size:10.5px;font-weight:700;
+  display:flex;align-items:center;gap:4px;cursor:pointer;}
+#rec .screen-chip:hover{background:rgba(255,255,255,.3)}
+#rec .screen-white{background:#fff;border-radius:0 0 7px 7px;padding:12px 12px 14px;text-align:center;
+  min-height:30px;display:flex;align-items:center;justify-content:center;}
+#rec .screen-white span{font-size:12px;font-weight:700;color:var(--text);line-height:1.4}
+#rec .screen-white.err span{color:var(--red)}
+#rec .screen-white.ok span{color:var(--green)}
+#rec .slot-area{margin-top:16px;display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;min-height:40px}
+#rec .slot-bar{width:64%;height:11px;border-radius:6px;
+  background:linear-gradient(180deg,#050607,#1a1c20);
+  box-shadow:inset 0 2px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.03);
+  position:relative;overflow:visible;}
+#rec .slot-bar::after{content:"";position:absolute;left:8%;right:8%;top:3px;height:2px;background:var(--neon);opacity:.6;border-radius:2px}
+#rec .ticket{background:#fff;border-radius:8px;padding:9px 12px;display:flex;align-items:center;gap:9px;
+  box-shadow:0 8px 18px rgba(0,0,0,.35);animation:ticketOut .35s ease;
+  cursor:pointer;}
+#rec .ticket .info b{display:block;font-size:12px;color:var(--text)}
+#rec .ticket .info span{font-size:9.5px;color:var(--muted);font-weight:700}
+@keyframes ticketOut{from{transform:translateY(-14px);opacity:0}to{transform:translateY(0);opacity:1}}
+#rec .face-light{margin:0 12px 12px;padding:16px 18px 18px;border-radius:10px 10px 16px 16px;
+  background:linear-gradient(160deg,#f4f6f8,#d8dde3);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6);}
+#rec .recycle-logo svg{width:44px;height:44px;display:block}
+#rec .lever-btn{font-family:var(--font-title);font-weight:700;font-size:13px;letter-spacing:1.2px;
+  color:#fff;background:linear-gradient(180deg,#3ddc6a,#1f7a3e);
+  border:none;border-radius:40px;padding:11px 22px;cursor:pointer;
+  box-shadow:0 5px 0 #14532b, 0 9px 16px rgba(0,0,0,.3);
+  transition:transform .08s, box-shadow .08s;}
+#rec .lever-btn:active:not(:disabled){transform:translateY(4px);box-shadow:0 1px 0 #14532b, 0 3px 8px rgba(0,0,0,.3)}
+#rec .lever-btn:disabled{filter:grayscale(.6) brightness(.85);cursor:not-allowed}
+#rec .feet{display:flex;justify-content:space-between;padding:0 34px;margin-top:-4px}
+#rec .feet span{width:16px;height:10px;border-radius:0 0 6px 6px;background:linear-gradient(180deg,#3a3d42,#1a1b1d)}
+#rec .panel{width:100%;max-width:400px;background:var(--surface);border-radius:16px;
+  box-shadow:0 20px 40px -18px rgba(0,0,0,.4);overflow:hidden;
+  display:none;}
+#rec .panel.is-open{display:block}
+#rec .panel-head{padding:14px 16px;font-size:13px;font-weight:800;color:var(--brand);
+  border-bottom:1.5px solid var(--border);background:var(--surface2);}
+#rec .panel-body{padding:16px}
+#rec .inv-strip-section{margin:14px 12px 5px;padding:12px 12px 14px;border-radius:12px;background:var(--surface2)}
+#rec .inv-strip-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+#rec .inv-strip-title{font-size:10px;font-weight:800;letter-spacing:1px;color:var(--muted)}
+#rec .restock-mini{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--border2);background:var(--surface);
+  color:var(--muted);font-size:12px;cursor:pointer;line-height:1;}
+#rec .restock-mini:hover{color:var(--brand);border-color:var(--brand-mid)}
+#rec .inv-strip-row{display:flex;align-items:center;gap:6px}
+#rec .inv-nav-btn{flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border2);
+  background:var(--surface);color:var(--muted);font-size:15px;font-weight:800;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;line-height:1;}
+#rec .inv-nav-btn:hover{color:var(--brand);border-color:var(--brand-mid)}
+#rec .inv-strip{flex:1;display:flex;gap:8px;overflow-x:auto;scroll-behavior:smooth;padding:8px 4px 2px;
+  scrollbar-width:none;}
+#rec .inv-strip::-webkit-scrollbar{display:none}
+#rec .inv-chip{flex:0 0 auto;width:58px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+  padding:8px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  cursor:pointer;transition:border-color .15s;position:relative;}
+#rec .inv-chip:hover{border-color:var(--brand-mid)}
+#rec .inv-chip.disabled{opacity:.35;cursor:default}
+#rec .inv-chip .name{font-size:8px;font-weight:700;text-align:center;color:var(--text);line-height:1.15}
+#rec .inv-chip .qty{position:absolute;top:-7px;right:-7px;background:var(--brand-mid);color:#fff;
+  font-size:9.5px;font-weight:800;border-radius:10px;padding:1px 6px;min-width:17px;text-align:center;
+  border:2px solid var(--surface);box-shadow:0 2px 4px rgba(0,0,0,.25);z-index:1;}
+#rec .inv-empty{flex:1;text-align:center;color:var(--muted);font-size:11.5px;padding:10px 0}
+#rec .recipe-list{display:flex;flex-direction:column;gap:8px;max-height:380px;overflow-y:auto;padding-right:2px}
+#rec .recipe-card{border:1.5px solid var(--border);border-radius:10px;padding:9px 11px;
+  display:flex;flex-direction:column;gap:5px;font-size:12.5px;}
+#rec .recipe-top{display:flex;align-items:center;gap:9px}
+#rec .recipe-card .rin{display:flex;gap:4px;align-items:center}
+#rec .recipe-card .rin span{display:inline-flex;align-items:center;gap:2px;background:var(--surface2);border-radius:6px;padding:2px 5px;font-size:10.5px;font-weight:700;color:var(--muted)}
+#rec .recipe-card .rarrow{color:var(--muted);font-size:13px}
+#rec .recipe-card .rout{display:flex;align-items:center;gap:5px;font-weight:700;color:var(--brand)}
+#rec .recipe-card.mystery{opacity:.55}
+#rec .recipe-card.mystery .rout{color:var(--muted)}
+#rec .recipe-flavor{font-size:10.5px;color:var(--muted);font-style:italic;line-height:1.4}
+#rec .recipe-hint{font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5}
+#rec .item-spr-fallback{display:inline-block;line-height:1}
+#rec .desktop-row{display:flex;flex-direction:column;align-items:center;gap:24px;
+  width:100%;max-width:400px;}
+@media (min-width:768px){#rec .desktop-row{flex-direction:row;align-items:flex-start;justify-content:center;
+    max-width:820px;gap:28px;}
+#rec .desktop-row .machine-wrap{flex-shrink:0}
+#rec .desktop-row .panel{width:340px;flex-shrink:0;margin-top:0;align-self:stretch}}
+#rec .machine-inv-slot{display:none}
+#rec .machine-inv-slot .panel{display:block;box-shadow:none;border-radius:0;max-width:none;margin:0;}
+@media (max-width:767px){#rec .machine.showing-inv .machine-normal-view{display:none}
+#rec .machine.showing-inv .machine-inv-slot{display:block}}
 </style>
 </head>
 <body>
@@ -441,6 +591,8 @@ function aplicaTema(t){if(!t)return;const r=document.documentElement.style;[['--
 
 let ses=null;try{ses=JSON.parse(localStorage.getItem(SK))}catch{}
 let LST=null,FL=[],F=null,ITM=null,TAB='b',CAT='',Q='',CB={},CS={},busy=false;
+/* ?tab=reciclagem abre direto na aba Reciclagem */
+{const t=new URLSearchParams(location.search).get('tab');if(/^(reciclagem|recycling|r)$/i.test(t||''))TAB='r'}
 
 /* itens: items.json do repositório */
 const CDN_REPO='https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/';
@@ -450,8 +602,12 @@ const isTM=it=>!!it&&nk(it.name)!=='tmvoucher'&&(/^(tms?|technicalmachines?|mach
 const isPill=it=>!!it&&/\bpills?\b|p[ií]lulas?/i.test((it.category||'')+' '+(it.name||''));
 const catOf=r=>isTM(r.it)?'TMs':(r.it?.category||'Outros');
 const bagOf=it=>isTM(it)?{bag:'tm'}:isPill(it)?{bag:'pill'}:{};
+const isVenda=it=>!!it&&it.flags?.venda?.enabled===true&&it.price!=null&&Number.isFinite(+it.price)&&+it.price>0;
+/* Comprar: só itens com a flag PokéMart (independe da flag Venda) */
 const isMart=it=>!!it&&it.flags?.pokemart?.enabled===true&&it.price!=null&&Number.isFinite(+it.price)&&+it.price>0;
-const sellUnit=it=>it&&it.price!=null&&Number.isFinite(+it.price)?Math.floor(+it.price*SELL_PCT):0;
+/* Vender: só itens com a flag Venda (independe de ser comprável; o jogador recebe SELL_PCT do preço); sem flags (legado) vale se tiver preço */
+const sellUnit=it=>{if(!it||it.price==null||!Number.isFinite(+it.price))return 0;const f=it.flags||{};
+ const ok=isVenda(it)||(f.pokemart?.enabled==null&&f.venda?.enabled==null);return ok?Math.floor(+it.price*SELL_PCT):0};
 
 /* sessão: admin do index (adm_session) vira admin aqui */
 async function idxSync(){
@@ -553,13 +709,503 @@ function render(){
  <div class="pmw"><div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):'Escolha uma ficha para comprar e vender'}</div></div></div>
  ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:''}
  <div class="lhs"><span>Saldo</span><b id="sal">${F?fm(saldo()):'—'}</b></div></div>
- <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">Comprar</button><button type="button" id="tb-s" onclick="setTab('s')">Vender</button></div>
+ <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">Comprar</button><button type="button" id="tb-s" onclick="setTab('s')">Vender</button><button type="button" id="tb-r" onclick="setTab('r')">Reciclagem</button></div>
  <select class="in pms" onchange="SORT=this.value;drawList()"><option value="n"${SORT==='n'?' selected':''}>Nome (A-Z)</option><option value="a"${SORT==='a'?' selected':''}>Menor preço</option><option value="d"${SORT==='d'?' selected':''}>Maior preço</option></select></div>
- <div class="chs" id="chs"></div><div class="pmg" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div></div>`;
+ <div class="chs" id="chs"></div><div class="pmg" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div><div id="rec" style="display:none;margin-top:14px"></div></div>`;
  ensureCart();drawList();drawSum();pmSc()}
 function ensureCart(){if($('pmc'))return;document.body.insertAdjacentHTML('beforeend','<div id="pmo" onclick="toggleCart(false)"></div><aside id="pmc"></aside>');$('pmc').addEventListener('click',cartEv);$('pmc').addEventListener('change',cartEv)}
 function toggleCart(o){$('pmc').classList.toggle('open',o);$('pmo').classList.toggle('open',o)}
 function setTab(t){TAB=t;CAT='';drawList();drawSum()}
+/* aba Reciclagem: a Recycling Machine roda embutida aqui mesmo (markup em REC_HTML, lógica em recInit) */
+const REC_HTML=`<div class="rec-page"><div class="desktop-row">
+<div class="machine-wrap">
+  <div class="machine" id="machine">
+    <div class="machine-header">
+      <div class="machine-title">RECYCLING MACHINE<small>insira lixo, receba prêmios</small></div>
+      <button class="recipe-btn-round" id="btn-open-recipes" aria-label="Receitas" title="Receitas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="machine-normal-view" id="machine-normal-view">
+      <div class="face-dark">
+        <div class="face-row">
+          <div class="port-col">
+            <div class="port" id="port"></div>
+            <div class="port-label">insira aqui</div>
+          </div>
+
+          <div class="screen-frame">
+            <div class="screen-green">
+              <div class="st-row">
+                <div class="st" id="screen-title">INSIRA O LIXO</div>
+                <span class="st-qty" id="screen-qty">×0</span>
+              </div>
+              <div class="screen-chips" id="screen-chips"></div>
+            </div>
+            <div class="screen-white idle" id="screen-white"><span>selecione um item abaixo</span></div>
+          </div>
+        </div>
+
+        <div class="slot-area" id="slot-area">
+          <div class="slot-bar"></div>
+        </div>
+      </div>
+
+      <div class="inv-strip-section">
+        <div class="inv-strip-head">
+          <span class="inv-strip-title">INVENTÁRIO</span>
+          <button class="restock-mini" id="btn-restock" title="atualizar da Bag">↻</button>
+        </div>
+        <div class="inv-strip-row">
+          <button class="inv-nav-btn" id="inv-prev" aria-label="anterior">‹</button>
+          <div class="inv-strip" id="inv-strip"></div>
+          <button class="inv-nav-btn" id="inv-next" aria-label="próximo">›</button>
+        </div>
+      </div>
+
+      <div class="face-light">
+        <div class="recycle-logo">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g fill="#2e9e44">
+              <path d="M 10.33 28.18 A 22 22 0 0 1 32.84 8.01 L 38.07 5.69 L 32.38 21.01 A 13 13 0 0 0 19.20 29.74 Z"/>
+              <path d="M 46.14 15.15 A 22 22 0 0 1 52.35 44.72 L 51.75 50.41 L 41.33 37.83 A 13 13 0 0 0 40.36 22.04 Z"/>
+              <path d="M 39.52 52.67 A 22 22 0 0 1 10.81 43.27 L 6.18 39.89 L 22.29 37.16 A 13 13 0 0 0 36.45 44.22 Z"/>
+            </g>
+          </svg>
+        </div>
+        <button class="lever-btn" id="btn-reciclar" disabled>♻ RECICLAR</button>
+      </div>
+    </div>
+
+    <div class="machine-inv-slot" id="machine-inv-slot"><!-- painel é movido pra cá no mobile via JS --></div>
+  </div>
+  <div class="feet"><span></span><span></span></div>
+</div>
+
+<div class="panel" id="panel-el">
+  <div class="panel-head">Receitas conhecidas</div>
+  <div class="panel-body">
+    <div class="recipe-hint">17 receitas, cada uma pede 3 itens de lixo. As que ainda não foram descobertas aparecem como <b>???</b> — descubra jogando itens na máquina.</div>
+    <div class="recipe-list" id="recipe-list"></div>
+  </div>
+</div>
+</div><!-- /desktop-row --></div>`;
+function drawRec(){
+ const q=$('q');if(q)q.style.visibility='hidden';
+ const pms=document.querySelector('.pms');if(pms)pms.style.display='none';
+ ['chs','lst'].forEach(i=>{const e=$(i);if(e)e.style.display='none'});
+ const r=$('rec');if(!r)return;r.style.display='';
+ if(!r.firstChild){r.innerHTML=REC_HTML;REC=recInit()}else if(REC)REC.sync()}
+/* ===== Recycling Machine embutida (antes: recyclingmachine.html). Inicia 1x, na primeira vez que a aba Reciclagem abre ===== */
+let REC=null;
+function recInit(){
+/* =========================================================================
+   1) CATÁLOGO DE ITENS
+   ========================================================================= */
+
+// Itens de lixo que o jogador pode inserir na máquina.
+// TODO(integração): isso deve vir do inventário real do jogador (tabela de
+// itens do Fichário/Supabase, filtrando por uma flag tipo `flags.lixo`).
+const TRASH_ITEMS = [
+  { id:'bottlecap',     nome:'Bottle Cap' },
+  { id:'brokenbranch',  nome:'Broken Branch' },
+  { id:'crumpledpaper', nome:'Crumpled Paper' },
+  { id:'dryleaf',       nome:'Dry Leaf' },
+  { id:'emptycan',      nome:'Empty Can' },
+  { id:'foodscrap',     nome:'Food Scrap' },
+  { id:'lostbutton',    nome:'Lost Button' },
+  { id:'oldcloth',      nome:'Old Cloth' },
+  { id:'rippeddoll',    nome:'Ripped Doll' },
+];
+
+// Tipos elementais possíveis pra "Gem" — sorteado só na hora de reciclar.
+const POKEMON_TYPES = ['Normal','Fire','Water','Electric','Grass','Ice','Fighting','Poison','Ground','Flying','Psychic','Bug','Rock','Ghost','Dragon','Dark','Steel','Fairy'];
+
+// Receitas: cada uma pede uma combinação exata de 3 itens de lixo (por id +
+// qtd) e devolve um prêmio real do KP. A combinação de cada receita tenta
+// "fazer sentido" com o resultado — edite/expanda à vontade.
+// TODO(integração): mover isso pra uma tabela no Supabase (mesmo padrão do
+// ItemDex/loot table do index.html principal) quando a lista estiver pronta.
+const RECIPES = [
+  { id:'r-nugget',        inputs:{ emptycan:3 },                              output:{ nome:'Nugget' },
+    flavor:'três latas amassadas, derretidas até virarem uma pepita reluzente.' },
+  { id:'r-pokeball',      inputs:{ bottlecap:2, lostbutton:1 },               output:{ nome:'PokéBall' },
+    flavor:'tampinhas redondas + um botão perdido formam a base de uma Poké Bola.' },
+  { id:'r-antidote',      inputs:{ crumpledpaper:2, oldcloth:1 },             output:{ nome:'Antidote' },
+    flavor:'papel amassado filtra, pano coa — um antídoto improvisado.' },
+  { id:'r-potion',        inputs:{ oldcloth:2, emptycan:1 },                  output:{ nome:'Potion' },
+    flavor:'pano fervido dentro de uma lata vira uma poção básica.' },
+  { id:'r-superpotion',   inputs:{ oldcloth:3 },                              output:{ nome:'Super Potion' },
+    flavor:'o triplo de pano rende uma poção bem mais forte.' },
+  { id:'r-fullheal',      inputs:{ rippeddoll:2, oldcloth:1 },                output:{ nome:'Full Heal' },
+    flavor:'remendar um bichinho de pano cura tudo de uma vez.' },
+  { id:'r-ether',         inputs:{ bottlecap:2, brokenbranch:1 },             output:{ nome:'Ether' },
+    flavor:'metal e madeira formam um condutor improvisado de energia.' },
+  { id:'r-paralyzeheal',  inputs:{ bottlecap:1, emptycan:1, lostbutton:1 },   output:{ nome:'Paralyze Heal' },
+    flavor:'três pedaços de metal — um choquezinho que cura o choque.' },
+  { id:'r-oranberry',     inputs:{ foodscrap:2, dryleaf:1 },                  output:{ nome:'Oran Berry' },
+    flavor:'restos de comida com uma folha seca viram adubo... e nasce uma baga.' },
+  { id:'r-pechaberry',    inputs:{ dryleaf:2, foodscrap:1 },                  output:{ nome:'Pecha Berry' },
+    flavor:'a mesma composta, em outra proporção — nasce uma baga diferente.' },
+  { id:'r-leftovers',     inputs:{ foodscrap:3 },                             output:{ nome:'Leftovers' },
+    flavor:'sobras de comida... viram literalmente as Sobras.' },
+  { id:'r-honey',         inputs:{ dryleaf:2, brokenbranch:1 },               output:{ nome:'Honey' },
+    flavor:'galho e folhas secas — um pedacinho de colmeia aparece sozinho.' },
+  { id:'r-plasticbottle', inputs:{ bottlecap:3 },                             output:{ nome:'Plastic Bottle' },
+    flavor:'tampinhas o bastante pra moldar uma garrafa nova.' },
+  { id:'r-heartscale',    inputs:{ lostbutton:1, bottlecap:1, rippeddoll:1 }, output:{ nome:'Heart Scale' },
+    flavor:'três coisas perdidas e esquecidas voltam a brilhar como uma escama rara.' },
+  { id:'r-rarecandy',     inputs:{ oldcloth:1, rippeddoll:1, crumpledpaper:1 }, output:{ nome:'Rare Candy' },
+    flavor:'pano, bichinho de pano e papel — pedacinhos de memória viram um doce raro.' },
+  { id:'r-revive',        inputs:{ rippeddoll:2, dryleaf:1 },                 output:{ nome:'Revive' },
+    flavor:'um brinquedo rasgado e uma folha seca — duas coisas sem vida, revividas.' },
+  { id:'r-gem',           inputs:{ brokenbranch:1, emptycan:1, crumpledpaper:1 }, output:{ nome:'Gem', special:'gem' },
+    flavor:'três materiais bem diferentes se fundem numa gema elemental aleatória.' },
+];
+
+/* SPRITES — reaproveita os itens que o PokéMart já carregou (ITM, chave nk(nome)); sem sprite cai no chute da PokeAPI e depois no 📦 */
+function _itemSlug(nome){
+  return String(nome).trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+}
+function _guessSpriteUrl(nome){
+  const it=ITM&&ITM.get(nk(nome));
+  return (it&&it.sprite)||('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/'+_itemSlug(nome)+'.png');
+}
+function itemImg(nome, size){
+  const attr = String(nome).replace(/"/g,'&quot;');
+  return `<img class="item-spr" data-item="${attr}" src="${_guessSpriteUrl(nome)}" `
+       + `style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle" onerror="_sprErr(this)"/>`;
+}
+window._sprErr=function(el){
+  el.onerror = null;
+  const size = parseInt(el.style.width)||18;
+  const span = document.createElement('span');
+  span.className = 'item-spr-fallback';
+  span.style.fontSize = Math.round(size*0.85)+'px';
+  span.textContent = '📦';
+  el.replaceWith(span);
+};
+function _resolveSprites(){
+  document.querySelectorAll('#rec .item-spr[data-item]').forEach(img=>{
+    const it = ITM&&ITM.get(nk(img.dataset.item));
+    if(it && it.sprite) img.src = it.sprite;
+  });
+}
+
+/* =========================================================================
+   3) ESTADO — estoque = lixo da Bag da ficha atual (F.d.inventario); receitas descobertas = F.d.receitas_descobertas.
+   Inserir/devolver na máquina é só visual; a Bag só muda (e salva) no "Reciclar".
+   ========================================================================= */
+let stock = {};
+let discovered = [];
+let inserted = {};
+let pendingReward = null;
+let _busyRec = false;
+const MAX_INSERT = 3; // toda receita pede exatamente 3 itens
+
+// itens vinculados não entram (mesma regra da venda no PokéMart)
+function bagQtd(id){
+  const k = nk(trashById(id).nome);
+  return bag().filter(e => !e.vinculado && nk(e.nome) === k).reduce((a,e) => a + (parseInt(e.qtd)||1), 0);
+}
+function syncFromBag(){
+  TRASH_ITEMS.forEach(t => { stock[t.id] = Math.max(0, bagQtd(t.id) - (inserted[t.id]||0)); });
+  discovered = Array.isArray(F?.d?.receitas_descobertas) ? F.d.receitas_descobertas : [];
+}
+
+/* =========================================================================
+   4) RENDER
+   ========================================================================= */
+function trashById(id){ return TRASH_ITEMS.find(t=>t.id===id); }
+function insertedCount(){ return Object.values(inserted).reduce((a,b)=>a+b,0); }
+function insertedIds(){ return Object.keys(inserted); }
+
+function renderInventory(){
+  const strip = document.getElementById('inv-strip');
+  strip.innerHTML = '';
+  const withStock = TRASH_ITEMS.filter(t => (stock[t.id]||0) > 0);
+  if(!withStock.length){
+    strip.innerHTML = '<div class="inv-empty">' + (F ? 'você não tem lixo na Bag' : 'escolha uma ficha para usar a máquina') + '</div>';
+    return;
+  }
+  withStock.forEach(t=>{
+    const qty = stock[t.id]||0;
+    const full = insertedCount() >= MAX_INSERT;
+    const div = document.createElement('div');
+    div.className = 'inv-chip' + (full ? ' disabled' : '');
+    div.innerHTML = `${itemImg(t.nome,26)}<span class="name">${t.nome}</span><span class="qty">${qty}</span>`;
+    if(!full) div.onclick = () => insertItem(t.id);
+    strip.appendChild(div);
+  });
+}
+
+function renderScreen(){
+  const ids = insertedIds();
+  const total = insertedCount();
+  document.getElementById('screen-title').textContent = total ? 'PRONTO PRA RECICLAR' : 'INSIRA O LIXO';
+
+  document.getElementById('screen-qty').textContent = `×${total}`;
+
+  const chips = document.getElementById('screen-chips');
+  chips.innerHTML = '';
+  ids.forEach(id=>{
+    const t = trashById(id);
+    const chip = document.createElement('div');
+    chip.className = 'screen-chip';
+    chip.innerHTML = `${itemImg(t.nome,14)} ${inserted[id]>1 ? '×'+inserted[id] : ''} ✕`;
+    chip.onclick = () => removeOne(id);
+    chips.appendChild(chip);
+  });
+
+  document.getElementById('btn-reciclar').disabled = total === 0 || !F || _busyRec;
+}
+
+function setStatus(msg, tone, dim){
+  const el = document.getElementById('screen-white');
+  el.className = 'screen-white ' + (tone||'idle');
+  el.innerHTML = `<span${dim ? ' style="opacity:.5"' : ''}>${msg}</span>`;
+}
+
+function renderSlotArea(){
+  const area = document.getElementById('slot-area');
+  area.innerHTML = '<div class="slot-bar"></div>';
+  if(pendingReward){
+    const ticket = document.createElement('div');
+    ticket.className = 'ticket';
+    ticket.innerHTML = `${itemImg(pendingReward.nome,26)}<div class="info"><b>${pendingReward.nome}</b><span>já está na sua Bag · toque pra fechar</span></div>`;
+    ticket.onclick = collectReward;
+    area.appendChild(ticket);
+  }
+}
+
+function renderRecipeBook(){
+  const list = document.getElementById('recipe-list');
+  list.innerHTML = '';
+  RECIPES.forEach(r=>{
+    const known = discovered.includes(r.id);
+    const card = document.createElement('div');
+    card.className = 'recipe-card' + (known ? '' : ' mystery');
+    const inputsHtml = Object.entries(r.inputs).map(([id,qty])=>{
+      const t = trashById(id);
+      return `<span>${t.nome}${qty>1?' ×'+qty:''}</span>`;
+    }).join('');
+    const outHtml = !known ? '??? · ???'
+      : (r.output.special==='gem' ? 'Gem (tipo aleatório)' : r.output.nome);
+    card.innerHTML = `
+      <div class="recipe-top">
+        <div class="rin">${inputsHtml}</div>
+        <div class="rarrow">→</div>
+        <div class="rout">${outHtml}</div>
+      </div>
+      ${known ? `<div class="recipe-flavor">${r.flavor}</div>` : ''}
+    `;
+    list.appendChild(card);
+  });
+}
+
+function renderAll(){
+  renderInventory();
+  renderScreen();
+  renderSlotArea();
+  renderRecipeBook();
+  _resolveSprites();
+}
+
+/* =========================================================================
+   5) AÇÕES
+   ========================================================================= */
+function pulsePort(){
+  const port = document.getElementById('port');
+  port.classList.remove('pulse');
+  void port.offsetWidth;
+  port.classList.add('pulse');
+}
+
+let _portBusy = false;
+
+function playPortInsertAnim(nome, onDone){
+  const port = document.getElementById('port');
+  const wrap = document.createElement('div');
+  wrap.className = 'port-item-anim';
+  wrap.innerHTML = itemImg(nome, 40);
+  port.appendChild(wrap);
+  pulsePort();
+  setTimeout(() => {
+    wrap.remove();
+    onDone();
+  }, 380);
+}
+
+function insertItem(id){
+  if(_portBusy) return;
+  if(insertedCount() >= MAX_INSERT) return;
+  if((stock[id]||0) <= 0) return;
+  const t = trashById(id);
+  _portBusy = true;
+  playPortInsertAnim(t.nome, () => {
+    stock[id]--;
+    inserted[id] = (inserted[id]||0) + 1;
+    setStatus('item inserido', 'idle', true);
+    renderAll();
+    _portBusy = false;
+  });
+}
+
+function removeOne(id){
+  if(!inserted[id]) return;
+  inserted[id]--;
+  if(inserted[id]<=0) delete inserted[id];
+  stock[id] = (stock[id]||0) + 1;
+  setStatus('item devolvido ao seu lixo', 'idle');
+  renderAll();
+}
+
+function findMatchingRecipe(){
+  return RECIPES.find(r=>{
+    const ids = Object.keys(r.inputs);
+    const sameIds = ids.length === Object.keys(inserted).length;
+    if(!sameIds) return false;
+    return ids.every(id => (inserted[id]||0) === r.inputs[id]);
+  });
+}
+
+// Relê a ficha, tira o lixo da Bag, põe o prêmio e salva tudo de uma vez (mesmo caminho da transação do PokéMart)
+async function recSalvar(recipe, ins, nomeFinal){
+  const fr = await lerFicha(F.slug);
+  if(!fr) throw new Error('Ficha não encontrada.');
+  fr.d = fr.d || {};
+  const inv = fr.d.inventario = Array.isArray(fr.d.inventario) ? fr.d.inventario : [];
+  for(const [id,q] of Object.entries(ins)){
+    const t = trashById(id), k = nk(t.nome);
+    let r = q;
+    for(let i = 0; i < inv.length && r > 0; i++){
+      const x = inv[i];
+      if(!x || x.vinculado || nk(x.nome) !== k) continue;
+      const c = parseInt(x.qtd)||1, m = Math.min(c, r);
+      r -= m;
+      if(c - m > 0) x.qtd = c - m; else { inv.splice(i,1); i--; }
+    }
+    if(r > 0) throw new Error('A Bag mudou: você não tem mais ' + q + 'x ' + t.nome + '.');
+  }
+  const it = ITM && ITM.get(nk(nomeFinal)), nome = it ? it.name : nomeFinal;
+  const i = inv.findIndex(x => x && !x.vinculado && nk(x.nome) === nk(nome));
+  if(i >= 0) inv[i].qtd = (parseInt(inv[i].qtd)||1) + 1;
+  else inv.push({nome, qtd:1, ...(it ? bagOf(it) : {})});
+  const dsc = Array.isArray(fr.d.receitas_descobertas) ? fr.d.receitas_descobertas.slice() : [];
+  if(!dsc.includes(recipe.id)) dsc.push(recipe.id);
+  fr.d.receitas_descobertas = dsc;
+  const j = await salvarFicha({slug:fr.slug, nome:fr.nome, foto:fr.foto, banner:fr.banner, thumb:fr.thumb, player_id:fr.player_id, d:fr.d});
+  if(j){ fr.foto = j.foto; fr.banner = j.banner; fr.thumb = j.thumb; fr.atualizado_em = j.atualizado_em; }
+  F = fr;
+  return nome;
+}
+
+async function reciclar(){
+  if(insertedCount() === 0 || _busyRec || busy) return;
+  if(!F){ setStatus('escolha uma ficha', 'err'); return; }
+  const recipe = findMatchingRecipe();
+  if(!recipe){
+    // combinação sem receita: nada é consumido, os itens voltam pro estoque
+    inserted = {}; pendingReward = null; syncFromBag();
+    setStatus('✕ essa combinação não gera nada... ainda (itens devolvidos)', 'err');
+    renderAll();
+    return;
+  }
+  if(!ses?.token){ alert('Para reciclar, entre com a sua conta de player (botão Entrar).'); lg.showModal(); return; }
+  let nomeFinal = recipe.output.nome;
+  if(recipe.output.special === 'gem'){
+    nomeFinal = POKEMON_TYPES[Math.floor(Math.random()*POKEMON_TYPES.length)] + ' Gem';
+  }
+  _busyRec = true; busy = true;
+  renderScreen();
+  setStatus('processando...', 'idle');
+  try{
+    const nome = await recSalvar(recipe, {...inserted}, nomeFinal);
+    inserted = {}; pendingReward = { nome };
+    syncFromBag();
+    setStatus(`✓ gerou: ${nome}`, 'ok');
+  }catch(e){
+    inserted = {}; pendingReward = null;
+    try{ const fr = await lerFicha(F.slug); if(fr){ fr.d = fr.d || {}; F = fr; } }catch{}
+    syncFromBag();
+    setStatus('✕ ' + (e.message || 'erro ao salvar'), 'err');
+  }finally{ _busyRec = false; busy = false; }
+  // o carrinho do PokéMart pode estar apontando pra itens que acabaram de sair da Bag
+  for(const k of Object.keys(CS)){ const o = ownQ(k); if(o <= 0) delete CS[k]; else if(CS[k] > o) CS[k] = o; }
+  renderAll();
+  drawSum();
+}
+
+function collectReward(){
+  pendingReward = null;
+  renderSlotArea();
+  setStatus('insira mais lixo', 'idle');
+}
+
+async function refreshBag(){
+  if(!F || _busyRec) return;
+  try{ const fr = await lerFicha(F.slug); if(fr){ fr.d = fr.d || {}; F = fr; } }
+  catch(e){ setStatus('✕ não consegui atualizar a Bag', 'err'); return; }
+  inserted = {}; pendingReward = null;
+  syncFromBag();
+  setStatus('Bag atualizada', 'idle');
+  renderAll();
+}
+
+/* =========================================================================
+   6) BOOT
+   ========================================================================= */
+document.getElementById('btn-reciclar').onclick = reciclar;
+document.getElementById('btn-restock').onclick = refreshBag;
+
+document.getElementById('inv-prev').onclick = () => document.getElementById('inv-strip').scrollBy({left:-140, behavior:'smooth'});
+document.getElementById('inv-next').onclick = () => document.getElementById('inv-strip').scrollBy({left:140, behavior:'smooth'});
+
+// Botão redondo único: abre e fecha as receitas, sem botão de "voltar".
+// No mobile, o painel é movido pra dentro do gabinete, substituindo a tela
+// normal da máquina. No desktop, ele só aparece/desaparece ao lado, já que
+// sempre vive fisicamente ali (último filho de .desktop-row).
+const panelEl = document.getElementById('panel-el');
+const btnRecipes = document.getElementById('btn-open-recipes');
+const machineEl = document.getElementById('machine');
+const invSlot = document.getElementById('machine-inv-slot');
+const desktopRow = document.querySelector('#rec .desktop-row');
+const isMobile = () => window.matchMedia('(max-width:767px)').matches;
+let recipesOpen = false;
+
+btnRecipes.onclick = () => {
+  recipesOpen = !recipesOpen;
+
+  if(isMobile()){
+    if(recipesOpen){
+      invSlot.appendChild(panelEl);
+    }else{
+      desktopRow.appendChild(panelEl); // volta pra posição de origem (último filho)
+    }
+    machineEl.classList.toggle('showing-inv', recipesOpen);
+  }
+
+  panelEl.classList.toggle('is-open', recipesOpen);
+  btnRecipes.setAttribute('aria-label', recipesOpen ? 'Fechar receitas' : 'Receitas');
+  btnRecipes.title = recipesOpen ? 'Fechar receitas' : 'Receitas';
+};
+
+syncFromBag();
+renderAll();
+return { sync(){ inserted = {}; pendingReward = null; syncFromBag(); renderAll(); } };
+}
+
+function hideRec(){
+ const q=$('q');if(q)q.style.visibility='';
+ const pms=document.querySelector('.pms');if(pms)pms.style.display='';
+ ['chs','lst'].forEach(i=>{const e=$(i);if(e)e.style.display=''});
+ const r=$('rec');if(r)r.style.display='none'}
 function setCat(c){CAT=c;drawList()}
 function rowsAtuais(){
  if(TAB!=='s')return[...ITM.values()].filter(isMart).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price,mx:MAXQ}));
@@ -576,6 +1222,8 @@ function tmSprites(){if(!ITM)return;ITM.forEach(it=>{if(isTM(it))it.sprite=CDN_R
 function tmCard(r,n,C){const t=tmParse(r.nome);
  return`<div class="pc tm${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="" loading="lazy">`:''}</span><h3>${esc(t.move)}</h3></div><span class="pcc">${t.num?'TM'+esc(t.num):'TM'}</span><div class="pcf"><b class="lp">${TAB!=='s'?'':'+'}${fm(r.unit)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}
 function drawList(){
+ if(TAB==='r'){drawRec();return}
+ hideRec();
  const q=nk(Q);let rows=rowsAtuais();
  const cats=[...new Set(rows.map(catOf))].sort();
  if(CAT&&!cats.includes(CAT))CAT='';
@@ -607,7 +1255,7 @@ function cartEv(e){const r=e.target.closest('.pml');if(r)chg(r,r.dataset.t==='b'
 function drawSum(){
  if(!$('pmn'))return;
  const t=totais(),nb=Object.keys(CB).length,ns=Object.keys(CS).length,n=nb+ns,un=Object.values(CB).reduce((a,b)=>a+b,0)+Object.values(CS).reduce((a,b)=>a+b,0);
- $('tb-b').className=TAB==='b'?'on':'';$('tb-s').className=TAB==='s'?'on':'';
+ $('tb-b').className=TAB==='b'?'on':'';$('tb-s').className=TAB==='s'?'on':'';$('tb-r').className=TAB==='r'?'on':'';
  $('pmn').textContent=un>99?'99+':un;$('pmn').style.display=un?'':'none';
  const ln=(k,q,tp)=>{const it=ITM.get(k);if(!it)return'';const u=tp==='b'?+it.price:sellUnit(it);const a=tp==='b'?(VCH[k]||0):0,free=tmvQtd()-vchUsed(),vc=tp==='b'&&isTM(it)&&tmvQtd()>0?(a?`<button type="button" class="vchc on" onclick="vchOff('${esc(k)}')">TM Voucher${a>1?' ×'+a:''} ✕</button>`:'')+(a<q&&free>0?`<button type="button" class="vchc" onclick="vchUse('${esc(k)}')">${a?'+ ':''}Usar TM Voucher (${free})</button>`:''):'';return`<div class="pml" data-t="${tp}" data-k="${esc(k)}"><span class="imi">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><span class="imn">${esc(it.name)}<small>${tp==='b'?'':'+'}${fm(u)} cada</small>${vc}</span><div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" value="${q}"><button type="button" data-a="+">+</button></div><b class="pmt">${a&&a>=q?'Grátis':fm(u*(q-a))}</b></div>`};
  const bl=Object.entries(CB).map(([k,q])=>ln(k,q,'b')).join(''),sl=Object.entries(CS).map(([k,q])=>ln(k,q,'s')).join('');
