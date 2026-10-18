@@ -770,6 +770,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-berry-btn" style="display:none" onclick="migrarBerryParaForage()" title="Troca a categoria Berry por Forage em todos os itens que ainda estão com Berry">🔁 Berry → Forage</button>
         <button class="btn btn-outline btn-sm" id="it-alpha-evt-btn" onclick="alphaItemsParaEvento()" title="Marca como Evento (flag + prefixo EVENTO na descrição) todos os itens da categoria Alpha Items">⭐ Alpha → Evento</button>
         <button class="btn btn-outline btn-sm" id="it-megadesc-btn" onclick="atualizarDescMegaStones()" title="Troca a frase padrão da descrição das Mega Stones por uma nova, em todos os itens que a contêm (mantém o resto do texto, ex.: EVENTO.).">📝 Descrição Mega Stones</button>
+        <button class="btn btn-outline btn-sm" id="it-berryinfo-btn" onclick="adicionarRaridadeSaborBerries()" title="Acrescenta no fim da descrição de cada Berry: \"Essa Berry é <raridade> e <sabor>.\" (raríssimas não têm sabor). Berries que já têm a frase são ignoradas.">🍓 Raridade/Sabor Berries</button>
         <button class="btn btn-outline btn-sm" id="it-empod-btn" onclick="importarEmpoderadoresAgora()" title="Cria os 20 itens empoderadores (Hold Items que aumentam em 20% o poder de movimentos de um tipo). Itens que já existem são ignorados.">💎 Itens Empoderadores</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
@@ -2748,6 +2749,140 @@ async function substituirTextoDescricoes(velho, novo, btnId) {
 
 function atualizarDescMegaStones() {
   return substituirTextoDescricoes(MEGA_DESC_ANTIGA, MEGA_DESC_NOVA, 'it-megadesc-btn');
+}
+
+/* ══════════════════════════════════════════
+   BERRIES: RARIDADE + SABOR NA DESCRIÇÃO
+   Acrescenta no fim da descrição de cada Berry a frase
+   "Essa Berry é <raridade> e <sabor>." (raríssimas não têm sabor:
+   "Essa Berry é raríssima."). Dados da tabela de berries (PDF): raridade =
+   seção (Comuns / Incomuns / Raras / Raríssimas), sabor = cor da linha.
+   Chave = nome sem " Berry", minúsculo e sem acento/símbolos.
+   Rodar de novo é seguro: quem já tem a frase é ignorado.
+══════════════════════════════════════════ */
+const BERRY_INFO = {
+  cheri: ['comum', 'apimentada'],
+  figy: ['comum', 'apimentada'],
+  pomeg: ['comum', 'apimentada'],
+  leppa: ['comum', 'apimentada'],
+  liechi: ['comum', 'apimentada'],
+  razz: ['comum', 'apimentada'],
+  chesto: ['comum', 'seca'],
+  bluk: ['comum', 'seca'],
+  kelpsy: ['comum', 'seca'],
+  wiki: ['comum', 'seca'],
+  cornn: ['comum', 'seca'],
+  coba: ['comum', 'seca'],
+  aspear: ['comum', 'azeda'],
+  iapapa: ['comum', 'azeda'],
+  grepa: ['comum', 'azeda'],
+  wacan: ['comum', 'azeda'],
+  charti: ['comum', 'azeda'],
+  shuca: ['comum', 'azeda'],
+  rawst: ['comum', 'amarga'],
+  aguav: ['comum', 'amarga'],
+  hondew: ['comum', 'amarga'],
+  rindo: ['comum', 'amarga'],
+  kebia: ['comum', 'amarga'],
+  tanga: ['comum', 'amarga'],
+  pecha: ['comum', 'doce'],
+  mago: ['comum', 'doce'],
+  qualot: ['comum', 'doce'],
+  payapa: ['comum', 'doce'],
+  colbur: ['comum', 'doce'],
+  kasib: ['comum', 'doce'],
+  spelon: ['incomum', 'apimentada'],
+  haban: ['incomum', 'apimentada'],
+  roseli: ['incomum', 'apimentada'],
+  occan: ['incomum', 'apimentada'],
+  chople: ['incomum', 'apimentada'],
+  tamato: ['incomum', 'apimentada'],
+  pamtre: ['incomum', 'seca'],
+  yache: ['incomum', 'seca'],
+  belue: ['incomum', 'seca'],
+  apicot: ['incomum', 'seca'],
+  oran: ['incomum', 'seca'],
+  ganlon: ['incomum', 'seca'],
+  passho: ['incomum', 'azeda'],
+  chilan: ['incomum', 'azeda'],
+  nomel: ['incomum', 'azeda'],
+  micle: ['incomum', 'azeda'],
+  sitrus: ['incomum', 'azeda'],
+  pinap: ['incomum', 'azeda'],
+  rabuta: ['incomum', 'amarga'],
+  babiri: ['incomum', 'amarga'],
+  wepear: ['incomum', 'amarga'],
+  salac: ['incomum', 'amarga'],
+  durin: ['incomum', 'amarga'],
+  lum: ['incomum', 'amarga'],
+  watmel: ['incomum', 'doce'],
+  magost: ['incomum', 'doce'],
+  nanab: ['incomum', 'doce'],
+  petaya: ['incomum', 'doce'],
+  persim: ['incomum', 'doce'],
+  lansat: ['incomum', 'doce'],
+  custap: ['rara', 'apimentada'],
+  rowap: ['rara', 'seca'],
+  jaboca: ['rara', 'azeda'],
+  maranga: ['rara', 'amarga'],
+  kee: ['rara', 'doce'],
+  starf: ['raríssima', null],
+  enigma: ['raríssima', null],
+  eggant: ['raríssima', null],
+  strib: ['raríssima', null],
+  touga: ['raríssima', null],
+  drash: ['raríssima', null],
+  pumkin: ['raríssima', null],
+};
+const BERRY_ALIAS = { occa: 'occan', pumpkin: 'pumkin' };
+const berryKey = name => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function berryInfoDe(it) {
+  const k = berryKey(it.name);
+  if (!k.endsWith('berry')) return null;
+  const base = k.slice(0, -5);
+  return BERRY_INFO[base] || BERRY_INFO[BERRY_ALIAS[base]] || null;
+}
+const berryFrase = ([raridade, sabor]) => `Essa Berry é ${raridade}${sabor ? ' e ' + sabor : ''}.`;
+const BERRY_FRASE_RE = /Essa Berry é\s/i;
+
+async function adicionarRaridadeSaborBerries() {
+  const berries = S.it.all.filter(i => /berry\s*$/i.test(String(i.name || '').trim()));
+  if (!berries.length) { toast('Nenhuma Berry encontrada nos itens.', 'ok'); return; }
+  const semDados = berries.filter(i => !berryInfoDe(i)).map(i => i.name);
+  const pendentes = berries.filter(i => berryInfoDe(i) && !BERRY_FRASE_RE.test(String(i.item_desc || '')));
+  if (!pendentes.length) {
+    toast(`Nenhuma Berry para atualizar (as que têm dados já estão com a frase).` + (semDados.length ? ` Sem dados na tabela: ${semDados.join(', ')}.` : ''), 'ok');
+    return;
+  }
+  if (!confirm(`Acrescentar a raridade e o sabor na descrição de ${pendentes.length} Berry(ies)?\n\n` +
+      pendentes.slice(0, 30).map(i => `• ${i.name} → ${berryFrase(berryInfoDe(i))}`).join('\n') +
+      (pendentes.length > 30 ? `\n… e mais ${pendentes.length - 30}` : '') +
+      (semDados.length ? `\n\nSem dados na tabela (não serão alteradas): ${semDados.join(', ')}` : ''))) return;
+  const btn = document.getElementById('it-berryinfo-btn');
+  const orig = btn?.innerHTML;
+  if (btn) btn.disabled = true;
+  let ok = 0;
+  const falhas = [];
+  try {
+    for (const it of pendentes) {
+      if (btn) btn.innerHTML = `⏳ ${ok}/${pendentes.length}…`;
+      try {
+        const cur = String(it.item_desc || '').trim();
+        const frase = berryFrase(berryInfoDe(it));
+        const desc = cur ? `${cur}${/[.!?]$/.test(cur) ? '' : '.'} ${frase}` : frase;
+        const row = { ...it, item_desc: desc, updated_at: new Date().toISOString() };
+        await sbUpsert('items', row);
+        S.it.dbMap[it.name] = row;
+        const idx = S.it.all.findIndex(x => x.name === it.name); if (idx >= 0) S.it.all[idx] = row;
+        ok++;
+      } catch (e) { console.warn('raridade/sabor berry falhou:', it.name, e); falhas.push(it.name); }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+  closeItemDetail();
+  applyItFilter();
+  toast(`🍓 ${ok}/${pendentes.length} Berry(ies) atualizada(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + ' Lembre de clicar em "Commitar items.json".', falhas.length ? 'err' : 'ok');
 }
 
 /* ══════════════════════════════════════════
