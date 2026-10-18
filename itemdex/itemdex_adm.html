@@ -724,7 +724,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             <input type="checkbox" id="nit-flag-evento" style="margin:0" onchange="toggleEventoPrefix('nit-description', this.checked)"> Evento <span style="font-weight:400;color:var(--muted)">(insere "EVENTO" no início da descrição)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleItemPriceField('nit-price-wrap', this.checked)"> PokéMart <span style="font-weight:400;color:var(--muted)">(comprável)</span>
+            <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleMartVenda('nit-flag-pokemart','nit-flag-venda','nit-price-wrap','pokemart')"> PokéMart <span style="font-weight:400;color:var(--muted)">(o jogador pode comprar)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="nit-flag-venda" style="margin:0" onchange="toggleMartVenda('nit-flag-pokemart','nit-flag-venda','nit-price-wrap','venda')"> Venda <span style="font-weight:400;color:var(--muted)">(o jogador pode vender)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pickup" style="margin:0" onchange="toggleItemPriceField('nit-pickup-wrap', this.checked)"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
@@ -1398,7 +1401,8 @@ function renderItemCard(it, i) {
     it.flags?.consumivel?.enabled ? '<span class="badge" style="background:var(--red);color:#fff;font-weight:800" title="Consumível">CONS.</span>' : '',
     it.flags?.evento?.enabled ? '<span class="badge" style="background:var(--purple);color:#fff;font-weight:800" title="Evento">EVENTO</span>' : '',
     it.flags?.conquista?.enabled ? '<span class="badge" style="background:#e8a020;color:#fff;font-weight:800" title="Conquista — não aparece na lista pública de itens">CONQ.</span>' : '',
-    it.flags?.pokemart?.enabled ? `<span title="PokéMart${it.price != null ? ' — ₽ ' + it.price : ''}">🛒</span>` : '',
+    it.flags?.pokemart?.enabled ? `<span title="PokéMart — comprável${it.price != null ? ' — ₽ ' + it.price : ''}">🛒</span>` : '',
+    it.flags?.venda?.enabled ? `<span title="Venda — o jogador pode vender${it.price != null ? ' (preço ₽ ' + it.price + ')' : ''}">💰</span>` : '',
     it.flags?.pickup?.enabled ? '<span title="Pickup">🔍</span>' : '',
   ].filter(Boolean).join('');
   return `<div class="it-card" id="it-card-${slug}" style="animation-delay:${Math.min(i*0.01,0.3)}s" onclick="toggleItemCard('${jsEsc(it.name)}','${slug}')">
@@ -1486,7 +1490,10 @@ function buildItemDetailHtml(it, slug) {
             <input type="checkbox" id="it-flag-evento-${slug}" style="margin:0" ${it.flags?.evento?.enabled ? 'checked' : ''} onchange="toggleEventoPrefix('it-description-${slug}', this.checked)"> Evento
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-price-wrap-${slug}', this.checked)"> PokéMart
+            <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''} onchange="toggleMartVenda('it-flag-pokemart-${slug}','it-flag-venda-${slug}','it-price-wrap-${slug}','pokemart')"> PokéMart
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer" title="O jogador pode vender este item ao PokéMart (recebe 50% do preço). Independe de ser comprável.">
+            <input type="checkbox" id="it-flag-venda-${slug}" style="margin:0" ${it.flags?.venda?.enabled ? 'checked' : ''} onchange="toggleMartVenda('it-flag-pokemart-${slug}','it-flag-venda-${slug}','it-price-wrap-${slug}','venda')"> Venda
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="it-flag-pickup-${slug}" style="margin:0" ${it.flags?.pickup?.enabled ? 'checked' : ''} onchange="toggleItemPriceField('it-pickup-wrap-${slug}', this.checked)"> Pickup
@@ -1495,7 +1502,7 @@ function buildItemDetailHtml(it, slug) {
             <input type="checkbox" id="it-flag-conquista-${slug}" style="margin:0" ${it.flags?.conquista?.enabled ? 'checked' : ''} onchange="toggleConquistaTipo('it-conquista-tipo-${slug}', this.checked)"> Conquista
           </label>
           <select class="mv-meta-input" id="it-conquista-tipo-${slug}" style="display:${it.flags?.conquista?.enabled ? '' : 'none'};max-width:150px">${[['insignia','Insígnia'],['ribbon','Ribbon'],['pin','Pin'],['premiacao','Honorários']].map(([v, t]) => `<option value="${v}"${(it.flags?.conquista?.tipo || 'insignia') === v ? ' selected' : ''}>${t}</option>`).join('')}</select>
-          <div id="it-price-wrap-${slug}" style="display:${it.flags?.pokemart?.enabled ? 'inline-flex' : 'none'};align-items:center;gap:6px">
+          <div id="it-price-wrap-${slug}" style="display:${(it.flags?.pokemart?.enabled || it.flags?.venda?.enabled) ? 'inline-flex' : 'none'};align-items:center;gap:6px">
             <span style="font-size:12px;font-weight:700;color:var(--muted)">💰 Preço</span>
             <input class="mv-meta-input" id="it-price-${slug}" type="number" min="0" step="1" placeholder="ex: 200" style="width:100px" value="${it.price != null ? it.price : ''}">
           </div>
@@ -1701,12 +1708,22 @@ function toggleItemPriceField(wrapId, checked) {
   wrap.style.display = checked ? 'inline-flex' : 'none';
 }
 
-function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo) {
+// PokéMart (jogador pode COMPRAR o item) e Venda (jogador pode VENDER o item ao PokéMart) são flags independentes:
+// dá pra marcar só uma, as duas ou nenhuma. Os dois usam o mesmo campo de preço
+// (na venda o jogador recebe 50% do preço).
+function toggleMartVenda(pokemartId, vendaId, wrapId) {
+  const pm = document.getElementById(pokemartId), vd = document.getElementById(vendaId);
+  if (!pm || !vd) return;
+  toggleItemPriceField(wrapId, pm.checked || vd.checked);
+}
+
+function mergeItemFlags(existingFlags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo, vendaOn) {
   const f = existingFlags && typeof existingFlags === 'object' ? existingFlags : {};
   return {
     ...f,
     conquista: { ...(f.conquista || {}), enabled: !!conquistaOn, tipo: conquistaOn ? (conquistaTipo || 'insignia') : (f.conquista?.tipo || 'insignia') },
     pokemart: { ...(f.pokemart || {}), enabled: !!pokemartOn },
+    venda: { ...(f.venda || {}), enabled: !!vendaOn },
     pickup: { ...(f.pickup || {}), enabled: !!pickupOn, numeros: pickupOn ? pickupNumeros : [] },
     consumivel: { ...(f.consumivel || {}), enabled: !!consumivelOn },
     evento: { ...(f.evento || {}), enabled: !!eventoOn },
@@ -1747,13 +1764,15 @@ async function saveItem(name) {
   const category = document.getElementById(`it-category-${slug}`)?.value.trim() || null;
   const item_desc = document.getElementById(`it-description-${slug}`)?.value.trim() || null;
   const pokemartOn = !!document.getElementById(`it-flag-pokemart-${slug}`)?.checked;
+  const vendaOn = !!document.getElementById(`it-flag-venda-${slug}`)?.checked;
   const pickupOn = !!document.getElementById(`it-flag-pickup-${slug}`)?.checked;
   const consumivelOn = !!document.getElementById(`it-flag-consumivel-${slug}`)?.checked;
   const eventoOn = !!document.getElementById(`it-flag-evento-${slug}`)?.checked;
   const conquistaOn = !!document.getElementById(`it-flag-conquista-${slug}`)?.checked;
   const conquistaTipo = document.getElementById(`it-conquista-tipo-${slug}`)?.value || 'insignia';
   const priceRaw = document.getElementById(`it-price-${slug}`)?.value;
-  const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  const price = ((pokemartOn || vendaOn) && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  if (vendaOn && !(price > 0)) { toast('Informe o preço (maior que 0) do item de Venda.', 'err'); return; }
   const pickupNumeros = pickupOn ? parsePickupNumeros(document.getElementById(`it-pickup-numeros-${slug}`)?.value) : [];
   if (!newName) { toast('Nome é obrigatório.', 'err'); return; }
   if (pickupOn && !pickupNumeros.length) { toast('Marque ao menos um número (1 a 100) pra este item aparecer no Pickup.', 'err'); return; }
@@ -1769,7 +1788,7 @@ async function saveItem(name) {
   if (renaming && S.it.dbMap[newName]) { toast(`Já existe um item chamado "${newName}".`, 'err'); return; }
   try {
     const existing = S.it.dbMap[name] || { name };
-    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
+    const flags = mergeItemFlags(existing.flags, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo, vendaOn);
     const row = { ...existing, name: newName, category, item_desc, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     if (renaming) {
@@ -1816,7 +1835,7 @@ async function deleteItem(name) {
 function openNewItem() {
   { const b = document.getElementById('nit-bulk-on'); if (b) b.checked = false; const t = document.getElementById('nit-bulk-names'); if (t) t.value = ''; const sd = document.getElementById('nit-bulk-samedesc'); if (sd) sd.checked = true; toggleBulkNew(false); }
   ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price','nit-pickup-numeros'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
-  ['nit-flag-pokemart','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento','nit-flag-conquista'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
+  ['nit-flag-pokemart','nit-flag-venda','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento','nit-flag-conquista'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   { const ct = document.getElementById('nit-conquista-tipo'); if (ct) { ct.style.display = 'none'; ct.value = 'insignia'; } }
   toggleItemPriceField('nit-price-wrap', false);
   toggleItemPriceField('nit-pickup-wrap', false);
@@ -2445,13 +2464,15 @@ async function saveNewItem() {
   const category = document.getElementById('nit-category').value.trim() || null;
   const item_desc = document.getElementById('nit-description').value.trim() || null;
   const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
+  const vendaOn = !!document.getElementById('nit-flag-venda')?.checked;
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
   const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
   const eventoOn = !!document.getElementById('nit-flag-evento')?.checked;
   const conquistaOn = !!document.getElementById('nit-flag-conquista')?.checked;
   const conquistaTipo = document.getElementById('nit-conquista-tipo')?.value || 'insignia';
   const priceRaw = document.getElementById('nit-price')?.value;
-  const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  const price = ((pokemartOn || vendaOn) && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  if (vendaOn && !(price > 0)) { toast('Informe o preço (maior que 0) do item de Venda.', 'err'); return; }
   const pickupNumeros = pickupOn ? parsePickupNumeros(document.getElementById('nit-pickup-numeros')?.value) : [];
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   if (S.it.dbMap[name]) { toast('Já existe um item com esse nome.', 'err'); return; }
@@ -2470,7 +2491,7 @@ async function saveNewItem() {
     } else if (iconPrev?.dataset.ghSprite) {
       sprite = iconPrev.dataset.ghSprite; // já existe em sprites/rewards: só grava o caminho
     }
-    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo);
+    const flags = mergeItemFlags(null, pokemartOn, pickupOn, consumivelOn, eventoOn, pickupNumeros, conquistaOn, conquistaTipo, vendaOn);
     const row = { name, category, item_desc, sprite, flags, price, updated_at: new Date().toISOString() };
     await sbUpsert('items', row);
     S.it.dbMap[name] = row;
@@ -2497,13 +2518,15 @@ async function saveNewItemsBulk() {
   const category = document.getElementById('nit-category').value.trim() || null;
   const commonDesc = document.getElementById('nit-description').value.trim();
   const pokemartOn = !!document.getElementById('nit-flag-pokemart')?.checked;
+  const vendaOn = !!document.getElementById('nit-flag-venda')?.checked;
   const pickupOn = !!document.getElementById('nit-flag-pickup')?.checked;
   const consumivelOn = !!document.getElementById('nit-flag-consumivel')?.checked;
   const eventoOn = !!document.getElementById('nit-flag-evento')?.checked;
   const conquistaOn = !!document.getElementById('nit-flag-conquista')?.checked;
   const conquistaTipo = document.getElementById('nit-conquista-tipo')?.value || 'insignia';
   const priceRaw = document.getElementById('nit-price')?.value;
-  const price = (pokemartOn && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  const price = ((pokemartOn || vendaOn) && priceRaw !== '' && priceRaw != null) ? Number(priceRaw) : null;
+  if (vendaOn && !(price > 0)) { toast('Informe o preço (maior que 0) do item de Venda.', 'err'); return; }
   if (pickupOn) { toast('Pickup usa números próprios por item — desmarque Pickup para criar vários de uma vez.', 'err'); return; }
   const sameDesc = !!document.getElementById('nit-bulk-samedesc')?.checked;
   const existentes = new Set(Object.keys(S.it.dbMap).map(n => n.toLowerCase()));
@@ -2526,7 +2549,7 @@ async function saveNewItemsBulk() {
   });
   if (!novos.length) { toast(jaExistem.length ? 'Todos esses itens já existem.' : 'Digite ao menos um nome (um por linha).', 'err'); return; }
   if (!confirm(`Criar ${novos.length} ite${novos.length === 1 ? 'm' : 'ns'}${category ? ` na categoria "${category}"` : ''}?` + (jaExistem.length ? `\n\nJá existem e serão ignorados: ${jaExistem.join(', ')}` : '') + `\n\n` + novos.map(n => '• ' + n.name).join('\n'))) return;
-  const flags = mergeItemFlags(null, pokemartOn, false, consumivelOn, eventoOn, [], conquistaOn, conquistaTipo);
+  const flags = mergeItemFlags(null, pokemartOn, false, consumivelOn, eventoOn, [], conquistaOn, conquistaTipo, vendaOn);
   const salvos = [], falhas = [], semIcone = [];
   for (let n = 0; n < novos.length; n++) {
     const it = novos[n];
