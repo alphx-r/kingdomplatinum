@@ -98,8 +98,8 @@ html{
 @keyframes scan{from{left:-30%}to{left:100%}}
 
 /* Abas de região */
-.region-tabs{background:linear-gradient(160deg,var(--panel2),var(--panel));border:1.5px solid var(--tline);border-radius:var(--r);padding:4px;margin-bottom:14px;display:flex;gap:2px;flex-wrap:wrap}
-.rtab{flex:1;min-width:74px;padding:9px 4px 7px;border:none;border-radius:7px;background:transparent;font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--ink-dim);cursor:pointer;transition:all .18s;letter-spacing:.4px;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:2px}
+.region-tabs{background:linear-gradient(160deg,var(--panel2),var(--panel));border:1.5px solid var(--tline);border-radius:var(--r);padding:4px;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:2px}
+.rtab{width:100%;min-height:38px;box-sizing:border-box;justify-content:center;white-space:nowrap;padding:9px 4px 7px;border:none;border-radius:7px;background:transparent;font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--ink-dim);cursor:pointer;transition:all .18s;letter-spacing:.4px;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:2px}
 .rtab:hover{background:rgba(63,232,255,.08);color:var(--cyan)}
 .rtab.active{background:rgba(63,232,255,.14);color:var(--cyan);box-shadow:0 0 0 1px var(--cyan-dim) inset}
 
@@ -379,7 +379,8 @@ html{
   .bio-layout{flex-direction:column}
   .detail-wrap,.list-wrap{padding:14px 10px}
   .nav{padding:0 14px}
-  .rtab{min-width:55px;font-size:9.5px}
+  .region-tabs{grid-template-columns:repeat(auto-fit,minmax(72px,1fr))}
+  .rtab{font-size:9px;letter-spacing:.2px;padding:9px 2px 7px}
   .nav-links{display:none}
   .nav-hamburger{display:flex}
 }
@@ -427,7 +428,8 @@ html{
     </div>
 
     <div class="region-tabs" id="region-tabs">
-      <button class="rtab active" data-gen="1">Kanto</button>
+      <button class="rtab active" data-gen="all">NationalDex</button>
+      <button class="rtab" data-gen="1">Kanto</button>
       <button class="rtab" data-gen="2">Johto</button>
       <button class="rtab" data-gen="3">Hoenn</button>
       <button class="rtab" data-gen="4">Sinnoh</button>
@@ -1179,7 +1181,7 @@ async function loadMoves(){
 /* ═══════════════════════════════════════
    LISTA — carregamento
 ═══════════════════════════════════════ */
-let all=[],filtered=[],typeCache={},listView='grid',curGen=1;
+let all=[],filtered=[],typeCache={},listView='grid',curGen='all';
 let _officialList=[]; // cache do id+nome de todos os oficiais (PokeAPI), carregado 1x
 // Token da navegação de detalhe atual — incrementado a cada chamada de
 // loadPokemon(). Renders assíncronos (moves, evolução etc.) checam esse
@@ -1769,6 +1771,27 @@ function batchTypes(ids){
   }),bi*350));
 }
 
+// Aba NationalDex: encaixa cada forma regional/Nendo logo depois da sua forma
+// original. O número-base vem do próprio id (A0019 → 19) ou de _altBase (formas
+// migradas pra formas_alt). Espécies Nendo originais (sem forma base) vão pro fim.
+function interleaveRegionals(officials, customs){
+  const ORDER=['A','G','H','P','N'];
+  const baseOf=p=>{
+    if(p._altBase!=null){ const n=Number(p._altBase); return Number.isFinite(n)?n:null; }
+    const pf=idPrefix(p.id);
+    if(!pf) return null;
+    if(pf==='N'&&isNendoOriginal(p.id,p.name)) return null;
+    const n=parseInt(String(p.id).slice(1),10);
+    return Number.isFinite(n)?n:null;
+  };
+  const items=[
+    ...officials.map((p,i)=>({p,k:p.id,s:0,i})),
+    ...customs.map((p,i)=>{ const b=baseOf(p); return {p,k:b==null?Infinity:b,s:1+ORDER.indexOf(idPrefix(p.id)),i}; })
+  ];
+  items.sort((a,b)=>(a.k<b.k?-1:a.k>b.k?1:0)||a.s-b.s||a.i-b.i);
+  return items.map(x=>x.p);
+}
+
 async function applyFilters(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const tp=document.getElementById('type-filter').value;
@@ -1808,36 +1831,40 @@ async function applyFilters(){
   const GEN_REGIONAL={7:'A', 8:'G', 9:'P'};
   // Hisui não tem gen própria — aparece na aba Sinnoh (4)
   const GEN_REGIONAL_EXTRA={4:'H'};
-  const regionalPrefix=GEN_REGIONAL[curGen]||GEN_REGIONAL_EXTRA[curGen]||null;
+  // Aba NationalDex: todos os oficiais (1–1025) + todas as formas regionais e Nendo
+  const REGIONAL_ORDER=['A','G','H','P','N'];
+  const regionalPrefixes=curGen==='all'
+    ? REGIONAL_ORDER
+    : [GEN_REGIONAL[curGen]||GEN_REGIONAL_EXTRA[curGen]].filter(Boolean);
 
   // Carrega regionais do Supabase se esta aba tiver prefixo regional
   let regionais=[];
-  if(regionalPrefix){
+  if(regionalPrefixes.length){
     if(!_rpgPokemon.length) await loadRpgData();
     // Registros antigos, separados por região (idPrefix A/G/H/P) — modelo
     // anterior à unificação em formas_alt (ver botão "Unificar formas
     // regionais" no admin). Ainda suportado pra quem não migrou tudo.
     const regionaisAntigos=_rpgPokemon
       .filter(p=>{
-        if(idPrefix(p.id)!==regionalPrefix) return false;
+        if(!regionalPrefixes.includes(idPrefix(p.id))) return false;
         const nm=!q||(p.name||'').toLowerCase().includes(q);
         const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
         return nm&&tpOk;
       })
       .map(p=>({...p, _isRpg:true}))
-      .sort((a,b)=>parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
+      .sort((a,b)=>regionalPrefixes.indexOf(idPrefix(a.id))-regionalPrefixes.indexOf(idPrefix(b.id))||parseInt(String(a.id).slice(1))-parseInt(String(b.id).slice(1)));
 
     // Formas já migradas pra dentro de formas_alt do Pokémon base — sem
     // registro próprio, então entram no fim da lista da região correspondente.
     const altByPrefix=await loadRegionalAltEntries();
-    const regionaisNovos=(altByPrefix[regionalPrefix]||[])
+    const regionaisNovos=regionalPrefixes.flatMap(pf=>(altByPrefix[pf]||[])
       .filter(p=>{
         const nm=!q||(p.name||'').toLowerCase().includes(q);
         const tpOk=!tp||p.tipo1===tp||p.tipo2===tp;
         return nm&&tpOk;
       })
       .map(p=>({...p, _isRpg:true}))
-      .sort((a,b)=>a._altBase-b._altBase||a._altIdx-b._altIdx);
+      .sort((a,b)=>a._altBase-b._altBase||a._altIdx-b._altIdx));
 
     regionais=[...regionaisAntigos, ...regionaisNovos];
   }
@@ -1846,7 +1873,7 @@ async function applyFilters(){
   const byRegion=all.filter(p=>{
     const nm=!q||(p.name||'').toLowerCase().includes(q)||String(p.id).includes(q);
     const rng=GR[curGen];
-    const gm=!!rng&&p.id>=rng[0]&&p.id<=rng[1];
+    const gm=curGen==='all'||(!!rng&&p.id>=rng[0]&&p.id<=rng[1]);
     return nm&&gm;
   });
 
@@ -1862,6 +1889,7 @@ async function applyFilters(){
     // completar e reaplicar o filtro (ver batchTypesAndRefilter).
     filtered=[...byRegion.filter(p=>(typeCache[p.id]||[]).includes(tp)), ...regionais];
   }
+  if(curGen==='all') filtered=interleaveRegionals(filtered.filter(p=>!p._isRpg), filtered.filter(p=>p._isRpg));
 
   document.getElementById('cpill').textContent=`${filtered.length} Pokémon`;
   renderList();
@@ -1893,7 +1921,7 @@ document.querySelectorAll('.rtab').forEach(btn=>btn.addEventListener('click',()=
   document.querySelectorAll('.rtab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const g=btn.dataset.gen;
-  curGen=g==='nendo'?'nendo':parseInt(g);
+  curGen=(g==='nendo'||g==='all')?g:parseInt(g);
   applyFilters();
 }));
 function setView(v){listView=v;document.getElementById('btn-grid').classList.toggle('active',v==='grid');document.getElementById('btn-list-btn').classList.toggle('active',v==='list');renderList();}
