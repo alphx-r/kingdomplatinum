@@ -15409,19 +15409,29 @@ const TR_TEMPORADAS_ABERTAS = [1]; // temporadas que abrem no site (as demais fi
 let trAdmTab = '1';
 const trEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 // Cidades em ordem: a própria região (nome começando com "Nendo") primeiro, depois as demais em ordem alfabética
-// Cidades vêm da tabela map_locais (projeto DataDex), linhas com tipo = 'cidade'.
+// Cidades: linhas com tipo = 'cidade' da tabela map_locais (projeto principal, ucbkod...).
 // Se existirem linhas não-excluídas, usa só elas; se todas estiverem marcadas como excluídas, usa todas.
 let trCidades = [], trCidadesCarregadas = false, trCidadesErro = '';
 async function trCarregarCidades(forcar){
   if(trCidadesCarregadas && !forcar) return trCidades;
-  try{
-    const rows = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/map_locais?select=local_id,nome,tipo,excluido&tipo=eq.cidade&order=nome.asc`, DATADEX_SH);
-    const todas = rows || [];
-    trCidadesErro = todas.length ? '' : 'A consulta a map_locais (tipo = cidade) voltou vazia. Se a tabela tem cidades, é permissão de leitura (RLS) para o acesso público.';
-    const ativas = todas.filter(r=>!r.excluido);
-    trCidades = (ativas.length ? ativas : todas).map(r=>({id:r.local_id, nome:r.nome, emoji:''}));
-    trCidadesCarregadas = true;
-  } catch(e){ trCidadesErro = 'Erro ao ler map_locais: ' + (e && e.message ? e.message : e); console.error('Erro ao carregar cidades (map_locais):', e); }
+  const q = 'select=*&tipo=eq.cidade&order=nome.asc';
+  const fontes = [
+    ['map_locais', ()=>sb('map_locais?'+q)],
+  ];
+  const erros = [];
+  for(const [nome, buscar] of fontes){
+    try{
+      const rows = await buscar();
+      const todas = Array.isArray(rows) ? rows : [];
+      if(!todas.length){ erros.push(nome+': 0 cidades'); continue; }
+      const ativas = todas.filter(r=>!r.excluido);
+      trCidades = (ativas.length ? ativas : todas).map(r=>({id: r.local_id!=null ? r.local_id : r.id, nome:r.nome, emoji:''}));
+      trCidadesCarregadas = true; trCidadesErro = '';
+      return trCidades;
+    } catch(e){ erros.push(nome+': '+(e && e.message ? String(e.message).slice(0,140) : e)); }
+  }
+  trCidadesErro = erros.join(' | ');
+  console.error('Cidades não encontradas:', erros);
   return trCidades;
 }
 const trCidadesOrdenadas = () => trCidades.slice().sort((a,b)=>{
