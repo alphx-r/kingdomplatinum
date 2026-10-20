@@ -77,8 +77,6 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .trama-hero::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 85% -10%,rgba(255,255,255,.18),transparent 55%);pointer-events:none}
 .trama-eyebrow{position:relative;font-family:var(--font-title);font-variant:small-caps;font-size:14px;letter-spacing:1px;color:rgba(255,255,255,.88);margin-bottom:4px}
 .trama-titulo{position:relative;font-family:var(--font-title);font-size:clamp(20px,4vw,26px);font-weight:700;line-height:1.15;letter-spacing:.5px;text-wrap:balance}
-.trama-sub{position:relative;margin:10px 0 0;font-size:13px;line-height:1.65;color:rgba(255,255,255,.88);text-align:justify;hyphens:auto}
-.trama-sub:empty{display:none}
 .trama-corpo{max-width:none;margin:24px 0 0;font-size:14px;line-height:1.8;color:var(--text);hyphens:auto}
 .trama-corpo,.trama-corpo p,.trama-corpo li,.trama-corpo div,.trama-corpo blockquote{text-align:justify!important}
 .trama-corpo p{margin:0 0 1.15em}
@@ -1476,7 +1474,6 @@ body.edit-mode .ganhos-example-header{cursor:text}
   <div id="trama-header" class="trama-hero">
     <div id="trama-tipo-badge" class="trama-eyebrow"></div>
     <div id="trama-titulo" class="trama-titulo"></div>
-    <div id="trama-desc" class="trama-sub"></div>
   </div>
   <div id="trama-conteudo" class="trama-corpo"></div>
 </div>
@@ -15412,14 +15409,16 @@ const TR_TEMPORADAS_ABERTAS = [1]; // temporadas que abrem no site (as demais fi
 let trAdmTab = '1';
 const trEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 // Cidades em ordem: a própria região (nome começando com "Nendo") primeiro, depois as demais em ordem alfabética
-// Cidades vêm da tabela map_locais (projeto DataDex): só as não excluídas cujo tipo é de cidade
-const TR_TIPO_CIDADE = /cidade|city|town|vila|village/i;
+// Cidades vêm da tabela map_locais (projeto DataDex), linhas com tipo = 'cidade'.
+// Se existirem linhas não-excluídas, usa só elas; se todas estiverem marcadas como excluídas, usa todas.
 let trCidades = [], trCidadesCarregadas = false;
 async function trCarregarCidades(forcar){
   if(trCidadesCarregadas && !forcar) return trCidades;
   try{
-    const rows = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/map_locais?select=local_id,nome,tipo,sigla,excluido&order=nome.asc`, DATADEX_SH);
-    trCidades = (rows||[]).filter(r=>!r.excluido && TR_TIPO_CIDADE.test(r.tipo||'')).map(r=>({id:r.local_id, nome:r.nome, emoji:'', sigla:r.sigla}));
+    const rows = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/map_locais?select=local_id,nome,tipo,excluido&tipo=eq.cidade&order=nome.asc`, DATADEX_SH);
+    const todas = rows || [];
+    const ativas = todas.filter(r=>!r.excluido);
+    trCidades = (ativas.length ? ativas : todas).map(r=>({id:r.local_id, nome:r.nome, emoji:''}));
     trCidadesCarregadas = true;
   } catch(e){ console.error('Erro ao carregar cidades (map_locais):', e); }
   return trCidades;
@@ -15792,9 +15791,9 @@ function renderTramasHub(){
       ${rodape?`<div style="background:${tom(20)};color:var(--text);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;text-align:center;padding:6px">${pub.length} de ${itens.length}</div>`:''}
     </div>`;
   };
-  const descCard = (texto, acao) => `<div style="margin:16px 0 22px;padding:16px 18px;background:var(--surface);border:1px solid var(--border);border-radius:12px">
-      ${texto?`<div style="font-size:14px;line-height:1.75;color:var(--text);text-align:justify;hyphens:auto;white-space:pre-line">${texto}</div>`:''}
-      ${acao?`<div style="${texto?'margin-top:12px;':''}text-align:right">${acao}</div>`:''}
+  const descCard = (texto, acao) => `<div style="margin:0 0 22px;padding:0 8px;text-align:center">
+      ${texto?`<div style="font-size:13px;line-height:1.65;color:var(--muted);white-space:pre-line">${texto}</div>`:''}
+      ${acao?`<div style="${texto?'margin-top:12px':''}">${acao}</div>`:''}
     </div>`;
   const tituloSecao = txt => `<div style="text-align:center;font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);letter-spacing:.4px;margin:6px 0 12px">${txt}</div>`;
   const vazio = txt => `<div style="text-align:center;padding:32px 24px;color:var(--muted);font-size:14px;font-weight:600">${txt}</div>`;
@@ -15827,7 +15826,7 @@ function renderTramasHub(){
 
   // Tramas da temporada — uma coluna larga
   const daTemp = tramas.filter(t=>t.tipo==='mini' && t.trama_pai_id===temp.id && !t.cidade_id);
-  box.innerHTML = tituloSecao('Tramas') + coluna('', daTemp) + htmlSubs;
+  box.innerHTML = tituloSecao('Tramas') + `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;align-items:start">${[0,1,2].map(i=>coluna('', daTemp.filter((t,j)=>j%3===i), false)).join('')}</div>` + htmlSubs;
 }
 
 // ── Página dinâmica de uma trama ──
@@ -15847,7 +15846,6 @@ async function iniciarPaginaTrama(slug){
       pg.classList.add('active');
         document.getElementById('trama-titulo').textContent = 'Trama não encontrada';
       document.getElementById('trama-tipo-badge').textContent = '';
-      document.getElementById('trama-desc').textContent = '';
       document.getElementById('trama-conteudo').innerHTML = `
         <div style="text-align:center;padding:40px 20px">
           <div style="font-size:14px;color:var(--muted);margin-bottom:24px">Esta trama não existe, foi removida ou ainda não foi publicada.</div>
@@ -15871,7 +15869,6 @@ async function iniciarPaginaTrama(slug){
     else eyebrow = t.temporada ? 'Season ' + romano(Number(t.temporada)) : 'Trama Principal';
     if(!t.publicada) eyebrow += ' · rascunho (só admins veem)';
     document.getElementById('trama-tipo-badge').textContent = eyebrow;
-    document.getElementById('trama-desc').textContent = t.descricao_curta || '';
 
     const conteudoEl = document.getElementById('trama-conteudo');
     conteudoEl.dataset.pageKey = 'trama:' + t.slug;
