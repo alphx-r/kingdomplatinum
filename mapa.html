@@ -2571,7 +2571,7 @@ function initMapaPanZoom() {
     // naturalWidth/Height = dimensões reais da imagem, imune ao transform atual
     const iW = img.naturalWidth,  iH = img.naturalHeight;
     if (!iW || !iH) return 1;
-    return Math.max(wW / iW, wH / iH);
+    return Math.min(wW / iW, wH / iH);
   }
 
   // Garante que o pan nunca deixa o mapa sair da área visível; centraliza se couber
@@ -2595,7 +2595,7 @@ function initMapaPanZoom() {
       // reaproveitado à força no celular (tela estreita) e vice-versa,
       // fazendo a "câmera" mostrar um pedaço torto do mapa (os pins não se
       // moviam, só pareciam fora do lugar porque o enquadramento tava errado).
-      localStorage.setItem('mapa_view_v2', JSON.stringify({
+      localStorage.setItem('mapa_view_v3', JSON.stringify({
         scale: _mapaScale, panX: _mapaPanX, panY: _mapaPanY,
         wW: wrap.clientWidth, wH: wrap.clientHeight
       }));
@@ -2634,7 +2634,7 @@ function initMapaPanZoom() {
     try {
       // v2: chave renomeada para descartar câmeras salvas antes do fix do
       // padding de .page (que media clientWidth/Height do container errado).
-      const saved = JSON.parse(localStorage.getItem('mapa_view_v2') || 'null');
+      const saved = JSON.parse(localStorage.getItem('mapa_view_v3') || 'null');
       const tolX = wrap.clientWidth  * 0.2;
       const tolY = wrap.clientHeight * 0.2;
       const telaCompativel = saved && typeof saved.wW === 'number' && typeof saved.wH === 'number'
@@ -2763,12 +2763,12 @@ function mapaZoom(dir) {
   const iNH = img.naturalHeight || img.offsetHeight;
   // Cover (Math.max) — mesma escala mínima usada em initMapaPanZoom/mapaReset,
   // pra não permitir dar zoom out até o ponto de sobrar vão vazio na tela.
-  const minScale = Math.max(wrap.clientWidth / iNW, wrap.clientHeight / iNH);
+  const minScale = Math.min(wrap.clientWidth / iNW, wrap.clientHeight / iNH);
   _mapaScale = Math.min(4, Math.max(minScale, _mapaScale + dir * 0.25));
   // Clamp pan
   const sW = iNW * _mapaScale, sH = iNH * _mapaScale;
-  _mapaPanX = Math.min(0, Math.max(wrap.clientWidth  - sW, _mapaPanX));
-  _mapaPanY = Math.min(0, Math.max(wrap.clientHeight - sH, _mapaPanY));
+  _mapaPanX = sW <= wrap.clientWidth  ? (wrap.clientWidth  - sW) / 2 : Math.min(0, Math.max(wrap.clientWidth  - sW, _mapaPanX));
+  _mapaPanY = sH <= wrap.clientHeight ? (wrap.clientHeight - sH) / 2 : Math.min(0, Math.max(wrap.clientHeight - sH, _mapaPanY));
   const canvas = document.getElementById('mapaCanvas');
   if (canvas) canvas.style.transform = `translate(${_mapaPanX}px,${_mapaPanY}px) scale(${_mapaScale})`;
 }
@@ -3184,7 +3184,7 @@ function mapaReset() {
   // Cover (Math.max), igual à escala mínima usada em initMapaPanZoom — cobre
   // a tela inteira em vez de deixar vão vazio (era Math.min/"contain" antes,
   // o mesmo bug que deixava espaço vazio embaixo do mapa no mobile).
-  const minScale = Math.max(wrap.clientWidth / iW, wrap.clientHeight / iH);
+  const minScale = Math.min(wrap.clientWidth / iW, wrap.clientHeight / iH);
   _mapaScale = minScale;
   // Centraliza em vez de travar em (0,0), senão o reset sempre reancora no
   // canto superior esquerdo da imagem.
