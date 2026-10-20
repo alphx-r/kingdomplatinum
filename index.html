@@ -15411,16 +15411,17 @@ const trEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;
 // Cidades em ordem: a própria região (nome começando com "Nendo") primeiro, depois as demais em ordem alfabética
 // Cidades vêm da tabela map_locais (projeto DataDex), linhas com tipo = 'cidade'.
 // Se existirem linhas não-excluídas, usa só elas; se todas estiverem marcadas como excluídas, usa todas.
-let trCidades = [], trCidadesCarregadas = false;
+let trCidades = [], trCidadesCarregadas = false, trCidadesErro = '';
 async function trCarregarCidades(forcar){
   if(trCidadesCarregadas && !forcar) return trCidades;
   try{
     const rows = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/map_locais?select=local_id,nome,tipo,excluido&tipo=eq.cidade&order=nome.asc`, DATADEX_SH);
     const todas = rows || [];
+    trCidadesErro = todas.length ? '' : 'A consulta a map_locais (tipo = cidade) voltou vazia. Se a tabela tem cidades, é permissão de leitura (RLS) para o acesso público.';
     const ativas = todas.filter(r=>!r.excluido);
     trCidades = (ativas.length ? ativas : todas).map(r=>({id:r.local_id, nome:r.nome, emoji:''}));
     trCidadesCarregadas = true;
-  } catch(e){ console.error('Erro ao carregar cidades (map_locais):', e); }
+  } catch(e){ trCidadesErro = 'Erro ao ler map_locais: ' + (e && e.message ? e.message : e); console.error('Erro ao carregar cidades (map_locais):', e); }
   return trCidades;
 }
 const trCidadesOrdenadas = () => trCidades.slice().sort((a,b)=>{
@@ -15807,7 +15808,7 @@ function renderTramasHub(){
   if(outrasSubs.length) colunasSub.push(coluna('Outra cidade', outrasSubs, false));
   const htmlSubs = `<div style="height:26px"></div>` + tituloSecao('Subtramas') + (colunasSub.length
     ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:2px;align-items:start">${colunasSub.join('')}</div>`
-    : vazio('Nenhuma cidade cadastrada ainda'));
+    : vazio('Nenhuma cidade encontrada' + (trCidadesErro ? `<div style="font-size:11px;font-weight:500;margin-top:6px">${trEsc(trCidadesErro)}</div>` : '')));
 
   if(tramaHubView==='outras'){
     if(descEl) descEl.innerHTML = descCard('Tramas que ainda não foram vinculadas a uma temporada.','');
