@@ -7,14 +7,14 @@
 // GET   → comportamento antigo (backupPokemonToGithub, igual ao cron).
 //
 // Variáveis: GH_REPO, GH_TOKEN, GH_BRANCH (já usadas pelo _gh.js) e,
-// opcionalmente, POKEMON_JSON_PATH (padrão "public/pokemon.json" — use o
+// opcionalmente, POKEMON_JSON_PATH (padrão "pokemon.json" — use o
 // mesmo caminho que o lib/backupPokemon.js escreve).
 
 import { gunzipSync } from 'node:zlib';
 import { commit, readFile } from '../_gh.js';
 import { backupPokemonToGithub } from '../../lib/backupPokemon.js';
 
-const JSON_PATH = process.env.POKEMON_JSON_PATH || 'public/pokemon.json';
+const JSON_PATH = process.env.POKEMON_JSON_PATH || 'pokemon.json';
 
 async function readBody(req) {
   if (Buffer.isBuffer(req.body)) return req.body;
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       const atual = await readFile(JSON_PATH);
       if (atual === content) { unchanged = true; return []; }
       return [{ path: JSON_PATH, content }];
-    }, `chore: atualiza pokemon.json (${rows.length} Pokémon) via ADM`);
+    }, `chore: atualiza pokemon.json (${rows.length} Pokémon) via ADM [skip ci]`);
 
     if (unchanged || !sha) return res.status(200).json({ unchanged: true, total: rows.length });
     return res.status(200).json({ ok: true, total: rows.length, commit: sha });
