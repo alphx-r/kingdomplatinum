@@ -611,8 +611,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="adm-desc">Gerencie traduções de Pokémon, habilidades e movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
     </div>
     <div class="adm-actions">
-      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Rodar o backup pokemon.json na hora, sem esperar o cron">💾 Backup agora</button>
-      <button class="btn btn-outline" id="btn-commit-json" onclick="commitPokemonJson()" title="Gera o pokemon.json a partir do Supabase e faz commit no GitHub (o deploy da Vercel publica o arquivo novo)">📤 Commit pokemon.json</button>
+      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Gera o pokemon.json a partir do Supabase e faz commit no GitHub na hora, sem esperar o cron">📤 Commit pokemon.json</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um local/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
@@ -5722,32 +5721,6 @@ function evoSlugForMainForm(idFieldId, listAll) {
 // cron (/api/cron/backup-pokemon) porque aquela exige um CRON_SECRET que não pode
 // ficar exposto aqui no JS do navegador; a rota manual reaproveita a mesma lógica
 // de backup (lib/backupPokemon.js) só que sem esse header.
-async function commitPokemonJson() {
-  if (!confirm('Isso vai gerar o pokemon.json a partir do Supabase e fazer commit dele no GitHub. A Vercel vai fazer um novo deploy em seguida. Continuar?')) return;
-  const btn = document.getElementById('btn-commit-json');
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Commitando...';
-  try {
-    const res = await fetch('/api/admin/commit-pokemon', { method: 'POST' });
-    const ct = res.headers.get('content-type') || '';
-    const body = ct.includes('application/json') ? await res.json() : await res.text();
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${typeof body === 'string' ? body : (body.error || JSON.stringify(body))}`);
-    }
-    if (body && body.unchanged) {
-      alert('ℹ️ O pokemon.json já está igual ao banco — nenhum commit foi necessário.\n\n' + body.total + ' Pokémon.');
-    } else {
-      alert('✅ Commit feito!\n\n' + body.total + ' Pokémon' + (body.commit_url ? '\n' + body.commit_url : '') + '\n\nAguarde o deploy da Vercel terminar para a NationalDex enxergar o arquivo novo.');
-    }
-  } catch (e) {
-    alert('❌ Falha ao fazer commit do pokemon.json: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = original;
-  }
-}
-
 async function runManualBackup() {
   const btn = document.getElementById('btn-manual-backup');
   const original = btn.textContent;
