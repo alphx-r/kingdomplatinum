@@ -724,10 +724,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
             <input type="checkbox" id="nit-flag-evento" style="margin:0" onchange="toggleEventoPrefix('nit-description', this.checked)"> Evento <span style="font-weight:400;color:var(--muted)">(insere "EVENTO" no início da descrição)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleMartVenda('nit-flag-pokemart','nit-flag-venda','nit-price-wrap','pokemart')"> PokéMart <span style="font-weight:400;color:var(--muted)">(o jogador pode comprar)</span>
+            <input type="checkbox" id="nit-flag-pokemart" style="margin:0" onchange="toggleMartVenda('nit-flag-pokemart','nit-flag-venda','nit-price-wrap','pokemart')"> PokéMart <span style="font-weight:400;color:var(--muted)">(o jogador pode comprar e revender por 50%)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="nit-flag-venda" style="margin:0" onchange="toggleMartVenda('nit-flag-pokemart','nit-flag-venda','nit-price-wrap','venda')"> Venda <span style="font-weight:400;color:var(--muted)">(o jogador pode vender)</span>
+            <input type="checkbox" id="nit-flag-venda" style="margin:0" onchange="toggleMartVenda('nit-flag-pokemart','nit-flag-venda','nit-price-wrap','venda')"> Venda <span style="font-weight:400;color:var(--muted)">(PokéMart compra pelo preço cheio)</span>
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="nit-flag-pickup" style="margin:0" onchange="toggleItemPriceField('nit-pickup-wrap', this.checked)"> Pickup <span style="font-weight:400;color:var(--muted)">(encontrável)</span>
@@ -767,7 +767,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
-        <button class="btn btn-outline btn-sm" id="it-venda-btn" onclick="ativarVendaPokemart()" title="Ativa a flag Venda em todos os itens que já têm a flag PokéMart ativa (o jogador recebe 50% do preço ao vender)">💰 Venda 50% (PokéMart)</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1495,7 +1494,7 @@ function buildItemDetailHtml(it, slug) {
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
             <input type="checkbox" id="it-flag-pokemart-${slug}" style="margin:0" ${it.flags?.pokemart?.enabled ? 'checked' : ''} onchange="toggleMartVenda('it-flag-pokemart-${slug}','it-flag-venda-${slug}','it-price-wrap-${slug}','pokemart')"> PokéMart
           </label>
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer" title="O jogador pode vender este item ao PokéMart (recebe 50% do preço). Independe de ser comprável.">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer" title="O PokéMart compra este item do jogador pelo preço cheio. Use em itens que NÃO são vendidos no PokéMart (itens com a flag PokéMart já podem ser revendidos por 50% do preço).">
             <input type="checkbox" id="it-flag-venda-${slug}" style="margin:0" ${it.flags?.venda?.enabled ? 'checked' : ''} onchange="toggleMartVenda('it-flag-pokemart-${slug}','it-flag-venda-${slug}','it-price-wrap-${slug}','venda')"> Venda
           </label>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer">
@@ -1711,9 +1710,9 @@ function toggleItemPriceField(wrapId, checked) {
   wrap.style.display = checked ? 'inline-flex' : 'none';
 }
 
-// PokéMart (jogador pode COMPRAR o item) e Venda (jogador pode VENDER o item ao PokéMart) são flags independentes:
-// dá pra marcar só uma, as duas ou nenhuma. Os dois usam o mesmo campo de preço
-// (na venda o jogador recebe 50% do preço).
+// PokéMart (jogador pode COMPRAR o item; ele também pode ser revendido por 50% do preço) e
+// Venda (o PokéMart compra o item do jogador pelo preço cheio, mesmo sem vendê-lo) usam o mesmo
+// campo de preço. Pra um item que tem as duas flags, vale a revenda de 50% (regra do PokéMart).
 function toggleMartVenda(pokemartId, vendaId, wrapId) {
   const pm = document.getElementById(pokemartId), vd = document.getElementById(vendaId);
   if (!pm || !vd) return;
@@ -2102,61 +2101,6 @@ async function atualizarImagensGithub() {
     toast(`✅ ${todo.length - falhas} imagem(ns) atualizada(s)${falhas ? ` · ${falhas} falha(s)` : ''}. Use "Commitar items.json" para o ItemDex público usar as novas imagens.`, falhas ? 'err' : 'ok');
   } catch (e) {
     toast('Erro ao atualizar imagens: ' + e.message, 'err');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
-  }
-}
-
-// Ativa a flag "Venda" em todos os itens com a flag "PokéMart" ativa.
-// Na venda o jogador recebe 50% do preço do item (mesmo campo "price" da compra),
-// então basta ligar a flag — não existe um preço de venda separado.
-// Itens PokéMart sem preço (> 0) são pulados, porque o salvamento normal também
-// exige preço pra flag Venda. Só mexe em flags.venda.enabled; o resto de "flags" é preservado.
-async function ativarVendaPokemart() {
-  const btn = document.getElementById('it-venda-btn');
-  const orig = btn?.innerHTML;
-  const pokemart = S.it.all.filter(it => it.flags?.pokemart?.enabled);
-  const jaVenda = pokemart.filter(it => it.flags?.venda?.enabled);
-  const semPreco = pokemart.filter(it => !it.flags?.venda?.enabled && !(Number(it.price) > 0));
-  const todo = pokemart.filter(it => !it.flags?.venda?.enabled && Number(it.price) > 0);
-
-  if (!pokemart.length) { toast('Nenhum item com a flag PokéMart ativa.', 'err'); return; }
-  if (!todo.length) {
-    toast(`Nada a atualizar: ${jaVenda.length} já com Venda${semPreco.length ? ` · ${semPreco.length} sem preço (ignorados)` : ''}.`, 'ok');
-    return;
-  }
-  const msg = `Itens com PokéMart ativo: ${pokemart.length}\n\n`
-    + `• ${todo.length} vão ativar a flag Venda (jogador recebe 50% do preço)\n`
-    + `• ${jaVenda.length} já têm Venda ativa\n`
-    + (semPreco.length ? `• ${semPreco.length} sem preço definido (ficam como estão): ${semPreco.slice(0, 8).map(i => i.name).join(', ')}${semPreco.length > 8 ? '…' : ''}\n` : '')
-    + `\nContinuar?`;
-  if (!confirm(msg)) return;
-
-  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Ativando…'; }
-  let feito = 0, falhas = 0, idx = 0;
-  try {
-    const worker = async () => {
-      while (idx < todo.length) {
-        const it = todo[idx++];
-        try {
-          const existing = S.it.dbMap[it.name] || it;
-          const f = existing.flags && typeof existing.flags === 'object' ? existing.flags : {};
-          const flags = { ...f, venda: { ...(f.venda || {}), enabled: true } };
-          const row = { ...existing, name: it.name, flags, updated_at: new Date().toISOString() };
-          await sbUpsert('items', row);
-          S.it.dbMap[it.name] = row;
-          const i = S.it.all.findIndex(x => x.name === it.name);
-          if (i >= 0) S.it.all[i] = row;
-        } catch (e) { falhas++; }
-        feito++;
-        if (btn) btn.innerHTML = `⏳ ${feito}/${todo.length}`;
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
-    applyItFilter();
-    toast(`✅ Venda ativada em ${todo.length - falhas} item(ns)${falhas ? ` · ${falhas} falha(s)` : ''}. Use "Commitar items.json" para o ItemDex público refletir.`, falhas ? 'err' : 'ok');
-  } catch (e) {
-    toast('Erro ao ativar Venda: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }
