@@ -1040,8 +1040,22 @@ window.addEventListener('popstate',e=>{
    O Supabase só entra como FALLBACK se esse fetch falhar.
 ═══════════════════════════════════════ */
 let _pkJsonCache=null;
+// Onde o ADM commita o pokemon.json. Preenchendo PK_JSON_REPO, a NationalDex
+// lê o arquivo direto do GitHub (raw) — assim um commit já aparece em ~1 min,
+// sem precisar de novo deploy da Vercel. Vazio = só usa o /pokemon.json do site.
+const PK_JSON_REPO='alphx-r/kingdomplatinum';
+const PK_JSON_BRANCH='main';
+const PK_JSON_PATH='pokemon.json'; // mesmo caminho do POKEMON_JSON_PATH no servidor
 async function loadPokemonJson(){
   if(_pkJsonCache) return _pkJsonCache;
+  if(PK_JSON_REPO){
+    try{
+      const url=`https://raw.githubusercontent.com/${PK_JSON_REPO}/${PK_JSON_BRANCH}/${PK_JSON_PATH}?v=${Math.floor(Date.now()/60000)}`;
+      const r=await fetch(url);
+      if(r.ok){ _pkJsonCache=await r.json(); return _pkJsonCache; }
+      throw new Error('HTTP '+r.status);
+    }catch(e){ console.warn('pokemon.json via GitHub falhou, usando /pokemon.json do site…',e); }
+  }
   const res=await fetch('/pokemon.json',{cache:'no-store'});
   if(!res.ok) throw new Error('pokemon.json não encontrado');
   _pkJsonCache=await res.json();
