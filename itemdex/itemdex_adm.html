@@ -767,6 +767,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
+        <button class="btn btn-outline btn-sm" id="it-venda-btn" onclick="ativarVendaPokemart()" title="Ativa a flag Venda em todos os itens que já têm a flag PokéMart ativa (o jogador recebe 50% do preço ao vender)">💰 Venda 50% (PokéMart)</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -2101,6 +2102,61 @@ async function atualizarImagensGithub() {
     toast(`✅ ${todo.length - falhas} imagem(ns) atualizada(s)${falhas ? ` · ${falhas} falha(s)` : ''}. Use "Commitar items.json" para o ItemDex público usar as novas imagens.`, falhas ? 'err' : 'ok');
   } catch (e) {
     toast('Erro ao atualizar imagens: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+// Ativa a flag "Venda" em todos os itens com a flag "PokéMart" ativa.
+// Na venda o jogador recebe 50% do preço do item (mesmo campo "price" da compra),
+// então basta ligar a flag — não existe um preço de venda separado.
+// Itens PokéMart sem preço (> 0) são pulados, porque o salvamento normal também
+// exige preço pra flag Venda. Só mexe em flags.venda.enabled; o resto de "flags" é preservado.
+async function ativarVendaPokemart() {
+  const btn = document.getElementById('it-venda-btn');
+  const orig = btn?.innerHTML;
+  const pokemart = S.it.all.filter(it => it.flags?.pokemart?.enabled);
+  const jaVenda = pokemart.filter(it => it.flags?.venda?.enabled);
+  const semPreco = pokemart.filter(it => !it.flags?.venda?.enabled && !(Number(it.price) > 0));
+  const todo = pokemart.filter(it => !it.flags?.venda?.enabled && Number(it.price) > 0);
+
+  if (!pokemart.length) { toast('Nenhum item com a flag PokéMart ativa.', 'err'); return; }
+  if (!todo.length) {
+    toast(`Nada a atualizar: ${jaVenda.length} já com Venda${semPreco.length ? ` · ${semPreco.length} sem preço (ignorados)` : ''}.`, 'ok');
+    return;
+  }
+  const msg = `Itens com PokéMart ativo: ${pokemart.length}\n\n`
+    + `• ${todo.length} vão ativar a flag Venda (jogador recebe 50% do preço)\n`
+    + `• ${jaVenda.length} já têm Venda ativa\n`
+    + (semPreco.length ? `• ${semPreco.length} sem preço definido (ficam como estão): ${semPreco.slice(0, 8).map(i => i.name).join(', ')}${semPreco.length > 8 ? '…' : ''}\n` : '')
+    + `\nContinuar?`;
+  if (!confirm(msg)) return;
+
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Ativando…'; }
+  let feito = 0, falhas = 0, idx = 0;
+  try {
+    const worker = async () => {
+      while (idx < todo.length) {
+        const it = todo[idx++];
+        try {
+          const existing = S.it.dbMap[it.name] || it;
+          const f = existing.flags && typeof existing.flags === 'object' ? existing.flags : {};
+          const flags = { ...f, venda: { ...(f.venda || {}), enabled: true } };
+          const row = { ...existing, name: it.name, flags, updated_at: new Date().toISOString() };
+          await sbUpsert('items', row);
+          S.it.dbMap[it.name] = row;
+          const i = S.it.all.findIndex(x => x.name === it.name);
+          if (i >= 0) S.it.all[i] = row;
+        } catch (e) { falhas++; }
+        feito++;
+        if (btn) btn.innerHTML = `⏳ ${feito}/${todo.length}`;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+    applyItFilter();
+    toast(`✅ Venda ativada em ${todo.length - falhas} item(ns)${falhas ? ` · ${falhas} falha(s)` : ''}. Use "Commitar items.json" para o ItemDex público refletir.`, falhas ? 'err' : 'ok');
+  } catch (e) {
+    toast('Erro ao ativar Venda: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }
