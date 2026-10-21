@@ -341,6 +341,7 @@ html{
 .evo-branch-wrap{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;width:100%}
 .evo-branch-col{display:flex;flex-direction:column;align-items:center;gap:8px}
 .evo-branch-row{display:flex;align-items:center;gap:4px}
+.evo-tree{display:flex;align-items:center;gap:4px}
 
 /* Mega badge */
 .mega-badge{position:absolute;top:6px;right:6px;width:22px;height:22px;background:linear-gradient(135deg,#c060ff,#7030d0);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(120,0,200,.4);z-index:2}
@@ -772,20 +773,23 @@ async function buildFormEvoChainHtml(evos,activeId,pref){
     const nodes=await Promise.all(evos.map((ev,i)=>node(ev,i===0)));
     return nodes.join('');
   }
+  // Árvore recursiva: qualquer estágio pode ramificar (ex: Ralts → Kirlia →
+  // Gardevoir / Gallade), não só a base.
   const baseIdx=parentOf.findIndex(par=>par===null);
-  let html=`<div class="evo-branch-wrap"><div class="evo-branch-col">${await node(evos[baseIdx],true)}</div><div class="evo-branch-col">`;
-  const branchStarts=childrenOf[baseIdx]||[];
-  for(const startIdx of branchStarts){
-    html+=`<div class="evo-branch-row">${await node(evos[startIdx],false)}`;
-    let cur=startIdx;
-    while((childrenOf[cur]||[]).length===1){
-      cur=childrenOf[cur][0];
-      html+=await node(evos[cur],false);
+  const seen=new Set();
+  async function subtree(i,isFirst){
+    seen.add(i);
+    const nodeHtml=await node(evos[i],isFirst);
+    const kids=(childrenOf[i]||[]).filter(k=>!seen.has(k));
+    let kidsHtml='';
+    if(kids.length){
+      const rows=[];
+      for(const k of kids) rows.push(`<div class="evo-branch-row">${await subtree(k,false)}</div>`);
+      kidsHtml=`<div class="evo-branch-col">${rows.join('')}</div>`;
     }
-    html+=`</div>`;
+    return `<div class="evo-tree">${nodeHtml}${kidsHtml}</div>`;
   }
-  html+=`</div></div>`;
-  return html;
+  return `<div class="evo-branch-wrap">${await subtree(baseIdx,true)}</div>`;
 }
 
 // Monta o bloco "Damage Taken" (usado tanto no primeiro render quanto ao
@@ -3004,8 +3008,11 @@ async function renderDetail(p,s,container,navToken){
   let evoHtml='';
   let _evoSpeciesNames=[];
   try{
-    const cr=await fetch(s.evolution_chain.url);
-    const cd=await cr.json();
+    let cd=null;
+    for(let attempt=0;attempt<2&&!cd;attempt++){
+      try{ const cr=await fetch(s.evolution_chain.url); if(!cr.ok) throw new Error('HTTP '+cr.status); cd=await cr.json(); }
+      catch(e){ if(attempt===1) throw e; await new Promise(r=>setTimeout(r,400)); }
+    }
     evoHtml=buildEvo(cd.chain);
     function collectSpecies(node){
       _evoSpeciesNames.push(node.species.name);
@@ -3498,31 +3505,16 @@ function buildEvo(chain){
   if(!hasBranch){
     html=nodes.map((n,i)=>evoNode(n.name,n.id,n.det,i===0)).join('');
   } else {
-    // Branched: render base, then each branch on its own row
-    const base=nodes.find(n=>n.depth===0);
-    const mid=nodes.filter(n=>n.depth===1);
-    const finals=nodes.filter(n=>n.depth===2);
-    html=`<div class="evo-branch-wrap">`;
-    // Base
-    html+=`<div class="evo-branch-col">${evoNode(base.name,base.id,null,true)}</div>`;
-    // Mid + finals
-    if(mid.length){
-      html+=`<div class="evo-branch-col">`;
-      for(const m of mid){
-        const mFinals=finals.filter(f=>nodes.find(n=>n.name===f.name&&n.depth===2));
-        html+=`<div class="evo-branch-row">${evoNode(m.name,m.id,m.det,false)}`;
-        const myFinals=nodes.filter(n=>n.depth===2);// simplified
-        if(myFinals.length&&mid.length===1){
-          for(const f of myFinals) html+=evoNode(f.name,f.id,f.det,false);
-        }
-        html+=`</div>`;
-      }
-      html+=`</div>`;
-    } else {
-      // Only final evolutions branching from base
-      for(const f of finals) html+=evoNode(f.name,f.id,f.det,false);
+    // Ramificado: árvore recursiva (qualquer estágio pode ter várias evoluções)
+    function tree(node,isFirst){
+      const name=node.species.name;
+      const id=node.species.url.split('/').filter(Boolean).pop();
+      const det=node.evolution_details?.[0]||null;
+      const kids=node.evolves_to||[];
+      const kidsHtml=kids.length?`<div class="evo-branch-col">${kids.map(k=>`<div class="evo-branch-row">${tree(k,false)}</div>`).join('')}</div>`:'';
+      return `<div class="evo-tree">${evoNode(name,id,det,isFirst)}${kidsHtml}</div>`;
     }
-    html+=`</div>`;
+    html=`<div class="evo-branch-wrap">${tree(chain,true)}</div>`;
   }
 
   // Mega evolutions — fetch from pokemon forms
@@ -3575,25 +3567,13 @@ function buildRegionalEvo(chain, pref, regSlug, currentId){
   if(!hasBranch){
     return nodes.map((n,i)=>regionalEvoNode(n.node,findRegional(n.node),n.det,i===0,currentId)).join('');
   }
-  const base=nodes.find(n=>n.depth===0);
-  const mid=nodes.filter(n=>n.depth===1);
-  const finals=nodes.filter(n=>n.depth===2);
-  let html=`<div class="evo-branch-wrap">`;
-  html+=`<div class="evo-branch-col">${regionalEvoNode(base.node,findRegional(base.node),null,true,currentId)}</div>`;
-  if(mid.length){
-    html+=`<div class="evo-branch-col">`;
-    for(const m of mid){
-      html+=`<div class="evo-branch-row">${regionalEvoNode(m.node,findRegional(m.node),m.det,false,currentId)}`;
-      if(finals.length&&mid.length===1){
-        for(const f of finals) html+=regionalEvoNode(f.node,findRegional(f.node),f.det,false,currentId);
-      }
-      html+=`</div>`;
-    }
-    html+=`</div>`;
-  } else {
-    for(const f of finals) html+=regionalEvoNode(f.node,findRegional(f.node),f.det,false,currentId);
+  function tree(node,isFirst){
+    const det=node.evolution_details?.[0]||null;
+    const kids=node.evolves_to||[];
+    const kidsHtml=kids.length?`<div class="evo-branch-col">${kids.map(k=>`<div class="evo-branch-row">${tree(k,false)}</div>`).join('')}</div>`:'';
+    return `<div class="evo-tree">${regionalEvoNode(node,findRegional(node),isFirst?null:det,isFirst,currentId)}${kidsHtml}</div>`;
   }
-  html+=`</div>`;
+  const html=`<div class="evo-branch-wrap">${tree(chain,true)}</div>`;
   return html;
 }
 
