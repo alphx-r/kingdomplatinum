@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>PokéMart | Kingdom Platinum</title>
 <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
-<!-- PokéMart (/pokemart): compra e venda de itens da Bag da ficha. Itens vêm do items.json (flags.pokemart.enabled + price; flags.pokemart.enabled = comprável; flags.venda.enabled = vendável; as duas flags são independentes).
-     Compra desconta o dinheiro e soma na Bag; venda tira da Bag e soma o dinheiro (SELL_PCT do preço). Salva via /api/ficha-salvar.
+<!-- PokéMart (/pokemart): compra e venda de itens da Bag da ficha. Itens vêm do items.json (flags.pokemart.enabled + price; flags.pokemart.enabled = comprável (e revendível por SELL_PCT do preço); flags.venda.enabled = o PokéMart compra do jogador pelo preço cheio do items.json, mesmo sem vender o item; se tiver as duas, vale a regra do PokéMart (SELL_PCT), pra não dar pra comprar e revender pelo mesmo valor).
+     Compra desconta o dinheiro e soma na Bag; venda tira da Bag e soma o dinheiro (ver sellUnit). Salva via /api/ficha-salvar.
      vercel.json: { "source": "/pokemart", "destination": "/pokemart.html" } -->
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -605,9 +605,14 @@ const bagOf=it=>isTM(it)?{bag:'tm'}:isPill(it)?{bag:'pill'}:{};
 const isVenda=it=>!!it&&it.flags?.venda?.enabled===true&&it.price!=null&&Number.isFinite(+it.price)&&+it.price>0;
 /* Comprar: só itens com a flag PokéMart (independe da flag Venda) */
 const isMart=it=>!!it&&it.flags?.pokemart?.enabled===true&&it.price!=null&&Number.isFinite(+it.price)&&+it.price>0;
-/* Vender: só itens com a flag Venda (independe de ser comprável; o jogador recebe SELL_PCT do preço); sem flags (legado) vale se tiver preço */
-const sellUnit=it=>{if(!it||it.price==null||!Number.isFinite(+it.price))return 0;const f=it.flags||{};
- const ok=isVenda(it)||(f.pokemart?.enabled==null&&f.venda?.enabled==null);return ok?Math.floor(+it.price*SELL_PCT):0};
+/* Vender (quanto o jogador recebe por unidade):
+   - flag PokéMart: revenda por SELL_PCT (50%) do preço (vale mesmo se tiver Venda também);
+   - só flag Venda: o PokéMart compra pelo preço cheio do items.json;
+   - sem nenhuma flag (legado): SELL_PCT do preço, se tiver preço */
+const sellUnit=it=>{if(!it||it.price==null||!Number.isFinite(+it.price))return 0;const f=it.flags||{},p=+it.price;
+ if(isMart(it))return Math.floor(p*SELL_PCT);
+ if(isVenda(it))return Math.floor(p);
+ return(f.pokemart?.enabled==null&&f.venda?.enabled==null)?Math.floor(p*SELL_PCT):0};
 
 /* sessão: admin do index (adm_session) vira admin aqui */
 async function idxSync(){
