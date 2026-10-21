@@ -611,7 +611,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="adm-desc">Gerencie traduções de Pokémon, habilidades e movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
     </div>
     <div class="adm-actions">
-      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Gera o pokemon.json a partir do Supabase e faz commit no GitHub na hora, sem esperar o cron">📤 Commit pokemon.json</button>
+      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Gera o pokemon.json com os Pokémon carregados no ADM e faz commit no GitHub (a Vercel publica o arquivo novo no próximo deploy)">📤 Commit pokemon.json</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um local/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
@@ -5722,20 +5722,39 @@ function evoSlugForMainForm(idFieldId, listAll) {
 // ficar exposto aqui no JS do navegador; a rota manual reaproveita a mesma lógica
 // de backup (lib/backupPokemon.js) só que sem esse header.
 async function runManualBackup() {
+  // Gera o pokemon.json a partir dos Pokémon que o ADM já tem carregados
+  // (S.pk.dbMap) e manda pro servidor só commitar no GitHub — o servidor
+  // não consulta o Supabase.
+  const rows = Object.values((S.pk && S.pk.dbMap) || {});
+  if (!rows.length) { alert('❌ Nenhum Pokémon carregado ainda. Espere a lista carregar e tente de novo.'); return; }
+  if (!confirm(`Isso vai commitar o pokemon.json com ${rows.length} Pokémon no GitHub (a Vercel faz novo deploy em seguida). Continuar?`)) return;
+
   const btn = document.getElementById('btn-manual-backup');
   const original = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Rodando...';
+  btn.textContent = '⏳ Commitando...';
   try {
-    const res = await fetch('/api/admin/backup-pokemon-now');
+    // gzip no navegador: o corpo de uma função da Vercel é limitado a ~4,5 MB
+    const gz = await new Response(
+      new Blob([JSON.stringify(rows)]).stream().pipeThrough(new CompressionStream('gzip'))
+    ).arrayBuffer();
+    const res = await fetch('/api/admin/backup-pokemon-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: gz,
+    });
     const ct = res.headers.get('content-type') || '';
     const body = ct.includes('application/json') ? await res.json() : await res.text();
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+      throw new Error(`HTTP ${res.status}: ${typeof body === 'string' ? body : (body.error || JSON.stringify(body))}`);
     }
-    alert('✅ Backup rodado com sucesso!\n\n' + (typeof body === 'string' ? body : JSON.stringify(body, null, 2)));
+    if (body && body.unchanged) {
+      alert(`ℹ️ O pokemon.json no GitHub já está igual ao ADM — nenhum commit foi necessário.\n\n${body.total} Pokémon.`);
+    } else {
+      alert(`✅ Commit feito! ${body.total} Pokémon.\n\nAguarde o deploy da Vercel terminar para a NationalDex enxergar o arquivo novo.`);
+    }
   } catch (e) {
-    alert('❌ Falha ao rodar o backup: ' + e.message);
+    alert('❌ Falha ao commitar o pokemon.json: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = original;
