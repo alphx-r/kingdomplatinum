@@ -6602,10 +6602,10 @@ function renderBiomaConteudo(){
   const nomes  = {rarissimo:'Raríssimo',raro:'Raro',incomum:'Incomum',comum:'Comum'};
   const rcls   = {comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
   cont.innerHTML = ordem.map(r=>{
-    const grupo = pokes.filter(p=>pkInfoNoBioma(p,biomaAtivo)?.raridade===r).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
+    const grupo = pokes.filter(p=>!!pkInfoNoBioma(p,biomaAtivo,r)).sort((a,b)=>a.name?.localeCompare(b.name,'pt-BR'));
     if(!grupo.length) return '';
     const cards = grupo.map(p=>{
-      const condicao = pkInfoNoBioma(p,biomaAtivo)?.condicao;
+      const condicao = pkInfoNoBioma(p,biomaAtivo,r)?.condicao;
       // Mesma lógica das cartas de sorteio: se o Pokémon não tem sprite
       // cadastrado (ou o link salvo quebrou), busca o atual no pokemonDB e,
       // por último, ao vivo na PokeAPI — só cai no Unown se nada disso achar
@@ -8265,7 +8265,7 @@ function abrirModalPkUnificado(nome){
 function fecharModalPkUnificado(){
   document.getElementById('modal-pk-uni-overlay').style.display='none';
 }
-function _pkBiomaNorm(b){ return typeof b==='string' ? {nome:b, raridade:'comum', condicao:null} : {nome:b.nome, raridade:b.raridade||'comum', condicao:b.condicao||null}; }
+function _pkBiomaNorm(b){ if(b&&typeof b!=='string'&&Array.isArray(b.regras)) return b; return typeof b==='string' ? {nome:b, raridade:'comum', condicao:null} : {nome:b.nome, raridade:b.raridade||'comum', condicao:b.condicao||null}; }
 function _renderPkUniBiomasList(nome){
   const wrap=document.getElementById('modal-pk-uni-biomas-list');
   const linhas=_pkUniLinhas(nome);
@@ -8591,7 +8591,7 @@ async function aplicarBulkRaridade(){
   const ids=[...bulkSelecionados];
   for(const id of ids){
     const p=pokemonDB.find(x=>x.id===id);if(!p)continue;
-    const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).map(b=>typeof b==='string'?{nome:b,raridade:'comum',condicao:null}:{nome:b.nome,raridade:b.raridade||'comum',condicao:b.condicao||null});
+    const biomasArr=(Array.isArray(p.biomas)?p.biomas:(p.bioma?[p.bioma]:[])).map(_pkBiomaNorm);
     biomasArr.forEach(b=>{ if(!biomaFiltro||b.nome===biomaFiltro) b.raridade=novaRaridade; });
     p.biomas=biomasArr; PK.set(id,{biomas:biomasArr});
   }
@@ -11511,12 +11511,40 @@ function spriteHtml(pk){
 // do pokémon. Esses helpers leem a info certa para o bioma sorteado.
 // Por segurança também aceitam o formato antigo (biomas como array de strings
 // + p.raridade/p.condicao globais), caso algum registro ainda não tenha migrado.
-function pkInfoNoBioma(p, bioma){
-  const lista=p.biomas||[];
-  const entry=lista.find(b=>(typeof b==='string'?b:b.nome)===bioma);
-  if(!entry) return null;
-  if(typeof entry==='string') return{raridade:p.raridade||'comum',condicao:p.condicao||null};
-  return{raridade:entry.raridade||'comum',condicao:entry.condicao||null};
+/* Formatos aceitos em p.biomas[i]:
+   - string (legado, usa p.raridade/p.condicao globais)
+   - {nome, raridade, condicao}            (legado por bioma)
+   - {nome, regras:[{categoria,condicao,raridade}|{legado:true,condicao,raridade}]}  (atual, salvo pelo ADM)
+   Um bioma pode ter VÁRIAS regras (ex.: Comum "Sempre" + Raro "Período: Noite"). */
+const PK_COND_CAT={clima:'Clima',periodo:'Período',ambiente:'Ambiente',recursos:'Recursos',interacoes:'Interações',eventos:'Eventos'};
+const PK_COND_LBL={sempre:'Sempre',ensolarado:'Ensolarado',nublado:'Nublado',chuva:'Chuva',tempestade:'Tempestade',garoa:'Garoa',neblina:'Neblina',ventania:'Ventania',seca:'Seca',neve:'Neve',granizo:'Granizo',
+  dia:'Dia',noite:'Noite',amanhecer:'Amanhecer',entardecer:'Entardecer',
+  agua_doce:'Água doce',agua_salgada:'Água salgada',agua_rasa:'Água rasa',agua_profunda:'Água profunda',prox_vegetacao:'Próximo à vegetação',prox_arvores:'Próximo a árvores',prox_flores:'Próximo a flores',prox_rochas:'Próximo a rochas',cavernas:'Dentro de cavernas',locais_elevados:'Locais elevados',areas_sombreadas:'Áreas sombreadas',areas_abertas:'Áreas abertas',
+  arvores_frutiferas:'Árvores frutíferas',cogumelos:'Cogumelos',flores:'Flores',algas:'Algas',corpos_dagua:"Corpos d'água",madeira_caida:'Madeira caída',
+  em_grupo:'Em grupo',sozinho:'Sozinho',prox_mesma_especie:'Próximo de Pokémon da mesma espécie/tipo',prox_predadores:'Próximo de predadores',prox_presas:'Próximo de presas',
+  lua_cheia:'Lua cheia',lua_nova:'Lua nova',eclipse:'Eclipse',chuva_meteoros:'Chuva de meteoros',evento_especial:'Evento especial'};
+const PK_RAR_ORDEM=['comum','incomum','raro','rarissimo'];
+function pkCondLabel(r){
+  if(!r) return null;
+  if(r.legado) return r.condicao||null;
+  if(!r.condicao||r.condicao==='sempre') return null;
+  const l=PK_COND_LBL[r.condicao]||r.condicao, c=PK_COND_CAT[r.categoria];
+  return c?`${c}: ${l}`:l;
+}
+// Todas as regras {raridade, condicao(texto exibível)} do Pokémon naquele bioma/local ([] se não tiver).
+function pkRegrasNoBioma(p, bioma){
+  const entry=(p.biomas||[]).find(b=>(typeof b==='string'?b:b.nome)===bioma);
+  if(!entry) return [];
+  if(typeof entry==='string') return [{raridade:p.raridade||'comum',condicao:p.condicao||null}];
+  if(Array.isArray(entry.regras)&&entry.regras.length) return entry.regras.map(r=>({raridade:r.raridade||'comum',condicao:pkCondLabel(r)}));
+  return [{raridade:entry.raridade||'comum',condicao:entry.condicao||null}];
+}
+// raridade informada → a regra dessa raridade (ou null); sem raridade → a regra mais comum (base do bioma).
+function pkInfoNoBioma(p, bioma, raridade){
+  const rs=pkRegrasNoBioma(p,bioma);
+  if(!rs.length) return null;
+  if(raridade) return rs.find(r=>r.raridade===raridade)||null;
+  return rs.slice().sort((a,b)=>PK_RAR_ORDEM.indexOf(a.raridade)-PK_RAR_ORDEM.indexOf(b.raridade))[0];
 }
 function pkTemBioma(p, bioma){
   return (p.biomas||[]).some(b=>(typeof b==='string'?b:b.nome)===bioma);
@@ -11595,7 +11623,7 @@ function pickFromPool(pool, usedIds, rarity, bioma){
   usedIds.add(p.id);
   const gender=rollGender(p.genero);
   // Condição de captura é a do bioma sorteado especificamente, não uma global do pokémon
-  const info=bioma?pkInfoNoBioma(p,bioma):null;
+  const info=bioma?(pkInfoNoBioma(p,bioma,rarity)||pkInfoNoBioma(p,bioma)):null;
   const condicao=info?info.condicao:(p.condicao||null);
   return{nome:p.name||p.nome,tipos:[p.tipo1,p.tipo2].filter(Boolean),emoji:p.emoji||'❓',sprite:p.sprite||null,sprite_shiny:p.sprite_shiny||null,habilidade:rollAbility(p.habilidade1,p.habilidade2),condicao,rarity,genderS:gender.s,genderC:gender.c,nature:rollNature(),isShiny:rollShiny()};
 }
@@ -12093,7 +12121,7 @@ async function locEncRolar() {
   const encounterUnits = getEncounterUnits(pokemonDB);
   for (const r of raridades) {
     pools[r] = encounterUnits.filter(p => {
-      const info = pkInfoNoBioma(p, local);
+      const info = pkInfoNoBioma(p, local, r);
       return info && info.raridade === r && (!p.estacao || p.estacao === estacaoAtiva) && pkRankingNecessario(p) <= rankingAtivo;
     });
     usedIds[r] = new Set();
@@ -12105,7 +12133,7 @@ async function locEncRolar() {
     for (const r of raridades) {
       const alvo = BOOST_MAP[r];
       const comBoost = encounterUnits.filter(p => {
-        const info = pkInfoNoBioma(p, local);
+        const info = pkInfoNoBioma(p, local, r);
         return info && info.raridade === r && p.estacao_boost === estacaoAtiva && !p.estacao && pkRankingNecessario(p) <= rankingAtivo;
       });
       if (comBoost.length) boostedPools[alvo] = [...(boostedPools[alvo] || []), ...comBoost];
@@ -12457,7 +12485,7 @@ async function rolarEncontro(){
   const encounterUnits = getEncounterUnits(pokemonDB);
   for(const r of raridades){
     // inclui pokémon sem estação exclusiva + exclusivos da estação ativa
-    pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
+    pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
     usedIds[r]=new Set();
   }
   // pool de boost: pokémon com estacao_boost da estação ativa entram na raridade promovida
@@ -12467,7 +12495,7 @@ async function rolarEncontro(){
   if(estacaoAtiva){
     for(const r of raridades){
       const alvo=BOOST_MAP[r];
-      const comBoost=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
+      const comBoost=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
       if(comBoost.length) boostedPools[alvo]=[...(boostedPools[alvo]||[]),...comBoost];
     }
   }
@@ -12923,7 +12951,7 @@ async function rerollarPokeFalho(entryId, pkIdx, btnEl){
     const pools={};
     const usedIds={};
     for(const r of raridades){
-      pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
+      pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
       usedIds[r]=new Set();
     }
     const BOOST_MAP={rarissimo:'raro',raro:'incomum',incomum:'comum',comum:'comum'};
@@ -12931,7 +12959,7 @@ async function rerollarPokeFalho(entryId, pkIdx, btnEl){
     if(estacaoAtiva){
       for(const r of raridades){
         const alvo=BOOST_MAP[r];
-        const comBoost=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
+        const comBoost=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&p.estacao_boost===estacaoAtiva&&!p.estacao&&pkRankingNecessario(p)<=rankingAtivo; });
         if(comBoost.length) boostedPools[alvo]=[...(boostedPools[alvo]||[]),...comBoost];
       }
     }
@@ -16427,7 +16455,7 @@ async function rolarEncontroEvento(){
   const rankingAtivoEvento = getPersonagemRanking(personagem);
   const encounterUnitsEvento = getEncounterUnits(pokemonDB);
   for(const r of raridades){
-    pools[r]=encounterUnitsEvento.filter(p=>{ const info=pkInfoNoBioma(p,bioma); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
+    pools[r]=encounterUnitsEvento.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
     usedIds[r]=new Set();
   }
   function rollRarity(){ const r=Math.ceil(Math.random()*100); if(r<=2)return 'rarissimo'; if(r<=13)return 'raro'; if(r<=51)return 'incomum'; return 'comum'; }
@@ -17038,7 +17066,7 @@ function renderPoolImportList(){
   let pks = getEncounterUnits(pokemonDB).filter(p=>
     (!biomaFiltro || pkTemBioma(p,biomaFiltro)) &&
     (!busca || (p.name||p.nome)?.toLowerCase().includes(busca)) &&
-    (!raridade || pkInfoNoBioma(p,biomaFiltro)?.raridade===raridade)
+    (!raridade || !!pkInfoNoBioma(p,biomaFiltro,raridade))
   );
   lista.innerHTML = pks.map(pk=>{
     const nome = pk.nome || pk.name || '';
