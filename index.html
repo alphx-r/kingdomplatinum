@@ -5951,7 +5951,7 @@ function calcSyncSelects(){
 // ══════════════════════════════════════
 // PK — PokemonStore
 // Lê/grava direto na tabela "pokemons" do projeto Supabase dedicado
-// ao DataDex — a mesma fonte de verdade usada pelo datadex_adm.html.
+// ao DataDex — a mesma fonte de verdade usada pelo nationaldex_adm.html.
 // Mesmo padrão de lá: sbSelect (paginado via Range) + sbUpsert
 // (INSERT ... ON CONFLICT DO UPDATE só nas colunas enviadas, então
 // campos que o roller não mexe — sprite, bio, evoluções etc. — não
@@ -11391,7 +11391,22 @@ async function setEstacao(val){
 // ══════════════════════════════════════
 // ROLADOR
 // ══════════════════════════════════════
-function rollGender(g){if(g==='macho')return{s:'♂',c:'#3a80e0'};if(g==='femea')return{s:'♀',c:'#e04090'};if(g==='genderless')return{s:'☼',c:'#888'};return Math.random()<.5?{s:'♂',c:'#3a80e0'}:{s:'♀',c:'#e04090'};}
+function rollGender(g){
+  const M={s:'♂',c:'#3a80e0'}, F={s:'♀',c:'#e04090'};
+  if(g==='macho')return M;
+  if(g==='femea')return F;
+  if(g==='genderless')return{s:'☼',c:'#888'};
+  // Formato do DataDex: "M,F" em % (ex: "0,100", "87.5,12.5"). "0,0" = sem gênero.
+  const parts=String(g==null?'':g).split(',');
+  if(parts.length===2){
+    const pm=parseFloat(parts[0]), pf=parseFloat(parts[1]);
+    if(!isNaN(pm)&&!isNaN(pf)){
+      if(pm+pf<=0) return{s:'☼',c:'#888'};
+      return Math.random()*(pm+pf)<pm?M:F;
+    }
+  }
+  return Math.random()<.5?M:F;
+}
 function rollNature(){const n=NATURES_DATA[Math.floor(Math.random()*NATURES_DATA.length)];return n||{en:'Hardy',pt:'Robusto'};}
 const SHINY_RATE=500; const SHINY_THRESHOLD=1; // 1 em 500 (taxa base)
 // Bônus de shiny configuráveis pelo ADM
@@ -11897,8 +11912,17 @@ function pkEvoluidoPorNivel(base, nivel){
 function pkGeneroDoEvoluido(pk, genero){
   const g = String(genero==null?'':genero);
   if(g==='genderless') return rollGender('genderless');
-  if(g==='macho' || g==='100,0') return rollGender('macho');
-  if(g==='femea' || g==='0,100') return rollGender('femea');
+  if(g==='macho') return rollGender('macho');
+  if(g==='femea') return rollGender('femea');
+  // formato "M,F": só troca o gênero se o atual for impossível na nova espécie
+  if(g.includes(',')){
+    const [pm,pf]=g.split(',').map(parseFloat);
+    if(pm>0&&pf>0) return null;                       // ambos possíveis → mantém
+    if(pm===0&&pf===0) return rollGender('genderless');
+    if(pf===0 && pk.genderS!=='♂') return rollGender('macho');
+    if(pm===0 && pk.genderS!=='♀') return rollGender('femea');
+    return null;
+  }
   if(pk.genderS==='\u263c') return rollGender(g); // base sem gênero → evoluído tem
   return null; // mantém o gênero já sorteado
 }
