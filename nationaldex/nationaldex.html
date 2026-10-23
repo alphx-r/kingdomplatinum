@@ -1040,6 +1040,45 @@ window.addEventListener('popstate',e=>{
    O Supabase só entra como FALLBACK se esse fetch falhar.
 ═══════════════════════════════════════ */
 let _pkJsonCache=null;
+/* ═══ Sprites no GitHub (substitui o Storage do Supabase — evita egress) ═══
+   Normal: sprites/pokemon/[#001] - Eckorrel.png
+   Shiny:  sprites/pokemon/shiny/[#001] - Eckorrel.png   (N0001 → 001, slug com 1ª maiúscula) */
+const KP_GH_REPO='alphx-r/kingdomplatinum';
+const KP_SPRITE_BASE=`https://raw.githubusercontent.com/${KP_GH_REPO}/main/sprites/pokemon/`;
+function kpGhFileName(rec,ext){
+  const m=/^N0*(\d+)$/i.exec(String(rec.id||'')); if(!m) return null;
+  const slug=String(rec.url_slug||rec.name||'').trim().replace(/\s*\(.*\)\s*$/,'');
+  if(!slug) return null;
+  return `[#${m[1].padStart(3,'0')}] - ${slug.charAt(0).toUpperCase()+slug.slice(1)}.${ext||'png'}`;
+}
+function kpGhSprite(rec,shiny){
+  const f=kpGhFileName(rec); if(!f) return null;
+  return KP_SPRITE_BASE+(shiny?'shiny/':'')+encodeURIComponent(f);
+}
+// Formas alt/alfa: "7-alt-n-squirtle" → "[#007] - Alt N Squirtle.png"
+function kpGhFormFile(stem,ext){
+  const m=/^N?0*(\d+)-(.+)$/i.exec(stem); if(!m) return null;
+  const nome=m[2].split('-').filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  return `[#${m[1].padStart(3,'0')}] - ${nome}.${ext||'png'}`;
+}
+function kpFixFormSprites(f){
+  if(!f||typeof f!=='object') return;
+  ['sprite','sprite_shiny'].forEach(k=>{
+    const u=f[k]; if(typeof u!=='string'||!u.includes('.supabase.co/storage/')) return;
+    const m=/\/pokemons\/([^/?]+?)(-shiny)?\.(png|jpe?g)(\?|$)/i.exec(u); if(!m) return;
+    const fn=kpGhFormFile(m[1],m[3].toLowerCase().replace('jpeg','jpg')); if(!fn) return;
+    f[k]=KP_SPRITE_BASE+(m[2]?'shiny/':'')+encodeURIComponent(fn);
+  });
+}
+function kpFixSprites(rec){
+  if(!rec||typeof rec!=='object') return rec;
+  ['formas_alt','formas_alfa'].forEach(k=>{ if(Array.isArray(rec[k])) rec[k].forEach(kpFixFormSprites); });
+  const isSb=u=>typeof u==='string'&&u.includes('.supabase.co/storage/');
+  if(isSb(rec.sprite)){const g=kpGhSprite(rec,false); if(g) rec.sprite=g;}
+  if(isSb(rec.sprite_shiny)){const g=kpGhSprite(rec,true); if(g) rec.sprite_shiny=g;}
+  return rec;
+}
+
 // Onde o ADM commita o pokemon.json. Preenchendo PK_JSON_REPO, a NationalDex
 // lê o arquivo direto do GitHub (raw) — assim um commit já aparece em ~1 min,
 // sem precisar de novo deploy da Vercel. Vazio = só usa o /pokemon.json do site.
@@ -1052,13 +1091,13 @@ async function loadPokemonJson(){
     try{
       const url=`https://raw.githubusercontent.com/${PK_JSON_REPO}/${PK_JSON_BRANCH}/${PK_JSON_PATH}?v=${Math.floor(Date.now()/60000)}`;
       const r=await fetch(url);
-      if(r.ok){ _pkJsonCache=await r.json(); return _pkJsonCache; }
+      if(r.ok){ _pkJsonCache=(await r.json()).map(kpFixSprites); return _pkJsonCache; }
       throw new Error('HTTP '+r.status);
     }catch(e){ console.warn('pokemon.json via GitHub falhou, usando /pokemon.json do site…',e); }
   }
   const res=await fetch('/pokemon.json',{cache:'no-store'});
   if(!res.ok) throw new Error('pokemon.json não encontrado');
-  _pkJsonCache=await res.json();
+  _pkJsonCache=(await res.json()).map(kpFixSprites);
   return _pkJsonCache;
 }
 // formas_alt_count não existe no JSON — deriva do array formas_alt, igual
@@ -1087,7 +1126,7 @@ async function sbFetchAllPages(url,headers,pageSize=1000){
     const r=await fetch(url,{headers:{...headers,Range:`${from}-${from+pageSize-1}`},cache:'no-store'});
     if(!r.ok&&r.status!==206) throw new Error(await r.text());
     const page=await r.json();
-    all=all.concat(page);
+    all=all.concat(page.map(kpFixSprites));
     if(page.length<pageSize) break;
     from+=pageSize;
   }
