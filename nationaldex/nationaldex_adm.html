@@ -612,6 +612,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     </div>
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Gera o pokemon.json com os Pokémon carregados no ADM e faz commit no GitHub (a Vercel publica o arquivo novo no próximo deploy)">📤 Commit pokemon.json</button>
+      <button class="btn btn-outline" id="btn-update-photos" onclick="runUpdatePhotos()" title="Troca as fotos do Supabase pelas do GitHub direto no pokemon.json — não precisa da lista carregada">🖼️ Atualizar fotos</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um local/raridade, colando uma lista">🔀 Transferência em massa</button>
     </div>
   </div>
@@ -1476,6 +1477,45 @@ function buildAutoSlug(nameRaw, id) {
    SUPABASE CONFIG
 ══════════════════════════════════════════ */
 const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
+/* ═══ Sprites no GitHub (substitui o Storage do Supabase — evita egress) ═══
+   Normal: sprites/pokemon/[#001] - Eckorrel.png
+   Shiny:  sprites/pokemon/shiny/[#001] - Eckorrel.png   (N0001 → 001, slug com 1ª maiúscula) */
+const KP_GH_REPO='alphx-r/kingdomplatinum';
+const KP_SPRITE_BASE=`https://raw.githubusercontent.com/${KP_GH_REPO}/main/sprites/pokemon/`;
+function kpGhFileName(rec,ext){
+  const m=/^N0*(\d+)$/i.exec(String(rec.id||'')); if(!m) return null;
+  const slug=String(rec.url_slug||rec.name||'').trim().replace(/\s*\(.*\)\s*$/,'');
+  if(!slug) return null;
+  return `[#${m[1].padStart(3,'0')}] - ${slug.charAt(0).toUpperCase()+slug.slice(1)}.${ext||'png'}`;
+}
+function kpGhSprite(rec,shiny){
+  const f=kpGhFileName(rec); if(!f) return null;
+  return KP_SPRITE_BASE+(shiny?'shiny/':'')+encodeURIComponent(f);
+}
+// Formas alt/alfa: "7-alt-n-squirtle" → "[#007] - Alt N Squirtle.png"
+function kpGhFormFile(stem,ext){
+  const m=/^N?0*(\d+)-(.+)$/i.exec(stem); if(!m) return null;
+  const nome=m[2].split('-').filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  return `[#${m[1].padStart(3,'0')}] - ${nome}.${ext||'png'}`;
+}
+function kpFixFormSprites(f){
+  if(!f||typeof f!=='object') return;
+  ['sprite','sprite_shiny'].forEach(k=>{
+    const u=f[k]; if(typeof u!=='string'||!u.includes('.supabase.co/storage/')) return;
+    const m=/\/pokemons\/([^/?]+?)(-shiny)?\.(png|jpe?g)(\?|$)/i.exec(u); if(!m) return;
+    const fn=kpGhFormFile(m[1],m[3].toLowerCase().replace('jpeg','jpg')); if(!fn) return;
+    f[k]=KP_SPRITE_BASE+(m[2]?'shiny/':'')+encodeURIComponent(fn);
+  });
+}
+function kpFixSprites(rec){
+  if(!rec||typeof rec!=='object') return rec;
+  ['formas_alt','formas_alfa'].forEach(k=>{ if(Array.isArray(rec[k])) rec[k].forEach(kpFixFormSprites); });
+  const isSb=u=>typeof u==='string'&&u.includes('.supabase.co/storage/');
+  if(isSb(rec.sprite)){const g=kpGhSprite(rec,false); if(g) rec.sprite=g;}
+  if(isSb(rec.sprite_shiny)){const g=kpGhSprite(rec,true); if(g) rec.sprite_shiny=g;}
+  return rec;
+}
+
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
 
 // Projeto ANTIGO (compartilhado com o index/RPG) — usado só na migração
@@ -4877,7 +4917,7 @@ async function savePkModal(approve) {
       } else {
         toast('Enviando sprite…', 'ok');
         const ext = b64.includes('image/png') ? 'png' : 'jpg';
-        sprite = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`) + '?t=' + Date.now();
+        sprite = await uploadImgStorage(b64, 'pokemons', `${newId}.${ext}`, slug) + '?t=' + Date.now();
         delete document.getElementById('epk-sprite-preview').dataset.b64;
         document.getElementById('epk-sprite').value = sprite;
       }
@@ -4887,7 +4927,7 @@ async function savePkModal(approve) {
         delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
       } else {
         const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
-        spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`) + '?t=' + Date.now();
+        spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${newId}-shiny.${ext}`, slug) + '?t=' + Date.now();
         delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
         document.getElementById('epk-sprite_shiny').value = spriteShiny;
       }
@@ -5043,7 +5083,18 @@ function updatePkStats() {
 async function loadPokemon() {
   try {
     // Fonte de verdade agora é o Supabase — pokemon.json virou só backup.
-    const dbRows = await sbSelect('pokemons');
+    let dbRows;
+    try {
+      dbRows = await sbSelect('pokemons');
+    } catch (supaErr) {
+      // Supabase fora (ex.: egress_quota) → lê o pokemon.json do GitHub (somente leitura)
+      console.warn('Supabase falhou, usando pokemon.json do GitHub…', supaErr);
+      const r = await fetch(`https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/pokemon.json?v=${Math.floor(Date.now()/60000)}`);
+      if (!r.ok) throw supaErr;
+      dbRows = await r.json();
+      toast('Supabase indisponível — exibindo dados do pokemon.json (somente leitura).', 'err');
+    }
+    dbRows = dbRows.map(kpFixSprites);
     S.pk.dbMap = {};
     dbRows.forEach(r => { S.pk.dbMap[r.id] = r; });
 
@@ -5617,23 +5668,85 @@ function closeModal(id) {
     if (pkListView) pkListView.style.display = '';
   }
 }
-async function uploadImgStorage(b64, bucket, path) {
-  const [header, data] = b64.split(',');
-  const mime = header.match(/:(.*?);/)[1];
-  const binary = atob(data);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: mime });
-  const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/${bucket}/${path}`, {
-    method: 'POST',
-    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': mime, 'x-upsert': 'true' },
-    body: blob
-  });
-  if (!uploadRes.ok) {
-    const err = await uploadRes.text();
-    throw new Error('Falha no upload: ' + uploadRes.status + ' — ' + err);
+// ── GitHub (Contents API) — token (PAT com Contents: Read and write) guardado só neste navegador ──
+// Token fixo no código (opcional): cole entre as aspas. Vazio = pede no navegador e guarda no localStorage.
+const KP_GH_TOKEN_FIXO = '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';
+function kpGhToken(force){
+  if (KP_GH_TOKEN_FIXO) return KP_GH_TOKEN_FIXO;
+  let t = localStorage.getItem('kp_gh_token') || '';
+  if (!t || force) {
+    t = (prompt('Cole o token do GitHub (fine-grained, repo alphx-r/kingdomplatinum, permissão Contents: Read and write).\nFica salvo só neste navegador.') || '').trim();
+    if (t) localStorage.setItem('kp_gh_token', t);
   }
-  return `${SUPA_URL}/storage/v1/object/public/${bucket}/${path}`;
+  if (!t) throw new Error('Token do GitHub não informado.');
+  return t;
+}
+function kpBytesToB64(bytes){
+  let bin=''; for (let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+  return btoa(bin);
+}
+async function kpGhPut(path, b64, message){
+  const tok = kpGhToken();
+  const api = `https://api.github.com/repos/${KP_GH_REPO}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const H = { 'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json' };
+  let sha;
+  const g = await fetch(api + '?ref=main&t=' + Date.now(), { headers: H });
+  if (g.ok) sha = (await g.json()).sha;
+  else if (g.status === 401) { localStorage.removeItem('kp_gh_token'); throw new Error('Token do GitHub inválido/expirado — tente de novo.'); }
+  else if (g.status !== 404) throw new Error('GitHub GET ' + g.status);
+  const r = await fetch(api, { method: 'PUT', headers: { ...H, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, content: b64, branch: 'main', ...(sha ? { sha } : {}) }) });
+  if (!r.ok) throw new Error('GitHub PUT ' + r.status + ' — ' + (await r.text()).slice(0, 200));
+  return r.json();
+}
+
+// Upload de sprite → GitHub (sprites/pokemon e sprites/pokemon/shiny). `slug` = slug final do Pokémon.
+// Normal: sprites/pokemon/[#001] - Slug.png | Shiny: sprites/pokemon/shiny/[#001] - Slug.png
+async function uploadImgStorage(b64, bucket, path, slug) {
+  const [header, data] = b64.split(',');
+  const ext = /jpe?g/.test(header) ? 'jpg' : 'png';
+  const shiny = /-shiny\.\w+$/.test(path);
+  const stem = path.replace(/(-shiny)?\.\w+$/, '');
+  let fname;
+  const mBase = /^N0*(\d+)$/i.exec(stem);
+  if (mBase) {
+    fname = kpGhFileName({ id: stem, url_slug: slug || stem }, ext);
+  } else {
+    // formas alt/alfa: "<baseId>-alt-<slug>" → "[#007] - Alt N Squirtle.png"
+    fname = kpGhFormFile(stem, ext) || `[#000] - ${stem}.${ext}`;
+  }
+  const ghPath = 'sprites/pokemon/' + (shiny ? 'shiny/' : '') + fname;
+  await kpGhPut(ghPath, data, `Sprite ${shiny ? 'shiny ' : ''}${fname} (adm)`);
+  return KP_SPRITE_BASE + (shiny ? 'shiny/' : '') + encodeURIComponent(fname);
+}
+
+// Botão "Atualizar fotos": não depende da lista carregada. Baixa o pokemon.json do GitHub,
+// troca as URLs de sprite do Supabase pelas do GitHub e commita só se mudou.
+async function runUpdatePhotos() {
+  const btn = document.getElementById('btn-update-photos');
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Atualizando...';
+  try {
+    const r = await fetch(`https://raw.githubusercontent.com/${KP_GH_REPO}/main/pokemon.json?v=${Date.now()}`);
+    if (!r.ok) throw new Error('Não consegui ler o pokemon.json do GitHub (HTTP ' + r.status + ')');
+    const text = await r.text();
+    const rows = JSON.parse(text);
+    let changed = 0;
+    rows.forEach(p => {
+      const a = p.sprite, b = p.sprite_shiny;
+      kpFixSprites(p);
+      if (p.sprite !== a || p.sprite_shiny !== b) changed++;
+    });
+    if (!changed) { alert('ℹ️ Nenhuma foto do Supabase pendente no pokemon.json — nada a atualizar.'); return; }
+    if (!confirm(`${changed} Pokémon vão ter as fotos trocadas para o GitHub no pokemon.json. Continuar?`)) return;
+    const out = text.startsWith('[\n') ? JSON.stringify(rows, null, 2) : JSON.stringify(rows);
+    await kpGhPut('pokemon.json', kpBytesToB64(new TextEncoder().encode(out)), `Fotos: Supabase → GitHub (${changed} Pokémon)`);
+    alert(`✅ Pronto! ${changed} Pokémon atualizados.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
+  } catch (e) {
+    alert('❌ Falha ao atualizar as fotos: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -6255,11 +6368,11 @@ async function saveNewRpgPokemon() {
     let sprite = null, spriteShiny = null;
     if (b64 && b64.startsWith('data:')) {
       const ext = b64.includes('image/png') ? 'png' : 'jpg';
-      sprite = await uploadImgStorage(b64, 'pokemons', `${id}.${ext}`);
+      sprite = await uploadImgStorage(b64, 'pokemons', `${id}.${ext}`, buildAutoSlug(name, id));
     }
     if (b64Shiny && b64Shiny.startsWith('data:')) {
       const ext = b64Shiny.includes('image/png') ? 'png' : 'jpg';
-      spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${id}-shiny.${ext}`);
+      spriteShiny = await uploadImgStorage(b64Shiny, 'pokemons', `${id}-shiny.${ext}`, buildAutoSlug(name, id));
     }
     // Evolução: se o campo foi deixado vazio, verifica se este novo Pokémon
     // já é citado na cadeia evolutiva de algum outro Pokémon existente (pelo
