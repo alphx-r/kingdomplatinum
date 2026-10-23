@@ -1043,16 +1043,17 @@ let _pkJsonCache=null;
 /* ═══ Sprites no GitHub (substitui o Storage do Supabase — evita egress) ═══
    Normal: sprites/pokemon/[#001] - Eckorrel.png
    Shiny:  sprites/pokemon/shiny/[#001] - Eckorrel.png   (N0001 → 001, slug com 1ª maiúscula) */
-/* Padrão de nome dos sprites. false = "[#001] - Slug.png" (atual) | true = "001-slug.png".
-   SÓ vire para true depois de renomear os arquivos no repo E atualizar as URLs no pokemon.json. */
-const KP_NOME_NOVO=false;
+/* Padrão de nome dos sprites. true = "001-slug.png" (novo, minúsculo, sem acento) | false = "[#001] - Slug.png" (antigo).
+   As URLs que já estão no pokemon.json continuam valendo como estão; isto só define os nomes NOVOS. */
+const KP_NOME_NOVO=true;
+function kpSlugify(t){return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
 const KP_GH_REPO='alphx-r/kingdomplatinum';
 const KP_SPRITE_BASE=`https://raw.githubusercontent.com/${KP_GH_REPO}/main/sprites/pokemon/`;
 function kpGhFileName(rec,ext){
   const m=/^N0*(\d+)$/i.exec(String(rec.id||'')); if(!m) return null;
   const slug=String(rec.url_slug||rec.name||'').trim().replace(/\s*\(.*\)\s*$/,'');
   if(!slug) return null;
-  if(KP_NOME_NOVO) return `${m[1].padStart(3,'0')}-${slug.toLowerCase().replace(/\s+/g,'-')}.${ext||'png'}`;
+  if(KP_NOME_NOVO){ const sl=kpSlugify(slug); if(!sl) return null; return `${m[1].padStart(3,'0')}-${sl}.${ext||'png'}`; }
   return `[#${m[1].padStart(3,'0')}] - ${slug.charAt(0).toUpperCase()+slug.slice(1)}.${ext||'png'}`;
 }
 function kpGhSprite(rec,shiny){
@@ -1063,7 +1064,7 @@ function kpGhSprite(rec,shiny){
 function kpGhFormFile(stem,ext){
   const m=/^N?0*(\d+)-(.+)$/i.exec(stem); if(!m) return null;
   const nome=m[2].split('-').filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-  if(KP_NOME_NOVO) return `${m[1].padStart(3,'0')}-${m[2].toLowerCase()}.${ext||'png'}`;
+  if(KP_NOME_NOVO){ const sl=kpSlugify(m[2]); if(!sl) return null; return `${m[1].padStart(3,'0')}-${sl}.${ext||'png'}`; }
   return `[#${m[1].padStart(3,'0')}] - ${nome}.${ext||'png'}`;
 }
 function kpFixFormSprites(f){
@@ -2864,42 +2865,46 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
 // aplicar uma escala compensatória via CSS var --fill-scale — assim os dois
 // aparentam o mesmo tamanho mesmo vindo de fontes com paddings diferentes.
 const _spriteFillCache = new Map();
+// Devolve o quanto o Pokémon ocupa da CAIXA (0.05–1), já considerando que a imagem é exibida com
+// object-fit:contain (imagens não quadradas, como as de Nendo 472×529, ficam com a maior dimensão = caixa).
+// Devolve null se a imagem não carregou (404 etc.) ou não dá pra medir — aí NÃO se compensa nada.
 function getSpriteFillRatio(url){
-  if(!url) return Promise.resolve(1);
+  if(!url) return Promise.resolve(null);
   if(_spriteFillCache.has(url)) return Promise.resolve(_spriteFillCache.get(url));
   return new Promise(resolve=>{
     const img=new Image();
     img.crossOrigin='anonymous';
     img.onload=()=>{
       try{
-        const S=96;
+        const nw=img.naturalWidth, nh=img.naturalHeight;
+        if(!nw||!nh){ resolve(null); return; }
+        const S=128, k=S/Math.max(nw,nh);
+        const W=Math.max(1,Math.round(nw*k)), H=Math.max(1,Math.round(nh*k));
         const cv=document.createElement('canvas');
-        cv.width=S; cv.height=S;
+        cv.width=W; cv.height=H;
         const ctx=cv.getContext('2d');
-        ctx.clearRect(0,0,S,S);
-        ctx.drawImage(img,0,0,S,S);
-        const data=ctx.getImageData(0,0,S,S).data;
-        let minX=S,minY=S,maxX=-1,maxY=-1;
-        for(let y=0;y<S;y++){
-          for(let x=0;x<S;x++){
-            if(data[(y*S+x)*4+3]>16){
+        ctx.clearRect(0,0,W,H);
+        ctx.drawImage(img,0,0,W,H);
+        const data=ctx.getImageData(0,0,W,H).data;
+        let minX=W,minY=H,maxX=-1,maxY=-1;
+        for(let y=0;y<H;y++){
+          for(let x=0;x<W;x++){
+            if(data[(y*W+x)*4+3]>16){
               if(x<minX)minX=x; if(x>maxX)maxX=x;
               if(y<minY)minY=y; if(y>maxY)maxY=y;
             }
           }
         }
-        let fill=1;
-        if(maxX>=minX && maxY>=minY){
-          fill=Math.min(1,Math.max(0.05,Math.max((maxX-minX+1)/S,(maxY-minY+1)/S)));
-        }
+        if(maxX<minX||maxY<minY){ resolve(null); return; }
+        const fill=Math.min(1,Math.max(0.05,Math.max(maxX-minX+1,maxY-minY+1)/S));
         _spriteFillCache.set(url,fill);
         resolve(fill);
       }catch(e){
-        // canvas "contaminado" por CORS ou outra falha — sem como medir, assume neutro
-        resolve(1);
+        // canvas "contaminado" por CORS ou outra falha — sem como medir
+        resolve(null);
       }
     };
-    img.onerror=()=>resolve(1);
+    img.onerror=()=>resolve(null);
     img.src=url;
   });
 }
@@ -2907,6 +2912,9 @@ function getSpriteFillRatio(url){
 // Recalcula e aplica a escala compensatória pro par normal/shiny de um hero-art-stack.
 // Cancelamento por dataset.spriteUrl evita aplicar escala num sprite que já foi trocado
 // (troca de forma/navegação) enquanto a medição ainda estava em andamento.
+// IMPORTANTE: se um dos dois (normal/shiny) não carregou, não compensa nada. Antes, a falha
+// virava "fill = 1" e inflava o sprite que existia (ex.: shiny 404 → normal ampliado e CORTADO
+// pelo overflow:hidden da caixa).
 async function normalizeHeroSpritePair(normalId, shinyId, normalUrl, shinyUrl){
   const elN=document.getElementById(normalId), elS=document.getElementById(shinyId);
   if(!elN||!elS) return;
@@ -2915,14 +2923,12 @@ async function normalizeHeroSpritePair(normalId, shinyId, normalUrl, shinyUrl){
   if(!normalUrl||!shinyUrl) return;
   const [fillN,fillS]=await Promise.all([getSpriteFillRatio(normalUrl),getSpriteFillRatio(shinyUrl)]);
   if(elN.dataset.spriteUrl!==normalUrl||elS.dataset.spriteUrl!==shinyUrl) return; // sprite trocou nesse meio-tempo
+  if(fillN==null||fillS==null) return; // um deles falhou/sem medida → deixa os dois no tamanho natural
   const target=Math.max(fillN,fillS);
-  const MAX_SCALE=1.25; // trava pra não estourar o card em casos extremos — era 1.6,
-  // reduzido porque um sprite normal/shiny com padding bem diferente (comum nas
-  // formas do Oricorio, cada uma com upload próprio) podia pedir até 1.6x e
-  // vazar pra fora do card (agora também contido pelo overflow:hidden do
-  // .hero-art-stack, mas o teto menor evita o zoom exagerado desde a raiz).
-  const scaleN=Math.min(MAX_SCALE,target/fillN);
-  const scaleS=Math.min(MAX_SCALE,target/fillS);
+  const MAX_SCALE=1.25; // teto da compensação
+  const FIT_MAX=0.95;   // o Pokémon nunca passa de 95% da caixa (sobra margem p/ o hover de 1.05 e a sombra)
+  const scaleN=Math.min(MAX_SCALE,target/fillN,FIT_MAX/fillN);
+  const scaleS=Math.min(MAX_SCALE,target/fillS,FIT_MAX/fillS);
   if(scaleN>1.02) elN.style.setProperty('--fill-scale',scaleN.toFixed(3));
   if(scaleS>1.02) elS.style.setProperty('--fill-scale',scaleS.toFixed(3));
 }
