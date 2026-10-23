@@ -1480,12 +1480,16 @@ const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
 /* ═══ Sprites no GitHub (substitui o Storage do Supabase — evita egress) ═══
    Normal: sprites/pokemon/[#001] - Eckorrel.png
    Shiny:  sprites/pokemon/shiny/[#001] - Eckorrel.png   (N0001 → 001, slug com 1ª maiúscula) */
+/* Padrão de nome dos sprites. false = "[#001] - Slug.png" (atual) | true = "001-slug.png".
+   SÓ vire para true depois de renomear os arquivos no repo E atualizar as URLs no pokemon.json. */
+const KP_NOME_NOVO=false;
 const KP_GH_REPO='alphx-r/kingdomplatinum';
 const KP_SPRITE_BASE=`https://raw.githubusercontent.com/${KP_GH_REPO}/main/sprites/pokemon/`;
 function kpGhFileName(rec,ext){
   const m=/^N0*(\d+)$/i.exec(String(rec.id||'')); if(!m) return null;
   const slug=String(rec.url_slug||rec.name||'').trim().replace(/\s*\(.*\)\s*$/,'');
   if(!slug) return null;
+  if(KP_NOME_NOVO) return `${m[1].padStart(3,'0')}-${slug.toLowerCase().replace(/\s+/g,'-')}.${ext||'png'}`;
   return `[#${m[1].padStart(3,'0')}] - ${slug.charAt(0).toUpperCase()+slug.slice(1)}.${ext||'png'}`;
 }
 function kpGhSprite(rec,shiny){
@@ -1496,6 +1500,7 @@ function kpGhSprite(rec,shiny){
 function kpGhFormFile(stem,ext){
   const m=/^N?0*(\d+)-(.+)$/i.exec(stem); if(!m) return null;
   const nome=m[2].split('-').filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  if(KP_NOME_NOVO) return `${m[1].padStart(3,'0')}-${m[2].toLowerCase()}.${ext||'png'}`;
   return `[#${m[1].padStart(3,'0')}] - ${nome}.${ext||'png'}`;
 }
 function kpFixFormSprites(f){
@@ -5668,36 +5673,51 @@ function closeModal(id) {
     if (pkListView) pkListView.style.display = '';
   }
 }
-// ── GitHub (Contents API) — token (PAT com Contents: Read and write) guardado só neste navegador ──
-// Token fixo no código (opcional): cole entre as aspas. Vazio = pede no navegador e guarda no localStorage.
-const KP_GH_TOKEN_FIXO = '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';
-function kpGhToken(force){
-  if (KP_GH_TOKEN_FIXO) return KP_GH_TOKEN_FIXO;
-  let t = localStorage.getItem('kp_gh_token') || '';
-  if (!t || force) {
-    t = (prompt('Cole o token do GitHub (fine-grained, repo alphx-r/kingdomplatinum, permissão Contents: Read and write).\nFica salvo só neste navegador.') || '').trim();
-    if (t) localStorage.setItem('kp_gh_token', t);
+// ── GitHub via servidor ──
+// O token do GitHub NÃO fica mais no navegador: o upload passa por /api/admin/backup-pokemon-now (POST em JSON)
+// (token em GH_SPRITE_TOKEN na Vercel). Aqui só guardamos a chave do admin (ADMIN_UPLOAD_KEY),
+// digitada uma vez e salva neste navegador.
+try { localStorage.removeItem('kp_gh_token'); } catch (_) {}   // limpa o token antigo, se existir
+function kpAdminKey(force){
+  let k = localStorage.getItem('kp_admin_key') || '';
+  if (!k || force) {
+    k = (prompt('Cole a chave de admin do upload (ADMIN_UPLOAD_KEY da Vercel).\nFica salva só neste navegador.') || '').trim();
+    if (k) localStorage.setItem('kp_admin_key', k);
   }
-  if (!t) throw new Error('Token do GitHub não informado.');
-  return t;
+  if (!k) throw new Error('Chave de admin não informada.');
+  return k;
 }
 function kpBytesToB64(bytes){
   let bin=''; for (let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
   return btoa(bin);
 }
+async function kpApiJson(res){
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('application/json') ? await res.json() : { error: await res.text() };
+}
+// Sobe UMA imagem (base64 puro, sem "data:...,") para o repo, via servidor.
 async function kpGhPut(path, b64, message){
-  const tok = kpGhToken();
-  const api = `https://api.github.com/repos/${KP_GH_REPO}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
-  const H = { 'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json' };
-  let sha;
-  const g = await fetch(api + '?ref=main&t=' + Date.now(), { headers: H });
-  if (g.ok) sha = (await g.json()).sha;
-  else if (g.status === 401) { localStorage.removeItem('kp_gh_token'); throw new Error('Token do GitHub inválido/expirado — tente de novo.'); }
-  else if (g.status !== 404) throw new Error('GitHub GET ' + g.status);
-  const r = await fetch(api, { method: 'PUT', headers: { ...H, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, content: b64, branch: 'main', ...(sha ? { sha } : {}) }) });
-  if (!r.ok) throw new Error('GitHub PUT ' + r.status + ' — ' + (await r.text()).slice(0, 200));
-  return r.json();
+  const res = await fetch('/api/admin/backup-pokemon-now', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': kpAdminKey() },
+    body: JSON.stringify({ files: [{ path, base64: b64 }], message }),
+  });
+  const body = await kpApiJson(res);
+  if (res.status === 401) { localStorage.removeItem('kp_admin_key'); throw new Error('Chave de admin inválida — tente de novo.'); }
+  if (!res.ok) throw new Error('Upload falhou (HTTP ' + res.status + '): ' + (body.error || ''));
+  return body;
+}
+// Commita o pokemon.json pela rota que o botão "Commit pokemon.json" já usa (gzip, p/ caber no limite da Vercel).
+async function kpCommitPokemonJson(rows){
+  const gz = await new Response(
+    new Blob([JSON.stringify(rows)]).stream().pipeThrough(new CompressionStream('gzip'))
+  ).arrayBuffer();
+  const res = await fetch('/api/admin/backup-pokemon-now', {
+    method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: gz,
+  });
+  const body = await kpApiJson(res);
+  if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (body.error || ''));
+  return body;
 }
 
 // Upload de sprite → GitHub (sprites/pokemon e sprites/pokemon/shiny). `slug` = slug final do Pokémon.
@@ -5739,8 +5759,7 @@ async function runUpdatePhotos() {
     });
     if (!changed) { alert('ℹ️ Nenhuma foto do Supabase pendente no pokemon.json — nada a atualizar.'); return; }
     if (!confirm(`${changed} Pokémon vão ter as fotos trocadas para o GitHub no pokemon.json. Continuar?`)) return;
-    const out = text.startsWith('[\n') ? JSON.stringify(rows, null, 2) : JSON.stringify(rows);
-    await kpGhPut('pokemon.json', kpBytesToB64(new TextEncoder().encode(out)), `Fotos: Supabase → GitHub (${changed} Pokémon)`);
+    await kpCommitPokemonJson(rows);
     alert(`✅ Pronto! ${changed} Pokémon atualizados.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
   } catch (e) {
     alert('❌ Falha ao atualizar as fotos: ' + e.message);
