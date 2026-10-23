@@ -1076,13 +1076,31 @@ function kpFixFormSprites(f){
     f[k]=KP_SPRITE_BASE+(m[2]?'shiny/':'')+encodeURIComponent(fn);
   });
 }
+// Converte URLs de sprite do GitHub no padrão ANTIGO ("[#001] - Slug.png") para o novo ("001-slug.png").
+// O pokemon.json ainda guarda as URLs antigas; sem isso a dex abria "[#002] - Squibole.png" em vez de "002-squibole.png".
+function kpRenameGhUrl(u){
+  if(!KP_NOME_NOVO||typeof u!=='string'||!u.startsWith(KP_SPRITE_BASE)) return u;
+  const [path,qs]=u.split('?'); const rest=path.slice(KP_SPRITE_BASE.length);
+  const shiny=rest.startsWith('shiny/'); let fn=rest.slice(shiny?6:0);
+  try{ fn=decodeURIComponent(fn); }catch(_){ return u; }
+  const m=/^\[#(\d+)\]\s*-\s*(.+)\.(png|jpe?g|webp)$/i.exec(fn); if(!m) return u;
+  const sl=kpSlugify(m[2]); if(!sl) return u;
+  const novo=`${m[1].padStart(3,'0')}-${sl}.${m[3].toLowerCase().replace('jpeg','jpg')}`;
+  return KP_SPRITE_BASE+(shiny?'shiny/':'')+encodeURIComponent(novo)+(qs?'?'+qs:'');
+}
+function kpRenameGhUrls(rec){
+  if(!rec||typeof rec!=='object') return rec;
+  ['sprite','sprite_shiny'].forEach(k=>{ if(rec[k]) rec[k]=kpRenameGhUrl(rec[k]); });
+  ['formas_alt','formas_alfa'].forEach(k=>{ if(Array.isArray(rec[k])) rec[k].forEach(f=>{ if(f&&typeof f==='object') ['sprite','sprite_shiny'].forEach(c=>{ if(f[c]) f[c]=kpRenameGhUrl(f[c]); }); }); });
+  return rec;
+}
 function kpFixSprites(rec){
   if(!rec||typeof rec!=='object') return rec;
   ['formas_alt','formas_alfa'].forEach(k=>{ if(Array.isArray(rec[k])) rec[k].forEach(kpFixFormSprites); });
   const isSb=u=>typeof u==='string'&&u.includes('.supabase.co/storage/');
   if(isSb(rec.sprite)){const g=kpGhSprite(rec,false); if(g) rec.sprite=g;}
   if(isSb(rec.sprite_shiny)){const g=kpGhSprite(rec,true); if(g) rec.sprite_shiny=g;}
-  return rec;
+  return kpRenameGhUrls(rec);
 }
 
 // Onde o ADM commita o pokemon.json. Preenchendo PK_JSON_REPO, a NationalDex
