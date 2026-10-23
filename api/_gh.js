@@ -3,14 +3,14 @@ const REPO = process.env.GH_REPO;               // ex.: "kingdomplatinum/fichas"
 const BRANCH = process.env.GH_BRANCH || 'main';
 const TOKEN = process.env.GH_TOKEN;             // PAT fine-grained: Contents = Read and write
 
-const need = () => { if (!REPO || !TOKEN) throw new Error('Servidor sem GH_REPO/GH_TOKEN configurados.'); };
+const need = (tok = TOKEN) => { if (!REPO || !tok) throw new Error('Servidor sem GH_REPO/GH_TOKEN configurados.'); };
 
-async function gh(path, opts = {}) {
-  need();
+async function gh(path, opts = {}, token = TOKEN) {
+  need(token);
   const r = await fetch('https://api.github.com/repos/' + REPO + path, {
     ...opts,
     headers: {
-      Authorization: 'Bearer ' + TOKEN,
+      Authorization: 'Bearer ' + token,
       Accept: 'application/vnd.github+json',
       'User-Agent': 'fichas-kp',
       'X-GitHub-Api-Version': '2022-11-28',
@@ -39,15 +39,18 @@ async function listDir(path, ref = BRANCH) {
   return Array.isArray(j) ? j.filter(x => x.type === 'file') : [];
 }
 
-// Faz UM commit com várias mudanças. build(parentSha) devolve [{path, content}] (content=null apaga).
+// Faz UM commit com várias mudanças. build(parentSha) devolve [{path, content}] (content=null apaga; content pode ser Buffer p/ binário).
+// 3º argumento opcional: { token } para usar outro PAT só neste commit.
 // Refaz tudo se alguém commitou ao mesmo tempo (conflito).
-async function commit(build, message) {
+async function commit(build, message, opts = {}) {
+  const token = opts.token || TOKEN; // opcional: permite usar outro token (ex.: GH_SPRITE_TOKEN)
+  const g = (p, o) => gh(p, o, token);
   const blobCache = new Map();
   for (let tentativa = 0; tentativa < 4; tentativa++) {
-    let r = await gh('/git/ref/heads/' + encodeURIComponent(BRANCH));
+    let r = await g('/git/ref/heads/' + encodeURIComponent(BRANCH));
     if (!r.ok) throw new Error('GitHub (ref) HTTP ' + r.status);
     const parent = (await r.json()).object.sha;
-    r = await gh('/git/commits/' + parent);
+    r = await g('/git/commits/' + parent);
     if (!r.ok) throw new Error('GitHub (commit) HTTP ' + r.status);
     const baseTree = (await r.json()).tree.sha;
 
@@ -61,19 +64,19 @@ async function commit(build, message) {
       const key = c.path + ':' + buf.length + ':' + buf.toString('base64').slice(0, 64);
       let sha = blobCache.get(key);
       if (!sha) {
-        const b = await gh('/git/blobs', { method: 'POST', body: JSON.stringify({ content: buf.toString('base64'), encoding: 'base64' }) });
+        const b = await g('/git/blobs', { method: 'POST', body: JSON.stringify({ content: buf.toString('base64'), encoding: 'base64' }) });
         if (!b.ok) throw new Error('GitHub (blob) HTTP ' + b.status);
         sha = (await b.json()).sha; blobCache.set(key, sha);
       }
       tree.push({ path: c.path, mode: '100644', type: 'blob', sha });
     }
-    r = await gh('/git/trees', { method: 'POST', body: JSON.stringify({ base_tree: baseTree, tree }) });
+    r = await g('/git/trees', { method: 'POST', body: JSON.stringify({ base_tree: baseTree, tree }) });
     if (!r.ok) throw new Error('GitHub (tree) HTTP ' + r.status);
     const newTree = (await r.json()).sha;
-    r = await gh('/git/commits', { method: 'POST', body: JSON.stringify({ message, tree: newTree, parents: [parent] }) });
+    r = await g('/git/commits', { method: 'POST', body: JSON.stringify({ message, tree: newTree, parents: [parent] }) });
     if (!r.ok) throw new Error('GitHub (novo commit) HTTP ' + r.status);
     const sha = (await r.json()).sha;
-    r = await gh('/git/refs/heads/' + encodeURIComponent(BRANCH), { method: 'PATCH', body: JSON.stringify({ sha, force: false }) });
+    r = await g('/git/refs/heads/' + encodeURIComponent(BRANCH), { method: 'PATCH', body: JSON.stringify({ sha, force: false }) });
     if (r.ok) return sha;
     if (r.status !== 422 && r.status !== 409) throw new Error('GitHub (atualizar ref) HTTP ' + r.status);
     // conflito: outro commit entrou no meio; tenta de novo
