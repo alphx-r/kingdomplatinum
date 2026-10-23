@@ -4,6 +4,8 @@
 //
 // POST  → o ADM manda o pokemon.json (gzip) e esta rota só COMMITA no GitHub
 //         usando o helper _gh.js. Não consulta o Supabase.
+// POST com Content-Type: application/json → upload de sprites (ver _upload-sprite.js).
+//         Fica aqui para não criar uma função nova (limite de 12 no plano Hobby).
 // GET   → comportamento antigo (backupPokemonToGithub, igual ao cron).
 //
 // Variáveis: GH_REPO, GH_TOKEN, GH_BRANCH (já usadas pelo _gh.js) e,
@@ -12,6 +14,7 @@
 
 import { gunzipSync } from 'node:zlib';
 import { commit, readFile } from '../_gh.js';
+import { handleUploadSprite } from '../_upload-sprite.js';
 import { backupPokemonToGithub } from '../../lib/backupPokemon.js';
 
 const JSON_PATH = process.env.POKEMON_JSON_PATH || 'pokemon.json';
@@ -29,6 +32,10 @@ export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ error: 'Método não permitido.' });
+  }
+  // POST em JSON = upload de sprite (o backup do pokemon.json manda application/octet-stream)
+  if (req.method === 'POST' && String(req.headers['content-type'] || '').includes('application/json')) {
+    return handleUploadSprite(req, res);
   }
   try {
     if (req.method === 'GET') {
@@ -58,7 +65,7 @@ export default async function handler(req, res) {
     }, `chore: atualiza pokemon.json (${rows.length} Pokémon) via ADM [skip ci]`);
 
     if (unchanged || !sha) return res.status(200).json({ unchanged: true, total: rows.length });
-    return res.status(200).json({ ok: true, total: rows.length, commit: sha });
+    return res.status(200).json({ ok: true, commit: sha, total: rows.length });
   } catch (e) {
     console.error('backup-pokemon-now falhou:', e);
     return res.status(e.statusCode || 500).json({ error: e.message });
