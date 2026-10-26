@@ -1783,7 +1783,7 @@ function enclMsg(t) { const el = document.getElementById('encl-msg'); if (el) el
 
 // id -> {nome, sprite} de todos os Pokémon e formas alternativas carregados no ADM
 function enclMontarIndicePk() {
-  ENCL.pk = {}; ENCL.nomes = {};
+  ENCL.pk = {}; ENCL.nomes = {}; ENCL._pkSplit = null;
   (S.pk.all || []).forEach(p => {
     ENCL.pk[String(p.id)] = { nome: p.name, sprite: p.sprite || null };
     ENCL.nomes[String(p.name).toLowerCase()] = String(p.id);
@@ -2127,7 +2127,8 @@ function kpResolverNome(info, mapa) {
   const chave = `${pre}${info.base}${ftag}`;
   const tenta = c => mapa.get(kpNorm(c));
   let id = tenta(chave);
-  if (!id && info.prefixo && ftag) id = tenta(`${pre}${info.base}`);          // "(P) Tauros (C/B/A)" → "(P) Tauros"
+  if (!id && info.prefixo && ftag) id = tenta(`${pre}${info.base}`);
+  if (!id && info.prefixo) id = tenta(`${info.base} (${info.prefixo})`) || tenta(`${info.base} ${info.prefixo}`);          // "(P) Tauros (C/B/A)" → "(P) Tauros"
   if (id) return { ids: [id], chave };
   if (info.formaTags.length === 1 && /^[A-Za-z]\/[A-Za-z]$/.test(info.formaTags[0])) {   // "Nidoran (F/M)" → as duas
     const ids = info.formaTags[0].split('/').map(g => tenta(`${pre}${info.base} (${g})`)).filter(Boolean);
@@ -2135,20 +2136,44 @@ function kpResolverNome(info, mapa) {
   }
   return { ids: [], chave };
 }
-function kpSugerir(chave, chaves) {
-  const k = kpNorm(chave); let melhor = null, d = 3;
-  for (const [nk, id] of chaves) { const dd = kpLev(k, nk, 2); if (dd < d) { d = dd; melhor = id; } else if (dd === d && melhor !== id && d <= 1) melhor = null; }
+// Sugestão por digitação: só compara com Pokémon do MESMO prefixo de forma — "(N) Hoothoot" nunca vira "Hoothoot".
+function kpSplitPrefixo(nome) {
+  const m = String(nome).match(/^\(([^)]{1,8})\)\s*(.+)$/);
+  return m ? { pre: kpNorm(m[1]), base: kpNorm(m[2]) } : { pre: '', base: kpNorm(nome) };
+}
+function kpSugerir(chave) {
+  if (!ENCL._pkSplit) ENCL._pkSplit = Object.entries(ENCL.pk).map(([id, x]) => ({ id, ...kpSplitPrefixo(x.nome) }));
+  const q = kpSplitPrefixo(chave.replace(/\s*\([^)]*\)\s*$/, ''));
+  let melhor = null, d = 3;
+  for (const c of ENCL._pkSplit) {
+    if (c.pre !== q.pre) continue;
+    const dd = kpLev(q.base, c.base, 2);
+    if (dd < d) { d = dd; melhor = c.id; } else if (dd === d && melhor !== c.id && d <= 1) melhor = null;
+  }
   return melhor ? { id: melhor, dist: d } : null;
+}
+// Locais com nome quase igual (erro de digitação de até 2 letras, só em nomes longos — "Rota 1" e "Rota 2" nunca se confundem)
+function kpLocalProximo(txt, norm) {
+  const k = kpNorm(txt); if (k.length < 10) return null;
+  let best = null, d = 3;
+  for (const [nk, n] of norm) { const dd = kpLev(k, nk, 2); if (dd < d) { d = dd; best = n; } }
+  return best;
+}
+function kpLocaisParecidos(txt) {
+  const k = kpNorm(txt);
+  return ENCL.locais.map(l => ({ n: l.nome, d: kpLev(k, kpNorm(l.nome), 8) })).filter(x => x.d <= 6).sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.n);
 }
 function kpResolverLocais(titulo) {
   const norm = new Map(ENCL.locais.map(l => [kpNorm(l.nome), l.nome]));
   const parens = (titulo.match(/\(([^)]*)\)/g) || []).map(x => x.slice(1, -1));
   const t = titulo.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   if (norm.has(kpNorm(t))) return { nomes: [norm.get(kpNorm(t))], faltam: [] };
+  const aprox = kpLocalProximo(t, norm);
+  if (aprox) { KPIMP.locaisAprox.push(`${t} → ${aprox}`); return { nomes: [aprox], faltam: [] }; }
   const nomes = [], faltam = [];
   const partes = t.split(/\s*,\s*|\s+e\s+/i).map(x => x.trim()).filter(Boolean);
   if (partes.length > 1) {
-    partes.forEach(p => { const n = norm.get(kpNorm(p)); if (n) nomes.push(n); else faltam.push(p); });
+    partes.forEach(p => { const n = norm.get(kpNorm(p)) || kpLocalProximo(p, norm); if (n) nomes.push(n); else faltam.push(p); });
     return { nomes, faltam };
   }
   // "Neo Techland (Sewers e Outskirts)" → procura "Neo Techland Sewers"/"Neo Techland Outskirts" ou qualquer Local que comece com o título
@@ -2193,11 +2218,11 @@ async function kpImpLerArquivo(input) {
 }
 function kpImpMontarPlano() {
   const mapa = kpMapaNomes();
-  KPIMP.itens = []; KPIMP.semLocal = []; KPIMP.ignorados = []; KPIMP.corrigidos = []; KPIMP.pend = [];
+  KPIMP.itens = []; KPIMP.semLocal = []; KPIMP.ignorados = []; KPIMP.corrigidos = []; KPIMP.pend = []; KPIMP.locaisAprox = [];
   const pendMap = new Map(); let total = 0, casadas = 0;
   KPIMP.secoes.forEach(sec => {
     const L = kpResolverLocais(sec.titulo);
-    L.faltam.forEach(n => KPIMP.semLocal.push(`${n} (do título “${sec.titulo}”)`));
+    L.faltam.forEach(n => { const par = kpLocaisParecidos(n); KPIMP.semLocal.push(`${n}${par.length ? ` (mais parecidos no sistema: ${par.join(', ')})` : ' (nenhum parecido no sistema)'}`); });
     if (!L.nomes.length) return;
     ENCL_RAR.forEach(rar => (sec[rar] || []).forEach(txt => {
       total++;
@@ -2223,11 +2248,12 @@ function kpImpMontarPlano() {
   const res = document.getElementById('kpimp-resumo');
   res.innerHTML = `<div><b>${KPIMP.secoes.length}</b> seções lidas do PDF → <b>${locaisUsados.size}</b> Locais do sistema · <b>${total}</b> entradas · <b style="color:var(--green,#2e7d32)">${casadas}</b> casadas (${KPIMP.corrigidos.length} com correção automática) · <b>${KPIMP.ignorados.length}</b> ignoradas (Quest) · <b style="color:${KPIMP.pend.length ? 'var(--red)' : 'inherit'}">${KPIMP.pend.length}</b> nomes sem correspondência</div>`
     + (KPIMP.semLocal.length ? `<div style="color:var(--red);margin-top:6px">Locais do PDF que não existem no sistema (ficam de fora): ${KPIMP.semLocal.map(enclEsc).join('; ')}</div>` : '')
+    + (KPIMP.locaisAprox.length ? `<div style="margin-top:6px">Locais casados por nome parecido: ${KPIMP.locaisAprox.map(enclEsc).join('; ')}</div>` : '')
     + (KPIMP.corrigidos.length ? `<details style="margin-top:6px"><summary>Correções automáticas de digitação (${KPIMP.corrigidos.length})</summary><div style="opacity:.85">${KPIMP.corrigidos.map(enclEsc).join('<br>')}</div></details>` : '')
     + (KPIMP.ignorados.length ? `<details style="margin-top:6px"><summary>Ignoradas por serem (Quest) (${KPIMP.ignorados.length})</summary><div style="opacity:.85">${KPIMP.ignorados.map(enclEsc).join('<br>')}</div></details>` : '');
   document.getElementById('kpimp-pend').innerHTML = KPIMP.pend.length
-    ? `<div style="font-weight:700;margin:10px 0 4px">Sem correspondência — escolha o Pokémon certo (ou deixe em branco para pular):</div>`
-      + KPIMP.pend.map((p, i) => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap"><span style="min-width:170px;font-size:12px"><b>${enclEsc(p.chave)}</b> <span style="color:var(--muted)">×${p.qtd}</span></span><input type="text" list="encl-dl" id="kpimp-pend-${i}" value="${enclEsc(p.sug)}" placeholder="nome no sistema…" style="flex:1;min-width:160px;font-size:12px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px"><span style="font-size:10px;color:var(--muted)" title="${enclEsc([...p.onde].join(', '))}">${enclEsc([...p.onde].slice(0, 2).join(', '))}${p.onde.size > 2 ? '…' : ''}</span></div>`).join('')
+    ? `<div style="font-weight:700;margin:10px 0 4px">Sem correspondência — escolha o Pokémon certo no campo, ou marque “criar” (com o campo vazio) para cadastrar como rascunho sem dados, que não aparece para os players. Sem nenhum dos dois, a entrada é pulada:</div>`
+      + KPIMP.pend.map((p, i) => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap"><span style="min-width:170px;font-size:12px"><b>${enclEsc(p.chave)}</b> <span style="color:var(--muted)">×${p.qtd}</span></span><input type="text" list="encl-dl" id="kpimp-pend-${i}" value="${enclEsc(p.sug)}" placeholder="nome no sistema…" style="flex:1;min-width:160px;font-size:12px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px"><label style="font-size:11px;white-space:nowrap;cursor:pointer" title="Cadastra “${enclEsc(p.chave)}” no sistema como rascunho sem dados (approved=false, não aparece para os players). Só vale se o campo ao lado estiver vazio."><input type="checkbox" id="kpimp-cr-${i}" ${p.sug ? '' : 'checked'}> criar</label><span style="font-size:10px;color:var(--muted)" title="${enclEsc([...p.onde].join(', '))}">${enclEsc([...p.onde].slice(0, 2).join(', '))}${p.onde.size > 2 ? '…' : ''}</span></div>`).join('')
     : '';
   document.getElementById('kpimp-apply').disabled = !KPIMP.itens.length;
 }
@@ -2237,14 +2263,45 @@ function kpRegrasDoItem(item) {
   const conds = item.info.conds.length ? item.info.conds : [{ categoria: 'clima', condicao: 'sempre' }];
   return conds.map(c => ({ ...c, raridade: item.rar }));
 }
+// próximo número N#### livre (Pokémon Nendo/fakemon) com base na lista carregada
+function kpProximoN() {
+  let max = 0;
+  const ids = Object.keys(ENCL.pk || {}).concat((S.pk.all || []).map(p => String(p.id)));
+  ids.forEach(id => { const m = /^N0*(\d+)$/i.exec(id); if (m) max = Math.max(max, parseInt(m[1], 10)); });
+  return max + 1;
+}
 async function kpImpAplicar() {
   const modo = document.querySelector('input[name="kpimp-modo"]:checked').value;   // 'substituir' | 'adicionar'
-  const manual = {};
+  const manual = {}, aCriar = [];
   KPIMP.pend.forEach((p, i) => {
-    const v = (document.getElementById('kpimp-pend-' + i)?.value || '').trim(); if (!v) return;
+    const v = (document.getElementById('kpimp-pend-' + i)?.value || '').trim();
+    if (!v) { if (document.getElementById('kpimp-cr-' + i)?.checked) aCriar.push(p.chave); return; }
     const id = ENCL.nomes[v.toLowerCase()];
     if (id) manual[p.chave] = id; else toast(`“${v}” não é um nome válido do sistema — ${p.chave} será pulado.`, 'err');
   });
+  if (aCriar.length) {
+    if (!confirm(`Cadastrar ${aCriar.length} Pokémon sem dados (rascunho, não aparecem para os players)?\n\n${aCriar.slice(0, 15).join(', ')}${aCriar.length > 15 ? '…' : ''}`)) return;
+    document.getElementById('kpimp-resumo').textContent = 'Cadastrando Pokémon sem dados…';
+    const criados = [], falhas = [];
+    try {
+      let n = kpProximoN();
+      try {   // maior N já gravado no banco (a lista carregada pode estar incompleta)
+        const r = await fetch(`${SUPA_URL}/rest/v1/pokemons?select=id&id=like.N*&order=id.desc&limit=1`, { headers: SH });
+        const j = r.ok ? await r.json() : null;
+        const m = j && j[0] && /^N0*(\d+)$/i.exec(j[0].id); if (m) n = Math.max(n, parseInt(m[1], 10) + 1);
+      } catch (_) {}
+      for (const nome of aCriar) {
+        const id = 'N' + String(n).padStart(4, '0');
+        try {
+          await sbUpsert('pokemons', { id, name: nome, is_fakemon: true, source: 'import-locais', approved: false, updated_at: new Date().toISOString() });
+          n++; manual[nome] = id; criados.push(nome);
+          ENCL.pk[id] = { nome, sprite: null }; ENCL.nomes[nome.toLowerCase()] = id;
+        } catch (e) { falhas.push(`${nome}: ${e.message}`); if (!criados.length && falhas.length >= 2) break; }
+      }
+    } catch (e) { falhas.push(e.message); }
+    if (falhas.length) alert(`❌ ${falhas.length} Pokémon não foram cadastrados (essas entradas serão puladas):\n${falhas.slice(0, 4).join('\n')}${falhas.length > 4 ? '\n…' : ''}\n\nSe aparecer exceed_egress_quota, o banco do DataDex ainda está bloqueado para escrita.`);
+    if (criados.length) toast(`${criados.length} Pokémon cadastrados como rascunho.`, 'ok');
+  }
   const porLocal = {};   // local -> Map(pokemon_id -> regras[])
   let puladas = 0;
   KPIMP.itens.forEach(item => {
@@ -2315,7 +2372,7 @@ async function limparBiomasPokemons() {
         Object.assign(r, patch);
         const pk = (S.pk.all || []).find(p => String(p.id) === String(r.id)); if (pk) Object.assign(pk, patch);
         ok++;
-      } catch (e) { falhas.push(`${r.id}: ${e.message}`); }
+      } catch (e) { falhas.push(`${r.id}: ${e.message}`); if (ok === 0 && falhas.length >= 3) fila.length = 0; }   // banco recusando tudo (ex.: cota) → para logo
     }
   };
   toast('Limpando biomas…');
