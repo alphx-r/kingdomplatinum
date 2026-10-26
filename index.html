@@ -3547,7 +3547,7 @@ function calcSyncSelects(){
   <div id="roller-modo-encontro">
   <div id="niveis-box" class="niv-box" style="display:none"></div>
   <div class="roller-controls">
-    <div class="ctrl-group"><label>Bioma <span id="bioma-fallback-badge" title="Supabase indisponível — rolando com backup (pokemon.json)" style="display:none;cursor:help">⚠️</span></label><select id="bioma" onchange="atualizarHoneyStatus()"></select></div>
+    <div class="ctrl-group"><label>Local <span id="bioma-fallback-badge" title="Supabase indisponível — rolando com backup (pokemon.json)" style="display:none;cursor:help">⚠️</span></label><select id="bioma" onchange="atualizarHoneyStatus()"></select></div>
     <div class="ctrl-group">
       <label>Personagem</label>
       <select id="personagem" required onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim());atualizarHoneyStatus()">
@@ -8060,16 +8060,31 @@ function locaisEncontroNomes(extras){
   return out;
 }
 async function carregarLocaisEncontro(){
-  if(!admLogado) return;   // Locais só aparecem para ADM
   try{
-    const rows=await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/locais?select=nome,bioma_primario,bioma_secundario,bioma_terciario&encontro=eq.true`, DATADEX_SH);
-    (rows||[]).forEach(r=>{ if(r.nome) LOCAIS_COMPOSICAO[r.nome]=[r.bioma_primario||null,r.bioma_secundario||null,r.bioma_terciario||null]; });
-    const nomes=(rows||[]).map(r=>r.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
-    if(!nomes.length) return;          // coluna vazia/inexistente: mantém a lista reserva
-    LOCAIS_ENCONTRO_DB=nomes;
+    const rows=await dbGet('locais_encontro','select=nome,ordem,bioma_primario,bioma_secundario,bioma_terciario&order=ordem.asc');
+    if(!Array.isArray(rows)||!rows.length) return;   // tabela ainda não criada/vazia: mantém a lista reserva
+    LOCAIS_ENCONTRO_DB=rows.map(r=>r.nome).filter(Boolean);
+    rows.forEach(r=>{ if(r.nome) LOCAIS_COMPOSICAO[r.nome]=[r.bioma_primario||null,r.bioma_secundario||null,r.bioma_terciario||null]; });
     if(document.getElementById('bioma')) syncBiomaSelect();
     syncBiomaSelects();
   }catch(e){ console.warn('[locais] usando lista reserva:', e); }
+}
+
+// ── Lista de Pokémon de cada Local (tabela `encontros_local`, banco principal) ──
+// Quando o Local tem lista cadastrada, ela é a ÚNICA fonte do pool (sem dedução por bioma).
+// Local sem lista (ou banco fora do ar) cai na dedução automática pelos biomas.
+let ENC_LOCAL_TAB = {};      // local -> { pokemon_id: regras[] }
+let _encLocalTs = {};        // local -> quando foi buscado (cache curto, só dos Locais já usados)
+async function garantirEncontrosLocal(local, forcar){
+  if(!local || !LOCAIS_COMPOSICAO[local]) return;                 // não é um Local (é bioma de evento etc.)
+  if(!forcar && _encLocalTs[local] && Date.now()-_encLocalTs[local] < 60000) return;
+  try{
+    const rows=await dbGet('encontros_local','select=pokemon_id,regras&local=eq.'+encodeURIComponent(local));
+    const mapa={};
+    (rows||[]).forEach(r=>{ mapa[String(r.pokemon_id)]=Array.isArray(r.regras)?r.regras:[]; });
+    ENC_LOCAL_TAB[local]=Object.keys(mapa).length?mapa:undefined;
+    _encLocalTs[local]=Date.now();
+  }catch(e){ console.warn('[encontros_local] usando dedução por bioma em', local, e); }
 }
 // Chamar sempre que o estado de ADM mudar (login, logout, sessão restaurada).
 function atualizarSeletoresLocais(){
@@ -8125,7 +8140,7 @@ function renderTbodyBiomas(){
 function syncBiomaSelect(){
   const sel=document.getElementById('bioma');
   const atualSel=sel.value;
-  sel.innerHTML=biomaLocalOptionsHtml();
+  sel.innerHTML=locaisEncontroNomes().map(n=>`<option value="${n}">${n}</option>`).join('');
   if(atualSel&&[...sel.options].some(o=>o.value===atualSel)) sel.value=atualSel;
   if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus();
 }
@@ -11721,6 +11736,12 @@ function pkCondLabel(r){
 }
 // Todas as regras {raridade, condicao(texto exibível)} do Pokémon naquele bioma/local ([] se não tiver).
 function pkRegrasNoBioma(p, bioma){
+  const tabLocal=ENC_LOCAL_TAB[bioma];
+  if(tabLocal){   // Local com lista própria cadastrada (encontros_local)
+    const rg=tabLocal[String(p.id)];
+    if(!rg||!rg.length) return [];
+    return rg.map(r=>r.legado?{raridade:r.raridade||'comum',condicao:r.condicao||null}:{raridade:r.raridade||'comum',condicao:pkCondLabel(r)});
+  }
   const entry=(p.biomas||[]).find(b=>(typeof b==='string'?b:b.nome)===bioma);
   if(!entry) return pkRegrasDerivadas(p,bioma);
   if(typeof entry==='string') return [{raridade:p.raridade||'comum',condicao:p.condicao||null}];
@@ -11748,7 +11769,10 @@ function pkTemBioma(p, bioma){
 function pkAltFormUnits(p){
   if(!p.formas_alt||!p.formas_alt.length) return [];
   return p.formas_alt.map((f,i)=>{
-    if(!f.biomas||!f.biomas.length) return null;
+    // Forma sem biomas próprios só entra se estiver na lista de algum Local (encontros_local)
+    const _uid=`${p.id}::alt${i}`;
+    const _naLista=Object.values(ENC_LOCAL_TAB).some(m=>m&&m[_uid]);
+    if((!f.biomas||!f.biomas.length)&&!_naLista) return null;
     return {
       id:`${p.id}::alt${i}`,
       name:f.nome, nome:f.nome,
@@ -11759,7 +11783,7 @@ function pkAltFormUnits(p){
       sprite:f.sprite||p.sprite||null, sprite_shiny:p.sprite_shiny||null,
       emoji:p.emoji||'❓', genero:p.genero,
       estacao:p.estacao||null, estacao_boost:p.estacao_boost||null,
-      biomas:f.biomas,
+      biomas:f.biomas||[],
       _rankingNecessario:pkRankingNecessario(p),
       _isAltForm:true, _baseId:p.id, _altIndex:i
     };
@@ -12292,6 +12316,7 @@ async function locEncVerForcado(personagem) {
 async function locEncRolar() {
   const local = document.getElementById('locenc-local')?.value;
   if (!local) { alert(`Selecione um ${LOCENC_FONTE === 'bioma' ? 'bioma' : 'local'}.`); return; }
+  await garantirEncontrosLocal(local);
   const personagem = (document.getElementById('locenc-personagem')?.value || '').trim();
   if (!personagem) {
     alert('Selecione o personagem antes de rolar!');
@@ -12635,6 +12660,7 @@ async function rolarEncontro(){
   if(personagem) localStorage.setItem('ultimo_personagem', personagem);
   const adicionais=0;
   const bioma=document.getElementById('bioma').value;
+  await garantirEncontrosLocal(bioma);
   if(!_honeyStateCarregado) await carregarHoneyState();
   const honeyCheckbox=document.getElementById('bonus-honey');
   const honeyMarcadoAgora=!!honeyCheckbox?.checked;
@@ -13142,6 +13168,7 @@ async function rerollarPokeFalho(entryId, pkIdx, btnEl){
   if(btnEl){ btnEl.disabled=true; btnEl.textContent='Rolando...'; }
   try{
     const bioma=entry.bioma;
+    await garantirEncontrosLocal(bioma);
     const personagem=entry.personagem;
     const rankingAtivo=getPersonagemRanking(personagem);
     const raridades=['comum','incomum','raro','rarissimo'];
