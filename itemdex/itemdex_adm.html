@@ -880,7 +880,7 @@ async function sbFetchAllPages(url, headers, pageSize = 1000) {
   return all;
 }
 
-async function sbUpsert(table, row, _retriedMissing) {
+async function sbUpsertRaw(table, row, _retriedMissing) {
   _retriedMissing = _retriedMissing || new Set();
   const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
     method: 'POST',
@@ -901,7 +901,7 @@ async function sbUpsert(table, row, _retriedMissing) {
       delete rowSemCampo[m[1]];
       _retriedMissing.add(m[1]);
       if (typeof toast === 'function') toast(`⚠️ Campo "${m[1]}" não foi salvo (coluna não existe no banco ainda) — o resto foi salvo normalmente.`, 'err');
-      return sbUpsert(table, rowSemCampo, _retriedMissing);
+      return sbUpsertRaw(table, rowSemCampo, _retriedMissing);
     }
     throw new Error(errText);
   }
@@ -911,13 +911,82 @@ async function sbUpsert(table, row, _retriedMissing) {
 
 // Exclui uma linha pelo campo "name" — usado por abilities/moves, cuja
 // chave é o nome (slug) e não um "id" numérico.
-async function sbDeleteByName(table, name) {
+async function sbDeleteByNameRaw(table, name) {
   const r = await fetch(`${SUPA_URL}/rest/v1/${table}?name=eq.${encodeURIComponent(name)}`, {
     method: 'DELETE',
     headers: SH
   });
   if (!r.ok) throw new Error(await r.text());
 }
+
+/* ══════════════════════════════════════════
+   ITENS: items.json é a fonte de EXIBIÇÃO (não gasta cota do Supabase).
+   Toda gravação de item tenta o Supabase; se ele estiver indisponível (ex.: exceed_egress_quota),
+   a alteração fica só no items.json. Em qualquer caso o items.json é commitado sozinho, em lote,
+   alguns segundos depois da última alteração (um commit só, mesmo com várias edições seguidas).
+══════════════════════════════════════════ */
+const SUPA_DOWN_RE = /egress|restricted|quota|failed to fetch|networkerror|load failed/i;
+let _supaDownWarned = false;
+function supaDownFallback(e) {
+  if (!SUPA_DOWN_RE.test(String(e && e.message || e))) return false;
+  if (!_supaDownWarned) {
+    _supaDownWarned = true;
+    if (typeof toast === 'function') toast('⚠️ Supabase indisponível (cota excedida) — salvando só no items.json.', 'err');
+  }
+  return true;
+}
+async function sbUpsert(table, row, _r) {
+  if (table !== 'items') return sbUpsertRaw(table, row, _r);
+  let out = {};
+  try { out = await sbUpsertRaw(table, row, _r); }
+  catch (e) { if (!supaDownFallback(e)) throw e; }
+  scheduleItemsCommit();
+  return out;
+}
+async function sbDeleteByName(table, name) {
+  if (table !== 'items') return sbDeleteByNameRaw(table, name);
+  try { await sbDeleteByNameRaw(table, name); }
+  catch (e) { if (!supaDownFallback(e)) throw e; }
+  scheduleItemsCommit();
+}
+const ITEMS_COMMIT_MS = 8000;
+let _itemsCommitTimer = null, _itemsCommitBusy = false, _itemsCommitAgain = false;
+function scheduleItemsCommit() {
+  if (!S.it.jsonReady) return;   // só sobrescreve o items.json depois de ter carregado a lista inteira
+  S.it.commitPending = true;
+  clearTimeout(_itemsCommitTimer);
+  _itemsCommitTimer = setTimeout(pushItemsJson, ITEMS_COMMIT_MS);
+}
+function buildItemsPayload() {
+  return S.it.all.map(it => ({
+    name: it.name,
+    category: it.category || null,
+    item_desc: it.item_desc || null,
+    sprite: it.sprite || null,
+    flags: it.flags || {},
+    price: it.price ?? null,
+  }));
+}
+async function pushItemsJson() {
+  if (_itemsCommitBusy) { _itemsCommitAgain = true; return; }
+  if (!S.it.jsonReady || !S.it.all.length) return;
+  _itemsCommitBusy = true; S.it.commitPending = false;
+  try {
+    const data = buildItemsPayload();
+    const res = await fetch('/api/commit-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: data }) });
+    let result = {};
+    try { result = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+    toast(`✅ items.json atualizado no GitHub (${data.length} itens).`, 'ok');
+  } catch (e) {
+    S.it.commitPending = true;
+    toast('Erro ao commitar items.json: ' + e.message + ' — use "Commitar items.json" para tentar de novo.', 'err');
+  } finally {
+    _itemsCommitBusy = false;
+    if (_itemsCommitAgain) { _itemsCommitAgain = false; scheduleItemsCommit(); }
+  }
+}
+addEventListener('beforeunload', e => { if (S.it && S.it.commitPending) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ══════════════════════════════════════════
    HELPERS
@@ -1175,19 +1244,50 @@ function categoryOptionsHtml(current) {
   return opts.join('');
 }
 
+// items.json (raiz do repo; o ItemDex público e as fichas usam o mesmo arquivo). Aceita nomes de campo em PT/EN.
+const ITEMS_JSON_URLS = ['/itemdex/items.json', '/items.json'];
+async function fetchItemsJson() {
+  for (const u of ITEMS_JSON_URLS) {
+    try {
+      const r = await fetch(u + '?v=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const l = Array.isArray(d) ? d : (d && (d.items || d.itens)) || [];
+      const rows = l.map(x => {
+        const name = x && (x.name || x.nome);
+        if (!name) return null;
+        return {
+          ...x,
+          name: String(name).trim(),
+          category: (x.category || x.categoria || '').toString().trim() || null,
+          item_desc: x.item_desc || x.desc || x.descricao || null,
+          sprite: x.sprite || x.image || x.img || null,
+          flags: (x.flags && typeof x.flags === 'object') ? x.flags : {},
+          price: x.price ?? x.preco ?? null,
+        };
+      }).filter(Boolean);
+      if (rows.length) return rows;
+    } catch (e) {}
+  }
+  return null;
+}
+
 async function loadItems() {
   try {
-    const dbRows = await sbSelect('items');
+    let rows = await fetchItemsJson();
+    S.it.source = rows ? 'json' : 'supabase';
+    if (!rows) rows = await sbSelect('items');   // reserva: só se o items.json não carregar
     S.it.dbMap = {};
-    dbRows.forEach(r => { S.it.dbMap[r.name] = r; });
-    const items = dbRows.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    rows.forEach(r => { S.it.dbMap[r.name] = r; });
+    const items = rows.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     S.it.all = items;
     S.it.filtered = items;
+    S.it.jsonReady = true;
     populateItemCategoryFilter();
     applyItFilter();
-    // Dispara em background, sem await: itens sem sprite tentam se
-    // auto-resolver na PokeAPI enquanto o usuário já pode usar a tela.
-    autoFetchMissingItemSprites();
+    // Varredura de sprites usa Supabase Storage: só roda quando a lista veio do Supabase
+    // (com o items.json, os ícones vêm do GitHub e não se gasta cota).
+    if (S.it.source === 'supabase') autoFetchMissingItemSprites();
   } catch (e) {
     document.getElementById('it-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar itens</div></div>`;
   }
@@ -1868,14 +1968,7 @@ async function backupItemsNow() {
   const origLabel = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
   try {
-    const data = S.it.all.map(it => ({
-      name: it.name,
-      category: it.category || null,
-      item_desc: it.item_desc || null,
-      sprite: it.sprite || null,
-      flags: it.flags || {},
-      price: it.price ?? null,
-    }));
+    const data = buildItemsPayload();
     const res = await fetch('/api/commit-items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1884,6 +1977,7 @@ async function backupItemsNow() {
     let result = {};
     try { result = await res.json(); } catch (e) {}
     if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+    S.it.commitPending = false; clearTimeout(_itemsCommitTimer);
     toast(`✅ items.json commitado no GitHub (${data.length} itens).`, 'ok');
   } catch (e) {
     toast('Erro ao commitar items.json: ' + e.message, 'err');
