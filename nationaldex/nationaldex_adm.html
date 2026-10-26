@@ -647,7 +647,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
   <!-- ENCONTROS POR LOCAL (lista de Pokémon de cada Local — banco principal ucbkod) -->
   <div class="panel" id="panel-encl">
     <div class="encl-wrap">
-      <div class="encl-help">Lista de Pokémon de <b>cada Local</b> (usada pelo Rolador de Encontros). Fica no banco principal (<code>encontros_local</code>), independente do DataDex. Local sem lista usa a dedução automática pelos biomas.</div>
+      <div class="encl-help">Lista de Pokémon de <b>cada Local</b> (usada pelo Rolador de Encontros). Fica gravada no <code>pokemon.json</code>, junto com os dados de cada Pokémon (campo <code>encontros_local</code>). Local sem lista usa a dedução automática pelos biomas.</div>
       <div class="encl-bar">
         <select id="encl-local" onchange="enclSelecionar(this.value)"><option>Carregando…</option></select>
         <span id="encl-info" class="encl-info"></span>
@@ -660,6 +660,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button type="button" class="btn btn-outline" onclick="enclGerarDoLocal()" title="Adiciona os Pokémon deduzidos dos biomas deste Local (não altera nem apaga os que já estão na lista)">⚙️ Gerar a partir dos biomas</button>
         <button type="button" class="btn btn-outline" onclick="enclGerarTodos()" title="Faz o mesmo para todos os Locais que ainda estão com a lista vazia">⚙️ Gerar todos os vazios</button>
         <button type="button" class="btn btn-outline" onclick="kpImpAbrir()" title="Lê o PDF “Pokémon por Bioma” — ou uma imagem/print da tabela (pode colar com Ctrl+V) — e grava a lista de cada Local (raridade + condição)">📥 Importar PDF / Imagem</button>
+        <button type="button" class="btn btn-outline" onclick="enclMigrarDoSupabase()" title="Copia para o pokemon.json as listas que ainda estão no Supabase (use uma vez; Locais que já têm lista no pokemon.json não mudam)">⬇️ Trazer do Supabase</button>
         <button type="button" class="btn btn-danger" onclick="enclEsvaziar()">🧹 Esvaziar este Local</button>
       </div>
       <div id="encl-msg" class="encl-msg"></div>
@@ -1829,7 +1830,7 @@ async function gTranslate(text) {
 
 /* ══════════════════════════════════════════
    ██ ENCONTROS POR LOCAL — lista de Pokémon de cada Local
-   Banco PRINCIPAL (OLD_SUPA_URL / ucbkod), tabelas `locais_encontro` e `encontros_local`.
+   Lista de Locais (`locais_encontro`) ainda é lida do Supabase; as listas de Pokémon por Local ficam no pokemon.json (campo `encontros_local` de cada Pokémon/forma).
    Independe do DataDex: continua funcionando com ele restrito (a lista de Pokémon
    para busca vem de S.pk.all, que cai no pokemon.json do GitHub se o DataDex falhar).
 ══════════════════════════════════════════ */
@@ -1864,22 +1865,60 @@ function enclMontarIndicePk() {
   if (dl) dl.innerHTML = Object.values(ENCL.pk).map(x => `<option value="${enclEsc(x.nome)}"></option>`).join('');
 }
 
-async function enclCarregarContagem() {
-  const cont = {};
-  for (let from = 0; ; from += 1000) {
-    const page = await enclReq('encontros_local?select=local', { headers: { 'Range': `${from}-${from + 999}`, 'Range-Unit': 'items' } });
-    (page || []).forEach(r => { cont[r.local] = (cont[r.local] || 0) + 1; });
-    if (!page || page.length < 1000) break;
-  }
-  ENCL.contagem = cont;
+/* ── Encontros por Local ficam DENTRO do pokemon.json, junto com os dados de cada Pokémon ──
+   Campo `encontros_local: [{ local, regras:[{categoria,condicao,raridade}|{legado,condicao,raridade}] }]`
+   no registro do Pokémon base; para formas alternativas ("77::alt0") fica em formas_alt[0].encontros_local. */
+function enclTodos(cb) {
+  Object.values(S.pk.dbMap || {}).forEach(row => {
+    cb(String(row.id), row, row);
+    (row.formas_alt || []).forEach((f, i) => { if (f && typeof f === 'object') cb(`${row.id}::alt${i}`, f, row); });
+  });
+}
+function enclAlvo(pid) {
+  const [base, alt] = String(pid).split('::alt');
+  const row = (S.pk.dbMap || {})[base]; if (!row) return null;
+  if (alt === undefined) return { obj: row, row };
+  const f = (row.formas_alt || [])[parseInt(alt, 10)];
+  return f && typeof f === 'object' ? { obj: f, row } : null;
+}
+function enclTemLocal(pid, local) { const t = enclAlvo(pid); return !!(t && (t.obj.encontros_local || []).some(x => x.local === local)); }
+function enclSetRegras(pid, local, regras) {
+  pkjCheck();
+  const t = enclAlvo(pid); if (!t) return false;
+  if (!Array.isArray(t.obj.encontros_local)) t.obj.encontros_local = [];
+  const e = t.obj.encontros_local.find(x => x.local === local);
+  if (e) e.regras = regras; else t.obj.encontros_local.push({ local, regras });
+  t.row.updated_at = new Date().toISOString(); pkjSujo(); return true;
+}
+function enclTirarLocal(pid, local) {
+  pkjCheck();
+  const t = enclAlvo(pid); if (!t || !Array.isArray(t.obj.encontros_local)) return false;
+  const n = t.obj.encontros_local.length;
+  t.obj.encontros_local = t.obj.encontros_local.filter(x => x.local !== local);
+  if (!t.obj.encontros_local.length) delete t.obj.encontros_local;
+  const mudou = (t.obj.encontros_local || []).length !== n;
+  if (mudou) { t.row.updated_at = new Date().toISOString(); pkjSujo(); }
+  return mudou;
+}
+function enclLimparLocal(local) { let n = 0; enclTodos(pid => { if (enclTirarLocal(pid, local)) n++; }); return n; }
+function enclLinhasDoLocal(nome) {
+  const rows = []; let n = 0;
+  enclTodos((pid, obj) => { const e = (obj.encontros_local || []).find(x => x.local === nome); if (e) rows.push({ id: ++n, pokemon_id: pid, pokemon_nome: (ENCL.pk[pid] || {}).nome || pid, regras: e.regras || [] }); });
+  return rows.sort((a, b) => String(a.pokemon_nome).localeCompare(String(b.pokemon_nome), 'pt-BR'));
 }
 
+async function enclCarregarContagem() {
+  const cont = {};
+  enclTodos((pid, obj) => (obj.encontros_local || []).forEach(e => { cont[e.local] = (cont[e.local] || 0) + 1; }));
+  ENCL.contagem = cont;
+}
 async function enclInit() {
   if (!ENCL.loaded) {
     try {
       enclMsg('Carregando Locais…');
       ENCL.locais = await enclReq('locais_encontro?select=*&order=ordem.asc') || [];
       if (!ENCL.locais.length) { enclMsg('A tabela locais_encontro está vazia. Rode o encontros_local.sql no Supabase (projeto ucbkod).'); return; }
+      if (!PKJ.loaded) { enclMsg('Carregando pokemon.json…'); await pkjLoad(); }
       await enclCarregarContagem();
       ENCL.loaded = true;
     } catch (e) {
@@ -1900,16 +1939,12 @@ function enclRenderSelect() {
 }
 
 async function enclSelecionar(nome) {
-  ENCL.local = nome; ENCL.edit = null; ENCL.rows = [];
-  enclMsg('Carregando lista…'); enclRender();
-  try {
-    ENCL.rows = await enclReq('encontros_local?select=id,pokemon_id,pokemon_nome,regras&local=eq.' + encodeURIComponent(nome) + '&order=pokemon_nome.asc') || [];
-    ENCL.contagem[nome] = ENCL.rows.length;
-    enclMsg('');
-  } catch (e) { enclMsg('Erro ao carregar: ' + e.message); }
+  ENCL.local = nome; ENCL.edit = null;
+  ENCL.rows = enclLinhasDoLocal(nome);
+  ENCL.contagem[nome] = ENCL.rows.length;
+  enclMsg('');
   enclRenderSelect(); enclRender();
 }
-
 function enclChipsHtml(regras) {
   return (regras || []).map(r => {
     const rar = r.raridade || 'comum';
@@ -1975,18 +2010,21 @@ function enclAddRegra() { if (ENCL.edit) { ENCL.edit.regras.push(regraPadrao());
 async function enclSalvarEdicao() {
   if (!ENCL.edit) return;
   try {
-    await enclReq('encontros_local?id=eq.' + ENCL.edit.id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ regras: ENCL.edit.regras, updated_at: new Date().toISOString() }) });
-    const r = ENCL.rows.find(x => x.id === ENCL.edit.id); if (r) r.regras = ENCL.edit.regras;
-    ENCL.edit = null; enclRender(); toast('Regras salvas.', 'ok');
+    const r = ENCL.rows.find(x => x.id === ENCL.edit.id); if (!r) return;
+    if (!enclSetRegras(r.pokemon_id, ENCL.local, ENCL.edit.regras)) throw new Error('Pokémon não encontrado no pokemon.json');
+    r.regras = ENCL.edit.regras;
+    await pkjFlush();
+    ENCL.edit = null; enclRender(); toast('Regras salvas no pokemon.json.', 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
 }
 async function enclRemover(id) {
   const r = ENCL.rows.find(x => x.id === id); if (!r) return;
   if (!confirm(`Remover ${r.pokemon_nome || r.pokemon_id} de ${ENCL.local}?`)) return;
   try {
-    await enclReq('encontros_local?id=eq.' + id, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+    enclTirarLocal(r.pokemon_id, ENCL.local);
     ENCL.rows = ENCL.rows.filter(x => x.id !== id); ENCL.contagem[ENCL.local] = ENCL.rows.length;
     enclRenderSelect(); enclRender();
+    await pkjFlush();
   } catch (e) { toast('Erro ao remover: ' + e.message, 'err'); }
 }
 async function enclAdicionar() {
@@ -1996,22 +2034,49 @@ async function enclAdicionar() {
   if (!pid) { toast('Pokémon não encontrado. Escolha um nome da lista de sugestões.', 'err'); return; }
   if (ENCL.rows.some(r => r.pokemon_id === pid)) { toast('Esse Pokémon já está na lista deste Local.', 'err'); return; }
   try {
-    const novo = await enclReq('encontros_local', { method: 'POST', headers: { 'Prefer': 'return=representation' },
-      body: JSON.stringify({ local: ENCL.local, pokemon_id: pid, pokemon_nome: ENCL.pk[pid].nome, regras: [regraPadrao()] }) });
-    ENCL.rows.push(novo[0]); ENCL.rows.sort((a, b) => String(a.pokemon_nome).localeCompare(String(b.pokemon_nome), 'pt-BR'));
+    if (!enclSetRegras(pid, ENCL.local, [regraPadrao()])) throw new Error('Pokémon não encontrado no pokemon.json');
+    const novoId = ENCL.rows.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+    ENCL.rows.push({ id: novoId, pokemon_id: pid, pokemon_nome: ENCL.pk[pid].nome, regras: [regraPadrao()] });
+    ENCL.rows.sort((a, b) => String(a.pokemon_nome).localeCompare(String(b.pokemon_nome), 'pt-BR'));
     ENCL.contagem[ENCL.local] = ENCL.rows.length; inp.value = '';
-    enclRenderSelect(); enclEditar(novo[0].id);   // já abre as regras para ajustar a raridade
+    enclRenderSelect(); enclEditar(novoId);   // já abre as regras para ajustar a raridade
+    await pkjFlush();
   } catch (e) { toast('Erro ao adicionar: ' + e.message, 'err'); }
 }
+async function enclMigrarDoSupabase() {
+  if (!PKJ.loaded) { toast('Aguarde o pokemon.json carregar.', 'err'); return; }
+  if (!confirm('Trazer para dentro do pokemon.json as listas de encontros que ainda estão no Supabase?\n\nLocais que JÁ têm lista no pokemon.json não são alterados.')) return;
+  try {
+    enclMsg('Lendo encontros do Supabase…');
+    const todas = [];
+    for (let from = 0; ; from += 1000) {
+      const page = await enclReq('encontros_local?select=local,pokemon_id,regras&order=id.asc', { headers: { 'Range': `${from}-${from + 999}`, 'Range-Unit': 'items' } });
+      todas.push(...(page || []));
+      if (!page || page.length < 1000) break;
+    }
+    const comLista = new Set(); enclTodos((pid, obj) => (obj.encontros_local || []).forEach(e => comLista.add(e.local)));
+    let novos = 0, ja = 0, semPk = 0;
+    todas.forEach(r => {
+      if (comLista.has(r.local)) { ja++; return; }
+      if (enclSetRegras(String(r.pokemon_id), r.local, r.regras || [])) novos++; else semPk++;
+    });
+    enclMsg('Gravando no pokemon.json…');
+    await pkjFlush();
+    await enclCarregarContagem(); enclMsg('');
+    await enclSelecionar(ENCL.local || (ENCL.locais[0] && ENCL.locais[0].nome));
+    alert(`✅ ${novos} entradas copiadas para o pokemon.json.${ja ? `\n${ja} puladas (Local já tem lista no pokemon.json).` : ''}${semPk ? `\n${semPk} puladas (Pokémon não existe no pokemon.json).` : ''}`);
+  } catch (e) { enclMsg(''); alert('❌ Não consegui migrar: ' + e.message); }
+}
+
 async function enclEsvaziar() {
   if (!ENCL.rows.length) return;
   if (!confirm(`Apagar TODA a lista de ${ENCL.local} (${ENCL.rows.length} Pokémon)? Depois disso o rolador volta a usar a dedução pelos biomas.`)) return;
   try {
-    await enclReq('encontros_local?local=eq.' + encodeURIComponent(ENCL.local), { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+    enclLimparLocal(ENCL.local);
     ENCL.rows = []; ENCL.contagem[ENCL.local] = 0; enclRenderSelect(); enclRender();
+    await pkjFlush();
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
-
 // ── geração a partir dos biomas (mesma regra do rolador: 1ª camada em que o Pokémon aparece; secundário +1, terciário +2) ──
 function enclDerivar(L) {
   const camadas = [L.bioma_primario, L.bioma_secundario, L.bioma_terciario];
@@ -2035,10 +2100,9 @@ function enclDerivar(L) {
   });
   return out;
 }
-async function enclInserirLote(linhas) {
-  for (let i = 0; i < linhas.length; i += 400) {
-    await enclReq('encontros_local?on_conflict=local,pokemon_id', { method: 'POST', headers: { 'Prefer': 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(linhas.slice(i, i + 400)) });
-  }
+async function enclInserirLote(linhas) {   // só adiciona quem ainda não tem o Local (não altera os existentes)
+  linhas.forEach(l => { if (!enclTemLocal(l.pokemon_id, l.local)) enclSetRegras(l.pokemon_id, l.local, l.regras); });
+  await pkjFlush();
 }
 async function enclGerarDoLocal() {
   const L = ENCL.locais.find(l => l.nome === ENCL.local); if (!L) return;
@@ -2064,7 +2128,7 @@ async function enclGerarTodos() {
 /* ══════════════════════════════════════════
    ██ IMPORTAR LISTA DE LOCAIS A PARTIR DO PDF ("Pokémon por Bioma")
    Lê o PDF no navegador (pdf.js), separa as colunas Comum/Incomum/Raro/Raríssimo pela
-   posição do texto, casa cada nome com os Pokémon/formas do ADM e grava em `encontros_local`.
+   posição do texto, casa cada nome com os Pokémon/formas do ADM e grava em `encontros_local` dentro de cada Pokémon (pokemon.json).
    Regras do PDF: (Quest) fica de fora; (Noite)/(Dia)/(Amanhecer/Anoitecer) = Período;
    (Sewers)/(Outskirts)/(Power Plant) = Ambiente; (Dive)/(Deep Dive)/(Superfície)/(Farol) = condição
    em texto; "(N) Meowth", "(A) Rattata"… = forma alternativa; (Chest)/(Trash Form)/(Sensu)/(Baile)
@@ -2580,12 +2644,14 @@ async function kpImpAplicar() {
   try {
     for (const l of locais) {
       document.getElementById('kpimp-resumo').textContent = `Gravando ${l}…`;
-      if (modo === 'substituir') await enclReq('encontros_local?local=eq.' + encodeURIComponent(l), { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
-      const linhas = [...porLocal[l].entries()].map(([id, regras]) => ({ local: l, pokemon_id: id, pokemon_nome: ENCL.pk[id].nome, regras }));
-      for (let i = 0; i < linhas.length; i += 400) {
-        await enclReq('encontros_local?on_conflict=local,pokemon_id', { method: 'POST', headers: { 'Prefer': (modo === 'substituir' ? 'resolution=merge-duplicates' : 'resolution=ignore-duplicates') + ',return=minimal' }, body: JSON.stringify(linhas.slice(i, i + 400)) });
-      }
+      if (modo === 'substituir') enclLimparLocal(l);          // tira o Local de todos os Pokémon (info antiga)
+      porLocal[l].forEach((regras, id) => {
+        if (modo === 'adicionar' && enclTemLocal(id, l)) return;
+        enclSetRegras(id, l, regras);                          // grava dentro do próprio Pokémon
+      });
     }
+    document.getElementById('kpimp-resumo').textContent = 'Gravando no pokemon.json…';
+    await pkjFlush();
     await enclCarregarContagem();
     document.getElementById('kpimp-modal').classList.remove('open');
     await enclSelecionar(ENCL.local || locais[0]);
@@ -6022,6 +6088,9 @@ async function savePkModal(approve) {
   let formasAlt = [];
   try { formasAlt = await faltProcessAndRead('epk-formas-alt', newId); }
   catch (e) { toast('Erro ao processar formas alternativas: ' + e.message, 'err'); }
+  // o formulário não conhece `encontros_local`: devolve o que já estava gravado em cada forma (mesma posição)
+  { const antigo = (S.pk.dbMap[String(id)] || {}).formas_alt || [];
+    formasAlt.forEach((f, i) => { const o = antigo[i]; if (f && o && Array.isArray(o.encontros_local) && !f.encontros_local) f.encontros_local = o.encontros_local; }); }
 
   try {
     // Se o ID mudou, remove o registro antigo ANTES de inserir o novo (evita conflito de PK)
@@ -6055,6 +6124,7 @@ async function savePkModal(approve) {
       moves_egg: moves_egg.length ? moves_egg : null,
       moves_tutor: moves_tutor.length ? moves_tutor : null,
       is_fakemon: !!pk._isRpg,
+      encontros_local: (S.pk.dbMap[String(id)] || {}).encontros_local || undefined,   // listas de encontro por Local (não perder ao editar)
       source: pk._isRpg ? (pk.source||'rpg') : 'pokeapi',
       approved: approve,
       revisado,
