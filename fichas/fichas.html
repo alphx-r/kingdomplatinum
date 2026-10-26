@@ -1480,23 +1480,27 @@ function histMain(){
   const hr=t=>t.toLocaleTimeString('pt-BR',HTZ),ts=(o.t0===o.t1?hr(t1):hr(t0)+' – '+hr(t1))+' · '+t1.toLocaleDateString('pt-BR',HTZ);
   return `<div class="hs-e"><div class="hs-eh"><span>${who} ${por}</span><span class="hs-ts">${ts}</span></div>${o.l.map(e=>{const k=e.det?null:histCurto(e),tx=k?k.t:e.txt,dt=histFotoLn(e)?null:k?{a:k.a,d:k.d}:e.det;return `<div class="hs-ln"><span class="hs-p">${esc(HC[e.cat]||e.cat||'—')}</span><div class="hs-tx">${esc(tx)}${histDetBox({det:dt})}</div></div>`}).join('')}</div>`}).join('')}
 /* ===== autosave: fichas já criadas, em modo edição =====
-   Salva só ao TROCAR DE PÁGINA (route), ao esconder/fechar a aba (visibilitychange/pagehide) e só se houve alteração real.
-   Cada save vira um commit no GitHub; nunca roda em paralelo com outro save. Sem timer e sem aviso fixo na tela. */
-let asF=null,asBase=null,asBusy=false,asQ=Promise.resolve();
+   Salva IMEDIATAMENTE a cada alteração real (sem prazo mínimo/debounce): digitar, selecionar, adicionar/remover itens etc.
+   Também salva ao trocar de página (route) e ao esconder/fechar a aba. Como as fichas são JSON no GitHub (sem deploy na Vercel), não há custo de build.
+   Nunca roda dois saves em paralelo: se mudar algo durante um save, roda de novo logo em seguida (asAgain). Sem aviso fixo na tela. */
+let asF=null,asBase=null,asBusy=false,asAgain=false,asQ=Promise.resolve();
 const asImg=v=>!v?'':String(v).startsWith('data:')?'D'+v.length+':'+v.slice(-40):'U';
 const asSnapOf=x=>JSON.stringify([(x.nome||'').trim(),asImg(x.foto),asImg(x.banner),asImg(x.thumb),x.d]);
 const asSnap=()=>asSnapOf(f);
 const asOn=()=>!!(ed&&f&&f.slug&&asF===f);
-function asReset(){asF=null;asBase=null}
-async function asRun(){
+function asReset(){asF=null;asBase=null;asAgain=false}
+async function asRun(quiet){
  if(!asOn()||asBase===null||asSnap()===asBase)return;
- if(!(f.nome||'').trim()){toast('Autosave não feito: informe o nome do personagem');return}
- if(asBusy)return;
- const F=f;asBusy=true;
- try{await salvarFicha({slug:F.slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d});LST=null}
- catch(e){toast(/outro lugar/.test(e.message)?'Autosave não feito: a ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página.':'Falha no autosave — alterações não salvas',6000)}
+ if(!(f.nome||'').trim()){if(!quiet)toast('Autosave não feito: informe o nome do personagem');return}
+ if(asBusy){asAgain=true;return}
+ const F=f;asBusy=true;let ok=false;
+ try{await salvarFicha({slug:F.slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d});LST=null;ok=true}
+ catch(e){asAgain=false;toast(/outro lugar/.test(e.message)?'Autosave não feito: a ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página.':'Falha no autosave — alterações não salvas',6000)}
  finally{asBusy=false}
+ if(ok&&asAgain){asAgain=false;asRun(true)}   /* houve mudança durante o save: salva de novo na hora */
 }
+/* dispara o autosave na hora (chamado a cada alteração) */
+const asKick=()=>{if(asOn())asRun(true)};
 /* todo save (manual, desativar ou auto) passa por uma fila e atualiza o "último estado salvo" */
 const _sf=salvarFicha;
 salvarFicha=function(x){const sn=asSnapOf(x),F=f,p=asQ.then(()=>{if(x.base===undefined&&F&&F.slug&&F.slug===x.slug&&F.atualizado_em)x.base=F.atualizado_em;return _sf(x)});asQ=p.catch(()=>{});
@@ -1509,6 +1513,15 @@ const _rt=route;
 route=function(){if(asOn())asRun();return _rt.apply(this,arguments)};   /* trocar de página salva o pendente */
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&asOn())asRun()});
 addEventListener('pagehide',()=>{if(asOn())asRun()});
+/* autosave imediato: qualquer campo alterado (S/rin), seleção, checkbox, texto rico ou re-render estrutural (add/remover) */
+const _S=S;
+S=function(){const r=_S.apply(this,arguments);asKick();return r};
+const _rin=rin;
+rin=function(){const r=_rin.apply(this,arguments);asKick();return r};
+document.addEventListener('input',asKick);
+document.addEventListener('change',asKick);
+const _rd2=render;
+render=function(){const r=_rd2.apply(this,arguments);asKick();return r};
 /* rede de segurança: fechar a aba não garante que o fetch termine, então avisa se ainda há algo pendente */
 addEventListener('beforeunload',e=>{if(asOn()&&asBase!==null&&(asBusy||asSnap()!==asBase)){e.preventDefault();e.returnValue=''}});
 function route(){const id=++rid,s=parse();const p=!s?vLista(id):s==='desativadas'?vLista(id,true):vFicha(s,id);Promise.resolve(p).finally(fim);return p}
