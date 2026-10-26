@@ -5981,6 +5981,25 @@ async function dxFetchAllPages(url, headers, pageSize = 1000) {
 // do DataDex cair — mesmo padrão do ITEMDEX_ITEMS_JSON_FALLBACK.
 const POKEMON_JSON_FALLBACK = 'https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/pokemon.json';
 
+// ── Economia de egress do Supabase ──────────────────────────────────────────
+// A tabela `pokemons` inteira tem ~4 MB (a maior parte são moves_tm/level/tutor/egg,
+// que o rolador e o admin do site NÃO usam). Aqui baixamos só as colunas necessárias
+// (~1 MB) e guardamos no navegador por alguns minutos. ADM nunca usa o cache.
+// Se alguma tela nova precisar de outra coluna, é só acrescentar o nome em PK_COLS.
+const PK_COLS = 'id,name,tipo1,tipo2,habilidade1,habilidade2,habilidade_oculta,sprite,sprite_shiny,genero,biomas,estacao,estacao_boost,evolucoes,formas_alt,formas_alt_count,formas_alfa,forca_alfa,sazonal,afinidade_biomas,is_fakemon,approved,source,url_slug';
+const PK_CACHE_KEY = 'pk_cache_v1';
+const PK_CACHE_TTL = 5 * 60 * 1000;   // 5 min — aumente pra economizar mais, diminua pra atualizar mais rápido
+function pkCacheLer(){
+  try{
+    if(localStorage.getItem('adm_session')) return null;   // ADM sempre busca dados frescos
+    const c = JSON.parse(localStorage.getItem(PK_CACHE_KEY)||'null');
+    if(c && Array.isArray(c.d) && c.d.length && (Date.now()-c.t) < PK_CACHE_TTL) return c.d;
+  }catch(e){}
+  return null;
+}
+function pkCacheGravar(d){ try{ localStorage.setItem(PK_CACHE_KEY, JSON.stringify({t:Date.now(), d})); }catch(e){} }
+function pkCacheLimpar(){ try{ localStorage.removeItem(PK_CACHE_KEY); }catch(e){} }
+
 const PK = (() => {
   let _data   = [];   // array de objetos pokémon
   let _loaded = false;
@@ -5989,8 +6008,14 @@ const PK = (() => {
   async function load() {
     if (_loaded) return _data; // já carregou — retorna cache
     try {
-      _data = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/pokemons?select=*`, DATADEX_SH);
-      if (!Array.isArray(_data) || !_data.length) throw new Error('Supabase retornou vazio');
+      const emCache = pkCacheLer();
+      if (emCache) {
+        _data = emCache;
+      } else {
+        _data = await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/pokemons?select=${PK_COLS}`, DATADEX_SH);
+        if (!Array.isArray(_data) || !_data.length) throw new Error('Supabase retornou vazio');
+        pkCacheGravar(_data);
+      }
       _loaded = true;
       _fonte = 'supabase';
     } catch (e) {
@@ -6022,6 +6047,7 @@ const PK = (() => {
       body: JSON.stringify(_data)
     });
     if (!r.ok) { const t = await r.text(); throw new Error('Supabase save: ' + t); }
+    pkCacheLimpar();
   }
 
   function get(id)          { return _data.find(p => String(p.id) === String(id)); }
@@ -6728,6 +6754,7 @@ async function fazerLogin(){
   if(!match){errEl.style.display='block';return;}
   const loggedEmail = match.nome;
   admLogado={email:loggedEmail};
+  atualizarSeletoresLocais();
   _admSenhaSessao = senha;
   admEmitirSessaoFichas(loggedEmail, senha);   // sessão do Fichário (/fichas) já abre logada como ADM
   localStorage.setItem('adm_session', JSON.stringify(admLogado));
@@ -6747,6 +6774,7 @@ async function fazerLogin(){
 async function fazerLogout(){
   try{ const sv=JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null'); if(sv&&admLogado&&normalizarNome(sv.nome)===normalizarNome(admLogado.email)) localStorage.removeItem('kp_ficha_sessao'); }catch(e){}
   admLogado=null;
+  atualizarSeletoresLocais();
   _admFichaTok=null; admFichasLista=null;
   _admSenhaSessao = null;
   localStorage.removeItem('adm_session');
@@ -7283,6 +7311,7 @@ async function restaurarSessaoAdm(){
     const match = (lista||[]).find(a=>a.nome===sess.email);
     if(!match){ localStorage.removeItem('adm_session'); admLogado=null; return false; }
     admLogado = {email: sess.email};
+    setTimeout(atualizarSeletoresLocais,0);
     // _admSenhaSessao fica null após reload — ações sensíveis vão pedir a senha
     // de novo via garantirSenhaAdmSessao(), o que é esperado e mais seguro.
     admins = lista;
@@ -7921,6 +7950,148 @@ function aplToggleAll(){
 }
 
 // ══════════════════════════════════════
+// LOCAIS DE ENCONTRO (novo sistema: encontros POR LOCAL)
+// Adição aos biomas — NADA é removido da lista `biomas` (tabela Supabase),
+// que continua alimentando "Por Bioma", eventos, DataDex etc. Os nomes abaixo
+// são as mesmas chaves gravadas em `pokemon.biomas[].nome` quando o Pokémon é
+// cadastrado por Local (mesmo formato {nome, regras[]}), então o sorteio
+// (pkInfoNoBioma/pickFromPoolCascade) funciona sem nenhuma mudança.
+// "Neo Techland" é UMA cidade; Sewers/Outskirts são condições de Ambiente
+// (aparecem no cartão do resultado), não locais separados.
+// ══════════════════════════════════════
+const LOCAIS_ENCONTRO = [
+  'Koen City','Ambrosia Academy','Wiltshire Town','Duststone Mines','Rush Cave','Neo Techland',
+  'Twinlake','Bittersweet River','Kraka Town','Krakatoa Vulkan','Magmatic Cave','Coven Town',
+  'Briarcliff Mansion','Yukon City','Laceon Town','Aurora Beach','Flowrest City','Temperature Forest',
+  'Trulyce Isle','Luxor Village','Hartford Island','Brutal Jungle','Soul Forest','Eternal Swamp','Shallow Valley',
+  ...Array.from({length:18},(_,i)=>'Rota '+(i+1))
+];
+// Composição de biomas de cada Local [primário, secundário, terciário] — cópia de reserva da
+// tabela `locais` (Duststone Mines e Shallow Valley ainda sem biomas). Quando o banco responde,
+// carregarLocaisEncontro() sobrescreve isto com os valores atuais da tabela.
+const LOCAIS_COMPOSICAO = {
+  "Koen City":["Florestal", "Urbano", "Costeiro"],
+  "Ambrosia Academy":["Urbano", "Planície", "Costeiro"],
+  "Wiltshire Town":["Montanhoso", "Caverna", "Urbano"],
+  "Duststone Mines":[null, null, null],
+  "Rush Cave":["Caverna", "Montanhoso", null],
+  "Neo Techland":["Urbano", null, null],
+  "Twinlake":["Rios e Lagos", null, "Marítimo"],
+  "Bittersweet River":["Rios e Lagos", null, "Marítimo"],
+  "Kraka Town":["Montanhoso", "Vulcânico", "Urbano"],
+  "Krakatoa Vulkan":["Vulcânico", "Montanhoso", "Rios e Lagos"],
+  "Magmatic Cave":["Vulcânico", "Caverna", "Montanhoso"],
+  "Coven Town":["Assombrado", "Urbano", "Florestal"],
+  "Briarcliff Mansion":["Assombrado", "Florestal", null],
+  "Yukon City":["Polar", "Urbano", "Montanhoso"],
+  "Laceon Town":["Costeiro", "Praia", "Urbano"],
+  "Aurora Beach":["Praia", "Costeiro", null],
+  "Flowrest City":["Florestal", null, "Urbano"],
+  "Temperature Forest":["Florestal", null, null],
+  "Trulyce Isle":["Polar", null, null],
+  "Luxor Village":["Árido", null, null],
+  "Hartford Island":["Costeiro", "Praia", "Recifes"],
+  "Brutal Jungle":["Florestal", null, "Costeiro"],
+  "Soul Forest":["Florestal", "Assombrado", null],
+  "Eternal Swamp":["Pantanoso", null, "Assombrado"],
+  "Shallow Valley":[null, null, null],
+  "Rota 1":["Planície", null, "Florestal"],
+  "Rota 2":["Planície", "Rios e Lagos", "Florestal"],
+  "Rota 3":["Árido", null, null],
+  "Rota 4":["Planície", "Montanhoso", null],
+  "Rota 5":["Polar", "Montanhoso", "Rios e Lagos"],
+  "Rota 6":["Pantanoso", "Florestal", "Rios e Lagos"],
+  "Rota 7":["Florestal", "Assombrado", null],
+  "Rota 8":["Planície", "Vulcânico", "Montanhoso"],
+  "Rota 9":["Planície", "Vulcânico", "Montanhoso"],
+  "Rota 10":["Árido", "Planície", null],
+  "Rota 11":["Florestal", null, "Planície"],
+  "Rota 12":["Florestal", null, "Planície"],
+  "Rota 13":["Polar", null, "Planície"],
+  "Rota 14":["Marítimo", "Polar", null],
+  "Rota 15":["Marítimo", "Recifes", "Polar"],
+  "Rota 16":["Marítimo", "Recifes", "Polar"],
+  "Rota 17":["Marítimo", "Recifes", "Costeiro"],
+  "Rota 18":["Planície", "Costeiro", "Florestal"]
+};
+
+// ── Encontros por Local derivados dos biomas ─────────────────────────────────
+// Enquanto um Local NÃO tiver nenhum Pokémon cadastrado nele de forma explícita, o rolador
+// monta o pool a partir dos biomas do Local: o Pokémon entra com as regras do bioma onde
+// melhor se encaixa (primário = raridade igual; secundário = 1 nível mais raro; terciário =
+// 2 níveis mais raro — a mesma regra do DataDex). Nada disso é gravado no banco.
+// Quando um Local tiver LOCAIS_MIN_CURADOS (10) ou mais Pokémon cadastrados nele de forma explícita,
+// ele passa a valer só o cadastro manual. Para desligar tudo isto: LOCAIS_DERIVAR_DE_BIOMA = false.
+const LOCAIS_DERIVAR_DE_BIOMA = true;
+let _locaisCurados = new Set();
+// Um Local só é considerado "curado" (derivação desligada) quando tem pelo menos
+// LOCAIS_MIN_CURADOS Pokémon cadastrados nele de forma explícita — assim um ou dois
+// cadastros de teste não desligam a derivação do Local inteiro.
+const LOCAIS_MIN_CURADOS = 10;
+function pkLocaisCuradosRecalc(db){
+  const cont={}, nomes=new Set(Object.keys(LOCAIS_COMPOSICAO));
+  const olha=lista=>{ for(const b of (lista||[])){ const n=typeof b==='string'?b:(b&&b.nome); if(nomes.has(n)) cont[n]=(cont[n]||0)+1; } };
+  for(const p of (db||[])){ olha(p.biomas); for(const f of (p.formas_alt||[])) olha(f.biomas); }
+  _locaisCurados=new Set(Object.keys(cont).filter(n=>cont[n]>=LOCAIS_MIN_CURADOS));
+}
+function pkRegrasDerivadas(p, local){
+  if(!LOCAIS_DERIVAR_DE_BIOMA || _locaisCurados.has(local)) return [];
+  const c=LOCAIS_COMPOSICAO[local]; if(!c) return [];
+  for(let desl=0; desl<3; desl++){
+    const bioma=c[desl]; if(!bioma) continue;
+    const base=pkRegrasNoBioma(p,bioma);
+    if(!base.length) continue;
+    return base.map(r=>({
+      raridade: PK_RAR_ORDEM[Math.min(Math.max(PK_RAR_ORDEM.indexOf(r.raridade),0)+desl, PK_RAR_ORDEM.length-1)],
+      condicao: r.condicao
+    }));
+  }
+  return [];
+}
+
+// Locais (fixos) + extras que existam só na tabela `locais`; sem duplicar.
+// Fonte: tabela `locais` (coluna encontro = true) — assim, mudar a lista é só editar no banco.
+// A constante acima é só reserva (coluna ainda não criada, banco fora do ar, etc.).
+let LOCAIS_ENCONTRO_DB=null;
+function locaisEncontroNomes(extras){
+  const base=(LOCAIS_ENCONTRO_DB&&LOCAIS_ENCONTRO_DB.length)?LOCAIS_ENCONTRO_DB:LOCAIS_ENCONTRO;
+  const vistos=new Set(), out=[];
+  [...base, ...(extras||[])].forEach(n=>{ if(n&&!vistos.has(n)){ vistos.add(n); out.push(n); } });
+  return out;
+}
+async function carregarLocaisEncontro(){
+  if(!admLogado) return;   // Locais só aparecem para ADM
+  try{
+    const rows=await dxFetchAllPages(`${DATADEX_SUPA_URL}/rest/v1/locais?select=nome,bioma_primario,bioma_secundario,bioma_terciario&encontro=eq.true`, DATADEX_SH);
+    (rows||[]).forEach(r=>{ if(r.nome) LOCAIS_COMPOSICAO[r.nome]=[r.bioma_primario||null,r.bioma_secundario||null,r.bioma_terciario||null]; });
+    const nomes=(rows||[]).map(r=>r.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
+    if(!nomes.length) return;          // coluna vazia/inexistente: mantém a lista reserva
+    LOCAIS_ENCONTRO_DB=nomes;
+    if(document.getElementById('bioma')) syncBiomaSelect();
+    syncBiomaSelects();
+  }catch(e){ console.warn('[locais] usando lista reserva:', e); }
+}
+// Chamar sempre que o estado de ADM mudar (login, logout, sessão restaurada).
+function atualizarSeletoresLocais(){
+  try{
+    if(admLogado&&!LOCAIS_ENCONTRO_DB){ carregarLocaisEncontro(); }   // re-sincroniza sozinho ao terminar
+    if(document.getElementById('bioma')) syncBiomaSelect();
+    syncBiomaSelects();
+  }catch(e){ console.warn('[locais] refresh seletores:', e); }
+}
+window.addEventListener('load',()=>setTimeout(carregarLocaisEncontro,1500));
+// <optgroup> "Locais" (primeiro) + "Biomas" (os de sempre). value = nome.
+function biomaLocalOptionsHtml(selecionado){
+  const op=n=>`<option value="${n}"${n===selecionado?' selected':''}>${n}</option>`;
+  const bio=(biomas||[]).map(b=>op(b.nome)).join('');
+  if(!admLogado) return bio;   // jogadores só veem os Biomas (Locais: só ADM, por enquanto)
+  const loc=locaisEncontroNomes().map(op).join('');
+  return `<optgroup label="Locais">${loc}</optgroup>`+(bio?`<optgroup label="Biomas">${bio}</optgroup>`:'');
+}
+// Itens {nome} de Locais + Biomas (pra tags/botões)
+function biomaLocalItens(){ return [...(admLogado?locaisEncontroNomes().map(n=>({nome:n,_local:true})):[]), ...(biomas||[])]; }
+
+// ══════════════════════════════════════
 // BIOMAS
 // ══════════════════════════════════════
 async function adicionarBioma(){
@@ -7953,21 +8124,23 @@ function renderTbodyBiomas(){
 }
 function syncBiomaSelect(){
   const sel=document.getElementById('bioma');
-  sel.innerHTML=biomas.map(b=>`<option>${b.nome}</option>`).join('');
+  const atualSel=sel.value;
+  sel.innerHTML=biomaLocalOptionsHtml();
+  if(atualSel&&[...sel.options].some(o=>o.value===atualSel)) sel.value=atualSel;
   if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus();
 }
 function syncBiomaSelects(){
   const pks=document.getElementById('pk-bioma');
   const imp=document.getElementById('imp-bioma');
   const mpk=document.getElementById('modal-pk-bioma');
-  const opts=biomas.map(b=>`<option>${b.nome}</option>`).join('');
+  const opts=biomaLocalOptionsHtml();
   if(pks)pks.innerHTML=opts;
   if(imp)imp.innerHTML=opts;
   if(mpk)mpk.innerHTML=opts;
   // Multi-bioma tag selector no formulário manual
   const biomasWrap=document.getElementById('pk-biomas-wrap');
   if(biomasWrap){
-    biomasWrap.innerHTML=biomas.map(b=>`<span class="tipo-tag pk-bioma-tag" data-bioma="${b.nome}" style="cursor:pointer">${b.nome}</span>`).join('');
+    biomasWrap.innerHTML=biomaLocalItens().map(b=>`<span class="tipo-tag pk-bioma-tag" data-bioma="${b.nome}" style="cursor:pointer">${b.nome}</span>`).join('');
     biomasWrap.querySelectorAll('.pk-bioma-tag').forEach(el=>{
       el.addEventListener('click',function(){this.classList.toggle('sel');});
     });
@@ -7978,7 +8151,7 @@ function syncBiomaSelects(){
   const btns=document.getElementById('pk-filtro-btns');
   if(btns){
     btns.innerHTML=`<button class="dice-side-btn${pkFiltroAtivo==='__all__'?' active':''}" onclick="setPkFiltro('__all__',this)">Todos (unificado)</button>`
-      + biomas.map(b=>`<button class="dice-side-btn" onclick="setPkFiltro('${b.nome}',this)">${b.nome}</button>`).join('');
+      + biomaLocalItens().map(b=>`<button class="dice-side-btn" onclick="setPkFiltro('${b.nome}',this)">${b.nome}</button>`).join('');
   }
 }
 
@@ -8291,7 +8464,7 @@ function _renderPkUniBiomasList(nome){
         <div style="margin-bottom:6px">${biomasCards||'<span style="color:var(--muted);font-size:11px">Nenhum bioma</span>'}</div>
         <div style="display:flex;gap:6px">
           <select id="add-bioma-sel-${l.id}" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid var(--border)">
-            ${biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('')}
+            ${biomaLocalOptionsHtml()}
           </select>
           <select id="add-bioma-raridade-${l.id}" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid var(--border)">
             <option value="comum">Comum</option>
@@ -8524,7 +8697,7 @@ function syncBulkBiomaSelect(){
   const sel=document.getElementById('bulk-bioma-sel');
   if(!sel)return;
   const atual=sel.value;
-  sel.innerHTML='<option value="">— Todos os biomas —</option>'+biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('');
+  sel.innerHTML='<option value="">— Todos os locais/biomas —</option>'+biomaLocalOptionsHtml();
   sel.value=atual;
 }
 function renderBulkPkList(){
@@ -9876,7 +10049,7 @@ function syncTipoBiomaSelect(){
   const sel=document.getElementById('tipo-bioma-sel');
   if(!sel)return;
   const atual=sel.value;
-  sel.innerHTML='<option value="">— Todos os biomas —</option>'+biomas.map(b=>`<option value="${b.nome}">${b.nome}</option>`).join('');
+  sel.innerHTML='<option value="">— Todos os locais/biomas —</option>'+biomaLocalOptionsHtml();
   sel.value=atual;
 }
 function renderTipoPkList(){
@@ -11534,7 +11707,7 @@ function spriteHtml(pk){
 const PK_COND_CAT={clima:'Clima',periodo:'Período',ambiente:'Ambiente',recursos:'Recursos',interacoes:'Interações',eventos:'Eventos'};
 const PK_COND_LBL={sempre:'Sempre',ensolarado:'Ensolarado',nublado:'Nublado',chuva:'Chuva',tempestade:'Tempestade',garoa:'Garoa',neblina:'Neblina',ventania:'Ventania',seca:'Seca',neve:'Neve',granizo:'Granizo',
   dia:'Dia',noite:'Noite',amanhecer:'Amanhecer',entardecer:'Entardecer',
-  agua_doce:'Água doce',agua_salgada:'Água salgada',agua_rasa:'Água rasa',agua_profunda:'Água profunda',prox_vegetacao:'Próximo à vegetação',prox_arvores:'Próximo a árvores',prox_flores:'Próximo a flores',prox_rochas:'Próximo a rochas',cavernas:'Dentro de cavernas',locais_elevados:'Locais elevados',areas_sombreadas:'Áreas sombreadas',areas_abertas:'Áreas abertas',
+  agua_doce:'Água doce',agua_salgada:'Água salgada',agua_rasa:'Água rasa',agua_profunda:'Água profunda',prox_vegetacao:'Próximo à vegetação',prox_arvores:'Próximo a árvores',prox_flores:'Próximo a flores',prox_rochas:'Próximo a rochas',cavernas:'Dentro de cavernas',locais_elevados:'Locais elevados',areas_sombreadas:'Áreas sombreadas',areas_abertas:'Áreas abertas',sewers:'Sewers',outskirts:'Outskirts',
   arvores_frutiferas:'Árvores frutíferas',cogumelos:'Cogumelos',flores:'Flores',algas:'Algas',corpos_dagua:"Corpos d'água",madeira_caida:'Madeira caída',
   em_grupo:'Em grupo',sozinho:'Sozinho',prox_mesma_especie:'Próximo de Pokémon da mesma espécie/tipo',prox_predadores:'Próximo de predadores',prox_presas:'Próximo de presas',
   lua_cheia:'Lua cheia',lua_nova:'Lua nova',eclipse:'Eclipse',chuva_meteoros:'Chuva de meteoros',evento_especial:'Evento especial'};
@@ -11549,7 +11722,7 @@ function pkCondLabel(r){
 // Todas as regras {raridade, condicao(texto exibível)} do Pokémon naquele bioma/local ([] se não tiver).
 function pkRegrasNoBioma(p, bioma){
   const entry=(p.biomas||[]).find(b=>(typeof b==='string'?b:b.nome)===bioma);
-  if(!entry) return [];
+  if(!entry) return pkRegrasDerivadas(p,bioma);
   if(typeof entry==='string') return [{raridade:p.raridade||'comum',condicao:p.condicao||null}];
   if(Array.isArray(entry.regras)&&entry.regras.length) return entry.regras.map(r=>({raridade:r.raridade||'comum',condicao:pkCondLabel(r)}));
   return [{raridade:entry.raridade||'comum',condicao:entry.condicao||null}];
@@ -11595,6 +11768,7 @@ function pkAltFormUnits(p){
 // Retorna a lista "achatada" de pokemonDB + todas as formas alternativas
 // roláveis (com bioma próprio), pronta pra usar nos pools do roller.
 function getEncounterUnits(db){
+  pkLocaisCuradosRecalc(db);
   const units=[];
   for(const p of db){
     units.push(p);
@@ -12032,7 +12206,7 @@ let LOCENC_FONTE = 'bioma';
 function locEncNomesDaFonte() {
   return LOCENC_FONTE === 'bioma'
     ? (biomas || []).map(b => b.nome).filter(Boolean)
-    : LOCENC_LOCAIS.map(l => l.nome).filter(Boolean);
+    : locaisEncontroNomes(LOCENC_LOCAIS.map(l => l.nome));
 }
 function locEncTrocarFonte() {
   LOCENC_FONTE = LOCENC_FONTE === 'bioma' ? 'local' : 'bioma';
@@ -17311,8 +17485,8 @@ function populateFrcSelects(){
     personagens.map(p => `<option value="${p.nome}">${p.nome}</option>`).join('');
 
   // Biomas
-  selB.innerHTML = '<option value="">— Todos os biomas —</option>' +
-    biomas.map(b => `<option value="${b.nome}">${b.nome}</option>`).join('');
+  selB.innerHTML = '<option value="">— Todos os locais/biomas —</option>' +
+    biomaLocalOptionsHtml();
 }
 
 // Renderiza o pool de Pokémon disponíveis para selecionar
