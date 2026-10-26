@@ -57,6 +57,26 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .tab:not(.active) .tab-badge{background:var(--brand-light);color:var(--brand-mid)}
 
 .panel{display:none}.panel.active{display:block}
+/* ── Encontros por Local ── */
+.encl-wrap{display:flex;flex-direction:column;gap:12px;padding:6px 0 30px}
+.encl-help{font-size:12px;color:var(--muted);background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;line-height:1.5}
+.encl-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.encl-bar select,.encl-bar input{font-family:var(--font-body);font-size:13px;padding:8px 10px;border:1.5px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);min-width:200px}
+.encl-info{font-size:12px;font-weight:700;color:var(--muted)}
+.encl-msg{font-size:12px;color:var(--brand-mid);min-height:16px}
+.encl-row{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.encl-row-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.encl-row-top img{width:34px;height:34px;object-fit:contain;image-rendering:pixelated}
+.encl-nome{font-weight:800;font-size:13px;color:var(--brand)}
+.encl-id{font-size:10px;color:var(--muted)}
+.encl-chips{display:flex;flex-wrap:wrap;gap:4px;flex:1}
+.encl-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--brand-light);color:var(--brand-mid)}
+.encl-chip.r-incomum{background:var(--green-light);color:var(--green-dark)}
+.encl-chip.r-raro{background:var(--accent-light);color:#8a5a00}
+.encl-chip.r-rarissimo{background:var(--purple-light);color:var(--purple)}
+.encl-edit{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--border);padding-top:8px}
+.encl-edit-btns{display:flex;gap:8px;flex-wrap:wrap}
+
 
 .stats-bar{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 18px;margin-bottom:12px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
 .stat-item{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:54px}
@@ -620,6 +640,29 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
   <div class="tabs">
     <button class="tab active" id="tab-pokemon" onclick="switchTab('pokemon')">Pokémon <span class="tab-badge" id="badge-pokemon">—</span></button>
     <button class="tab" id="tab-rpg" onclick="switchTab('rpg')">＋</button>
+    <button class="tab" id="tab-encl" onclick="switchTab('encl')">Encontros por Local</button>
+  </div>
+
+  <!-- ENCONTROS POR LOCAL (lista de Pokémon de cada Local — banco principal ucbkod) -->
+  <div class="panel" id="panel-encl">
+    <div class="encl-wrap">
+      <div class="encl-help">Lista de Pokémon de <b>cada Local</b> (usada pelo Rolador de Encontros). Fica no banco principal (<code>encontros_local</code>), independente do DataDex. Local sem lista usa a dedução automática pelos biomas.</div>
+      <div class="encl-bar">
+        <select id="encl-local" onchange="enclSelecionar(this.value)"><option>Carregando…</option></select>
+        <span id="encl-info" class="encl-info"></span>
+        <input type="text" id="encl-busca" placeholder="Buscar na lista deste Local…" oninput="enclRender()">
+      </div>
+      <div class="encl-bar">
+        <input type="text" id="encl-add-nome" list="encl-dl" placeholder="Adicionar Pokémon (digite o nome)…" onkeydown="if(event.key==='Enter')enclAdicionar()">
+        <datalist id="encl-dl"></datalist>
+        <button type="button" class="btn btn-primary" onclick="enclAdicionar()">+ Adicionar</button>
+        <button type="button" class="btn btn-outline" onclick="enclGerarDoLocal()" title="Adiciona os Pokémon deduzidos dos biomas deste Local (não altera nem apaga os que já estão na lista)">⚙️ Gerar a partir dos biomas</button>
+        <button type="button" class="btn btn-outline" onclick="enclGerarTodos()" title="Faz o mesmo para todos os Locais que ainda estão com a lista vazia">⚙️ Gerar todos os vazios</button>
+        <button type="button" class="btn btn-danger" onclick="enclEsvaziar()">🧹 Esvaziar este Local</button>
+      </div>
+      <div id="encl-msg" class="encl-msg"></div>
+      <div id="encl-list"></div>
+    </div>
   </div>
 
   <!-- POKÉMON -->
@@ -1695,6 +1738,240 @@ async function gTranslate(text) {
   }
 }
 
+
+/* ══════════════════════════════════════════
+   ██ ENCONTROS POR LOCAL — lista de Pokémon de cada Local
+   Banco PRINCIPAL (OLD_SUPA_URL / ucbkod), tabelas `locais_encontro` e `encontros_local`.
+   Independe do DataDex: continua funcionando com ele restrito (a lista de Pokémon
+   para busca vem de S.pk.all, que cai no pokemon.json do GitHub se o DataDex falhar).
+══════════════════════════════════════════ */
+const ENCL = { locais: [], contagem: {}, local: null, rows: [], edit: null, loaded: false, pk: {}, nomes: {} };
+const ENCL_RAR = ['comum', 'incomum', 'raro', 'rarissimo'];
+const enclEsc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+async function enclReq(path, opts = {}) {
+  const r = await fetch(`${OLD_SUPA_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'apikey': OLD_SUPA_KEY, 'Authorization': 'Bearer ' + OLD_SUPA_KEY, ...(opts.headers || {}) }
+  });
+  const txt = await r.text();
+  if (!r.ok) throw new Error(txt || ('HTTP ' + r.status));
+  return txt ? JSON.parse(txt) : null;
+}
+function enclMsg(t) { const el = document.getElementById('encl-msg'); if (el) el.textContent = t || ''; }
+
+// id -> {nome, sprite} de todos os Pokémon e formas alternativas carregados no ADM
+function enclMontarIndicePk() {
+  ENCL.pk = {}; ENCL.nomes = {};
+  (S.pk.all || []).forEach(p => {
+    ENCL.pk[String(p.id)] = { nome: p.name, sprite: p.sprite || null };
+    ENCL.nomes[String(p.name).toLowerCase()] = String(p.id);
+    (p.formas_alt || []).forEach((f, i) => {
+      const fid = `${p.id}::alt${i}`;
+      ENCL.pk[fid] = { nome: f.nome || `${p.name} (forma ${i + 1})`, sprite: f.sprite || p.sprite || null };
+      if (f.nome) ENCL.nomes[String(f.nome).toLowerCase()] = fid;
+    });
+  });
+  const dl = document.getElementById('encl-dl');
+  if (dl) dl.innerHTML = Object.values(ENCL.pk).map(x => `<option value="${enclEsc(x.nome)}"></option>`).join('');
+}
+
+async function enclCarregarContagem() {
+  const cont = {};
+  for (let from = 0; ; from += 1000) {
+    const page = await enclReq('encontros_local?select=local', { headers: { 'Range': `${from}-${from + 999}`, 'Range-Unit': 'items' } });
+    (page || []).forEach(r => { cont[r.local] = (cont[r.local] || 0) + 1; });
+    if (!page || page.length < 1000) break;
+  }
+  ENCL.contagem = cont;
+}
+
+async function enclInit() {
+  if (!ENCL.loaded) {
+    try {
+      enclMsg('Carregando Locais…');
+      ENCL.locais = await enclReq('locais_encontro?select=*&order=ordem.asc') || [];
+      if (!ENCL.locais.length) { enclMsg('A tabela locais_encontro está vazia. Rode o encontros_local.sql no Supabase (projeto ucbkod).'); return; }
+      await enclCarregarContagem();
+      ENCL.loaded = true;
+    } catch (e) {
+      enclMsg('Não consegui ler o banco principal: ' + e.message + ' — as tabelas já foram criadas (encontros_local.sql)?');
+      return;
+    }
+  }
+  enclMontarIndicePk();
+  enclRenderSelect();
+  if (!ENCL.local) await enclSelecionar(ENCL.locais[0].nome);
+  else enclRender();
+}
+
+function enclRenderSelect() {
+  const sel = document.getElementById('encl-local');
+  if (!sel) return;
+  sel.innerHTML = ENCL.locais.map(l => `<option value="${enclEsc(l.nome)}"${l.nome === ENCL.local ? ' selected' : ''}>${enclEsc(l.nome)} (${ENCL.contagem[l.nome] || 0})</option>`).join('');
+}
+
+async function enclSelecionar(nome) {
+  ENCL.local = nome; ENCL.edit = null; ENCL.rows = [];
+  enclMsg('Carregando lista…'); enclRender();
+  try {
+    ENCL.rows = await enclReq('encontros_local?select=id,pokemon_id,pokemon_nome,regras&local=eq.' + encodeURIComponent(nome) + '&order=pokemon_nome.asc') || [];
+    ENCL.contagem[nome] = ENCL.rows.length;
+    enclMsg('');
+  } catch (e) { enclMsg('Erro ao carregar: ' + e.message); }
+  enclRenderSelect(); enclRender();
+}
+
+function enclChipsHtml(regras) {
+  return (regras || []).map(r => {
+    const rar = r.raridade || 'comum';
+    let cond;
+    if (r.legado) cond = r.condicao || '';
+    else if (!r.condicao || r.condicao === 'sempre') cond = 'Sempre';
+    else { const o = (CONDICAO_OPTS[r.categoria] || []).find(x => x[0] === r.condicao); cond = o ? o[1] : r.condicao; }
+    return `<span class="encl-chip r-${rar}">${(RARIDADE_OPTS.find(o => o[0] === rar) || [rar, rar])[1].replace(/ \(.*\)/, '')} · ${enclEsc(cond)}</span>`;
+  }).join('');
+}
+
+function enclRender() {
+  const box = document.getElementById('encl-list');
+  if (!box) return;
+  const L = ENCL.locais.find(l => l.nome === ENCL.local);
+  const info = document.getElementById('encl-info');
+  if (info && L) info.textContent = `${ENCL.rows.length} Pokémon · biomas: ${[L.bioma_primario, L.bioma_secundario, L.bioma_terciario].filter(Boolean).join(' / ') || '— (sem biomas)'}`;
+  const q = (document.getElementById('encl-busca')?.value || '').toLowerCase().trim();
+  const lista = ENCL.rows.filter(r => !q || String(r.pokemon_nome || '').toLowerCase().includes(q));
+  if (!lista.length) { box.innerHTML = `<div class="encl-help">${ENCL.rows.length ? 'Nada encontrado na busca.' : 'Lista vazia. Use “Gerar a partir dos biomas” ou adicione Pokémon manualmente. Enquanto estiver vazia, o rolador usa a dedução automática pelos biomas.'}</div>`; return; }
+  box.innerHTML = lista.map(r => {
+    const pk = ENCL.pk[r.pokemon_id] || {};
+    const editando = ENCL.edit && ENCL.edit.id === r.id;
+    return `<div class="encl-row">
+      <div class="encl-row-top">
+        ${pk.sprite ? `<img src="${enclEsc(pk.sprite)}" loading="lazy" alt="">` : ''}
+        <div><div class="encl-nome">${enclEsc(r.pokemon_nome || pk.nome || r.pokemon_id)}</div><div class="encl-id">#${enclEsc(r.pokemon_id)}</div></div>
+        <div class="encl-chips">${enclChipsHtml(editando ? ENCL.edit.regras : r.regras)}</div>
+        <button type="button" class="btn btn-outline" onclick="enclEditar(${r.id})">✏️ Regras</button>
+        <button type="button" class="btn btn-danger" onclick="enclRemover(${r.id})">🗑️</button>
+      </div>
+      ${editando ? `<div class="encl-edit">
+        ${ENCL.edit.regras.map((rg, i) => regraRowHtml('encl', '', i, rg)).join('')}
+        <div class="encl-edit-btns">
+          <button type="button" class="btn btn-outline" onclick="enclAddRegra()">+ Adicionar regra</button>
+          <button type="button" class="btn btn-success" onclick="enclSalvarEdicao()">Salvar</button>
+          <button type="button" class="btn btn-outline" onclick="enclCancelarEdicao()">Cancelar</button>
+        </div></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── edição de regras (reaproveita regraRowHtml: o prefixo 'encl' chama enclSetRegraField/enclRemoveRegra) ──
+function enclEditar(id) {
+  const r = ENCL.rows.find(x => x.id === id); if (!r) return;
+  ENCL.edit = { id, regras: JSON.parse(JSON.stringify((r.regras && r.regras.length) ? r.regras : [regraPadrao()])) };
+  enclRender();
+}
+function enclCancelarEdicao() { ENCL.edit = null; enclRender(); }
+function enclSetRegraField(_n, idx, campo, valor) {
+  const rg = ENCL.edit && ENCL.edit.regras[idx]; if (!rg) return;
+  rg[campo] = valor;
+  if (campo === 'categoria') rg.condicao = (CONDICAO_OPTS[valor] || CONDICAO_OPTS.clima)[0][0];
+  enclRender();
+}
+function enclRemoveRegra(_n, idx) {
+  if (!ENCL.edit) return;
+  ENCL.edit.regras.splice(idx, 1);
+  if (!ENCL.edit.regras.length) ENCL.edit.regras.push(regraPadrao());
+  enclRender();
+}
+function enclAddRegra() { if (ENCL.edit) { ENCL.edit.regras.push(regraPadrao()); enclRender(); } }
+async function enclSalvarEdicao() {
+  if (!ENCL.edit) return;
+  try {
+    await enclReq('encontros_local?id=eq.' + ENCL.edit.id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ regras: ENCL.edit.regras, updated_at: new Date().toISOString() }) });
+    const r = ENCL.rows.find(x => x.id === ENCL.edit.id); if (r) r.regras = ENCL.edit.regras;
+    ENCL.edit = null; enclRender(); toast('Regras salvas.', 'ok');
+  } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
+}
+async function enclRemover(id) {
+  const r = ENCL.rows.find(x => x.id === id); if (!r) return;
+  if (!confirm(`Remover ${r.pokemon_nome || r.pokemon_id} de ${ENCL.local}?`)) return;
+  try {
+    await enclReq('encontros_local?id=eq.' + id, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+    ENCL.rows = ENCL.rows.filter(x => x.id !== id); ENCL.contagem[ENCL.local] = ENCL.rows.length;
+    enclRenderSelect(); enclRender();
+  } catch (e) { toast('Erro ao remover: ' + e.message, 'err'); }
+}
+async function enclAdicionar() {
+  const inp = document.getElementById('encl-add-nome');
+  const nome = (inp.value || '').trim(); if (!nome) return;
+  const pid = ENCL.nomes[nome.toLowerCase()];
+  if (!pid) { toast('Pokémon não encontrado. Escolha um nome da lista de sugestões.', 'err'); return; }
+  if (ENCL.rows.some(r => r.pokemon_id === pid)) { toast('Esse Pokémon já está na lista deste Local.', 'err'); return; }
+  try {
+    const novo = await enclReq('encontros_local', { method: 'POST', headers: { 'Prefer': 'return=representation' },
+      body: JSON.stringify({ local: ENCL.local, pokemon_id: pid, pokemon_nome: ENCL.pk[pid].nome, regras: [regraPadrao()] }) });
+    ENCL.rows.push(novo[0]); ENCL.rows.sort((a, b) => String(a.pokemon_nome).localeCompare(String(b.pokemon_nome), 'pt-BR'));
+    ENCL.contagem[ENCL.local] = ENCL.rows.length; inp.value = '';
+    enclRenderSelect(); enclEditar(novo[0].id);   // já abre as regras para ajustar a raridade
+  } catch (e) { toast('Erro ao adicionar: ' + e.message, 'err'); }
+}
+async function enclEsvaziar() {
+  if (!ENCL.rows.length) return;
+  if (!confirm(`Apagar TODA a lista de ${ENCL.local} (${ENCL.rows.length} Pokémon)? Depois disso o rolador volta a usar a dedução pelos biomas.`)) return;
+  try {
+    await enclReq('encontros_local?local=eq.' + encodeURIComponent(ENCL.local), { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+    ENCL.rows = []; ENCL.contagem[ENCL.local] = 0; enclRenderSelect(); enclRender();
+  } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+// ── geração a partir dos biomas (mesma regra do rolador: 1ª camada em que o Pokémon aparece; secundário +1, terciário +2) ──
+function enclDerivar(L) {
+  const camadas = [L.bioma_primario, L.bioma_secundario, L.bioma_terciario];
+  const out = [];
+  const tenta = (id, nome, biomasArr, base) => {
+    for (let d = 0; d < 3; d++) {
+      const b = camadas[d]; if (!b) continue;
+      const e = (biomasArr || []).find(x => (typeof x === 'string' ? x : x.nome) === b);
+      if (!e) continue;
+      let regras;
+      if (typeof e === 'string') regras = [(base && base.condicao) ? { legado: true, condicao: base.condicao, raridade: base.raridade || 'comum' } : { categoria: 'clima', condicao: 'sempre', raridade: (base && base.raridade) || 'comum' }];
+      else regras = normalizarBiomaItem(e).regras;
+      regras = regras.map(r => ({ ...r, raridade: ENCL_RAR[Math.min(Math.max(ENCL_RAR.indexOf(r.raridade || 'comum'), 0) + d, 3)] }));
+      out.push({ local: L.nome, pokemon_id: String(id), pokemon_nome: nome, regras });
+      return;
+    }
+  };
+  (S.pk.all || []).forEach(p => {
+    tenta(p.id, p.name, p.biomas, p);
+    (p.formas_alt || []).forEach((f, i) => tenta(`${p.id}::alt${i}`, f.nome || `${p.name} (forma ${i + 1})`, f.biomas, f));
+  });
+  return out;
+}
+async function enclInserirLote(linhas) {
+  for (let i = 0; i < linhas.length; i += 400) {
+    await enclReq('encontros_local?on_conflict=local,pokemon_id', { method: 'POST', headers: { 'Prefer': 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(linhas.slice(i, i + 400)) });
+  }
+}
+async function enclGerarDoLocal() {
+  const L = ENCL.locais.find(l => l.nome === ENCL.local); if (!L) return;
+  if (!S.pk.all.length) { toast('A lista de Pokémon ainda não carregou.', 'err'); return; }
+  const linhas = enclDerivar(L);
+  if (!linhas.length) { toast('Nenhum Pokémon deduzido (este Local tem biomas definidos?).', 'err'); return; }
+  if (!confirm(`Adicionar até ${linhas.length} Pokémon deduzidos dos biomas em ${L.nome}? Os que já estão na lista não serão alterados.`)) return;
+  try { enclMsg('Gravando…'); await enclInserirLote(linhas); await enclSelecionar(L.nome); toast('Lista gerada.', 'ok'); }
+  catch (e) { enclMsg(''); toast('Erro: ' + e.message, 'err'); }
+}
+async function enclGerarTodos() {
+  if (!S.pk.all.length) { toast('A lista de Pokémon ainda não carregou.', 'err'); return; }
+  const vazios = ENCL.locais.filter(l => !(ENCL.contagem[l.nome] > 0) && (l.bioma_primario || l.bioma_secundario || l.bioma_terciario));
+  if (!vazios.length) { toast('Nenhum Local vazio com biomas definidos.', 'err'); return; }
+  if (!confirm(`Gerar a lista de ${vazios.length} Locais vazios a partir dos biomas?`)) return;
+  try {
+    for (const L of vazios) { enclMsg(`Gravando ${L.nome}…`); await enclInserirLote(enclDerivar(L)); }
+    await enclCarregarContagem(); enclMsg(''); await enclSelecionar(ENCL.local || ENCL.locais[0].nome); toast('Listas geradas.', 'ok');
+  } catch (e) { enclMsg(''); toast('Erro: ' + e.message, 'err'); }
+}
+
 /* ══════════════════════════════════════════
    TABS
 ══════════════════════════════════════════ */
@@ -1709,6 +1986,7 @@ function switchTab(tab) {
   // Usa uma flag própria (S.rpg._formInit) em vez de S.rpg._loaded — essa já vem
   // true desde o carregamento inicial da página (ver INIT no fim do arquivo),
   // então reaproveitá-la aqui deixava o dropdown travado em "— Carregando —".
+  if (tab === 'encl') enclInit();
   if (tab === 'rpg' && !S.rpg._formInit) { S.rpg._formInit = true; openNewRpgPokemon(); }
 }
 
