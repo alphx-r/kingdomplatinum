@@ -59,17 +59,19 @@ async function commitMany(files, message, token) {
     if (!r.ok) { const e = new Error(`GitHub (${nome}) HTTP ${r.status}`); e.status = r.status; throw e; }
     return r.json();
   };
-  const blobs = new Map();   // path -> sha (não recria o blob se a tentativa se repetir)
+  const blobs = new Map();       // path -> sha
+  const porConteudo = new Map(); // conteúdo base64 -> sha (a mesma imagem em vários caminhos vira um blob só)
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     const parent = (await call(`/git/ref/heads/${encodeURIComponent(BRANCH)}`, {}, 'ref')).object.sha;
     const baseTree = (await call(`/git/commits/${parent}`, {}, 'commit')).tree.sha;
-    const pend = files.filter(f => !blobs.has(f.path));
-    for (let i = 0; i < pend.length; i += 6) {   // 6 por vez, para não disparar o limite de requisições simultâneas
-      await Promise.all(pend.slice(i, i + 6).map(async f => {
-        const b = await call('/git/blobs', { method: 'POST', body: JSON.stringify({ content: f.contentBase64, encoding: 'base64' }) }, 'blob');
-        blobs.set(f.path, b.sha);
+    const novos = [...new Set(files.map(f => f.contentBase64))].filter(c => !porConteudo.has(c));
+    for (let i = 0; i < novos.length; i += 6) {   // 6 por vez, para não disparar o limite de requisições simultâneas
+      await Promise.all(novos.slice(i, i + 6).map(async c => {
+        const b = await call('/git/blobs', { method: 'POST', body: JSON.stringify({ content: c, encoding: 'base64' }) }, 'blob');
+        porConteudo.set(c, b.sha);
       }));
     }
+    files.forEach(f => blobs.set(f.path, porConteudo.get(f.contentBase64)));
     const tree = await call('/git/trees', { method: 'POST', body: JSON.stringify({
       base_tree: baseTree,
       tree: files.map(f => ({ path: f.path, mode: '100644', type: 'blob', sha: blobs.get(f.path) })),
