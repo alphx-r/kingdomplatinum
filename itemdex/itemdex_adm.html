@@ -798,7 +798,13 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 <script>
 /* ícones de itens (sprites/items) saem pelo jsDelivr, não pelo deploy da Vercel */
 const CDN_REPO='https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/';
-const itemSrc=p=>(p||'').replace(/^\/?sprites\/items\//,CDN_REPO+'sprites/items/');
+const PENDING_IMGS = new Map(); // caminho no repo -> dataURL aguardando commit
+let ITEMS_DIRTY = false;
+const itemSrc = p => {
+  const key = decodeURIComponent((p || '').split('?')[0]).replace(/^\//, '');
+  if (PENDING_IMGS.has(key)) return PENDING_IMGS.get(key);
+  return (p || '').replace(/^\/?sprites\/items\//, CDN_REPO + 'sprites/items/');
+};
 /* fallback de ícones: jsDelivr -> raw.githubusercontent -> caminho original (Vercel) */
 const RAW_REPO='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/';
 document.addEventListener('error',e=>{
@@ -954,6 +960,7 @@ function supaDownFallback(e) {
   return true;
 }
 async function sbUpsert(table, row, _r) {
+  if (table === 'items') ITEMS_DIRTY = true;
   if (table !== 'items') return sbUpsertRaw(table, row, _r);
   let out = {};
   try { out = await sbUpsertRaw(table, row, _r); }
@@ -962,6 +969,7 @@ async function sbUpsert(table, row, _r) {
   return out;
 }
 async function sbDeleteByName(table, name) {
+  if (table === 'items') ITEMS_DIRTY = true;
   if (table !== 'items') return sbDeleteByNameRaw(table, name);
   try { await sbDeleteByNameRaw(table, name); }
   catch (e) { if (!supaDownFallback(e)) throw e; }
@@ -988,6 +996,7 @@ function buildItemsPayload() {
 async function pushItemsJson() {
   if (_itemsCommitBusy) { _itemsCommitAgain = true; return; }
   if (!S.it.jsonReady || !S.it.all.length) return;
+  if (PENDING_IMGS.size) return; // há ícones na fila: só o botão 📤 commita (json + imagens juntos)
   _itemsCommitBusy = true; S.it.commitPending = false;
   try {
     const data = buildItemsPayload();
@@ -1853,22 +1862,10 @@ async function ghItemTarget(slug, category, conqTipo) {
 }
 
 async function uploadItemImage(dataUrl, slug, category, conqTipo) {
-  const base = conqTipo ? GH_REWARDS_DIR : GH_ITEMS_DIR;
   const path = await ghItemTarget(slug, category, conqTipo);
-  try {
-    const j = await pushImageToGithub(dataUrl, path);
-    if (GH_CACHE[base]) {
-      const rel = path.slice(base.length + 1), k = rel.lastIndexOf('/');
-      const name = rel.slice(k + 1), dir = k >= 0 ? rel.slice(0, k) : '';
-      GH_CACHE[base] = GH_CACHE[base].filter(f => !(f.name === name && f.dir === dir));
-      GH_CACHE[base].push({ name, dir, sha: j.sha });
-    }
-    return { sprite: `/${path.split('/').map(encodeURIComponent).join('/')}?v=${String(j.sha || Date.now()).slice(0, 7)}`, github: true };
-  } catch (e) {
-    console.warn('[uploadItemImage] GitHub falhou, usando Supabase:', e);
-    const url = await uploadImgStorage(dataUrl, 'pokemons', `items/${slug}.png`) + '?t=' + Date.now();
-    return { sprite: url, github: false, erro: e.message };
-  }
+  PENDING_IMGS.set(path, dataUrl);
+  ITEMS_DIRTY = true;
+  return { sprite: `/${path.split('/').map(encodeURIComponent).join('/')}?v=${Date.now().toString(36)}`, github: true };
 }
 
 function toggleItemPriceField(wrapId, checked) {
@@ -2030,24 +2027,36 @@ function closeNewItemForm() {
 // nunca passa pelo cliente — fica só como env var (GITHUB_TOKEN) na Vercel,
 // lido pela function em /api/commit-items.js (evita repetir o vazamento
 // de token que já aconteceu quando isso rodava no navegador).
+window.addEventListener('beforeunload', e => { if (ITEMS_DIRTY || PENDING_IMGS.size) { e.preventDefault(); e.returnValue = ''; } });
+
 async function backupItemsNow() {
   const btn = document.getElementById('it-backup-btn');
   const origLabel = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
   try {
     const data = buildItemsPayload();
+    // limite do corpo na Vercel é ~4,5 MB: manda as imagens em lotes de até ~3,5 MB
+    const lote = []; let tam = 0;
+    for (const [path, d] of PENDING_IMGS) {
+      const b64 = d.split(',')[1] || '';
+      if (lote.length && tam + b64.length > 3_500_000) break;
+      lote.push({ path, contentBase64: b64 }); tam += b64.length;
+    }
+    let admin = null;
+    try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
     const res = await fetch('/api/commit-items', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: data }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: data, images: lote, admin }),
     });
-    let result = {};
-    try { result = await res.json(); } catch (e) {}
+    let result = {}; try { result = await res.json(); } catch (e) {}
     if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
-    S.it.commitPending = false; clearTimeout(_itemsCommitTimer);
-    toast(`✅ items.json commitado no GitHub (${data.length} itens).`, 'ok');
+    lote.forEach(i => PENDING_IMGS.delete(i.path));
+    if (!PENDING_IMGS.size) { ITEMS_DIRTY = false; S.it.commitPending = false; clearTimeout(_itemsCommitTimer); }
+    toast(PENDING_IMGS.size
+      ? `✅ Commit feito (${lote.length} imagens). Restam ${PENDING_IMGS.size} na fila: clique de novo.`
+      : `✅ items.json + ${lote.length} imagem(ns) commitados num commit só (${data.length} itens).`, 'ok');
   } catch (e) {
-    toast('Erro ao commitar items.json: ' + e.message, 'err');
+    toast('Erro ao commitar: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
@@ -2612,7 +2621,7 @@ async function uploadItemIconFile(name, slugInput, file, done) {
       if (ph) ph.style.display = 'none';
       const cardIcon = document.querySelector(`#it-card-${domSlug} .it-card-icon`);
       if (cardIcon) cardIcon.innerHTML = `<img src="${shown}" alt="" style="${itemIconSizeStyle(name, 30)}">`;
-      toast(up.github ? '🖼️ Ícone commitado no GitHub! Aparece no site depois do deploy da Vercel (≈1 min).' : `🖼️ Ícone salvo no Supabase (GitHub falhou: ${up.erro})`, up.github ? 'ok' : 'err');
+      toast('🖼️ Ícone na fila — vai pro GitHub ao clicar em 📤 Commitar items.json.', 'ok');
     } catch (e) { toast('Erro ao enviar ícone: ' + e.message, 'err'); }
     if (done) done();
   };
