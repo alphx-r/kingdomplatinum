@@ -685,11 +685,16 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
               📁 Enviar várias imagens
               <input type="file" accept="image/*" multiple style="display:none" onchange="nbPickMany(this)">
             </label>
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block" title="Uma única imagem usada por todos os itens da lista (quem tiver imagem própria mantém a sua)">
+              🖼️ Mesma imagem para todos
+              <input type="file" accept="image/*" style="display:none" onchange="nbPickCommon(this)">
+            </label>
+            <span id="nit-bulk-common" style="display:none;align-items:center;gap:4px"></span>
             <button type="button" class="btn btn-outline btn-sm" id="nit-bulk-icons-clear" style="display:none" onclick="nbClearIcons()">Limpar imagens</button>
             <span id="nit-bulk-icons-count" style="font-size:11.5px;color:var(--muted)"></span>
           </div>
           <div id="nit-bulk-icons" ondragover="event.preventDefault()" ondrop="nbDrop(event)" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px"></div>
-          <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Nome do arquivo = nome do item (maiúsculas, espaços e hífen tanto faz). Também dá para arrastar as imagens para esta área ou escolher uma imagem por item. Item sem imagem enviada continua buscando o ícone pelo nome em sprites/items do GitHub.</p>
+          <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Nome do arquivo = nome do item (maiúsculas, espaços e hífen tanto faz). Também dá para arrastar as imagens para esta área, escolher uma imagem por item ou usar a mesma imagem para todos (quem tiver imagem própria mantém a sua; cada item grava a sua cópia, então editar o ícone de um depois não mexe nos outros). Item sem imagem enviada continua buscando o ícone pelo nome em sprites/items do GitHub.</p>
         </div>
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;margin-top:6px">
           <input type="checkbox" id="nit-bulk-samedesc" checked style="margin:0"> Mesma descrição para todos <span style="font-weight:400;color:var(--muted)">(usa o campo Descrição abaixo; desmarque para dar uma descrição por linha)</span>
@@ -2667,6 +2672,8 @@ async function saveNewItem() {
 ══════════════════════════════════════════ */
 /* ── Ícones na criação em lote: imagens enviadas ficam em NB_ICONS (slug do nome → data URL) ── */
 const NB_ICONS = {};
+let NB_COMMON = '';   // imagem usada por todos os itens que não têm imagem própria
+const nbImgFor = key => NB_ICONS[key] || NB_COMMON || '';
 const nbEsc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function nbNames() {
   const vistos = new Set(), out = [];
@@ -2698,18 +2705,27 @@ function nbRenderIcons() {
   const keys = new Set(names.map(n => n.key));
   Object.keys(NB_ICONS).forEach(k => { if (!keys.has(k)) delete NB_ICONS[k]; });   // linha apagada do texto → descarta a imagem
   box.innerHTML = names.map(n => {
-    const img = NB_ICONS[n.key];
+    const own = NB_ICONS[n.key], img = nbImgFor(n.key);
     return `<div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border:1.5px solid ${img ? 'var(--brand-mid)' : 'var(--border)'};border-radius:8px;background:var(--surface2)">
       <div style="width:36px;height:36px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--surface);border-radius:6px">${img ? `<img src="${img}" alt="" style="max-width:34px;max-height:34px;object-fit:contain">` : '<span style="font-size:16px;opacity:.5">🎒</span>'}</div>
-      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nbEsc(n.name)}</div><div style="font-size:10.5px;color:var(--muted)">${img ? 'imagem enviada' : 'buscar no GitHub'}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nbEsc(n.name)}</div><div style="font-size:10.5px;color:var(--muted)">${own ? 'imagem enviada' : NB_COMMON ? 'imagem comum' : 'buscar no GitHub'}</div></div>
       <label class="btn btn-outline btn-sm" style="cursor:pointer;padding:3px 7px" title="Escolher imagem para ${nbEsc(n.name)}">🖼️<input type="file" accept="image/*" style="display:none" onchange="nbPickOne('${n.key}',this)"></label>
-      ${img ? `<button type="button" class="btn btn-outline btn-sm" style="padding:3px 7px" title="Remover imagem" onclick="nbRemove('${n.key}')">✕</button>` : ''}
+      ${own ? `<button type="button" class="btn btn-outline btn-sm" style="padding:3px 7px" title="Remover imagem" onclick="nbRemove('${n.key}')">✕</button>` : ''}
     </div>`;
   }).join('');
-  const n = Object.keys(NB_ICONS).length;
-  const cnt = document.getElementById('nit-bulk-icons-count'); if (cnt) cnt.textContent = n ? `${n}/${names.length} com imagem enviada` : '';
-  const clr = document.getElementById('nit-bulk-icons-clear'); if (clr) clr.style.display = n ? '' : 'none';
+  const n = names.filter(x => nbImgFor(x.key)).length;
+  const cnt = document.getElementById('nit-bulk-icons-count'); if (cnt) cnt.textContent = n ? `${n}/${names.length} com imagem` : '';
+  const clr = document.getElementById('nit-bulk-icons-clear'); if (clr) clr.style.display = (Object.keys(NB_ICONS).length || NB_COMMON) ? '' : 'none';
+  const cm = document.getElementById('nit-bulk-common');
+  if (cm) { cm.style.display = NB_COMMON ? 'inline-flex' : 'none'; cm.innerHTML = NB_COMMON ? `<img src="${NB_COMMON}" alt="" style="width:28px;height:28px;object-fit:contain;background:var(--surface2);border:1.5px solid var(--brand-mid);border-radius:6px"><button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px" title="Remover a imagem comum" onclick="nbClearCommon()">✕</button>` : ''; }
 }
+async function nbPickCommon(inputEl) {
+  const file = inputEl.files && inputEl.files[0]; inputEl.value = '';
+  if (!file) return;
+  try { NB_COMMON = await nbReadFile(file); } catch (e) { toast(e.message, 'err'); return; }
+  nbRenderIcons();
+}
+function nbClearCommon() { NB_COMMON = ''; nbRenderIcons(); }
 async function nbPickOne(key, inputEl) {
   const file = inputEl.files && inputEl.files[0]; inputEl.value = '';
   if (!file) return;
@@ -2741,7 +2757,7 @@ function nbDrop(ev) {
   if (files.length) nbAddFiles(files);
 }
 function nbRemove(key) { delete NB_ICONS[key]; nbRenderIcons(); }
-function nbClearIcons() { Object.keys(NB_ICONS).forEach(k => delete NB_ICONS[k]); nbRenderIcons(); }
+function nbClearIcons() { Object.keys(NB_ICONS).forEach(k => delete NB_ICONS[k]); NB_COMMON = ''; nbRenderIcons(); }
 
 function toggleBulkNew(on) {
   const w = document.getElementById('nit-bulk-wrap'); if (w) w.style.display = on ? '' : 'none';
@@ -2788,12 +2804,12 @@ async function saveNewItemsBulk() {
   const flags = mergeItemFlags(null, pokemartOn, false, consumivelOn, eventoOn, [], conquistaOn, conquistaTipo, vendaOn);
   const salvos = [], falhas = [], semIcone = [], falhaImg = [];
   // imagens enviadas: todas num commit só (antes de salvar os itens)
-  const comImg = novos.filter(it => NB_ICONS[toSlugBase(it.name)]);
+  const comImg = novos.filter(it => nbImgFor(toSlugBase(it.name)));
   let upLote = { sprites: new Map(), falhas: [], erro: '' };
   if (comImg.length) {
     toast(`Enviando ${comImg.length} imagem(ns) para o GitHub (1 commit)…`);
     try {
-      upLote = await uploadItemImagesBatch(comImg.map(it => ({ key: toSlugBase(it.name), slug: toSlugBase(it.name), category, conqTipo: conquistaOn ? conquistaTipo : null, dataUrl: NB_ICONS[toSlugBase(it.name)] })), `Adiciona ${comImg.length} ícones de itens (ItemDex ADM)`);
+      upLote = await uploadItemImagesBatch(comImg.map(it => ({ key: toSlugBase(it.name), slug: toSlugBase(it.name), category, conqTipo: conquistaOn ? conquistaTipo : null, dataUrl: nbImgFor(toSlugBase(it.name)) })), `Adiciona ${comImg.length} ícones de itens (ItemDex ADM)`);
     } catch (e) { upLote = { sprites: new Map(), falhas: comImg.map(it => toSlugBase(it.name)), erro: e.message }; }
     if (upLote.erro) toast('Erro ao enviar imagens: ' + upLote.erro, 'err');
   }
@@ -2802,7 +2818,7 @@ async function saveNewItemsBulk() {
     toast(`Salvando ${n + 1}/${novos.length}: ${it.name}…`);
     let sprite = null;
     const k0 = toSlugBase(it.name);
-    if (NB_ICONS[k0]) { if (upLote.sprites.has(k0)) sprite = upLote.sprites.get(k0); else falhaImg.push(it.name); }
+    if (nbImgFor(k0)) { if (upLote.sprites.has(k0)) sprite = upLote.sprites.get(k0); else falhaImg.push(it.name); }
     if (!sprite) { try { sprite = (await acharSpriteGithub([it.name], conquistaOn ? conquistaTipo : null, category || '', false)).sprite; } catch (e) { semIcone.push(it.name); } }
     const row = { name: it.name, category, item_desc: it.desc, sprite, flags, price, updated_at: new Date().toISOString() };
     try {
