@@ -289,7 +289,7 @@ module.exports = async (req, res) => {
     };
 
     // a ficha pode ter mudado em outro lugar (index gastou item, loja entregou item): não sobrescreve às cegas
-    if (b.base) {
+    if (b.base && !Array.isArray(b.mud)) {   // cliente antigo: trava total. Cliente novo manda `mud` e é mesclado dentro do commit
       const atualN = (await lerEx())?.atualizado_em || null;
       // só é conflito se o servidor está MAIS NOVO que a base do cliente; leitura atrasada do GitHub (mais antiga) não deve bloquear
       if (atualN && atualN !== b.base && !(Date.parse(atualN) < Date.parse(b.base))) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
@@ -335,19 +335,41 @@ module.exports = async (req, res) => {
     const atualizado_em = new Date().toISOString();
 
     // 1) o Supabase confere o token e a permissão. Guarda só texto e URLs (sem base64).
-    await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: b.d });
+    await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: (await lerEx())?.d ?? b.d });
 
     // 2) um único commit no GitHub: JSON + imagens novas + índice (+ apaga imagens antigas)
     const ficha = { slug, nome, player_id: b.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d: b.d, atualizado_em };
+    let mesclado = null;   // {d, outros} quando houve merge com mudanças de outra pessoa
     await commit(async parent => {
-      const ch = [{ path: `data/fichas/${slug}.json`, content: JSON.stringify(ficha) }];
+      let fin = ficha; mesclado = null;
+      // MERGE POR CAMPO: se a ficha mudou desde que o navegador a carregou (b.base), aplica por cima da versão atual
+      // só os campos de `d` que ESTE usuário mexeu (b.mud). Só há conflito se o mesmo campo mudou dos dois lados.
+      if (Array.isArray(b.mud) && b.base) {
+        const tAtual = await readFile(`data/fichas/${slug}.json`, parent);   // leitura exata do commit-pai (nunca atrasada)
+        const cur = tAtual ? JSON.parse(tAtual) : null;
+        if (cur && cur.atualizado_em && cur.atualizado_em !== b.base) {
+          const J = v => JSON.stringify(v);
+          const sd = cur.d || {}, bd = (b.bd && typeof b.bd === 'object') ? b.bd : {}, nd = { ...sd }, conf = [];
+          const mud = b.mud.map(String).filter(k => !['__proto__', 'constructor', 'prototype'].includes(k));
+          for (const k of mud) {
+            if (J(sd[k]) !== J(bd[k]) && J(sd[k]) !== J(b.d[k])) conf.push(k);   // mudou no servidor E no navegador, com valores diferentes
+            if (b.d[k] === undefined) delete nd[k]; else nd[k] = b.d[k];
+          }
+          if (conf.length) throw Object.assign(new Error(`Os campos (${conf.join(', ')}) foram alterados em outro lugar ao mesmo tempo que você (uso de item, compra, outra pessoa...). Recarregue a página antes de salvar para não perder essas mudanças.`), { status: 409, code: 'conflito', campos: conf });
+          const outros = {};   // campos que a outra pessoa mudou e que o navegador ainda não tem
+          for (const k of Object.keys(nd)) if (!mud.includes(k) && J(nd[k]) !== J(b.d[k])) outros[k] = nd[k];
+          fin = { ...ficha, d: nd };
+          mesclado = { d: nd, outros };
+        }
+      }
+      const ch = [{ path: `data/fichas/${slug}.json`, content: JSON.stringify(fin) }];
       // as 3 leituras são independentes: disparam juntas (antes eram em fila)
       const pExist = listDir(`img/fichas/${slug}`, parent);
       const pIdx = readFile('data/index.json', parent);
       const pHist = (async () => {   // histórico: compara com a versão que está no GitHub agora
         try {
           const t = await readFile(`data/fichas/${slug}.json`, parent);
-          return await mudancaHist(readFile, parent, entradas(ficha, b.por, diffFicha(t ? JSON.parse(t) : null, ficha)));
+          return await mudancaHist(readFile, parent, entradas(fin, b.por, diffFicha(t ? JSON.parse(t) : null, fin)));
         } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); return null; }
       })();
       const [hist, existentes, idxTxt] = await Promise.all([pHist, pExist, pIdx]);
@@ -362,13 +384,16 @@ module.exports = async (req, res) => {
         if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb', 'pk'].includes(kind)) ch.push({ path: f.path, content: null });
       }
       const idx = parseIdx(idxTxt).filter(x => x.slug !== slug);
-      idx.push(indexEntry(ficha));
+      idx.push(indexEntry(fin));
       ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
       return ch;
     }, `ficha: ${slug}`);
 
-    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em });
+    try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: mesclado ? mesclado.d : b.d }); }
+    catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }   // o GitHub é a fonte da verdade
+
+    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em, outros: mesclado ? mesclado.outros : undefined });
   } catch (e) {
-    return res.status(e.status || 500).json({ error: e.message || 'Erro ao salvar.' });
+    return res.status(e.status || 500).json({ error: e.message || 'Erro ao salvar.', code: e.code, campos: e.campos });
   }
 };
