@@ -1410,7 +1410,10 @@ const LIM_ATIVAS=2,LIM_MSG='Limite atingido: cada player só pode ter 2 fichas a
 async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;const l=await carregaLista(),me=String(ses.nome||'').trim().toLowerCase();
  return l.filter(x=>x&&x.slug!==exceto&&x.desativada!=='true'&&(x.player_id!=null&&ses.player_id!=null?x.player_id===ses.player_id:String(x.player||'').trim().toLowerCase()===me)).length>=LIM_ATIVAS}
 /* fichas agora vivem em JSON no GitHub; o servidor (Vercel) valida a sessão e faz o commit */
-async function salvarFicha(x){if(x.d)x.d.ranking=String(rankDe(x.d.pts_ranking));const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d,base:x.base||undefined,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);return j}
+async function salvarFicha(x){if(x.d)x.d.ranking=String(rankDe(x.d.pts_ranking));
+ let mud,bd;const F0=x._F;   /* merge por campo: manda só QUAIS campos de d este usuário mudou + o valor-base deles */
+ if(F0&&F0._bd&&F0.slug&&F0.slug===x.slug&&x.d){mud=[];bd={};x._bdNovo={};new Set([...Object.keys(x.d),...Object.keys(F0._bd)]).forEach(k=>{if(JSON.stringify(x.d[k])!==JSON.stringify(F0._bd[k])){mud.push(k);if(F0._bd[k]!==undefined)bd[k]=F0._bd[k];x._bdNovo[k]=x.d[k]===undefined?undefined:JSON.parse(JSON.stringify(x.d[k]))}})}
+const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d,base:x.base||undefined,mud,bd,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);if(j&&x._bdNovo)Object.entries(j.pk||{}).forEach(([k,u])=>{const[K,n]=k.split('.'),v=x._bdNovo[K]?.[+n];if(v&&typeof v==='object'&&typeof v.foto==='string'&&v.foto.startsWith('data:'))v.foto=u});return j}
 async function apagarFicha(slug){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',token:ses.token,slug,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}
 async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug)+'&_='+Date.now(),{cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 function aplicaSalvo(j,F=f){if(!j||!F)return;if(j.pk&&F.d)Object.entries(j.pk).forEach(([k,u])=>{const[K,n]=k.split('.'),x=F.d[K]?.[+n];if(x&&typeof x.foto==='string'&&x.foto.startsWith('data:'))x.foto=u});F.foto=j.foto;F.banner=j.banner;F.thumb=j.thumb;F.atualizado_em=j.atualizado_em}
@@ -1547,8 +1550,13 @@ async function asRun(quiet){
 setInterval(()=>{if(asOn())asRun(true)},AS_MS);   /* ciclo de 30s */
 /* todo save (manual, desativar ou auto) passa por uma fila e atualiza o "último estado salvo" */
 const _sf=salvarFicha;
-salvarFicha=function(x){const sn=asSnapOf(x),F=f,p=asQ.then(()=>{if(x.base===undefined&&F&&F.slug&&F.slug===x.slug&&F.atualizado_em)x.base=F.atualizado_em;return _sf(x)});asQ=p.catch(()=>{});
- return p.then(j=>{if(F&&F.slug&&F.slug===x.slug&&j&&j.atualizado_em)F.atualizado_em=j.atualizado_em;if(asF&&F&&F===f&&F.slug===x.slug){if(asSnap()===sn){aplicaSalvo(j);asBase=asSnap()}else asBase=sn}return j})};
+salvarFicha=function(x){const sn=asSnapOf(x),F=f;x._F=F;const p=asQ.then(()=>{if(x.base===undefined&&F&&F.slug&&F.slug===x.slug&&F.atualizado_em)x.base=F.atualizado_em;return _sf(x)});asQ=p.catch(()=>{});
+ return p.then(j=>{if(F&&F.slug&&F.slug===x.slug&&j&&j.atualizado_em)F.atualizado_em=j.atualizado_em;if(asF&&F&&F===f&&F.slug===x.slug){if(asSnap()===sn){aplicaSalvo(j);asBase=asSnap()}else asBase=sn}
+  if(j&&F&&F._bd&&F.slug===x.slug){const eq0=!!asF&&F===f&&asSnap()===asBase;let novo=false;   /* atualiza a base e traz as mudanças que OUTRA pessoa fez */
+   Object.entries(x._bdNovo||{}).forEach(([k,v])=>{if(v===undefined)delete F._bd[k];else F._bd[k]=v});
+   Object.entries(j.outros||{}).forEach(([k,v])=>{if(JSON.stringify(F.d[k])===JSON.stringify(F._bd[k])){F.d[k]=JSON.parse(JSON.stringify(v));novo=true}F._bd[k]=JSON.parse(JSON.stringify(v))});
+   if(novo&&F===f){if(eq0)asBase=asSnap();toast('Mudanças feitas por outra pessoa foram mescladas na ficha',5000);if(!document.activeElement?.matches?.('input,textarea,select'))render()}}
+  return j})};
 const _rd=render;
 render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap();asConf=false}return r};
 const _cn=cancelar;
@@ -1585,7 +1593,7 @@ async function vFicha(slug,id){modo('F');document.title='Ficha | Kingdom Platinu
  try{const r=await lerFicha(slug).then(x=>x?[x]:[]);if(id!==rid)return;
   if(!r.length){app.innerHTML='<div class="wrap"><div class="lt">Ficha não encontrada. <a href="/fichas" data-r>← Voltar ao fichário</a></div></div>';return}f=r[0]}
  catch(e){if(id===rid)app.innerHTML='<div class="wrap"><div class="lt" style="color:#c00">Erro: '+esc(e.message)+'</div></div>';return}
- f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});document.title=(f.nome||'Ficha')+' | Fichário';render();fixStats()}
+ f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});f._bd=JSON.parse(JSON.stringify(f.d));document.title=(f.nome||'Ficha')+' | Fichário';render();fixStats()}
 // ── Ícone do botão de controle do sidebar (vetor): hamburguer/fechar ──
 const NAV_ICO_MENU  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>';
 const NAV_ICO_GAMEPAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>';
