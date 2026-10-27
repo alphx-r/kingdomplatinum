@@ -1404,7 +1404,7 @@ function go(u,rep){history[rep?'replaceState':'pushState'](null,'',u);route();sc
 document.addEventListener('click',e=>{const a=e.target.closest?.('a[data-r]');if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey)return;e.preventDefault();go(a.getAttribute('href'))});
 addEventListener('popstate',()=>route());
 function modo(m){document.body.classList.remove('ed');relSelI=-1;f=null;ed=false;drw=false;fab=true;ab.clear();so.clear();psA=0;setColors({});mostrarBadge()}
-async function carregaLista(){if(!LST){SHC.clear();const r=await fetch('/api/ficha-salvar?lista=1');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
+async function carregaLista(){if(!LST){SHC.clear();const r=await fetch('/api/ficha-salvar?lista=1&_='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
 /* limite: cada player só pode ter 2 fichas ativas (admin não tem limite) */
 const LIM_ATIVAS=2,LIM_MSG='Limite atingido: cada player só pode ter 2 fichas ativas. Desative uma das fichas antigas (Fichas > Desativadas) para criar ou reativar outra.';
 async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;const l=await carregaLista(),me=String(ses.nome||'').trim().toLowerCase();
@@ -1412,7 +1412,7 @@ async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;co
 /* fichas agora vivem em JSON no GitHub; o servidor (Vercel) valida a sessão e faz o commit */
 async function salvarFicha(x){if(x.d)x.d.ranking=String(rankDe(x.d.pts_ranking));const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d,base:x.base||undefined,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);return j}
 async function apagarFicha(slug){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',token:ses.token,slug,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}
-async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug));if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug)+'&_='+Date.now(),{cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 function aplicaSalvo(j,F=f){if(!j||!F)return;if(j.pk&&F.d)Object.entries(j.pk).forEach(([k,u])=>{const[K,n]=k.split('.'),x=F.d[K]?.[+n];if(x&&typeof x.foto==='string'&&x.foto.startsWith('data:'))x.foto=u});F.foto=j.foto;F.banner=j.banner;F.thumb=j.thumb;F.atualizado_em=j.atualizado_em}
 /* ===== histórico de alterações (só admin) ===== */
 const HC={ficha:'Ficha',pokemon:'Pokémon',bag:'Bag',compra:'Compra',dinheiro:'Dinheiro',stats:'Stats',conquista:'Conquista',perfil:'Perfil',timeline:'Timeline'};
@@ -1528,19 +1528,19 @@ function histMain(){
    Cada save vira um commit no GitHub (sem deploy na Vercel); 30s respeita os limites de API do GitHub (~6 escritas por save).
    Nunca roda em paralelo com outro save; se mudar algo durante um save, o próximo ciclo pega. Sem aviso fixo na tela. */
 const AS_MS=30000;
-let asF=null,asBase=null,asBusy=false,asAgain=false,asQ=Promise.resolve();
+let asF=null,asBase=null,asBusy=false,asAgain=false,asConf=false,asQ=Promise.resolve();
 const asImg=v=>!v?'':String(v).startsWith('data:')?'D'+v.length+':'+v.slice(-40):'U';
 const asSnapOf=x=>JSON.stringify([(x.nome||'').trim(),asImg(x.foto),asImg(x.banner),asImg(x.thumb),x.d]);
 const asSnap=()=>asSnapOf(f);
 const asOn=()=>!!(ed&&f&&f.slug&&asF===f);
-function asReset(){asF=null;asBase=null;asAgain=false}
+function asReset(){asF=null;asBase=null;asAgain=false;asConf=false}
 async function asRun(quiet){
- if(!asOn()||asBase===null||asSnap()===asBase)return;
+ if(asConf||!asOn()||asBase===null||asSnap()===asBase)return;
  if(!(f.nome||'').trim()){if(!quiet)toast('Autosave não feito: informe o nome do personagem');return}
  if(asBusy){if(!quiet)asAgain=true;return}
  const F=f;asBusy=true;let ok=false;
  try{await salvarFicha({slug:F.slug,nome:F.nome.trim(),foto:F.foto,banner:F.banner,thumb:F.thumb,player_id:F.player_id,d:F.d});LST=null;ok=true}
- catch(e){asAgain=false;toast(/outro lugar/.test(e.message)?'Autosave não feito: a ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página.':'Falha no autosave — alterações não salvas',6000)}
+ catch(e){asAgain=false;if(/outro lugar/.test(e.message)){asConf=true;toast('Conflito: a ficha foi alterada em outro lugar (outra aba, uso de item, compra...). Autosave pausado — recarregue a página.',9000)}else toast('Falha no autosave — alterações não salvas',6000)}
  finally{asBusy=false}
  if(ok&&asAgain){asAgain=false;asRun()}   /* save pedido (troca de página/aba) durante outro save: roda em seguida */
 }
@@ -1550,7 +1550,7 @@ const _sf=salvarFicha;
 salvarFicha=function(x){const sn=asSnapOf(x),F=f,p=asQ.then(()=>{if(x.base===undefined&&F&&F.slug&&F.slug===x.slug&&F.atualizado_em)x.base=F.atualizado_em;return _sf(x)});asQ=p.catch(()=>{});
  return p.then(j=>{if(F&&F.slug&&F.slug===x.slug&&j&&j.atualizado_em)F.atualizado_em=j.atualizado_em;if(asF&&F&&F===f&&F.slug===x.slug){if(asSnap()===sn){aplicaSalvo(j);asBase=asSnap()}else asBase=sn}return j})};
 const _rd=render;
-render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap()}return r};
+render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap();asConf=false}return r};
 const _cn=cancelar;
 cancelar=function(){asReset();return _cn.apply(this,arguments)};   /* Cancelar descarta o que ainda não foi salvo */
 const _rt=route;
