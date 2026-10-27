@@ -291,7 +291,8 @@ module.exports = async (req, res) => {
     // a ficha pode ter mudado em outro lugar (index gastou item, loja entregou item): não sobrescreve às cegas
     if (b.base) {
       const atualN = (await lerEx())?.atualizado_em || null;
-      if (atualN && atualN !== b.base) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
+      // só é conflito se o servidor está MAIS NOVO que a base do cliente; leitura atrasada do GitHub (mais antiga) não deve bloquear
+      if (atualN && atualN !== b.base && !(Date.parse(atualN) < Date.parse(b.base))) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
     }
 
     // limite: cada player só pode ter LIM_ATIVAS fichas ativas (vale para criar ficha nova e para reativar uma desativada).
