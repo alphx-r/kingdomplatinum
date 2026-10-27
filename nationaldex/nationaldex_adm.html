@@ -4501,6 +4501,7 @@ function faltAddRow(listId, data = {}) {
     <div class="falt-sprite-row" style="margin-bottom:8px">
       <input type="text" class="falt-pokeapi-slug" placeholder="slug PokeAPI (ex: oricorio-pom-pom)" style="flex:1;font-family:var(--font-body);font-size:11px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text)" value="${data.pokeapi_slug || faltGuessPokeapiSlug(data.nome) || ''}" oninput="faltMarkSlugLocked(this);faltSyncPokeapiSlug(this)">
       <button type="button" class="btn btn-outline btn-sm falt-pokeapi-btn" onclick="faltFetchFromPokeapi(this)" style="flex-shrink:0">🌐 Puxar do PokeAPI</button>
+      <button type="button" class="btn btn-outline btn-sm falt-github-btn" onclick="faltFetchFromGithub(this)" style="flex-shrink:0" title="Procura no repositório do GitHub os sprites desta forma (normal e shiny), pelo nº do Pokémon + nome da forma">🐙 Buscar do GitHub</button>
     </div>
 
     <!-- Tipos lado a lado -->
@@ -4799,6 +4800,53 @@ async function faltFetchFromPokeapi(btn) {
   } finally {
     btn.disabled = false;
     btn.textContent = origLabel;
+  }
+}
+// Procura no GitHub (repo de sprites) o sprite normal + shiny de uma forma alternativa, pelo nº do Pokémon base + nome da forma.
+// Usa a MESMA função de nome do upload (kpGhFormFile), então acha o que o próprio adm enviou: sprites/pokemon/052-n-meowth-alt.png
+// (shiny em sprites/pokemon/shiny/…). Também tenta o nome do padrão anterior (052-alt-n-meowth.png) e outras extensões.
+async function faltFetchFromGithub(btn) {
+  const row = btn.closest('.falt-row');
+  const nome = row.querySelector('.falt-nome')?.value.trim() || '';
+  if (!nome) { toast('Preencha o nome da forma antes de buscar.', 'err'); return; }
+  const listId = row.closest('.falt-list')?.id || '';
+  const dexRaw = (document.getElementById(listId === 'nrpg-formas-alt' ? 'nrpg-pokedex' : 'epk-pokedex')?.value || '').trim();
+  if (!/\d/.test(dexRaw)) { toast('Preencha o Nº Pokédex do Pokémon antes de buscar.', 'err'); return; }
+  const slug = toSlugBase(nome) || 'forma';
+  const origLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Buscando…';
+  const existe = async url => { try { const r = await fetch(url, { method: 'HEAD', cache: 'no-store' }); return r.ok; } catch (_) { return false; } };
+  try {
+    const exts = ['png', 'jpg', 'webp'];
+    const nomes = [];
+    exts.forEach(e => nomes.push(kpGhFormFile(`${dexRaw}-alt-${slug}`, e)));                       // padrão atual: 052-n-meowth-alt.png
+    exts.forEach(e => { const f = kpGhFormFile(`${dexRaw}-alt-${slug}`, e); const m = /^(\d+)-(.+)-alt\.(\w+)$/.exec(f || ''); if (m) nomes.push(`${m[1]}-alt-${m[2]}.${m[3]}`); });  // padrão anterior
+    const achar = async shiny => {
+      for (const f of nomes.filter(Boolean)) {
+        const url = KP_SPRITE_BASE + (shiny ? 'shiny/' : '') + encodeURIComponent(f);
+        if (await existe(url)) return url;
+      }
+      return '';
+    };
+    const [normal, shiny] = await Promise.all([achar(false), achar(true)]);
+    if (!normal && !shiny) throw new Error(`não achei ${nomes[0]} em sprites/pokemon/ (nem em shiny/)`);
+    if (normal) {
+      row.querySelector('.falt-sprite-url').value = normal;
+      const prev = row.querySelector('.falt-sprite-prev');
+      prev.innerHTML = `<img src="${normal}" style="width:100%;height:100%;object-fit:contain">`;
+      delete prev.dataset.b64;
+    }
+    if (shiny) {
+      row.querySelector('.falt-sprite-shiny-url').value = shiny;
+      const prevShiny = row.querySelector('.falt-sprite-shiny-prev');
+      prevShiny.innerHTML = `<img src="${shiny}" style="width:100%;height:100%;object-fit:contain">`;
+      delete prevShiny.dataset.b64;
+    }
+    toast(`Sprite do GitHub: ${normal ? 'normal' : ''}${normal && shiny ? ' + ' : ''}${shiny ? 'shiny' : ''} encontrado.`, 'ok');
+  } catch (e) {
+    toast('GitHub: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = origLabel;
   }
 }
 // Lê as formas alternativas de uma lista (sem sprite ainda pendente de upload — usa URL já existente)
