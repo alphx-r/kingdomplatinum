@@ -1449,6 +1449,10 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
       <span class="kpimp-lbl" style="margin:0">📍 Local</span>
       <select id="kpimp-local" class="mv-meta-input" style="flex:1;min-width:220px" onchange="kpImpInvalida()"></select>
     </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <span class="kpimp-lbl" style="margin:0" title="Grava exatamente a mesma lista (raridades e flags) também neste segundo Local">🔁 Repetir também em</span>
+      <select id="kpimp-local2" class="mv-meta-input" style="flex:1;min-width:220px" onchange="kpImpInvalida()"></select>
+    </div>
     <div id="kpimp-listas"></div>
     <button type="button" class="bioma-add-regra" onclick="kpImpNovaLista()" style="margin-top:8px">+ Outra lista (outras flags)</button>
     <div style="margin-top:12px;font-size:12px;display:flex;flex-direction:column;gap:4px">
@@ -2326,6 +2330,8 @@ function kpImpAbrir() {
   const sel = document.getElementById('kpimp-local');
   const atual = ENCL.local || (ENCL.locais[0] && ENCL.locais[0].nome) || '';
   sel.innerHTML = ENCL.locais.map(l => `<option value="${enclEsc(l.nome)}"${l.nome === atual ? ' selected' : ''}>${enclEsc(l.nome)} (${ENCL.contagem[l.nome] || 0})</option>`).join('');
+  const sel2 = document.getElementById('kpimp-local2');
+  sel2.innerHTML = '<option value="">— nenhum (só o Local acima) —</option>' + ENCL.locais.map(l => `<option value="${enclEsc(l.nome)}">${enclEsc(l.nome)} (${ENCL.contagem[l.nome] || 0})</option>`).join('');
   document.getElementById('kpimp-listas').innerHTML = '';
   KPIMP.seq = 0; kpImpNovaLista();
   kpImpInvalida();
@@ -2489,6 +2495,10 @@ function kpProximoN() {
 async function kpImpAplicar() {
   const local = KPIMP.local;
   if (!local || !KPIMP.itens.length) return;
+  const local2 = document.getElementById('kpimp-local2')?.value || '';
+  if (local2 && local2 === local) { toast('Os dois Locais são o mesmo — escolha outro em “Repetir também em”.', 'err'); return; }
+  const locais = local2 ? [local, local2] : [local];
+  const localTxt = locais.map(l => `“${l}”`).join(' e ');
   const modo = document.querySelector('input[name="kpimp-modo"]:checked').value;   // 'mesclar' | 'substituir' | 'adicionar'
   const manual = {}, aCriar = [], aliases = [];
   KPIMP.pend.forEach((p, i) => {
@@ -2510,7 +2520,7 @@ async function kpImpAplicar() {
   if (aNovos.length) extras.push(`• ${aNovos.length} Pokémon novo(s) sem dados (rascunho, não aparece para os players): ${aNovos.slice(0, 10).join(', ')}${aNovos.length > 10 ? '…' : ''}`);
   const rep = KPIMP.repetidos || [];
   const avisoRep = rep.length ? `\n\n⚠️ ${rep.length} repetido(s) em mais de uma raridade na mesma lista: ${rep.slice(0, 6).map(e => kpRepTexto(e, false)).join('; ')}${rep.length > 6 ? '…' : ''}` : '';
-  if (!confirm(`${modoTxt} “${local}” — ${qtd} Pokémon${puladas ? ` (${puladas} linhas sem correspondência serão puladas)` : ''}?${extras.length ? '\n\nTambém será cadastrado:\n' + extras.join('\n') : ''}${avisoRep}`)) return;
+  if (!confirm(`${modoTxt} ${localTxt} — ${qtd} Pokémon${puladas ? ` (${puladas} linhas sem correspondência serão puladas)` : ''}?${extras.length ? '\n\nTambém será cadastrado:\n' + extras.join('\n') : ''}${avisoRep}`)) return;
 
   const btn = document.getElementById('kpimp-apply'); btn.disabled = true;
   const resumo = document.getElementById('kpimp-resumo');
@@ -2547,9 +2557,10 @@ async function kpImpAplicar() {
         porId.set(id, arr);
       });
     });
+    let gravados = 0;
+    for (const local of locais) {
     resumo.textContent = `Gravando ${local}…`;
     if (modo === 'substituir') enclLimparLocal(local);          // tira o Local de todos os Pokémon (info antiga)
-    let gravados = 0;
     porId.forEach((regras, id) => {
       const t = enclAlvo(id);
       if (!t) { falhas.push(`${(ENCL.pk[id] || {}).nome || id}: não encontrado no pokemon.json`); return; }
@@ -2562,6 +2573,7 @@ async function kpImpAplicar() {
       }
       if (enclSetRegras(id, local, final)) gravados++;
     });
+    }
     resumo.textContent = 'Gravando no pokemon.json…';
     await pkjFlush();
     await enclCarregarContagem();
@@ -2569,7 +2581,7 @@ async function kpImpAplicar() {
     document.getElementById('kpimp-modal').classList.remove('open');
     await enclSelecionar(local);
     try { applyPkFilter(); updatePkStats(); } catch (e) { /* lista de Pokémon fechada: ignora */ }
-    toast(`Importado em ${local}: ${gravados} Pokémon.`, falhas.length ? 'err' : 'ok');
+    toast(`Importado em ${locais.join(' e ')}: ${gravados} registros.`, falhas.length ? 'err' : 'ok');
     if (falhas.length) alert(`⚠️ ${falhas.length} problema(s):\n${falhas.slice(0, 8).join('\n')}${falhas.length > 8 ? '\n…' : ''}`);
   } catch (e) {
     btn.disabled = false;
@@ -4753,7 +4765,8 @@ async function faltFetchFromPokeapi(btn) {
   const row = btn.closest('.falt-row');
   const input = row.querySelector('.falt-pokeapi-slug');
   const slug = (input?.value || '').trim().toLowerCase().replace(/\s+/g, '-');
-  if (!slug) { toast('Digite o slug do PokeAPI (ex: oricorio-pom-pom).', 'err'); return; }
+  if (!slug) { toast('Digite o slug do PokeAPI (ex: oricorio-pom-pom). Formas Nendo não existem na PokeAPI — use "Buscar do GitHub".', 'err'); return; }
+  if (/-nendo$/.test(slug)) { toast('Formas Nendo não existem na PokeAPI. Use "🐙 Buscar do GitHub" ou envie o sprite por arquivo.', 'err'); return; }
   const origLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Buscando…';
@@ -5122,10 +5135,13 @@ function faltMarkSlugLocked(el) {
 function faltGuessPokeapiSlug(nomeRaw) {
   const nome = String(nomeRaw || '').trim();
   if (!nome) return '';
+  // Nendo (N) é região própria do RPG — não existe na PokeAPI, então nunca chuta slug "-nendo".
+  if (namePrefixLetter(nome) === 'N') return '';
   if (namePrefixLetter(nome)) return buildAutoSlug(nome, '');
   const m = nome.match(REGIONAL_ALT_PAREN_RE);
   if (m) {
     const letra = REGIONAL_ALT_LETRA_POR_REGIAO[m[2].toLowerCase()];
+    if (letra === 'N') return '';
     const suf = letra && REGION_SLUG_SUFFIX[letra];
     const base = toSlugBase(m[1]);
     if (base && suf) return `${base}-${suf}`;
