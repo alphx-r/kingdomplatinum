@@ -677,11 +677,24 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </label>
       <div id="nit-bulk-wrap" style="display:none;margin-bottom:14px">
         <div class="field-lbl pt" style="margin-bottom:4px">Itens (um por linha)</div>
-        <textarea class="field-pt" id="nit-bulk-names" rows="8" placeholder="Normalium Z&#10;Firium Z&#10;Waterium Z" style="width:100%"></textarea>
+        <textarea class="field-pt" id="nit-bulk-names" rows="8" placeholder="Normalium Z&#10;Firium Z&#10;Waterium Z" style="width:100%" oninput="nbRenderIcons()"></textarea>
+        <div style="margin-top:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+            <div class="field-lbl pt" style="margin:0">Ícones</div>
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block" title="Escolha várias imagens de uma vez: cada uma é ligada ao item de mesmo nome (ex: normalium-z.png → Normalium Z)">
+              📁 Enviar várias imagens
+              <input type="file" accept="image/*" multiple style="display:none" onchange="nbPickMany(this)">
+            </label>
+            <button type="button" class="btn btn-outline btn-sm" id="nit-bulk-icons-clear" style="display:none" onclick="nbClearIcons()">Limpar imagens</button>
+            <span id="nit-bulk-icons-count" style="font-size:11.5px;color:var(--muted)"></span>
+          </div>
+          <div id="nit-bulk-icons" ondragover="event.preventDefault()" ondrop="nbDrop(event)" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px"></div>
+          <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Nome do arquivo = nome do item (maiúsculas, espaços e hífen tanto faz). Também dá para arrastar as imagens para esta área ou escolher uma imagem por item. Item sem imagem enviada continua buscando o ícone pelo nome em sprites/items do GitHub.</p>
+        </div>
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;margin-top:6px">
           <input type="checkbox" id="nit-bulk-samedesc" checked style="margin:0"> Mesma descrição para todos <span style="font-weight:400;color:var(--muted)">(usa o campo Descrição abaixo; desmarque para dar uma descrição por linha)</span>
         </label>
-        <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Categoria e flags (Consumível, Evento, PokéMart/preço, Conquista) valem para todos. Com "Mesma descrição" desmarcado, use <b>Nome | descrição</b> em cada linha; linhas sem descrição usam o campo Descrição. O ícone de cada um é buscado pelo nome em sprites/items do GitHub (se não achar, fica sem ícone — depois use 🖼️ IMGs GIT). Pickup não vale no modo em lote.</p>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:4px">Categoria e flags (Consumível, Evento, PokéMart/preço, Conquista) valem para todos. Com "Mesma descrição" desmarcado, use <b>Nome | descrição</b> em cada linha; linhas sem descrição usam o campo Descrição. O ícone de cada um vem da imagem enviada abaixo ou, se não houver, é buscado pelo nome em sprites/items do GitHub (se não achar, fica sem ícone — depois use 🖼️ IMGs GIT). Pickup não vale no modo em lote.</p>
       </div>
       <div>
         <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:12px">
@@ -1756,6 +1769,55 @@ async function pushImageToGithub(dataUrl, path) {
   return j;
 }
 
+// Várias imagens de uma vez: UM commit por lote (em geral um só). Os lotes só se dividem se passarem de
+// ~3,5 MB ou 50 imagens (limite de corpo da Vercel). Devolve { shas: Map(path→sha), falhas: [path], erro }.
+async function pushImagesBatchToGithub(files, message) {
+  let admin = null;
+  try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
+  const lotes = []; let cur = [], size = 0;
+  for (const f of files) {
+    const b64 = String(f.dataUrl).split(',')[1] || '';
+    if (cur.length && (size + b64.length > 3_500_000 || cur.length >= 50)) { lotes.push(cur); cur = []; size = 0; }
+    cur.push({ path: f.path, contentBase64: b64 }); size += b64.length;
+  }
+  if (cur.length) lotes.push(cur);
+  const shas = new Map(), falhas = []; let erro = '';
+  for (const lote of lotes) {
+    try {
+      const res = await fetch('/api/commit-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: lote, admin, message }),
+      });
+      let j = {}; try { j = await res.json(); } catch (e) {}
+      if (!res.ok) throw new Error(j.error || `Erro ${res.status} ao enviar pro GitHub`);
+      (j.files || []).forEach(x => shas.set(x.path, x.sha));
+    } catch (e) { erro = e.message; lote.forEach(f => falhas.push(f.path)); }
+  }
+  return { shas, falhas, erro };
+}
+
+// entries: [{ key, slug, category, conqTipo, dataUrl }] → { sprites: Map(key→caminho do sprite), falhas: [key], erro }
+async function uploadItemImagesBatch(entries, message) {
+  const prep = [];
+  for (const e of entries) prep.push({ ...e, path: await ghItemTarget(e.slug, e.category, e.conqTipo) });
+  const { shas, falhas, erro } = await pushImagesBatchToGithub(prep, message);
+  const sprites = new Map(), falhou = [];
+  prep.forEach(e => {
+    const sha = shas.get(e.path);
+    if (!sha) { falhou.push(e.key); return; }
+    const base = e.conqTipo ? GH_REWARDS_DIR : GH_ITEMS_DIR;
+    if (GH_CACHE[base]) {
+      const rel = e.path.slice(base.length + 1), k = rel.lastIndexOf('/');
+      const name = rel.slice(k + 1), dir = k >= 0 ? rel.slice(0, k) : '';
+      GH_CACHE[base] = GH_CACHE[base].filter(f => !(f.name === name && f.dir === dir));
+      GH_CACHE[base].push({ name, dir, sha });
+    }
+    sprites.set(e.key, `/${e.path.split('/').map(encodeURIComponent).join('/')}?v=${String(sha).slice(0, 7)}`);
+  });
+  return { sprites, falhas: falhou, erro };
+}
+
 // Descobre onde a imagem deve ir. Itens de conquista vão para
 // sprites/rewards/<pasta do tipo>/ (badges, ribbons, pins, randoms); os demais
 // para sprites/items/<categoria>/. Se já existir um arquivo com esse nome em
@@ -1935,7 +1997,7 @@ async function deleteItem(name) {
 }
 
 function openNewItem() {
-  { const b = document.getElementById('nit-bulk-on'); if (b) b.checked = false; const t = document.getElementById('nit-bulk-names'); if (t) t.value = ''; const sd = document.getElementById('nit-bulk-samedesc'); if (sd) sd.checked = true; toggleBulkNew(false); }
+  { const b = document.getElementById('nit-bulk-on'); if (b) b.checked = false; const t = document.getElementById('nit-bulk-names'); if (t) t.value = ''; const sd = document.getElementById('nit-bulk-samedesc'); if (sd) sd.checked = true; toggleBulkNew(false); nbClearIcons(); }
   ['nit-name','nit-category','nit-description','nit-icon-slug','nit-price','nit-pickup-numeros'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
   ['nit-flag-pokemart','nit-flag-venda','nit-flag-pickup','nit-flag-consumivel','nit-flag-evento','nit-flag-conquista'].forEach(f => { const el = document.getElementById(f); if (el) el.checked = false; });
   { const ct = document.getElementById('nit-conquista-tipo'); if (ct) { ct.style.display = 'none'; ct.value = 'insignia'; } }
@@ -2603,11 +2665,89 @@ async function saveNewItem() {
 /* ══════════════════════════════════════════
    CRIAÇÃO EM LOTE (ex: Z-Crystals) + MIGRAÇÃO Berry → Forage
 ══════════════════════════════════════════ */
+/* ── Ícones na criação em lote: imagens enviadas ficam em NB_ICONS (slug do nome → data URL) ── */
+const NB_ICONS = {};
+const nbEsc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function nbNames() {
+  const vistos = new Set(), out = [];
+  String(document.getElementById('nit-bulk-names')?.value || '').split(/\r?\n/).forEach(l => {
+    const t = l.trim(); if (!t) return;
+    const k = t.indexOf('|');
+    const name = titleCap((k < 0 ? t : t.slice(0, k)).trim());
+    const key = toSlugBase(name);
+    if (!name || !key || vistos.has(key)) return;
+    vistos.add(key); out.push({ name, key });
+  });
+  return out;
+}
+function nbReadFile(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = async () => {
+      let out = r.result;
+      try { out = await trimAndFitSprite(out, 512); } catch (e) {}
+      resolve(out);
+    };
+    r.onerror = () => reject(new Error('Erro ao ler ' + file.name));
+    r.readAsDataURL(file);
+  });
+}
+function nbRenderIcons() {
+  const box = document.getElementById('nit-bulk-icons'); if (!box) return;
+  const names = nbNames();
+  const keys = new Set(names.map(n => n.key));
+  Object.keys(NB_ICONS).forEach(k => { if (!keys.has(k)) delete NB_ICONS[k]; });   // linha apagada do texto → descarta a imagem
+  box.innerHTML = names.map(n => {
+    const img = NB_ICONS[n.key];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border:1.5px solid ${img ? 'var(--brand-mid)' : 'var(--border)'};border-radius:8px;background:var(--surface2)">
+      <div style="width:36px;height:36px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--surface);border-radius:6px">${img ? `<img src="${img}" alt="" style="max-width:34px;max-height:34px;object-fit:contain">` : '<span style="font-size:16px;opacity:.5">🎒</span>'}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nbEsc(n.name)}</div><div style="font-size:10.5px;color:var(--muted)">${img ? 'imagem enviada' : 'buscar no GitHub'}</div></div>
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;padding:3px 7px" title="Escolher imagem para ${nbEsc(n.name)}">🖼️<input type="file" accept="image/*" style="display:none" onchange="nbPickOne('${n.key}',this)"></label>
+      ${img ? `<button type="button" class="btn btn-outline btn-sm" style="padding:3px 7px" title="Remover imagem" onclick="nbRemove('${n.key}')">✕</button>` : ''}
+    </div>`;
+  }).join('');
+  const n = Object.keys(NB_ICONS).length;
+  const cnt = document.getElementById('nit-bulk-icons-count'); if (cnt) cnt.textContent = n ? `${n}/${names.length} com imagem enviada` : '';
+  const clr = document.getElementById('nit-bulk-icons-clear'); if (clr) clr.style.display = n ? '' : 'none';
+}
+async function nbPickOne(key, inputEl) {
+  const file = inputEl.files && inputEl.files[0]; inputEl.value = '';
+  if (!file) return;
+  try { NB_ICONS[key] = await nbReadFile(file); } catch (e) { toast(e.message, 'err'); return; }
+  nbRenderIcons();
+}
+async function nbAddFiles(files) {
+  const names = nbNames();
+  if (!names.length) { toast('Digite os nomes dos itens primeiro (um por linha) para ligar as imagens.', 'err'); return; }
+  const byKey = new Map(names.map(n => [n.key, n]));
+  const sem = [];
+  let ok = 0;
+  for (const f of files) {
+    if (!/^image\//.test(f.type || '')) { sem.push(f.name); continue; }
+    const key = toSlugBase(f.name.replace(/\.[^.]+$/, ''));
+    if (!byKey.has(key)) { sem.push(f.name); continue; }
+    try { NB_ICONS[key] = await nbReadFile(f); ok++; } catch (e) { sem.push(f.name); }
+  }
+  nbRenderIcons();
+  toast(`${ok} imagem(ns) ligada(s) aos itens.` + (sem.length ? ` Sem item correspondente: ${sem.join(', ')}.` : ''), sem.length ? 'err' : 'ok');
+}
+function nbPickMany(inputEl) {
+  const files = [...(inputEl.files || [])]; inputEl.value = '';
+  if (files.length) nbAddFiles(files);
+}
+function nbDrop(ev) {
+  ev.preventDefault();
+  const files = [...((ev.dataTransfer && ev.dataTransfer.files) || [])];
+  if (files.length) nbAddFiles(files);
+}
+function nbRemove(key) { delete NB_ICONS[key]; nbRenderIcons(); }
+function nbClearIcons() { Object.keys(NB_ICONS).forEach(k => delete NB_ICONS[k]); nbRenderIcons(); }
+
 function toggleBulkNew(on) {
   const w = document.getElementById('nit-bulk-wrap'); if (w) w.style.display = on ? '' : 'none';
   const n = document.getElementById('nit-name-wrap'); if (n) n.style.display = on ? 'none' : '';
   const i = document.getElementById('nit-icon-col'); if (i) i.style.display = on ? 'none' : '';
-  if (on) document.getElementById('nit-bulk-names')?.focus();
+  if (on) { document.getElementById('nit-bulk-names')?.focus(); nbRenderIcons(); }
 }
 
 async function saveNewItemsBulk() {
@@ -2646,12 +2786,24 @@ async function saveNewItemsBulk() {
   if (!novos.length) { toast(jaExistem.length ? 'Todos esses itens já existem.' : 'Digite ao menos um nome (um por linha).', 'err'); return; }
   if (!confirm(`Criar ${novos.length} ite${novos.length === 1 ? 'm' : 'ns'}${category ? ` na categoria "${category}"` : ''}?` + (jaExistem.length ? `\n\nJá existem e serão ignorados: ${jaExistem.join(', ')}` : '') + `\n\n` + novos.map(n => '• ' + n.name).join('\n'))) return;
   const flags = mergeItemFlags(null, pokemartOn, false, consumivelOn, eventoOn, [], conquistaOn, conquistaTipo, vendaOn);
-  const salvos = [], falhas = [], semIcone = [];
+  const salvos = [], falhas = [], semIcone = [], falhaImg = [];
+  // imagens enviadas: todas num commit só (antes de salvar os itens)
+  const comImg = novos.filter(it => NB_ICONS[toSlugBase(it.name)]);
+  let upLote = { sprites: new Map(), falhas: [], erro: '' };
+  if (comImg.length) {
+    toast(`Enviando ${comImg.length} imagem(ns) para o GitHub (1 commit)…`);
+    try {
+      upLote = await uploadItemImagesBatch(comImg.map(it => ({ key: toSlugBase(it.name), slug: toSlugBase(it.name), category, conqTipo: conquistaOn ? conquistaTipo : null, dataUrl: NB_ICONS[toSlugBase(it.name)] })), `Adiciona ${comImg.length} ícones de itens (ItemDex ADM)`);
+    } catch (e) { upLote = { sprites: new Map(), falhas: comImg.map(it => toSlugBase(it.name)), erro: e.message }; }
+    if (upLote.erro) toast('Erro ao enviar imagens: ' + upLote.erro, 'err');
+  }
   for (let n = 0; n < novos.length; n++) {
     const it = novos[n];
     toast(`Salvando ${n + 1}/${novos.length}: ${it.name}…`);
     let sprite = null;
-    try { sprite = (await acharSpriteGithub([it.name], conquistaOn ? conquistaTipo : null, category || '', false)).sprite; } catch (e) { semIcone.push(it.name); }
+    const k0 = toSlugBase(it.name);
+    if (NB_ICONS[k0]) { if (upLote.sprites.has(k0)) sprite = upLote.sprites.get(k0); else falhaImg.push(it.name); }
+    if (!sprite) { try { sprite = (await acharSpriteGithub([it.name], conquistaOn ? conquistaTipo : null, category || '', false)).sprite; } catch (e) { semIcone.push(it.name); } }
     const row = { name: it.name, category, item_desc: it.desc, sprite, flags, price, updated_at: new Date().toISOString() };
     try {
       await sbUpsert('items', row);
@@ -2661,8 +2813,8 @@ async function saveNewItemsBulk() {
   S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   populateItemCategoryFilter();
   applyItFilter();
-  if (!falhas.length) closeNewItemForm();
-  toast(`${salvos.length} item(ns) salvo(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + (semIcone.length ? ` Sem ícone no GitHub: ${semIcone.join(', ')}.` : ''), falhas.length ? 'err' : 'ok');
+  if (!falhas.length) { nbClearIcons(); closeNewItemForm(); }
+  toast(`${salvos.length} item(ns) salvo(s)!` + (falhas.length ? ` Falharam: ${falhas.join(', ')}.` : '') + (falhaImg.length ? ` Falha ao enviar a imagem de: ${falhaImg.join(', ')}.` : '') + (semIcone.length ? ` Sem ícone no GitHub: ${semIcone.join(', ')}.` : ''), (falhas.length || falhaImg.length) ? 'err' : 'ok');
 }
 
 async function padronizarNomesItens() {
