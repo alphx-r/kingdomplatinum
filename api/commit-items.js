@@ -1,82 +1,63 @@
-// /api/commit-items.js
-// Rota serverless (Vercel) chamada pelo botão "Commitar items.json" do
-// itemdex_adm.html. Recebe { items: [...] } no corpo, e commita esse
-// conteúdo como itemdex/items.json no repo alphx-r/kingdomplatinum via
-// GitHub Contents API.
-//
-// O GITHUB_TOKEN vive só aqui, como env var da Vercel — nunca chega no
-// navegador. Precisa ter escopo de escrita em "contents" nesse repo
-// (um PAT clássico com escopo "repo", ou um fine-grained token
-// restrito a alphx-r/kingdomplatinum com permissão Contents: Read/Write).
+const OWNER = 'alphx-r', REPO = 'kingdomplatinum', BRANCH = 'main';
+const FILE_PATH = 'itemdex/items.json';
+const AUTH_SUPA_URL = process.env.AUTH_SUPA_URL || 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const AUTH_SUPA_KEY = process.env.AUTH_SUPA_KEY || '<a mesma chave anon que está no commit-image.js>';
+const PATH_RE = /^sprites\/(items(\/[\p{L}\p{N}][\p{L}\p{N}._ -]*)?|rewards\/(badges|ribbons|pins|randoms))\/[a-z0-9][a-z0-9._-]*\.(png|webp|gif|jpg|jpeg)$/u;
 
-const OWNER = 'alphx-r';
-const REPO = 'kingdomplatinum';
-const FILE_PATH = 'itemdex/items.json'; // <- alterado (antes: 'items.json')
+async function adminValido(nome) {
+  if (!nome) return false;
+  try {
+    const r = await fetch(`${AUTH_SUPA_URL}/rest/v1/rpc/admin_list`, {
+      method: 'POST',
+      headers: { apikey: AUTH_SUPA_KEY, Authorization: 'Bearer ' + AUTH_SUPA_KEY, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    return r.ok && ((await r.json()) || []).some(a => a.nome === nome);
+  } catch (e) { return false; }
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Método não permitido.' });
-  }
-
+  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Método não permitido.' }); }
   const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    return res.status(500).json({ error: 'GITHUB_TOKEN não configurado nas env vars da Vercel.' });
+  if (!token) return res.status(500).json({ error: 'GITHUB_TOKEN não configurado.' });
+
+  const { items, images = [], admin } = req.body || {};
+  if (!Array.isArray(items) || !Array.isArray(images)) return res.status(400).json({ error: 'Payload inválido.' });
+  if (!(await adminValido(admin))) return res.status(401).json({ error: 'Sessão de admin inválida. Faça login de novo.' });
+  for (const im of images) {
+    if (!im?.path || !PATH_RE.test(im.path) || im.path.includes('..')) return res.status(400).json({ error: `Caminho não permitido: ${im?.path}` });
+    if (!/^[A-Za-z0-9+/=]+$/.test(im.contentBase64 || '') || im.contentBase64.length > 2_000_000) return res.status(400).json({ error: `Imagem inválida ou grande demais: ${im.path}` });
   }
 
-  const { items } = req.body || {};
-  if (!Array.isArray(items)) {
-    return res.status(400).json({ error: 'Payload inválido: esperado { items: [...] }.' });
-  }
-
-  const ghHeaders = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
+  const H = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json', 'User-Agent': 'kingdomplatinum-itemdex-adm' };
+  const gh = async (path, method = 'GET', body) => {
+    const r = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/${path}`, { method, headers: H, body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.message || `GitHub HTTP ${r.status}`);
+    return d;
   };
 
   try {
-    // 1) Pega o sha do itemdex/items.json atual (necessário pro GitHub aceitar
-    //    o update; se o arquivo ainda não existir, segue sem sha = cria novo).
-    let sha;
-    const getRes = await fetch(
-      `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`,
-      { headers: ghHeaders }
-    );
-    if (getRes.ok) {
-      const getData = await getRes.json();
-      sha = getData.sha;
-    } else if (getRes.status !== 404) {
-      const errText = await getRes.text();
-      return res.status(getRes.status).json({ error: `Erro ao ler ${FILE_PATH} atual: ${errText}` });
+    const headSha = (await gh(`git/ref/heads/${BRANCH}`)).object.sha;
+    const baseTree = (await gh(`git/commits/${headSha}`)).tree.sha;
+
+    const entries = [];
+    for (const im of images) {
+      const b = await gh('git/blobs', 'POST', { content: im.contentBase64, encoding: 'base64' });
+      entries.push({ path: im.path, mode: '100644', type: 'blob', sha: b.sha });
     }
+    const jb = await gh('git/blobs', 'POST', { content: JSON.stringify(items, null, 2), encoding: 'utf-8' });
+    entries.push({ path: FILE_PATH, mode: '100644', type: 'blob', sha: jb.sha });
 
-    // 2) Commita o novo conteúdo (branch padrão do repo, sem forçar nome).
-    const content = Buffer.from(JSON.stringify(items, null, 2)).toString('base64');
-    const putRes = await fetch(
-      `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`,
-      {
-        method: 'PUT',
-        headers: { ...ghHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `chore: atualiza ${FILE_PATH} (${items.length} itens) via itemdex_adm`,
-          content,
-          sha, // omitido (undefined) se o arquivo não existia ainda
-        }),
-      }
-    );
+    const tree = await gh('git/trees', 'POST', { base_tree: baseTree, tree: entries });
+    if (tree.sha === baseTree) return res.status(200).json({ ok: true, unchanged: true });
 
-    if (!putRes.ok) {
-      const errText = await putRes.text();
-      return res.status(putRes.status).json({ error: `Erro ao commitar: ${errText}` });
-    }
-
-    const putData = await putRes.json();
-    return res.status(200).json({
-      ok: true,
-      commitSha: putData.commit?.sha,
-      htmlUrl: putData.content?.html_url,
+    const commit = await gh('git/commits', 'POST', {
+      message: `chore: atualiza ${FILE_PATH} (${items.length} itens, ${images.length} imagens) via itemdex_adm`,
+      tree: tree.sha, parents: [headSha],
     });
+    await gh(`git/refs/heads/${BRANCH}`, 'PATCH', { sha: commit.sha });
+    return res.status(200).json({ ok: true, commitSha: commit.sha });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
