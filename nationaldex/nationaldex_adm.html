@@ -698,6 +698,10 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button type="button" class="btn btn-outline" onclick="enclMigrarDoSupabase()" title="Copia para o pokemon.json as listas que ainda estão no Supabase (use uma vez; Locais que já têm lista no pokemon.json não mudam)">⬇️ Trazer do Supabase</button>
         <button type="button" class="btn btn-danger" onclick="enclEsvaziar()">🧹 Esvaziar este Local</button>
       </div>
+      <div class="encl-bar">
+        <select id="encl-copy-dest" title="Local que vai receber uma cópia da lista do Local selecionado acima"></select>
+        <button type="button" class="btn btn-outline" onclick="enclCopiarPara()" title="Copia a lista inteira deste Local (Pokémon, raridades e condições) para o Local escolhido ao lado">🔁 Copiar esta lista para…</button>
+      </div>
       <div id="encl-msg" class="encl-msg"></div>
       <div id="encl-list"></div>
     </div>
@@ -1977,9 +1981,41 @@ async function enclInit() {
   else enclRender();
 }
 
+function enclRenderCopyDest() {
+  const d = document.getElementById('encl-copy-dest'); if (!d) return;
+  const ant = d.value;
+  d.innerHTML = '<option value="">— escolha o Local de destino —</option>' + ENCL.locais.filter(l => l.nome !== ENCL.local).map(l => `<option value="${enclEsc(l.nome)}"${l.nome === ant ? ' selected' : ''}>${enclEsc(l.nome)} (${ENCL.contagem[l.nome] || 0})</option>`).join('');
+}
+async function enclCopiarPara() {
+  const origem = ENCL.local, dest = document.getElementById('encl-copy-dest')?.value;
+  if (!origem || !ENCL.rows.length) { toast('Este Local não tem lista para copiar.', 'err'); return; }
+  if (!dest) { toast('Escolha o Local de destino.', 'err'); return; }
+  if (dest === origem) { toast('Origem e destino são o mesmo Local.', 'err'); return; }
+  if (!confirm(`Copiar os ${ENCL.rows.length} Pokémon de “${origem}” para “${dest}”?`)) return;
+  const jaTem = ENCL.contagem[dest] > 0;
+  const substituir = jaTem && confirm(`“${dest}” já tem ${ENCL.contagem[dest]} Pokémon.\n\nOK = SUBSTITUIR a lista de “${dest}” pela de “${origem}”.\nCancelar = MESCLAR (mantém o que já tem e soma o que falta).`);
+  try {
+    pkjCheck();
+    const copia = JSON.parse(JSON.stringify(ENCL.rows));   // snapshot antes de mexer em qualquer coisa
+    if (substituir) enclLimparLocal(dest);
+    let n = 0;
+    copia.forEach(r => {
+      const t = enclAlvo(r.pokemon_id); if (!t) return;
+      const atual = ((t.obj.encontros_local || []).find(x => x.local === dest) || {}).regras;
+      let final = r.regras || [];
+      if (atual && !substituir) { final = atual.slice(); (r.regras || []).forEach(rg => { if (!final.some(x => kpRegraChave(x) === kpRegraChave(rg))) final.push(rg); }); }
+      if (enclSetRegras(r.pokemon_id, dest, final)) n++;
+    });
+    await pkjFlush();
+    await enclCarregarContagem();
+    enclRenderSelect(); enclRenderCopyDest();
+    toast(`${n} Pokémon copiados para ${dest}.`, 'ok');
+  } catch (e) { toast('Erro ao copiar: ' + e.message, 'err'); }
+}
 function enclRenderSelect() {
   const sel = document.getElementById('encl-local');
   if (!sel) return;
+  enclRenderCopyDest();
   sel.innerHTML = ENCL.locais.map(l => `<option value="${enclEsc(l.nome)}"${l.nome === ENCL.local ? ' selected' : ''}>${enclEsc(l.nome)} (${ENCL.contagem[l.nome] || 0})</option>`).join('');
 }
 
