@@ -305,6 +305,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .roller-modo-tabs{display:flex;gap:8px;max-width:400px;margin:0 auto 24px;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:4px}
 .roller-modo-tabs button{flex:1;padding:8px 12px;border-radius:8px;border:none;font-family:var(--font-body);font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;background:transparent;color:var(--muted)}
 .roller-modo-tabs button.active{background:var(--brand);color:#fff}
+.roller-modo-tabs button:disabled{opacity:.45;cursor:not-allowed}
 .roller-hist-btn{display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--brand);font-family:var(--font-body);font-size:12px;font-weight:700;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
 .roller-hist-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--surface2)}
 .roller-hist-row-mobile{display:none}
@@ -6292,8 +6293,9 @@ async function init(){
     await restaurarSessaoAdm().catch(()=>{});
 
     await carregarAba(hash);
-    navegarPara(hash, true);
-    if(pathPage==='dados') rollerSetModo('dados');
+    rollerEncontroTravado = (pathPage==='dados');
+    await navegarPara(hash, true);
+    rollerTravarEncontro(pathPage==='dados');
 
     // Restaura último nome de personagem salvo
     const ultimoPersonagem = localStorage.getItem('ultimo_personagem') || '';
@@ -6504,7 +6506,7 @@ async function navegarPara(page, replace=false){
   // Highlight Guias dropdown btn when on a guias page
   const dropBtn = document.getElementById('nav-drop-btn');
   if(dropBtn) dropBtn.classList.toggle('active', ['ganhos','nature','batalhas'].includes(page));
-  const path = page==='roller' ? '/' : page==='eventos-hub' ? '/calendario' : '/'+page;
+  const path = page==='roller' ? (rollerEncontroTravado ? '/dados' : '/') : page==='eventos-hub' ? '/calendario' : '/'+page;
   if(replace) history.replaceState(null,'', path);
   else history.pushState(null,'', path);
   // Checa manutenção específica desta aba (admins logados nunca são bloqueados)
@@ -6512,7 +6514,8 @@ async function navegarPara(page, replace=false){
 }
 
 async function goTo(page,el){
-  if(page==='dados'){ page='roller'; rollerSetModo('dados'); }
+  if(page==='dados'){ page='roller'; rollerTravarEncontro(true); }
+  else rollerTravarEncontro(false);
   if(!admLogado){
     const restaurado = await restaurarSessaoAdm().catch(()=>false);
     if(!restaurado) admLogado = null;
@@ -12642,6 +12645,7 @@ setInterval(()=>{ if(typeof atualizarHoneyStatus==='function') atualizarHoneySta
 setInterval(()=>{ if(_honeyStateCarregado && typeof carregarHoneyState==='function') carregarHoneyState(); }, 120000);
 
 async function rolarEncontro(){
+  if(rollerEncontroTravado) return;
   // Trava de segurança: o overlay de loading tem um timeout de 8s que pode
   // sumir antes do PK.load() (busca paginada de todos os Pokémon) terminar
   // em conexões lentas. Sem essa checagem, o player consegue rolar com
@@ -13528,7 +13532,20 @@ async function resetarEstilo(){
 // ══════════════════════════════════════
 // ROLADOR — seletor Encontro / Dados
 // ══════════════════════════════════════
+// Em /dados o rolador de encontros fica travado (só o modo Dados é acessível)
+let rollerEncontroTravado = false;
+function rollerTravarEncontro(on){
+  rollerEncontroTravado = !!on;
+  const b = document.getElementById('roller-btn-encontro');
+  if(b){
+    b.disabled = rollerEncontroTravado;
+    b.setAttribute('aria-disabled', rollerEncontroTravado ? 'true' : 'false');
+    b.title = rollerEncontroTravado ? 'Rolador de encontros indisponível nesta página' : '';
+  }
+  if(rollerEncontroTravado) rollerSetModo('dados');
+}
 function rollerSetModo(modo){
+  if(rollerEncontroTravado) modo = 'dados';
   const dados = modo==='dados';
   const enc = document.getElementById('roller-modo-encontro');
   const dad = document.getElementById('roller-modo-dados');
@@ -17810,8 +17827,8 @@ window.addEventListener('popstate', async ()=>{
   }
   const validPages = ['roller','fichario','bioma','adm','npcs','batalhas','tramas'];
   const page = (validPages.includes(pathPage) ? pathPage : 'roller');
-  if(pathPage==='dados') rollerSetModo('dados');
-  carregarAba(page).then(()=>navegarPara(page));
+  rollerTravarEncontro(pathPage==='dados');
+  carregarAba(page).then(()=>navegarPara(page, true));
 });
 
 // ══════════════════════════════════════
