@@ -2363,6 +2363,23 @@ function kpImpMontarLista(localSel) {
   KPIMP.pend = [...pendMap.values()].sort((a, b) => a.chave.localeCompare(b.chave, 'pt-BR'));
   return { total, casadas };
 }
+// Pokémon que aparece mais de uma vez NA MESMA lista com as mesmas condições (ex.: Pidgey em Comum e em Raríssimo).
+// Em listas diferentes, ou com condições diferentes (Rattata vs Rattata (Noite)), não conta — aí é de propósito.
+function kpImpRepetidos() {
+  const mapa = new Map();
+  KPIMP.itens.forEach(it => {
+    const cs = kpRegrasDoItem(it).map(r => `${r.legado ? 'txt' : (r.categoria || 'clima')}|${r.condicao || 'sempre'}`).sort().join('+');
+    (it.ids.length ? it.ids : [it.chave]).forEach(id => {
+      const k = `${it.lista}#${id}#${cs}`;
+      const e = mapa.get(k) || { nome: it.ids.length ? ((ENCL.pk[id] || {}).nome || id) : it.chave, lista: it.lista, rars: [] };
+      e.rars.push(it.rar); mapa.set(k, e);
+    });
+  });
+  return [...mapa.values()].filter(e => e.rars.length > 1).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+function kpRepTexto(e, comLista) {
+  return `${e.nome} — ${e.rars.map(r => KP_RAR_NOME[r]).join(' + ')}${comLista ? ` (Lista ${e.lista})` : ''}`;
+}
 function kpImpConferir() {
   const sel = document.getElementById('kpimp-local').value;
   if (!sel) { toast('Escolha o Local.', 'err'); return; }
@@ -2370,7 +2387,14 @@ function kpImpConferir() {
   const res = document.getElementById('kpimp-resumo'), pend = document.getElementById('kpimp-pend');
   if (!total) { res.innerHTML = '<span style="color:var(--red)">Cole pelo menos um nome em alguma das raridades.</span>'; pend.innerHTML = ''; document.getElementById('kpimp-apply').disabled = true; return; }
   const nomeDe = it => it.ids.length ? it.ids.map(id => (ENCL.pk[id] || {}).nome || id).join(' + ') : null;
-  res.innerHTML = `<div>📍 <b>${enclEsc(sel)}</b> · <b>${total}</b> linhas · <b style="color:var(--green,#2e7d32)">${casadas}</b> casadas${KPIMP.corrigidos.length ? ` (${KPIMP.corrigidos.length} com correção automática)` : ''} · <b>${KPIMP.ignorados.length}</b> ignoradas (Quest) · <b style="color:${KPIMP.pend.length ? 'var(--red)' : 'inherit'}">${KPIMP.pend.length}</b> nomes sem correspondência</div>`
+  KPIMP.repetidos = kpImpRepetidos();
+  const nListas = document.querySelectorAll('#kpimp-listas .kpimp-lista').length;
+  const distintos = new Set(KPIMP.itens.filter(it => it.ids.length).flatMap(it => it.ids)).size;
+  const repHtml = KPIMP.repetidos.length
+    ? `<div style="margin-top:8px;padding:8px 10px;border:1.5px solid #e0a800;background:#fff8e1;border-radius:8px"><b>⚠️ ${KPIMP.repetidos.length} Pokémon repetido(s) na mesma lista</b> <span style="opacity:.8">— entram com uma regra por raridade. Se foi engano, tire a linha da raridade errada e confira de novo:</span><div style="margin-top:4px">${KPIMP.repetidos.map(e => enclEsc(kpRepTexto(e, nListas > 1))).join('<br>')}</div></div>`
+    : '';
+  res.innerHTML = `<div>📍 <b>${enclEsc(sel)}</b> · <b>${total}</b> linhas · <b style="color:var(--green,#2e7d32)">${casadas}</b> casadas (${distintos} Pokémon distintos)${KPIMP.corrigidos.length ? ` (${KPIMP.corrigidos.length} com correção automática)` : ''} · <b>${KPIMP.ignorados.length}</b> ignoradas (Quest) · <b style="color:${KPIMP.pend.length ? 'var(--red)' : 'inherit'}">${KPIMP.pend.length}</b> nomes sem correspondência</div>`
+    + repHtml
     + (KPIMP.corrigidos.length ? `<details style="margin-top:6px"><summary>Correções automáticas de digitação (${KPIMP.corrigidos.length})</summary><div style="opacity:.85">${KPIMP.corrigidos.map(enclEsc).join('<br>')}</div></details>` : '')
     + (KPIMP.ignorados.length ? `<details style="margin-top:6px"><summary>Ignoradas por serem (Quest) (${KPIMP.ignorados.length})</summary><div style="opacity:.85">${KPIMP.ignorados.map(enclEsc).join('<br>')}</div></details>` : '')
     + `<details style="margin-top:6px"><summary>Ver o que será gravado (${KPIMP.itens.length})</summary><div class="kpimp-prev">${KPIMP.itens.map(it => `<div><b>${enclEsc(nomeDe(it) || it.chave)}</b>${it.ids.length ? '' : ' <span style="color:var(--red)">(sem correspondência)</span>'} ${enclChipsHtml(kpRegrasDoItem(it))}</div>`).join('')}</div></details>`;
@@ -2484,7 +2508,9 @@ async function kpImpAplicar() {
   const extras = [];
   if (aForma.length) extras.push(`• ${aForma.length} Forma(s) Alternativa(s) nova(s) (só o nome): ${aForma.slice(0, 10).join(', ')}${aForma.length > 10 ? '…' : ''}`);
   if (aNovos.length) extras.push(`• ${aNovos.length} Pokémon novo(s) sem dados (rascunho, não aparece para os players): ${aNovos.slice(0, 10).join(', ')}${aNovos.length > 10 ? '…' : ''}`);
-  if (!confirm(`${modoTxt} “${local}” — ${qtd} Pokémon${puladas ? ` (${puladas} linhas sem correspondência serão puladas)` : ''}?${extras.length ? '\n\nTambém será cadastrado:\n' + extras.join('\n') : ''}`)) return;
+  const rep = KPIMP.repetidos || [];
+  const avisoRep = rep.length ? `\n\n⚠️ ${rep.length} repetido(s) em mais de uma raridade na mesma lista: ${rep.slice(0, 6).map(e => kpRepTexto(e, false)).join('; ')}${rep.length > 6 ? '…' : ''}` : '';
+  if (!confirm(`${modoTxt} “${local}” — ${qtd} Pokémon${puladas ? ` (${puladas} linhas sem correspondência serão puladas)` : ''}?${extras.length ? '\n\nTambém será cadastrado:\n' + extras.join('\n') : ''}${avisoRep}`)) return;
 
   const btn = document.getElementById('kpimp-apply'); btn.disabled = true;
   const resumo = document.getElementById('kpimp-resumo');
