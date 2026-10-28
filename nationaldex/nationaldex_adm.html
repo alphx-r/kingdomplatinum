@@ -669,6 +669,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="As alterações já são gravadas sozinhas no pokemon.json (GitHub) poucos segundos depois de cada edição. Este botão força a gravação imediata de tudo.">📤 Gravar pokemon.json agora</button>
       <button class="btn btn-outline" id="btn-update-photos" onclick="runUpdatePhotos()" title="Troca as fotos do Supabase pelas do GitHub direto no pokemon.json — não precisa da lista carregada">🖼️ Atualizar fotos</button>
+      <button class="btn btn-outline" id="btn-pokeapi-photos" onclick="runPokeapiPhotos()" title="Preenche, com a foto da PokeAPI (normal e shiny), os Pokémon oficiais que estão sem foto e grava no pokemon.json. Não mexe em quem já tem foto.">🔄 Fotos da PokeAPI</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um local/raridade, colando uma lista">🔀 Transferência em massa</button>
       <button class="btn btn-outline" onclick="limparBiomasPokemons()" title="Zera o campo biomas (Local/raridade/condição) de todos os Pokémon e formas alternativas. Baixa um backup antes.">🧹 Limpar biomas</button>
     </div>
@@ -6720,6 +6721,46 @@ async function runUpdatePhotos() {
     alert(`✅ Pronto! ${changed} Pokémon atualizados.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
   } catch (e) {
     alert('❌ Falha ao atualizar as fotos: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+}
+
+/* ══════════════════════════════════════════
+   Botão "Fotos da PokeAPI": para os Pokémon OFICIAIS (id numérico 1…1025, sem Fakemon) que estão
+   sem foto normal e/ou shiny, preenche com o official-artwork da PokeAPI e grava no pokemon.json.
+   Não sobe nada no GitHub (só o pokemon.json é commitado) e não mexe em quem já tem foto.
+══════════════════════════════════════════ */
+const KP_POKEAPI_ART='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/';
+async function runPokeapiPhotos(){
+  const btn = document.getElementById('btn-pokeapi-photos');
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Lendo pokemon.json...';
+  try {
+    if (PKJ.dirty) await pkjFlush();   // grava antes o que estiver pendente
+    const r = await fetch(`https://raw.githubusercontent.com/${KP_GH_REPO}/main/pokemon.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('Não consegui ler o pokemon.json do GitHub (HTTP ' + r.status + ')');
+    const rows = await r.json();
+    if (!Array.isArray(rows) || !rows.length) throw new Error('pokemon.json vazio ou em formato inesperado.');
+    const vazio = v => v == null || String(v).trim() === '';
+    let nNormal = 0, nShiny = 0; const tocados = [];
+    rows.forEach(p => {
+      if (!/^\d+$/.test(String(p.id || '')) || p.is_fakemon) return;
+      const n = +p.id; if (n < 1 || n > 1025) return;
+      let t = false;
+      if (vazio(p.sprite))       { p.sprite = KP_POKEAPI_ART + n + '.png'; nNormal++; t = true; }
+      if (vazio(p.sprite_shiny)) { p.sprite_shiny = KP_POKEAPI_ART + 'shiny/' + n + '.png'; nShiny++; t = true; }
+      if (t) tocados.push(p);
+    });
+    if (!tocados.length) { alert('ℹ️ Todos os Pokémon oficiais já têm foto normal e shiny — nada a atualizar.'); return; }
+    if (!confirm(`${tocados.length} Pokémon oficiais estão sem foto (${nNormal} normal, ${nShiny} shiny). Preencher com a PokeAPI e gravar no pokemon.json?`)) return;
+    btn.textContent = '⏳ Gravando pokemon.json...';
+    await kpCommitPokemonJson(rows);
+    // espelha na memória do ADM p/ a próxima gravação automática não apagar o que foi preenchido
+    tocados.forEach(p => { const m = S.pk && S.pk.dbMap && S.pk.dbMap[p.id]; if (m) { m.sprite = p.sprite; m.sprite_shiny = p.sprite_shiny; } });
+    alert(`✅ Pronto! ${nNormal} foto(s) normais e ${nShiny} shiny preenchidas em ${tocados.length} Pokémon e gravadas no pokemon.json.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
+  } catch (e) {
+    alert('❌ Falha ao preencher as fotos: ' + e.message);
   } finally {
     btn.disabled = false; btn.textContent = original;
   }
