@@ -347,17 +347,30 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .bioma-tab-btn{padding:7px 18px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .2s}
 .bioma-tab-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
 .bioma-tab-btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
-.loc-picker{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:6px 16px;margin-bottom:20px}
-.loc-group{display:flex;gap:14px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border)}
-.loc-group:last-child{border-bottom:none}
-.loc-group-title{flex:0 0 120px;padding-top:6px;font-family:var(--font-title);font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
-.loc-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
-.loc-picker .bioma-tab-btn{padding:5px 12px;font-size:12px;border-radius:8px}
-.loc-picker .bioma-tab-btn.num{min-width:34px;text-align:center;padding:5px 8px}
+.loc-picker{margin-bottom:22px}
+.loc-row{position:relative}
+/* desktop: todas as pills visíveis, em grade que fecha de borda a borda */
+.loc-track{position:relative;display:grid;grid-template-columns:repeat(var(--cols,5),1fr);gap:8px}
+.loc-track.flex{display:flex;flex-wrap:wrap}
+.loc-track.flex .bioma-tab-btn{flex:1 1 150px}
+.loc-picker .bioma-tab-btn{min-width:0;text-align:center;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);padding:12px 8px;font-size:14px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.loc-picker .bioma-tab-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
+.loc-picker .bioma-tab-btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.loc-arr{display:none}
+.loc-rotas-lbl{margin:20px 0 8px;font-family:var(--font-title);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+/* mobile: 2x2 por página, com swipe */
+@media(max-width:700px){
+  .loc-track,.loc-track.flex{display:grid;grid-template-columns:none;grid-template-rows:repeat(2,auto);grid-auto-flow:column;grid-auto-columns:calc((100% - 8px)/2);overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .loc-track::-webkit-scrollbar{display:none}
+  .loc-picker .bioma-tab-btn,.loc-track.flex .bioma-tab-btn{flex:none;font-size:13px;padding:13px 4px}
+  .loc-picker .bioma-tab-btn:nth-child(2n+1){scroll-snap-align:start}
+  .loc-track:not(.rotas) .bioma-tab-btn:last-child:nth-child(odd){grid-row:span 2}
+  /* rotas: 5 por página, numa linha só */
+  .loc-track.rotas{grid-template-rows:auto;grid-auto-columns:calc((100% - 32px)/5)}
+  .loc-track.rotas .bioma-tab-btn{padding:13px 0;scroll-snap-align:start}
+}
 .loc-head{display:flex;align-items:baseline;gap:10px;margin:0 0 12px}
-.loc-head-nome{font-family:var(--font-title);font-size:18px;font-weight:700;color:var(--text)}
-.loc-head-sub{font-size:12px;color:var(--muted)}
-@media(max-width:640px){.loc-group{flex-direction:column;gap:6px}.loc-group-title{flex:none;padding-top:0}}
+.loc-head-nome{font-family:var(--font-title);font-size:16px;font-weight:700;color:var(--text)}
 /* POKÉMON TABS */
 .pk-tab-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-title);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .18s}
 .pk-tab-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--brand-light)}
@@ -3704,8 +3717,8 @@ function calcSyncSelects(){
 <div class="page" id="page-bioma">
   <div style="padding-top:8px;margin-bottom:20px">
     <h2 style="font-family:var(--font-title);font-size:20px;color:var(--text);font-weight:700;margin-bottom:16px">Pokémon por Local</h2>
-    <div id="bioma-tabs" class="loc-picker"></div>
   </div>
+  <div id="bioma-tabs" class="loc-picker"></div>
   <div id="bioma-content"></div>
 </div>
 
@@ -6214,33 +6227,82 @@ const LOCAIS_GRUPOS = [
   {titulo:'Natureza', nomes:['Temperature Forest','Brutal Jungle','Soul Forest','Eternal Swamp','Shallow Valley','Twinlake','Bittersweet River','Krakatoa Vulcan','Aurora Beach']},
   {titulo:'Ilhas', nomes:['Trulyce Isle','Hartford Island']},
 ];
+function colsLocal(n){
+  // nº de colunas (divisor de n, entre 4 e 7) p/ a grade fechar sem sobras; senão flex esticado
+  for(let c=Math.min(7,n);c>=4;c--) if(n%c===0) return {n:c,flex:false};
+  return n<=7?{n:Math.max(n,1),flex:false}:{n:6,flex:true};
+}
 function renderBiomaPage(){
   const tabs  = document.getElementById('bioma-tabs');
   const cont  = document.getElementById('bioma-content');
-  const locais = locaisEncontroNomes();
+  // inclui também Locais que têm lista cadastrada (encontros_local) mas não estão em locais_encontro (ex.: Koen City Docks)
+  try{ pkReconstruirEncontrosLocal(pokemonDB); }catch(e){}
+  const locais = locaisEncontroNomes(Object.keys(ENC_LOCAL_TAB||{}).filter(n=>n && Object.keys(ENC_LOCAL_TAB[n]||{}).length));
   if(!locais.length){ tabs.style.display='none'; cont.innerHTML='<div style="color:var(--muted);padding:20px">Nenhum local cadastrado.</div>'; return; }
   tabs.style.display='';
+  if(!biomaAtivo){ try{ biomaAtivo = sessionStorage.getItem('kp_bioma_local'); }catch(e){} }
   if(!biomaAtivo || !locais.includes(biomaAtivo)) biomaAtivo = locais[0];
   const ehRota = n => /^Rota \d+$/.test(n);
   const usados = new Set();
   const grupos = LOCAIS_GRUPOS.map(g=>({titulo:g.titulo, itens:g.nomes.filter(n=>locais.includes(n))}));
   grupos.forEach(g=>g.itens.forEach(n=>usados.add(n)));
   const rotas = locais.filter(ehRota).sort((x,y)=>parseInt(x.slice(5))-parseInt(y.slice(5)));
+  if(rotas.length) grupos.push({titulo:'Rotas', itens:rotas, num:true});
   rotas.forEach(n=>usados.add(n));
   const outros = locais.filter(n=>!usados.has(n));
-  const btn = (n,num) => `<button class="bioma-tab-btn${num?' num':''}${n===biomaAtivo?' active':''}" onclick="selecionarBioma('${n.replace(/'/g,"\\'")}',this)" title="${n}">${num?n.slice(5):n}</button>`;
-  const linha = (titulo, chips) => `<div class="loc-group"><div class="loc-group-title">${titulo}</div><div class="loc-chips">${chips}</div></div>`;
-  tabs.innerHTML =
-    grupos.filter(g=>g.itens.length).map(g=>linha(g.titulo, g.itens.map(n=>btn(n)).join(''))).join('')
-    + (rotas.length ? linha('Rotas', rotas.map(n=>btn(n,true)).join('')) : '')
-    + (outros.length ? linha('Outros', outros.map(n=>btn(n)).join('')) : '');
+  if(outros.length) grupos.push({titulo:'Outros', itens:outros});
+  const lista = grupos.filter(g=>g.itens.length);
+  const ativo = lista.find(g=>g.itens.includes(biomaAtivo)) || lista[0];
+  const esc = n => n.replace(/'/g,"\\'");
+  const btn = (n,txt,pos='')=>`<button style="${pos}" class="bioma-tab-btn${n===biomaAtivo?' active':''}" onclick="selecionarBioma('${esc(n)}',this)" title="${n}">${txt}</button>`;
+  const rotasG = lista.find(g=>g.num);
+  const outrosG = lista.filter(g=>!g.num).flatMap(g=>g.itens);
+  outrosG.sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
+  const row = (itens,fmt,cols,flex,rot)=>`<div class="loc-row"><div class="loc-track${flex?' flex':''}${rot?' rotas':''}" style="--cols:${cols}">${itens.map((n,i)=>btn(n,fmt(n))).join('')}</div></div>`;
+  const cl = colsLocal(outrosG.length);
+  tabs.innerHTML = row(outrosG,n=>n,cl.n,cl.flex)
+    + (rotasG ? `<div class="loc-rotas-lbl">Rotas</div>${row(rotasG.itens,n=>n.slice(5),Math.min(rotasG.itens.length,20),false,true)}` : '');
+  tabs.querySelectorAll('.loc-row').forEach(locInitRow);
   renderBiomaConteudo();
-  // busca a lista própria do local (encontros_local) e redesenha se ainda for o local ativo
-  const alvo = biomaAtivo;
-  garantirEncontrosLocal(alvo).then(()=>{ if(biomaAtivo===alvo && currentPage==='bioma') renderBiomaConteudo(); });
+  // a lista de cada local vem do campo encontros_local dos Pokémon (já carregados)
+}
+function locScroll(btn,dir){
+  const t=btn.parentElement.querySelector('.loc-track');
+  t.scrollBy({left:dir*(t.clientWidth+8),behavior:'smooth'});
+}
+function locAtualiza(row){
+  const t=row.querySelector('.loc-track');
+  row.classList.toggle('pode-l',t.scrollLeft>4);
+  row.classList.toggle('pode-r',t.scrollLeft<t.scrollWidth-t.clientWidth-4);
+}
+function locInitRow(row){
+  const t=row.querySelector('.loc-track');
+  t.addEventListener('scroll',()=>locAtualiza(row),{passive:true});
+  // arrastar com o mouse (no toque o swipe já é nativo)
+  let down=false,sx=0,sl=0,moved=false;
+  t.addEventListener('pointerdown',e=>{ if(e.pointerType!=='mouse') return; down=true;moved=false;sx=e.clientX;sl=t.scrollLeft; });
+  window.addEventListener('pointermove',e=>{ if(!down) return; const dx=e.clientX-sx; if(Math.abs(dx)>5){moved=true;t.classList.add('drag');} if(moved) t.scrollLeft=sl-dx; });
+  window.addEventListener('pointerup',()=>{ if(!down) return; down=false; if(moved){ t.classList.remove('drag'); const w=t.querySelector('.bioma-tab-btn'); } });
+  t.addEventListener('click',e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } },true);
+  const at=t.querySelector('.bioma-tab-btn.active');
+  if(at){ t.scrollLeft=at.offsetLeft; }
+  requestAnimationFrame(()=>locAtualiza(row));
+}
+function selecionarBiomaSel(nome){
+  biomaAtivo = nome;
+  try{ sessionStorage.setItem('kp_bioma_local', nome); }catch(e){}
+  document.querySelectorAll('.bioma-tab-btn').forEach(b=>b.classList.toggle('active',b.title===nome));
+  renderBiomaConteudo();
+  garantirEncontrosLocal(nome).then(()=>{ if(biomaAtivo===nome && currentPage==='bioma') renderBiomaConteudo(); });
+}
+function selecionarGrupoLocal(primeiro){
+  // troca de categoria: seleciona o 1º local dela e redesenha
+  biomaAtivo = primeiro;
+  renderBiomaPage();
 }
 function selecionarBioma(nome, el){
   biomaAtivo = nome;
+  try{ sessionStorage.setItem('kp_bioma_local', nome); }catch(e){}
   document.querySelectorAll('.bioma-tab-btn').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   renderBiomaConteudo();
@@ -6280,9 +6342,14 @@ function getPersonagemRanking(nome){
   const p = personagens.find(pp=>pp.nome===nome);
   return p ? (p.ranking||0) : 0;
 }
+// Só exibe no index Pokémon com o mínimo cadastrado: foto, habilidade e gênero.
+function pkCompletoParaExibir(p){
+  const tem = v => v!=null && String(v).trim()!=='';
+  return tem(p.sprite) && (tem(p.habilidade1)||tem(p.habilidade2)||tem(p.habilidade_oculta)) && tem(p.genero);
+}
 function renderBiomaConteudo(){
   const cont = document.getElementById('bioma-content');
-  const pokes = getEncounterUnits(pokemonDB).filter(p=>pkRegrasNoBioma(p,biomaAtivo).length && pkEvoDepth(p)===0);
+  const pokes = getEncounterUnits(pokemonDB).filter(p=>pkRegrasNoBioma(p,biomaAtivo).length && pkEvoDepth(p)===0 && pkCompletoParaExibir(p));
   if(!pokes.length){
     cont.innerHTML=renderBiomaLocaisBox(biomaAtivo)+'<div style="color:var(--muted);padding:20px;font-size:14px">Nenhum Pokémon cadastrado neste local.</div>';
     return;
@@ -7619,7 +7686,7 @@ function aplToggleAll(){
 // ══════════════════════════════════════
 const LOCAIS_ENCONTRO = [
   'Koen City','Ambrosia Academy','Wiltshire Town','Duststone Mines','Rush Cave','Neo Techland',
-  'Twinlake','Bittersweet River','Kraka Town','Krakatoa Vulkan','Magmatic Cave','Coven Town',
+  'Twinlake','Bittersweet River','Kraka Town','Krakatoa Vulcan','Magmatic Cave','Coven Town',
   'Briarcliff Mansion','Yukon City','Laceon Town','Aurora Beach','Flowrest City','Temperature Forest',
   'Trulyce Isle','Luxor Village','Hartford Island','Brutal Jungle','Soul Forest','Eternal Swamp','Shallow Valley',
   ...Array.from({length:18},(_,i)=>'Rota '+(i+1))
@@ -7637,7 +7704,7 @@ const LOCAIS_COMPOSICAO = {
   "Twinlake":["Rios e Lagos", null, "Marítimo"],
   "Bittersweet River":["Rios e Lagos", null, "Marítimo"],
   "Kraka Town":["Montanhoso", "Vulcânico", "Urbano"],
-  "Krakatoa Vulkan":["Vulcânico", "Montanhoso", "Rios e Lagos"],
+  "Krakatoa Vulcan":["Vulcânico", "Montanhoso", "Rios e Lagos"],
   "Magmatic Cave":["Vulcânico", "Caverna", "Montanhoso"],
   "Coven Town":["Assombrado", "Urbano", "Florestal"],
   "Briarcliff Mansion":["Assombrado", "Florestal", null],
@@ -7715,6 +7782,11 @@ function locaisEncontroNomes(extras){
   const base=(LOCAIS_ENCONTRO_DB&&LOCAIS_ENCONTRO_DB.length)?LOCAIS_ENCONTRO_DB:LOCAIS_ENCONTRO;
   const vistos=new Set(), out=[];
   [...base, ...(extras||[])].forEach(n=>{ if(n&&!vistos.has(n)){ vistos.add(n); out.push(n); } });
+  // ordem alfabética; Rotas sempre por último (em ordem numérica)
+  const ehRota=n=>/^Rota \d+$/.test(n);
+  const normais=out.filter(n=>!ehRota(n)).sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
+  const rotas=out.filter(ehRota).sort((a,b)=>parseInt(a.slice(5))-parseInt(b.slice(5)));
+  out.length=0; out.push(...normais,...rotas);
   return out;
 }
 async function carregarLocaisEncontro(){
@@ -11495,6 +11567,10 @@ function pkSortearDificil(candidatos){
   if(!ds.length || Math.random() >= ENCONTRO_DIFICIL.chance) return null;
   return ds[Math.floor(Math.random() * ds.length)];
 }
+// Unidades de encontro usadas nas rolagens: só Pokémon com foto, habilidade e gênero.
+function getEncounterUnitsCompletos(db){
+  return getEncounterUnits(db).filter(pkCompletoParaExibir);
+}
 // Sorteio uniforme dentro da lista.
 function sortearPonderado(lista){
   return lista[Math.floor(Math.random() * lista.length)];
@@ -11869,7 +11945,7 @@ async function atualizarContadorNiveis(selId, boxId, forcar){
   if(!forcar && box.dataset.nome===nome && box.innerHTML) return;
   box.dataset.nome = nome;
   const vazio = txt => { box.title=''; box.innerHTML = `<div class="niv-icons">${_pvSlotsHtml(null)}</div><div class="niv-lv">${txt}</div>`; };
-  if(!nome){ vazio('selecione o personagem'); return; }
+  if(!nome){ vazio(''); return; }
   vazio('…');
   const v = await provasDeValorDoPersonagem(nome, forcar);
   if((document.getElementById(selId)?.value||'').trim()!==nome) return; // trocou de personagem enquanto carregava
@@ -12018,7 +12094,7 @@ async function locEncRolar() {
   const raridades = ['comum', 'incomum', 'raro', 'rarissimo'];
   const pools = {};
   const usedIds = {};
-  const encounterUnits = getEncounterUnits(pokemonDB);
+  const encounterUnits = getEncounterUnitsCompletos(pokemonDB);
   for (const r of raridades) {
     pools[r] = encounterUnits.filter(p => {
       const info = pkInfoNoBioma(p, local, r);
@@ -12283,8 +12359,8 @@ function atualizarHoneyStatus(){
     status.style.display = 'none';
     status.textContent = '';
   } else {
-    status.style.display = 'flex';
-    status.textContent = 'Selecione uma das suas fichas para usar Honey e Shiny Charm.';
+    status.style.display = 'none';
+    status.textContent = '';
   }
 }
 
@@ -12322,7 +12398,7 @@ setInterval(()=>{ if(_honeyStateCarregado && typeof carregarHoneyState==='functi
 // Diagnóstico de um Local: por que o pool pode estar vazio (usado para travar rolagens que sairiam todas "???").
 function pkDiagnosticoLocal(local, personagem){
   const rk=getPersonagemRanking(personagem);
-  const units=getEncounterUnits(pokemonDB);
+  const units=getEncounterUnitsCompletos(pokemonDB);
   const noLocal=units.filter(p=>pkRegrasNoBioma(p,local).length);
   const porRanking=noLocal.filter(p=>pkRankingNecessario(p)<=rk);
   const disp=porRanking.filter(p=>!p.estacao||p.estacao===estacaoAtiva);
@@ -12412,7 +12488,7 @@ async function rolarEncontro(){
   const usedIds={};
   // Inclui formas alternativas (ex: Oricorio Estilo Pom-Pom) que tenham
   // bioma próprio cadastrado — elas entram como unidades independentes.
-  const encounterUnits = getEncounterUnits(pokemonDB);
+  const encounterUnits = getEncounterUnitsCompletos(pokemonDB);
   for(const r of raridades){
     // inclui pokémon sem estação exclusiva + exclusivos da estação ativa
     pools[r]=encounterUnits.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&(!p.estacao||p.estacao===estacaoAtiva)&&pkRankingNecessario(p)<=rankingAtivo; });
@@ -12878,7 +12954,7 @@ async function rerollarPokeFalho(entryId, pkIdx, btnEl){
     const personagem=entry.personagem;
     const rankingAtivo=getPersonagemRanking(personagem);
     const raridades=['comum','incomum','raro','rarissimo'];
-    const encounterUnits=getEncounterUnits(pokemonDB);
+    const encounterUnits=getEncounterUnitsCompletos(pokemonDB);
     const pools={};
     const usedIds={};
     for(const r of raridades){
@@ -16397,7 +16473,7 @@ async function rolarEncontroEvento(){
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={}, usedIds={};
   const rankingAtivoEvento = getPersonagemRanking(personagem);
-  const encounterUnitsEvento = getEncounterUnits(pokemonDB);
+  const encounterUnitsEvento = getEncounterUnitsCompletos(pokemonDB);
   for(const r of raridades){
     pools[r]=encounterUnitsEvento.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
     usedIds[r]=new Set();
