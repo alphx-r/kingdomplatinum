@@ -679,7 +679,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <button class="tab active" id="tab-pokemon" onclick="switchTab('pokemon')">Pokémon <span class="tab-badge" id="badge-pokemon">—</span></button>
     <button class="tab" id="tab-rpg" onclick="switchTab('rpg')">＋</button>
     <button class="tab" id="tab-encl" onclick="switchTab('encl')">Encontros por Local</button>
-    <button class="tab" id="tab-rcfg" onclick="switchTab('rcfg')">Rolador</button>
   </div>
 
   <!-- ENCONTROS POR LOCAL (lista de Pokémon de cada Local — banco principal ucbkod) -->
@@ -710,52 +709,6 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
   </div>
 
   <!-- POKÉMON -->
-  <!-- ROLADOR: exibição de Período e Categoria nos cards -->
-  <div class="panel" id="panel-rcfg">
-    <style>
-      .rcfg-wrap{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:28px;padding:18px 4px;align-items:start}
-      @media(max-width:760px){.rcfg-wrap{grid-template-columns:1fr}}
-      .rcfg-col h3{font-size:14px;margin:0 0 6px;color:var(--brand)}
-      .rcfg-help{font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 14px}
-      .rcfg-row{display:flex;gap:8px;align-items:center;font-size:13px;padding:6px 0;cursor:pointer}
-      .rcfg-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);margin:10px 0}
-      .rcfg-field input{padding:7px 10px;border:1.5px solid var(--border);border-radius:7px;font:inherit;color:var(--text)}
-      .rcfg-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
-      .rcfg-status{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.4}
-      .rcfg-prev{display:flex;flex-wrap:wrap;gap:12px}
-      .rcfg-card{position:relative;width:190px;border:1.5px solid var(--border);border-radius:12px;padding:16px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;background:#fff}
-      .rcfg-img{width:60px;height:60px;border-radius:50%;background:#eef2f9}
-      .rcfg-nome{font-weight:700;font-size:12px;color:var(--text)}
-      .rcfg-rar{font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:#e0f0e0;color:#1a6a1a}
-      .rcfg-meta{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
-      .rcfg-chip{font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:#f1f4fa;border:1px solid var(--border);color:var(--text)}
-      .rcfg-chip i{font-style:normal;font-weight:600;color:var(--muted)}
-      .rcfg-chip.vazio{font-weight:600;opacity:.65}
-      .rcfg-orb{position:absolute;top:7px;left:7px;width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;background:#9aa3b2}
-    </style>
-    <div class="rcfg-wrap" oninput="rcfgRender()" onchange="rcfgRender()">
-      <div class="rcfg-col">
-        <h3>Exibição no Rolador</h3>
-        <p class="rcfg-help">Escolha o que aparece em cada card sorteado. Período e Categoria vêm das condições cadastradas em <b>Encontros por Local</b>; quem não tem condição mostra o texto padrão abaixo.</p>
-        <label class="rcfg-row"><input type="checkbox" id="rcfg-mostrarPeriodo"> Mostrar Período em todos os cards</label>
-        <label class="rcfg-row"><input type="checkbox" id="rcfg-mostrarCategoria"> Mostrar Categoria em todos os cards</label>
-        <label class="rcfg-row"><input type="checkbox" id="rcfg-categoriaComCondicao"> Categoria junto da condição (ex.: Ambiente · Farol)</label>
-        <label class="rcfg-row"><input type="checkbox" id="rcfg-orbTodos"> Esfera de período também nos cards sem condição</label>
-        <label class="rcfg-row"><input type="checkbox" id="rcfg-nasRolagens"> Mostrar nos cards do Rolador</label>
-        <label class="rcfg-row"><input type="checkbox" id="rcfg-noHistorico"> Mostrar no histórico</label>
-        <label class="rcfg-field">Texto quando não há Período<input type="text" id="rcfg-semPeriodoTexto" maxlength="24"></label>
-        <label class="rcfg-field">Texto quando não há Categoria<input type="text" id="rcfg-semCategoriaTexto" maxlength="24"></label>
-        <div class="rcfg-actions">
-          <button type="button" class="btn btn-primary" onclick="rcfgSalvar()">Salvar</button>
-          <button type="button" class="btn btn-outline" onclick="rcfgRestaurar()">Restaurar padrão</button>
-          <button type="button" class="btn btn-outline" onclick="rcfgBaixar()">Baixar JSON</button>
-        </div>
-        <div class="rcfg-status" id="rcfg-status"></div>
-      </div>
-      <div class="rcfg-col"><h3>Prévia</h3><div class="rcfg-prev" id="rcfg-prev"></div></div>
-    </div>
-  </div>
-
   <div class="panel active" id="panel-pokemon">
     <div id="pk-list-view">
     <div class="stats-bar">
@@ -2785,64 +2738,6 @@ function kpGhEscolher(arquivo, shiny) {
    TABS
 ══════════════════════════════════════════ */
 let curTab = 'pokemon';
-/* ── Aba Rolador: exibição de Período/Categoria (lida pelo Rolador via rolador_config.json) ── */
-const RCFG_KEY = 'kp_rol_cfg', RCFG_PATH = 'rolador_config.json';
-const RCFG_PADRAO = { mostrarPeriodo: true, mostrarCategoria: true, categoriaComCondicao: false, orbTodos: true, nasRolagens: true, noHistorico: true, semPeriodoTexto: 'Qualquer hora', semCategoriaTexto: 'Sem condição' };
-const RCFG_BOOL = ['mostrarPeriodo','mostrarCategoria','categoriaComCondicao','orbTodos','nasRolagens','noHistorico'];
-const RCFG_TXT = ['semPeriodoTexto','semCategoriaTexto'];
-let RCFG = { ...RCFG_PADRAO };
-function rcfgPreencher() {
-  RCFG_BOOL.forEach(k => { document.getElementById('rcfg-' + k).checked = !!RCFG[k]; });
-  RCFG_TXT.forEach(k => { document.getElementById('rcfg-' + k).value = RCFG[k] || ''; });
-}
-function rcfgLer() {
-  const c = { ...RCFG };
-  RCFG_BOOL.forEach(k => { c[k] = document.getElementById('rcfg-' + k).checked; });
-  RCFG_TXT.forEach(k => { c[k] = document.getElementById('rcfg-' + k).value.trim() || RCFG_PADRAO[k]; });
-  return c;
-}
-async function rcfgInit() {
-  if (rcfgInit._ok) { rcfgRender(); return; }
-  rcfgInit._ok = true;
-  let loc = {}, rem = {};
-  try { loc = JSON.parse(localStorage.getItem(RCFG_KEY) || '{}'); } catch (_) {}
-  try { const r = await fetch(`https://raw.githubusercontent.com/${KP_GH_REPO}/main/${RCFG_PATH}?v=${Date.now()}`, { cache: 'no-store' }); if (r.ok) rem = await r.json(); } catch (_) {}
-  RCFG = { ...RCFG_PADRAO, ...((rem._t || 0) > (loc._t || 0) ? rem : loc) };
-  rcfgPreencher(); rcfgRender();
-}
-function rcfgRender() {
-  const c = rcfgLer(), esc = s => String(s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
-  const amostras = [
-    { nome: 'Zigzagoon', orb: ['☀', '#e0a010'], per: 'Dia', cats: [['Período', 'Dia']] },
-    { nome: 'Wingull', orb: ['▲', '#e0902a'], per: null, cats: [['Ambiente', 'Farol']] },
-    { nome: 'Rattata', orb: null, per: null, cats: [] },
-  ];
-  document.getElementById('rcfg-prev').innerHTML = amostras.map(a => {
-    const orb = a.orb ? `<span class="rcfg-orb" style="background:${a.orb[1]}">${a.orb[0]}</span>` : (c.orbTodos && c.mostrarPeriodo ? '<span class="rcfg-orb">◐</span>' : '');
-    const chips = [];
-    if (c.mostrarPeriodo) chips.push(`<span class="rcfg-chip${a.per ? '' : ' vazio'}"><i>Período</i> ${esc(a.per || c.semPeriodoTexto)}</span>`);
-    if (c.mostrarCategoria) chips.push(`<span class="rcfg-chip${a.cats.length ? '' : ' vazio'}"><i>Categoria</i> ${esc(a.cats.length ? a.cats.map(x => x[0] + (c.categoriaComCondicao ? ' · ' + x[1] : '')).join(' + ') : c.semCategoriaTexto)}</span>`);
-    return `<div class="rcfg-card">${orb}<div class="rcfg-img"></div><div class="rcfg-nome">${a.nome}</div><span class="rcfg-rar">COMUM</span>${c.nasRolagens && chips.length ? `<div class="rcfg-meta">${chips.join('')}</div>` : ''}</div>`;
-  }).join('');
-}
-async function rcfgSalvar() {
-  const c = rcfgLer(); c._t = Date.now(); RCFG = c;
-  try { localStorage.setItem(RCFG_KEY, JSON.stringify(c)); } catch (_) {}
-  const st = document.getElementById('rcfg-status'); st.textContent = 'Gravando…';
-  try {
-    await kpGhPut(RCFG_PATH, kpBytesToB64(new TextEncoder().encode(JSON.stringify(c, null, 2))), 'Rolador: exibição de Período e Categoria');
-    st.textContent = '✔ Salvo. O Rolador pega a mudança em alguns minutos (cache do GitHub).'; toast('Configuração salva', 'ok');
-  } catch (e) {
-    st.textContent = '⚠ Salvo só neste navegador (' + e.message + '). Use "Baixar JSON" e coloque ' + RCFG_PATH + ' na raiz do repositório.'; toast('Salvo só neste navegador', 'err');
-  }
-}
-function rcfgRestaurar() { RCFG = { ...RCFG_PADRAO, _t: RCFG._t }; rcfgPreencher(); rcfgRender(); }
-function rcfgBaixar() {
-  const c = rcfgLer(); c._t = Date.now();
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(c, null, 2)], { type: 'application/json' }));
-  a.download = RCFG_PATH; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
-
 function switchTab(tab) {
   curTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -2854,7 +2749,6 @@ function switchTab(tab) {
   // true desde o carregamento inicial da página (ver INIT no fim do arquivo),
   // então reaproveitá-la aqui deixava o dropdown travado em "— Carregando —".
   if (tab === 'encl') enclInit();
-  if (tab === 'rcfg') rcfgInit();
   if (tab === 'rpg' && !S.rpg._formInit) { S.rpg._formInit = true; openNewRpgPokemon(); }
 }
 
