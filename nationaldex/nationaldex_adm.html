@@ -650,7 +650,11 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 /* ── Aba Condições de captura ── */
 .cc-wrap{display:flex;flex-direction:column;gap:12px;padding:6px 0 30px}
 .cc-textos{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-.cc-tx{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) auto;gap:6px;align-items:center;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:6px 8px}
+.cc-tx{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.2fr) auto;gap:8px;align-items:center;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:6px 8px}
+.cc-tx-sels{display:flex;flex-direction:column;gap:4px}
+.cc-tx-part{display:flex;gap:6px;align-items:center}
+.cc-tx-part select{flex:1;min-width:0}
+.cc-tx-plbl{font-size:11px;font-weight:700;color:var(--muted);min-width:80px}
 .cc-tx-txt{font-size:12px;font-weight:800;color:var(--brand)}
 .cc-tx-txt small{font-weight:600;color:var(--muted)}
 .cc-item{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;display:flex;flex-direction:column;gap:8px}
@@ -667,7 +671,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .cc-badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;text-transform:uppercase}
 .cc-badge.leg{background:#fff3cd;color:#8a5a00}
 .cc-badge.ok{background:var(--green-light);color:var(--green-dark)}
-@media(max-width:760px){.cc-tx{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.cc-tx{grid-template-columns:1fr}.cc-tx-part{flex-wrap:wrap}}
 </style>
 </head>
 <body>
@@ -7638,6 +7642,23 @@ function ccSugerir(txt) {
     }
   return null;
 }
+function ccPartes(txt) { return String(txt || '').split(',').map(x => x.trim()).filter(Boolean); }
+// vírgula = condições SEPARADAS. Devolve [{categoria,condicao}, ...] ou null se alguma parte não tiver correspondência
+function ccSugerirLista(txt) {
+  const ps = ccPartes(txt); if (!ps.length) return null;
+  const out = [];
+  for (const p of ps) {
+    const sg = ccSugerir(p); if (!sg) return null;
+    if (!out.some(o => o.categoria === sg.categoria && o.condicao === sg.condicao)) out.push(sg);
+  }
+  return out;
+}
+function ccLabelLista(lista) { return lista.map(x => ccLabel(x.categoria, x.condicao)).join(' + '); }
+function ccChave(r) { return `${r.legado ? 'txt' : (r.categoria || 'clima')}|${r.condicao || 'sempre'}|${r.raridade || 'comum'}`; }
+function ccDedupe(rs) {
+  const vistos = new Set();
+  for (let k = 0; k < rs.length; k++) { const c = ccChave(rs[k]); if (vistos.has(c)) { rs.splice(k, 1); k--; } else vistos.add(c); }
+}
 function ccLabel(cat, cond) {
   const c = CONDICAO_CATEGORIAS.find(x => x[0] === cat);
   const o = (CONDICAO_OPTS[cat] || []).find(x => x[0] === cond);
@@ -7731,8 +7752,9 @@ function ccRegraHtml(i, li, ri, r) {
   const condHtml = leg
     ? '<option value="">— condição —</option>' + (cat ? condicaoOptsHtml(cat, null) : '')
     : condicaoOptsHtml(cat, r.condicao);
-  const sug = leg ? ccSugerir(r.condicao) : null;
-  const banner = leg ? `<div class="cc-leg">⚠️ Texto livre: <b>${enclEsc(r.condicao || '(vazio)')}</b>${sug ? `<button type="button" class="cc-sug" onclick="ccUsarSug(${i},${li},${ri})">✨ usar ${enclEsc(ccLabel(sug.categoria, sug.condicao))}</button>` : ''}</div>` : '';
+  const sug = leg ? ccSugerirLista(r.condicao) : null;
+  const partes = leg ? ccPartes(r.condicao) : [];
+  const banner = leg ? `<div class="cc-leg">⚠️ Texto livre: <b>${enclEsc(r.condicao || '(vazio)')}</b>${sug ? `<button type="button" class="cc-sug" onclick="ccUsarSug(${i},${li},${ri})">✨ ${sug.length > 1 ? 'separar em ' + sug.length + ' regras: ' : 'usar '}${enclEsc(ccLabelLista(sug))}</button>` : ''}${partes.length > 1 ? `<button type="button" class="cc-sug" style="border-color:var(--brand-mid);background:var(--brand-light);color:var(--brand-mid)" onclick="ccDividir(${i},${li},${ri})">✂️ separar em ${partes.length} (escolher manualmente)</button>` : ''}</div>` : '';
   return `<div>${banner}<div class="regra-row rar-${r.raridade || 'comum'}">
     <select class="mv-meta-input" onchange="ccSetCat(${i},${li},${ri},this.value)">${catHtml}</select>
     <select class="mv-meta-input" onchange="ccSetCond(${i},${li},${ri},this.value)">${condHtml}</select>
@@ -7779,8 +7801,16 @@ function ccSetCond(i, li, ri, v) {
   ccRerender(i);
 }
 function ccUsarSug(i, li, ri) {
-  const r = ccR(i, li, ri), s = ccSugerir(r.condicao); if (!s) return;
-  r.categoria = s.categoria; r.condicao = s.condicao; delete r.legado; delete r._cat;
+  const rs = CC.items[i].locais[li].regras, r = rs[ri], lista = ccSugerirLista(r.condicao); if (!lista) return;
+  const novas = lista.map(x => { const c = { ...r }; delete c.legado; delete c._cat; c.categoria = x.categoria; c.condicao = x.condicao; return c; });
+  rs.splice(ri, 1, ...novas); ccDedupe(rs);
+  ccRerender(i);
+}
+// "A, B" → duas regras em texto livre ("A" e "B"), para converter cada uma com os selects
+function ccDividir(i, li, ri) {
+  const rs = CC.items[i].locais[li].regras, r = rs[ri];
+  const novas = ccPartes(r.condicao).map(p => { const c = { ...r, condicao: p, legado: true }; delete c._cat; return c; });
+  rs.splice(ri, 1, ...novas); ccDedupe(rs);
   ccRerender(i);
 }
 function ccSetRar(i, li, ri, v) { ccR(i, li, ri).raridade = v; ccRerender(i); }
@@ -7826,29 +7856,40 @@ function ccRenderTextos() {
   const box = ccEl('cc-textos');
   if (!CC.textos.length) { box.innerHTML = '<div class="encl-help">🎉 Nenhum texto livre restante.</div>'; return; }
   box.innerHTML = CC.textos.map((t, i) => {
-    const s = ccSugerir(t.txt);
-    const catSel = (s ? '' : '<option value="">— categoria —</option>') + condicaoCategoriaOptionsHtml(s ? s.categoria : '');
-    const condSel = s ? condicaoOptsHtml(s.categoria, s.condicao) : '<option value="">— condição —</option>';
+    const partes = ccPartes(t.txt), ps = partes.length ? partes : [''];
+    const sels = ps.map((p, j) => {
+      const sg = ccSugerir(p);
+      const catSel = (sg ? '' : '<option value="">— categoria —</option>') + condicaoCategoriaOptionsHtml(sg ? sg.categoria : '');
+      const condSel = sg ? condicaoOptsHtml(sg.categoria, sg.condicao) : '<option value="">— condição —</option>';
+      return `<div class="cc-tx-part">${ps.length > 1 ? `<span class="cc-tx-plbl">${enclEsc(p)}</span>` : ''}
+        <select class="mv-meta-input" id="cc-tx-cat-${i}-${j}" onchange="ccTxCat(${i},${j},this.value)">${catSel}</select>
+        <select class="mv-meta-input" id="cc-tx-cond-${i}-${j}">${condSel}</select></div>`;
+    }).join('');
     return `<div class="cc-tx">
-      <div class="cc-tx-txt">${enclEsc(t.txt || '(vazio)')} <small>× ${t.n}</small></div>
-      <select class="mv-meta-input" id="cc-tx-cat-${i}" onchange="ccTxCat(${i},this.value)">${catSel}</select>
-      <select class="mv-meta-input" id="cc-tx-cond-${i}">${condSel}</select>
+      <div class="cc-tx-txt">${enclEsc(t.txt || '(vazio)')} <small>× ${t.n}</small>${ps.length > 1 ? `<br><small>= ${ps.length} condições separadas</small>` : ''}</div>
+      <div class="cc-tx-sels">${sels}</div>
       <button type="button" class="btn btn-primary btn-sm" onclick="ccAplicarTexto(${i})">Aplicar a todos</button>
     </div>`;
   }).join('');
 }
-function ccTxCat(i, v) { ccEl('cc-tx-cond-' + i).innerHTML = '<option value="">— condição —</option>' + (v ? condicaoOptsHtml(v, null) : ''); }
+function ccTxCat(i, j, v) { ccEl(`cc-tx-cond-${i}-${j}`).innerHTML = '<option value="">— condição —</option>' + (v ? condicaoOptsHtml(v, null) : ''); }
 
-// aplica `mapa(textoLivre) → {categoria, condicao} | null` em todos os Pokémon do pokemon.json
+// aplica `mapa(textoLivre) → {categoria,condicao} | [{categoria,condicao},...] | null` em todo o pokemon.json.
+// Uma lista vira várias regras (uma por condição), todas com a mesma raridade da regra original.
 async function ccAplicarMapa(mapa) {
   pkjCheck(); let n = 0;
   enclTodos((pid, obj) => {
     const ls = locaisDoRegistro(obj); let ch = false;
-    ls.forEach(l => (l.regras || []).forEach(r => {
-      if (!r.legado) return;
-      const m = mapa(r.condicao); if (!m) return;
-      delete r.legado; r.categoria = m.categoria; r.condicao = m.condicao; ch = true; n++;
-    }));
+    ls.forEach(l => {
+      const novas = [];
+      (l.regras || []).forEach(r => {
+        const m = r.legado ? mapa(r.condicao) : null;
+        if (!m) { novas.push(r); return; }
+        (Array.isArray(m) ? m : [m]).forEach(x => { const c = { ...r }; delete c.legado; c.categoria = x.categoria; c.condicao = x.condicao; novas.push(c); });
+        ch = true; n++;
+      });
+      ccDedupe(novas); l.regras = novas;
+    });
     if (ch) ccGravarLocais(pid, ls);
   });
   if (n) await pkjFlush();
@@ -7856,23 +7897,27 @@ async function ccAplicarMapa(mapa) {
 }
 function ccConfirmaDescarte() { return !CC.items.some(x => x.dirty) || confirm('Há edições não salvas nesta aba que serão descartadas. Continuar?'); }
 async function ccAplicarTexto(i) {
-  const t = CC.textos[i], cat = ccEl('cc-tx-cat-' + i).value, cond = ccEl('cc-tx-cond-' + i).value;
-  if (!cat || !cond) { toast('Escolha a categoria e a condição.', 'err'); return; }
+  const t = CC.textos[i], qtdPartes = Math.max(1, ccPartes(t.txt).length), lista = [];
+  for (let j = 0; j < qtdPartes; j++) {
+    const cat = ccEl(`cc-tx-cat-${i}-${j}`).value, cond = ccEl(`cc-tx-cond-${i}-${j}`).value;
+    if (!cat || !cond) { toast('Escolha a categoria e a condição de cada parte.', 'err'); return; }
+    lista.push({ categoria: cat, condicao: cond });
+  }
   if (!ccConfirmaDescarte()) return;
-  if (!confirm(`Trocar o texto livre “${t.txt}” por ${ccLabel(cat, cond)} em ${t.n} regra(s)?`)) return;
+  if (!confirm(`Trocar o texto livre “${t.txt}” por ${ccLabelLista(lista)} em ${t.n} regra(s)?${lista.length > 1 ? `\n\nCada uma vira ${lista.length} regras separadas, com a mesma raridade.` : ''}`)) return;
   try {
-    const n = await ccAplicarMapa(x => x === t.txt ? { categoria: cat, condicao: cond } : null);
+    const n = await ccAplicarMapa(x => x === t.txt ? lista : null);
     ccCarregar(); toast(`${n} regra(s) organizadas.`, 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
 async function ccAplicarSugestoes() {
-  const aplicaveis = CC.textos.filter(t => ccSugerir(t.txt));
+  const aplicaveis = CC.textos.filter(t => ccSugerirLista(t.txt));
   if (!aplicaveis.length) { toast('Nenhum texto tem sugestão automática. Use os selects.', 'err'); return; }
   if (!ccConfirmaDescarte()) return;
-  const qtd = aplicaveis.reduce((s, t) => s + t.n, 0);
-  if (!confirm(`Aplicar sugestões automáticas em ${qtd} regra(s) (${aplicaveis.length} textos)?\n\n` + aplicaveis.map(t => { const s = ccSugerir(t.txt); return `• ${t.txt} → ${ccLabel(s.categoria, s.condicao)}`; }).join('\n'))) return;
+  const qtd = aplicaveis.reduce((x, t) => x + t.n, 0);
+  if (!confirm(`Aplicar sugestões automáticas em ${qtd} regra(s) (${aplicaveis.length} textos)?\n\n` + aplicaveis.map(t => `• ${t.txt} → ${ccLabelLista(ccSugerirLista(t.txt))}`).join('\n'))) return;
   try {
-    const n = await ccAplicarMapa(ccSugerir);
+    const n = await ccAplicarMapa(ccSugerirLista);
     ccCarregar(); toast(`${n} regra(s) organizadas.`, 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
