@@ -11488,12 +11488,12 @@ function pkRegrasNoBioma(p, bioma){
   if(tabLocal){   // Local com lista própria cadastrada (encontros_local)
     const rg=tabLocal[String(p.id)];
     if(!rg||!rg.length) return [];
-    return rg.map(r=>r.legado?{raridade:r.raridade||'comum',condicao:r.condicao||null}:{raridade:r.raridade||'comum',condicao:pkCondLabel(r)});
+    return rg.map(r=>r.legado?{raridade:r.raridade||'comum',condicao:r.condicao||null,peso:r.peso}:{raridade:r.raridade||'comum',condicao:pkCondLabel(r),peso:r.peso});
   }
   const entry=(p.biomas||[]).find(b=>(typeof b==='string'?b:b.nome)===bioma);
   if(!entry) return pkRegrasDerivadas(p,bioma);
   if(typeof entry==='string') return [{raridade:p.raridade||'comum',condicao:p.condicao||null}];
-  if(Array.isArray(entry.regras)&&entry.regras.length) return entry.regras.map(r=>({raridade:r.raridade||'comum',condicao:pkCondLabel(r)}));
+  if(Array.isArray(entry.regras)&&entry.regras.length) return entry.regras.map(r=>({raridade:r.raridade||'comum',condicao:pkCondLabel(r),peso:r.peso}));
   return [{raridade:entry.raridade||'comum',condicao:entry.condicao||null}];
 }
 // raridade informada → a regra dessa raridade (ou null); sem raridade → a regra mais comum (base do bioma).
@@ -11550,30 +11550,24 @@ function getEncounterUnits(db){
   return units;
 }
 
-// Pokémon "difíceis": só entram em jogo quando a raridade resultante é RARÍSSIMO. Nesse caso o GRUPO todo tem 1% de chance
-// (sai um deles por igual entre os disponíveis no pool Rarissímo do bioma); nos outros 99%, sorteia só entre os Rarissímos normais.
-// Em qualquer outra raridade eles não têm regra especial.
-const ENCONTRO_DIFICIL = {
-  chance: 0.01,
-  nomes: new Set(['Dratini','Larvitar','Bagon','Beldum','Gible','Deino','Goomy','Jangmo-o','Dreepy','Frigibax'].map(n => n.toLowerCase().replace(/[^a-z0-9]/g,'')))
-};
-function pkEhDificil(p){
-  const n = String((p && (p.name || p.nome)) || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
-  return ENCONTRO_DIFICIL.nomes.has(n);
-}
-// Chance do grupo (dentro do Rarissímo): 1% de sair UM dos difíceis (escolhido por igual entre os da lista), senão null.
-function pkSortearDificil(candidatos){
-  const ds = candidatos.filter(pkEhDificil);
-  if(!ds.length || Math.random() >= ENCONTRO_DIFICIL.chance) return null;
-  return ds[Math.floor(Math.random() * ds.length)];
-}
 // Unidades de encontro usadas nas rolagens: só Pokémon com foto, habilidade e gênero.
 function getEncounterUnitsCompletos(db){
   return getEncounterUnits(db).filter(pkCompletoParaExibir);
 }
-// Sorteio uniforme dentro da lista.
-function sortearPonderado(lista){
-  return lista[Math.floor(Math.random() * lista.length)];
+// Sorteio dentro da lista. Sem pesoFn = uniforme. Com pesoFn(item) = ponderado (peso 100 = normal; 50 = metade da chance).
+function sortearPonderado(lista, pesoFn){
+  if(!pesoFn) return lista[Math.floor(Math.random() * lista.length)];
+  const pesos = lista.map(x => { const n = Number(pesoFn(x)); return n > 0 ? n : 100; });
+  let r = Math.random() * pesos.reduce((a, b) => a + b, 0);
+  for(let i = 0; i < lista.length; i++){ r -= pesos[i]; if(r < 0) return lista[i]; }
+  return lista[lista.length - 1];
+}
+// Peso do Pokémon dentro da raridade, naquele bioma/Local (campo `peso` da regra, definido no ADM; sem campo = 100).
+function pkPesoNoBioma(p, bioma, rarity){
+  if(!bioma) return 100;
+  const i = pkInfoNoBioma(p, bioma, rarity) || pkInfoNoBioma(p, bioma);
+  const n = Number(i && i.peso);
+  return n > 0 ? n : 100;
 }
 
 function pickFromPool(pool, usedIds, rarity, bioma){
@@ -11585,7 +11579,7 @@ function pickFromPool(pool, usedIds, rarity, bioma){
   let available=pool.filter(p=>!usedIds.has(p.id));
   // se todos já foram usados, reseta (ciclo)
   if(available.length===0){ usedIds.clear(); available=[...pool]; }
-  const p=sortearPonderado(available);
+  const p=sortearPonderado(available, q=>pkPesoNoBioma(q,bioma,rarity));
   usedIds.add(p.id);
   const gender=rollGender(p.genero);
   // Condição de captura é a do bioma sorteado especificamente, não uma global do pokémon
@@ -11604,18 +11598,9 @@ function pickFromPoolCascade(poolsObj, usedIdsObj, rarity, bioma){
   for(const r of ordem){
     const pool=poolsObj[r]||[];
     if(!pool.length) continue;
-    if(r==='rarissimo'){
-      // Dentro do Rarissímo: 1% pro grupo "difícil" (um deles por igual); senão só os Rarissímos normais.
-      const livres=pool.filter(p=>!(usedIdsObj[r] && usedIdsObj[r].has(p.id)));
-      const dif=pkSortearDificil(livres);
-      if(dif) return pickFromPool([dif], usedIdsObj[r], r, bioma);
-      const normais=pool.filter(p=>!pkEhDificil(p));
-      if(normais.length) return pickFromPool(normais, usedIdsObj[r], r, bioma);
-      continue; // pool Rarissímo só tem difíceis: tenta as outras raridades
-    }
     return pickFromPool(pool, usedIdsObj[r], r, bioma);
   }
-  // Nada nas outras raridades: usa o que tiver (inclui os difíceis)
+  // Nada nas outras raridades: usa o que tiver
   for(const r of ordem){
     const pool=poolsObj[r];
     if(pool && pool.length) return pickFromPool(pool, usedIdsObj[r], r, bioma);
@@ -16429,9 +16414,7 @@ async function rolarEncontroEvento(){
     for(let i=0;i<total;i++){
       const rarity=rollRarityC();
       const pool=pools[rarity].length?pools[rarity]:(pools['comum'].length?pools['comum']:biomaObj.pokemons);
-      const pkDif=(rarity==='rarissimo' && pools[rarity].length)?pkSortearDificil(pools[rarity]):null;
-      const poolSemDif=(rarity==='rarissimo' && pools[rarity].length)?pool.filter(p=>!pkEhDificil(p)):pool;
-      const pk=pkDif||sortearPonderado(poolSemDif.length?poolSemDif:pool);
+      const pk=sortearPonderado(pool);
       if(pk){
         const gender=rollGender(pk.genero);
         pokes.push({
