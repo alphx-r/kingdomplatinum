@@ -7922,10 +7922,31 @@ function renderTbodyBiomas(){
         <td><button class="btn btn-danger btn-sm" onclick="removerBioma('${b.id}','${b.nome}')">Remover</button></td>
       </tr>`).join('');
 }
+// Jogadores só veem Locais que tenham ao menos 1 Pokémon disponível (cadastro + ranking do personagem + estação).
+// ADM vê todos. Sem dados carregados, não filtra (evita lista vazia por engano).
+function locaisComPokemonNomes(){
+  const todos=locaisEncontroNomes();
+  try{
+    if(admLogado||typeof pokemonDB==='undefined'||!pokemonDB.length) return todos;
+    const pers=(document.getElementById('personagem')?.value||'').trim();
+    const rk=getPersonagemRanking(pers);
+    const units=getEncounterUnitsCompletos(pokemonDB);
+    const ok=todos.filter(n=>units.some(p=>pkRegrasNoBioma(p,n).length&&pkRankingNecessario(p)<=rk&&(!p.estacao||p.estacao===estacaoAtiva)));
+    return ok.length?ok:todos;
+  }catch(e){ return todos; }
+}
+let _locSig='';
+setInterval(()=>{
+  try{
+    if(!document.getElementById('bioma')) return;
+    const sig=[(typeof pokemonDB!=='undefined'?pokemonDB.length:0),estacaoAtiva,admLogado,document.getElementById('personagem')?.value,(LOCAIS_ENCONTRO_DB||[]).length].join('|');
+    if(sig!==_locSig){ _locSig=sig; syncBiomaSelect(); }
+  }catch(e){}
+},1500);
 function syncBiomaSelect(){
   const sel=document.getElementById('bioma');
   const atualSel=sel.value;
-  sel.innerHTML=locaisEncontroNomes().map(n=>`<option value="${n}">${n}</option>`).join('');
+  sel.innerHTML=locaisComPokemonNomes().map(n=>`<option value="${n}">${n}</option>`).join('');
   if(atualSel&&[...sel.options].some(o=>o.value===atualSel)) sel.value=atualSel;
   if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus();
 }
