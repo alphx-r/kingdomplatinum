@@ -460,6 +460,25 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .bioma-locais-row{font-size:13px;color:var(--text);margin-bottom:5px;display:flex;gap:6px;flex-wrap:wrap;line-height:1.4}
 .bioma-locais-row:last-child{margin-bottom:0}
 .bioma-locais-label{font-weight:700;color:var(--muted);min-width:84px}
+/* Busca de Pokémon em /porlocal */
+.bioma-busca{position:relative;margin-bottom:16px}
+.bioma-busca input{width:100%;padding:11px 38px 11px 14px;border:1.5px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--font-body);font-size:12px;outline:none;transition:border-color .2s,box-shadow .2s}
+.bioma-busca input:focus{border-color:var(--brand-mid);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand-mid) 18%,transparent)}
+.bioma-busca-x{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--muted);font-size:18px;line-height:1;width:30px;height:30px;border-radius:50%;cursor:pointer;display:none}
+.bioma-busca-x:hover{background:var(--surface2);color:var(--text)}
+.bioma-busca.tem-texto .bioma-busca-x{display:block}
+.bb-res{display:flex;flex-direction:column;gap:10px}
+.bb-info{font-size:12px;color:var(--muted);font-weight:600}
+.bb-card{--tc:#c8c8a0;display:flex;gap:12px;align-items:flex-start;background:color-mix(in srgb,var(--tc) 14%,var(--surface));border:1.5px solid color-mix(in srgb,var(--tc) 35%,var(--border));border-left:4px solid var(--tc);border-radius:var(--r);padding:10px 12px}
+.bb-poke{display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;flex-shrink:0;cursor:pointer;text-align:center}
+.bb-poke img{width:60px;height:60px;object-fit:contain}
+.bb-nome{font-family:var(--font-title);font-size:12px;font-weight:600;color:var(--text);line-height:1.25;word-break:break-word}
+.bb-locais{display:flex;flex-wrap:wrap;gap:6px;min-width:0;flex:1}
+.bb-loc{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border:1.5px solid var(--border);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;font-family:var(--font-body)}
+.bb-loc:hover{border-color:var(--brand-mid);color:var(--brand-mid)}
+.bb-cond{font-size:9px;font-weight:700;color:#7a4a00;background:#fff3d4;border:1px solid #e8c86a;border-radius:6px;padding:1px 5px;line-height:1.3}
+.bb-vazio{color:var(--muted);padding:20px;font-size:14px}
+@media(max-width:600px){.bb-poke{width:68px}.bb-poke img{width:52px;height:52px}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes diceShake{0%,100%{transform:rotate(0)}20%{transform:rotate(-8deg)}40%{transform:rotate(8deg)}60%{transform:rotate(-5deg)}80%{transform:rotate(5deg)}}
@@ -3724,6 +3743,11 @@ function calcSyncSelects(){
   <div style="padding-top:8px;margin-bottom:20px">
     <h2 style="font-family:var(--font-title);font-size:20px;color:var(--text);font-weight:700;margin-bottom:16px">Pokémon por Local</h2>
   </div>
+  <div class="bioma-busca" id="bioma-busca-wrap">
+    <input type="search" id="bioma-busca" placeholder="Procure por Pokémon" autocomplete="off" oninput="bioBuscaInput(this.value)" aria-label="Pesquisar Pokémon">
+    <button type="button" class="bioma-busca-x" onclick="bioBuscaLimpar()" title="Limpar busca" aria-label="Limpar busca">×</button>
+  </div>
+  <div id="bioma-busca-res" class="bb-res" style="display:none"></div>
   <div id="bioma-tabs" class="loc-picker"></div>
   <div id="bioma-content"></div>
 </div>
@@ -6270,6 +6294,7 @@ function renderBiomaPage(){
     + (rotasG ? `<div class="loc-rotas-lbl">Rotas</div>${row(rotasG.itens,n=>n.slice(5),Math.min(rotasG.itens.length,20),false,true)}` : '');
   tabs.querySelectorAll('.loc-row').forEach(locInitRow);
   renderBiomaConteudo();
+  bioBuscaAplicar();   // se houver texto na busca, mantém os resultados em vez das abas
   // a lista de cada local vem do campo encontros_local dos Pokémon (já carregados)
 }
 function locScroll(btn,dir){
@@ -6313,6 +6338,83 @@ function selecionarBioma(nome, el){
   el.classList.add('active');
   renderBiomaConteudo();
   garantirEncontrosLocal(nome).then(()=>{ if(biomaAtivo===nome && currentPage==='bioma') renderBiomaConteudo(); });
+}
+
+// ── Busca de Pokémon em /porlocal: mostra todos os Locais onde ele aparece e a raridade ──
+let _bioBuscaT=null;
+function bioNorm(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(); }
+function bioBuscaInput(v){
+  clearTimeout(_bioBuscaT);
+  _bioBuscaT=setTimeout(()=>bioBuscaAplicar(),120);
+}
+function bioBuscaLimpar(){
+  const i=document.getElementById('bioma-busca'); if(i){ i.value=''; i.focus(); }
+  bioBuscaAplicar();
+}
+function bioBuscaIrLocal(nome){
+  const i=document.getElementById('bioma-busca'); if(i) i.value='';
+  biomaAtivo=nome;
+  try{ sessionStorage.setItem('kp_bioma_local', nome); }catch(e){}
+  bioBuscaAplicar();
+  renderBiomaPage();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function bioBuscaAplicar(){
+  const inp=document.getElementById('bioma-busca'); if(!inp) return;
+  const wrap=document.getElementById('bioma-busca-wrap');
+  const res=document.getElementById('bioma-busca-res');
+  const tabs=document.getElementById('bioma-tabs');
+  const cont=document.getElementById('bioma-content');
+  const q=bioNorm(inp.value);
+  wrap.classList.toggle('tem-texto',!!inp.value);
+  if(!q){ res.style.display='none'; res.innerHTML=''; tabs.style.display=''; cont.style.display=''; return; }
+  tabs.style.display='none'; cont.style.display='none'; res.style.display='';
+  if(q.length<2){ res.innerHTML='<div class="bb-vazio">Digite pelo menos 2 letras.</div>'; return; }
+
+  const unidades=getEncounterUnits(pokemonDB);   // também reconstrói ENC_LOCAL_TAB
+  const locais=locaisEncontroNomes(Object.keys(ENC_LOCAL_TAB||{}).filter(n=>n && Object.keys(ENC_LOCAL_TAB[n]||{}).length));
+  const ordemRar=['comum','incomum','raro','rarissimo'];
+  const nomesRar={rarissimo:'Raríssimo',raro:'Raro',incomum:'Incomum',comum:'Comum'};
+  const rcls={comum:'rc',incomum:'ri',raro:'rr',rarissimo:'rrr'};
+  const esc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const escJs=t=>String(t||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+
+  const achados=unidades.filter(p=>bioNorm(p.name).includes(q));
+  // mesmas regras da página: só forma base e com cadastro mínimo completo
+  const visiveis=achados.filter(p=>pkEvoDepth(p)===0 && pkCompletoParaExibir(p))
+    .sort((a,b)=>{ const an=bioNorm(a.name).startsWith(q)?0:1, bn=bioNorm(b.name).startsWith(q)?0:1; return an-bn || String(a.name).localeCompare(b.name,'pt-BR'); });
+  if(!visiveis.length){
+    res.innerHTML=achados.length
+      ? '<div class="bb-vazio">Nenhum resultado. Os locais listam apenas a forma base de cada Pokémon — tente buscar pelo primeiro estágio da linha evolutiva.</div>'
+      : '<div class="bb-vazio">Nenhum Pokémon encontrado com esse nome.</div>';
+    return;
+  }
+  const LIM=30, lista=visiveis.slice(0,LIM);
+  const cards=lista.map(p=>{
+    const itens=[];
+    locais.forEach(loc=>{
+      const regras=pkRegrasNoBioma(p,loc);
+      regras.slice().sort((a,b)=>ordemRar.indexOf(a.raridade)-ordemRar.indexOf(b.raridade)).forEach(r=>itens.push({loc,r}));
+    });
+    const nEsc=escJs(p.name);
+    let src=p.sprite; if(!src){ src=pkFreshSprite(p.name,false)||FALLBACK_SPRITE; }
+    const locHtml=itens.length ? itens.map(({loc,r})=>`
+        <button type="button" class="bb-loc" onclick="bioBuscaIrLocal('${escJs(loc)}')" title="Abrir ${esc(loc)}">
+          <span>${esc(loc)}</span>
+          <span class="poke-rarity ${rcls[r.raridade]||'rc'}">${nomesRar[r.raridade]||esc(r.raridade)}</span>
+          ${r.condicao?`<span class="bb-cond">${esc(r.condicao)}</span>`:''}
+        </button>`).join('')
+      : '<span class="bb-vazio" style="padding:0">Não aparece em nenhum local.</span>';
+    return `<div class="bb-card" style="--tc:${BIOMA_TIPO_COR[p.tipo1]||'#c8c8a0'}">
+      <div class="bb-poke" onclick="abrirNationaldex('${nEsc}')" title="Ver no National Dex">
+        <img src="${esc(src)}" alt="${esc(p.name)}" onerror="handleHistSpriteError(this,'${nEsc}',false)"/>
+        <div class="bb-nome">${esc(p.name)}</div>
+      </div>
+      <div class="bb-locais">${locHtml}</div>
+    </div>`;
+  }).join('');
+  const total=visiveis.length;
+  res.innerHTML=`<div class="bb-info">${total} Pokémon encontrado${total>1?'s':''}${total>LIM?` (mostrando os ${LIM} primeiros — refine a busca)`:''}</div>${cards}`;
 }
 
 // ── Estágio de evolução ──
