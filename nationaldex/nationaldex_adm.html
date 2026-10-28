@@ -720,6 +720,20 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .cc-badge.leg{background:#fff3cd;color:#8a5a00}
 .cc-badge.ok{background:var(--green-light);color:var(--green-dark)}
 @media(max-width:760px){.cc-tx{grid-template-columns:1fr}.cc-tx-part{flex-wrap:wrap}}
+/* PESOS DE APARIÇÃO — edição em massa */
+.pw-box{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.pw-title{font-size:12px;font-weight:800;color:var(--brand);text-transform:uppercase;letter-spacing:.4px}
+.pw-chk{font-size:12px;font-weight:700;color:var(--muted);display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.pw-row{display:grid;grid-template-columns:auto 38px minmax(120px,1.3fr) minmax(120px,1.3fr) auto auto;gap:10px;align-items:center;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:5px;cursor:pointer}
+.pw-row.off{opacity:.45}
+.pw-row img{width:34px;height:34px;object-fit:contain;image-rendering:pixelated}
+.pw-nome{font-weight:800;font-size:13px;color:var(--brand)}
+.pw-loc{font-size:12px;font-weight:700;color:var(--text)}
+.pw-sub{font-size:10px;color:var(--muted);font-weight:600}
+.pw-peso{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:800;justify-content:flex-end;white-space:nowrap}
+.pw-novo{min-width:46px;text-align:center;padding:2px 8px;border-radius:99px;background:var(--surface2);color:var(--muted)}
+.pw-novo.mudou{background:var(--accent-light);color:#8a5a00;border:1px solid var(--accent)}
+@media(max-width:760px){.pw-row{grid-template-columns:auto 34px 1fr}.pw-row .pw-peso{grid-column:2/-1;justify-content:flex-start}}
 </style>
 </head>
 <body>
@@ -741,7 +755,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <div class="adm-desc">Gerencie traduções de Pokémon, habilidades e movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
     </div>
     <div class="adm-actions">
-      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="As alterações já são gravadas sozinhas no pokemon.json (GitHub) poucos segundos depois de cada edição. Este botão força a gravação imediata de tudo.">📤 Gravar pokemon.json agora</button>
+      <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Grava no GitHub (pokemon.json) todas as alterações feitas no ADM. O commit só acontece quando você clica aqui — nada é commitado automaticamente.">📤 Commit pokemon.json</button>
       <button class="btn btn-outline" id="btn-update-photos" onclick="runUpdatePhotos()" title="Troca as fotos do Supabase pelas do GitHub direto no pokemon.json — não precisa da lista carregada">🖼️ Atualizar fotos</button>
       <button class="btn btn-outline" id="btn-pokeapi-photos" onclick="runPokeapiPhotos()" title="Preenche, com a foto da PokeAPI (normal e shiny), os Pokémon oficiais que estão sem foto e grava no pokemon.json. Não mexe em quem já tem foto.">🔄 Fotos da PokeAPI</button>
       <button class="btn btn-outline" onclick="openBulkTransferModal()" title="Transferir vários Pokémon de uma vez para um local/raridade, colando uma lista">🔀 Transferência em massa</button>
@@ -754,6 +768,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <button class="tab" id="tab-rpg" onclick="switchTab('rpg')">＋</button>
     <button class="tab" id="tab-encl" onclick="switchTab('encl')">Encontros por Local</button>
     <button class="tab" id="tab-cc" onclick="switchTab('cc')">Condições</button>
+    <button class="tab" id="tab-pw" onclick="switchTab('pw')">⚖️ Pesos</button>
   </div>
 
   <!-- ENCONTROS POR LOCAL (lista de Pokémon de cada Local — banco principal ucbkod) -->
@@ -805,6 +820,56 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button type="button" class="btn btn-success btn-sm" onclick="ccSalvarTudo()">💾 Salvar todos alterados</button>
       </div>
       <div id="cc-list"></div>
+    </div>
+  </div>
+
+  <!-- PESOS DE APARIÇÃO (edição em massa) -->
+  <div class="panel" id="panel-pw">
+    <div class="encl-wrap">
+      <div class="encl-help"><b>Peso de aparição</b> é a chance relativa de um Pokémon <b>dentro da mesma raridade</b> de um Local: 100 = normal; 50 = metade da chance dos outros da mesma raridade (ex.: Caterpie 50 e Weedle 100, ambos Comuns → Weedle sai 2× mais). Aqui você escolhe <b>quais regras</b> alterar, define <b>o que fazer</b> com o peso e confere a prévia antes de aplicar. As mudanças ficam no <code>pokemon.json</code> em memória — clique em <b>“Commit pokemon.json”</b> para gravar no GitHub.</div>
+      <div class="pw-box">
+        <div class="pw-title">1 · Quais regras alterar</div>
+        <div class="encl-bar">
+          <select id="pw-local" onchange="pwReset()"><option value="">Todos os Locais</option></select>
+          <select id="pw-rar" onchange="pwReset()"></select>
+          <select id="pw-cond" onchange="pwReset()">
+            <option value="">Qualquer condição</option>
+            <option value="sempre">Só “Sempre” (sem condição)</option>
+            <option value="cond">Só com condição (Dia, Noite, Clima…)</option>
+          </select>
+          <select id="pw-atual" onchange="pwReset()">
+            <option value="">Qualquer peso atual</option>
+            <option value="cheio">Só os que estão em 100</option>
+            <option value="reduzido">Só os já reduzidos (&lt; 100)</option>
+          </select>
+        </div>
+        <div class="encl-bar">
+          <input type="text" id="pw-busca" placeholder="Pokémon (um ou vários, separados por vírgula) — vazio = todos…" oninput="pwReset()" style="flex:1;min-width:240px">
+          <label class="pw-chk"><input type="checkbox" id="pw-exato" onchange="pwReset()"> nome exato</label>
+        </div>
+      </div>
+      <div class="pw-box">
+        <div class="pw-title">2 · O que fazer com o peso</div>
+        <div class="encl-bar">
+          <select id="pw-modo" onchange="pwModoMudou()">
+            <option value="definir">Definir peso para</option>
+            <option value="mult">Multiplicar por (%)</option>
+            <option value="somar">Somar / subtrair</option>
+            <option value="reset">Voltar ao normal (100)</option>
+          </select>
+          <input type="number" id="pw-valor" value="50" step="any" oninput="pwRender()" style="width:110px">
+          <span class="encl-info" id="pw-dica"></span>
+        </div>
+      </div>
+      <div class="encl-bar">
+        <span id="pw-info" class="encl-info"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="pwSelTodos(true)">Marcar todas</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="pwSelTodos(false)">Desmarcar todas</button>
+        <button type="button" class="btn btn-primary" id="pw-aplicar" onclick="pwAplicar()" disabled>⚖️ Aplicar</button>
+        <button type="button" class="btn btn-outline" id="pw-desfazer" onclick="pwDesfazer()" disabled title="Desfaz só a última aplicação feita nesta aba">↩️ Desfazer última</button>
+      </div>
+      <div id="pw-msg" class="encl-msg"></div>
+      <div id="pw-list"></div>
     </div>
   </div>
 
@@ -1764,8 +1829,8 @@ const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorizat
    PKJ — Pokémon agora vivem no pokemon.json (GitHub), NÃO no Supabase.
    • Leitura: baixa o pokemon.json do GitHub (S.pk.dbMap é o espelho em memória).
    • Escrita: sbUpsert/sbPatch/sbDelete('pokemons') só alteram a memória e agendam a gravação;
-     ~2,5 s depois da última alteração o arquivo inteiro é commitado no GitHub
-     (rota /api/admin/backup-pokemon-now). O botão da pílula no canto inferior esquerdo grava na hora.
+     NÃO há commit automático: o arquivo inteiro só é commitado no GitHub (rota /api/admin/backup-pokemon-now)
+     quando o botão "Commit pokemon.json" é clicado (a pílula no canto inferior esquerdo só avisa que há alterações pendentes).
 ══════════════════════════════════════════ */
 const PKJ = { loaded: false, count: 0, dirty: false, timer: null, chain: Promise.resolve() };
 function pkjStatus(txt, tipo) {
@@ -1773,8 +1838,8 @@ function pkjStatus(txt, tipo) {
   if (!el) {
     el = document.createElement('div'); el.id = 'pkj-status';
     el.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:9999;padding:7px 13px;border-radius:999px;font:700 12px Nunito,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.25);cursor:pointer;color:#fff;display:none';
-    el.title = 'pokemon.json — clique para gravar agora';
-    el.onclick = () => pkjFlush().catch(e => alert('❌ ' + e.message));
+    el.title = 'Alterações ainda não commitadas — clique para abrir o Commit pokemon.json';
+    el.onclick = () => runManualBackup();
     document.body.appendChild(el);
   }
   el.textContent = txt; el.style.display = txt ? 'block' : 'none';
@@ -1792,26 +1857,29 @@ async function pkjLoad() {
   return rows;
 }
 function pkjSujo() {
-  PKJ.dirty = true; pkjStatus('⏳ Alterações pendentes — gravando no pokemon.json…', 'warn');
-  clearTimeout(PKJ.timer); PKJ.timer = setTimeout(() => pkjFlush().catch(() => {}), 2500);
+  PKJ.dirty = true; pkjStatus('⏳ Alterações não commitadas — clique em “Commit pokemon.json”', 'warn');
 }
-async function pkjGravar() {
-  if (!PKJ.dirty) return;
+async function pkjGravar(force) {
+  if (!PKJ.dirty && !force) return;
   const rows = Object.values(S.pk.dbMap || {}).map(x => Object.fromEntries(Object.entries(x).filter(([k]) => !k.startsWith('_'))));
   if (!PKJ.loaded || !rows.length) throw new Error('A lista de Pokémon não está carregada — recarregue a página antes de gravar.');
   if (rows.length < PKJ.count - 25) throw new Error(`Segurança: o ADM tem ${rows.length} Pokémon, mas o pokemon.json tinha ${PKJ.count}. Recarregue a página antes de gravar para não apagar dados.`);
   PKJ.dirty = false;
-  pkjStatus('💾 Gravando no pokemon.json…', 'warn');
+  pkjStatus('💾 Commitando pokemon.json…', 'warn');
   try {
-    await kpCommitPokemonJson(rows);
+    const body = await kpCommitPokemonJson(rows);
     PKJ.count = rows.length;
-    pkjStatus(PKJ.dirty ? '⏳ Alterações pendentes — gravando no pokemon.json…' : '✓ Salvo no pokemon.json', PKJ.dirty ? 'warn' : 'ok');
+    pkjStatus(PKJ.dirty ? '⏳ Alterações não commitadas — clique em “Commit pokemon.json”' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok');
+    return body;
   } catch (e) {
-    PKJ.dirty = true; pkjStatus('⚠️ Falha ao gravar no pokemon.json — clique para tentar de novo', 'err');
-    throw new Error('Falha ao gravar no pokemon.json: ' + e.message);
+    PKJ.dirty = true; pkjStatus('⚠️ Falha no commit do pokemon.json — clique em “Commit pokemon.json” para tentar de novo', 'err');
+    throw new Error('Falha ao commitar o pokemon.json: ' + e.message);
   }
 }
-function pkjFlush() { clearTimeout(PKJ.timer); PKJ.chain = PKJ.chain.catch(() => {}).then(pkjGravar); return PKJ.chain; }
+// pkjFlush() NÃO commita mais (era a gravação automática). Fica só para os fluxos que ainda o chamam após editar.
+// O único caminho que commita é o botão "Commit pokemon.json" → runManualBackup() → pkjCommit().
+function pkjFlush() { return Promise.resolve(); }
+function pkjCommit(force) { PKJ.chain = PKJ.chain.catch(() => {}).then(() => pkjGravar(force)); return PKJ.chain; }
 window.addEventListener('beforeunload', e => { if (PKJ.dirty) { e.preventDefault(); e.returnValue = ''; } });
 function pkjCheck() { if (!PKJ.loaded) throw new Error('A lista de Pokémon ainda não carregou do pokemon.json — recarregue a aba.'); }
 
@@ -2198,7 +2266,7 @@ async function enclSalvarEdicao() {
     if (!enclSetRegras(r.pokemon_id, ENCL.local, ENCL.edit.regras)) throw new Error('Pokémon não encontrado no pokemon.json');
     r.regras = ENCL.edit.regras;
     await pkjFlush();
-    ENCL.edit = null; enclRender(); toast('Regras salvas no pokemon.json.', 'ok');
+    ENCL.edit = null; enclRender(); toast('Regras salvas — falta o Commit pokemon.json para gravar no GitHub.', 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
 }
 async function enclRemover(id) {
@@ -2244,11 +2312,11 @@ async function enclMigrarDoSupabase() {
       if (comLista.has(r.local)) { ja++; return; }
       if (enclSetRegras(String(r.pokemon_id), r.local, r.regras || [])) novos++; else semPk++;
     });
-    enclMsg('Gravando no pokemon.json…');
+    enclMsg('Aplicando…');
     await pkjFlush();
     await enclCarregarContagem(); enclMsg('');
     await enclSelecionar(ENCL.local || (ENCL.locais[0] && ENCL.locais[0].nome));
-    alert(`✅ ${novos} entradas copiadas para o pokemon.json.${ja ? `\n${ja} puladas (Local já tem lista no pokemon.json).` : ''}${semPk ? `\n${semPk} puladas (Pokémon não existe no pokemon.json).` : ''}`);
+    alert(`✅ ${novos} entradas copiadas para o pokemon.json (em memória — clique em “Commit pokemon.json” para gravar no GitHub).${ja ? `\n${ja} puladas (Local já tem lista no pokemon.json).` : ''}${semPk ? `\n${semPk} puladas (Pokémon não existe no pokemon.json).` : ''}`);
   } catch (e) { enclMsg(''); alert('❌ Não consegui migrar: ' + e.message); }
 }
 
@@ -2713,7 +2781,7 @@ async function kpImpAplicar() {
       if (enclSetRegras(id, local, final)) gravados++;
     });
     }
-    resumo.textContent = 'Gravando no pokemon.json…';
+    resumo.textContent = 'Aplicando…';
     await pkjFlush();
     await enclCarregarContagem();
     enclMontarIndicePk();
@@ -2852,6 +2920,7 @@ function switchTab(tab) {
   // então reaproveitá-la aqui deixava o dropdown travado em "— Carregando —".
   if (tab === 'encl') enclInit();
   if (tab === 'cc') ccInit();
+  if (tab === 'pw') pwInit();
   if (tab === 'rpg' && !S.rpg._formInit) { S.rpg._formInit = true; openNewRpgPokemon(); }
 }
 
@@ -5826,7 +5895,7 @@ async function epkFetchMovesetFromPokeapi(category) {
   if (!id) { toast('Não foi possível identificar o Pokémon.', 'err'); return; }
   const pk = S.pk.all.find(p => String(p.id) === String(id));
   const query = /^\d+$/.test(id) ? id : String(pk?.url_slug || pk?.name || id).trim().toLowerCase().replace(/\s+/g, '-');
-  if (!confirm(`Isso vai buscar o moveset "${label}" de "${query}" na PokéAPI e SALVAR direto no pokemon.json — sobrescreve só o campo "${label}" deste Pokémon. Continuar?`)) return;
+  if (!confirm(`Isso vai buscar o moveset "${label}" de "${query}" na PokéAPI e SALVAR no ADM (depois clique em “Commit pokemon.json” para gravar no GitHub) — sobrescreve só o campo "${label}" deste Pokémon. Continuar?`)) return;
 
   const btn = event?.target;
   const origLabel = btn?.textContent;
@@ -5859,7 +5928,7 @@ async function epkFetchMovesetFromPokeapi(category) {
     if (pk) Object.assign(pk, patch);
     if (S.pk.dbMap && S.pk.dbMap[id]) Object.assign(S.pk.dbMap[id], patch);
 
-    toast(`✓ Moveset "${label}" de "${query}" atualizado no pokemon.json!`, 'ok');
+    toast(`✓ Moveset "${label}" de "${query}" atualizado — falta o Commit pokemon.json!`, 'ok');
   } catch (e) {
     toast('Erro ao buscar moveset: ' + e.message, 'err');
   } finally {
@@ -6597,36 +6666,22 @@ function evoSlugForMainForm(idFieldId, listAll) {
 // ficar exposto aqui no JS do navegador; a rota manual reaproveita a mesma lógica
 // de backup (lib/backupPokemon.js) só que sem esse header.
 async function runManualBackup() {
-  // Gera o pokemon.json a partir dos Pokémon que o ADM já tem carregados
-  // (S.pk.dbMap) e manda pro servidor só commitar no GitHub — o servidor
-  // não consulta o Supabase.
-  const rows = Object.values((S.pk && S.pk.dbMap) || {});
-  if (!rows.length) { alert('❌ Nenhum Pokémon carregado ainda. Espere a lista carregar e tente de novo.'); return; }
-  if (!confirm(`Isso vai commitar o pokemon.json com ${rows.length} Pokémon no GitHub (sem novo deploy da Vercel). Continuar?`)) return;
+  // Único ponto que commita o pokemon.json no GitHub. Usa os Pokémon que o ADM já tem em memória (S.pk.dbMap);
+  // o servidor só commita, não consulta o Supabase.
+  const total = Object.keys((S.pk && S.pk.dbMap) || {}).length;
+  if (!total) { alert('❌ Nenhum Pokémon carregado ainda. Espere a lista carregar e tente de novo.'); return; }
+  if (!confirm(`Isso vai commitar o pokemon.json com ${total} Pokémon no GitHub (sem novo deploy da Vercel). Continuar?`)) return;
 
   const btn = document.getElementById('btn-manual-backup');
   const original = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Commitando...';
   try {
-    // gzip no navegador: o corpo de uma função da Vercel é limitado a ~4,5 MB
-    const gz = await new Response(
-      new Blob([JSON.stringify(rows)]).stream().pipeThrough(new CompressionStream('gzip'))
-    ).arrayBuffer();
-    const res = await fetch('/api/admin/backup-pokemon-now', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: gz,
-    });
-    const ct = res.headers.get('content-type') || '';
-    const body = ct.includes('application/json') ? await res.json() : await res.text();
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${typeof body === 'string' ? body : (body.error || JSON.stringify(body))}`);
-    }
+    const body = await pkjCommit(true);
     if (body && body.unchanged) {
       alert(`ℹ️ O pokemon.json no GitHub já está igual ao ADM — nenhum commit foi necessário.\n\n${body.total} Pokémon.`);
     } else {
-      alert(`✅ Commit feito! ${body.total} Pokémon.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
+      alert(`✅ Commit feito! ${(body && body.total) || total} Pokémon.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
     }
   } catch (e) {
     alert('❌ Falha ao commitar o pokemon.json: ' + e.message);
@@ -6634,6 +6689,151 @@ async function runManualBackup() {
     btn.disabled = false;
     btn.textContent = original;
   }
+}
+
+/* ══════════════════════════════════════════
+   ██ PESOS DE APARIÇÃO — edição em massa (aba "⚖️ Pesos")
+   O peso fica em cada regra de `encontros_local` (campo `peso`, 1–100, relativo à mesma raridade; 100 = normal e o campo some).
+   Filtra as regras (Local, raridade, condição, peso atual, nome), calcula o novo peso e aplica em tudo de uma vez.
+   Só altera o pokemon.json em memória (enclSetRegras → pendente); quem commita é o botão "Commit pokemon.json".
+══════════════════════════════════════════ */
+const PW = { alvos: [], sel: new Set(), limite: 150, undo: null };
+const pwEl = id => document.getElementById(id);
+function pwMsg(t) { const el = pwEl('pw-msg'); if (el) el.textContent = t || ''; }
+function pwCondTxt(r) {
+  if (r.legado) return r.condicao || '(texto livre)';
+  if (!r.condicao || r.condicao === 'sempre') return 'Sempre';
+  const o = (CONDICAO_OPTS[r.categoria || 'clima'] || []).find(x => x[0] === r.condicao);
+  return o ? o[1].replace(/\s*\(.*\)\s*$/, '') : r.condicao;
+}
+async function pwInit() {
+  try { if (!PKJ.loaded) { pwMsg('Carregando pokemon.json…'); await pkjLoad(); pwMsg(''); } }
+  catch (e) { pwMsg('Não consegui carregar o pokemon.json: ' + e.message); return; }
+  enclMontarIndicePk();
+  const rar = pwEl('pw-rar'), antRar = rar.value;
+  rar.innerHTML = '<option value="">Todas as raridades</option>' + RARIDADE_OPTS.map(([v, l]) => `<option value="${v}">${enclEsc(l)}</option>`).join('');
+  rar.value = antRar;
+  const sel = pwEl('pw-local'), ant = sel.value, locais = new Set();
+  enclTodos((pid, obj) => (obj.encontros_local || []).forEach(e => { if (e && e.local) locais.add(e.local); }));
+  sel.innerHTML = '<option value="">Todos os Locais</option>' + [...locais].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(l => `<option value="${enclEsc(l)}">${enclEsc(l)}</option>`).join('');
+  if (ant && locais.has(ant)) sel.value = ant;
+  pwModoMudou(); pwReset();
+}
+function pwColetar() {
+  const loc = pwEl('pw-local').value, rar = pwEl('pw-rar').value, cond = pwEl('pw-cond').value, atual = pwEl('pw-atual').value;
+  const exato = pwEl('pw-exato').checked;
+  const termos = pwEl('pw-busca').value.split(/[,;\n]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+  const out = [];
+  enclTodos((pid, obj) => {
+    const info = ENCL.pk[pid] || {}, nome = info.nome || pid, nl = String(nome).toLowerCase();
+    if (termos.length && !termos.some(t => exato ? nl === t : nl.includes(t))) return;
+    (obj.encontros_local || []).forEach(e => {
+      if (!e || (loc && e.local !== loc)) return;
+      (e.regras || []).forEach((r, ri) => {
+        if (!r) return;
+        const rr = r.raridade || 'comum';
+        if (rar && rr !== rar) return;
+        const sempre = !r.legado && (!r.condicao || r.condicao === 'sempre');
+        if (cond === 'sempre' && !sempre) return;
+        if (cond === 'cond' && sempre) return;
+        const peso = pesoDe(r);
+        if (atual === 'cheio' && peso !== 100) return;
+        if (atual === 'reduzido' && peso >= 100) return;
+        out.push({ key: `${pid}\u0000${e.local}\u0000${ri}`, pid, local: e.local, ri, nome, sprite: info.sprite || '', rar: rr, cond: pwCondTxt(r), peso });
+      });
+    });
+  });
+  const ordRar = { comum: 0, incomum: 1, raro: 2, rarissimo: 3 };
+  return out.sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR') || String(a.local).localeCompare(String(b.local), 'pt-BR') || (ordRar[a.rar] - ordRar[b.rar]) || (a.ri - b.ri));
+}
+// Novo peso para um peso atual `p` conforme a operação escolhida (sempre entre 1 e 100). null = valor inválido.
+function pwNovo(p) {
+  const modo = pwEl('pw-modo').value, v = parseFloat(String(pwEl('pw-valor').value).replace(',', '.'));
+  let n;
+  if (modo === 'reset') n = 100;
+  else if (!isFinite(v)) return null;
+  else if (modo === 'definir') n = v;
+  else if (modo === 'mult') n = p * v / 100;
+  else n = p + v;
+  return pesoNorm(Math.max(1, Math.min(100, n)));
+}
+function pwModoMudou() {
+  const modo = pwEl('pw-modo').value, v = pwEl('pw-valor');
+  const dicas = {
+    definir: 'ex.: 50 = metade da chance dos outros da mesma raridade (1 a 100)',
+    mult: 'ex.: 50 = reduz pela metade · 200 = dobra (nunca passa de 100)',
+    somar: 'ex.: -10 tira 10 pontos · 10 soma 10 (fica entre 1 e 100)',
+    reset: 'tira a redução: o peso volta para 100 (normal)'
+  };
+  pwEl('pw-dica').textContent = dicas[modo];
+  v.style.display = modo === 'reset' ? 'none' : '';
+  if (modo === 'definir' && !v.value) v.value = 50;
+  pwRender();
+}
+function pwReset() { PW.alvos = pwColetar(); PW.sel = new Set(PW.alvos.map(a => a.key)); PW.limite = 150; pwRender(); }
+function pwToggle(i) { const a = PW.alvos[i]; if (!a) return; if (PW.sel.has(a.key)) PW.sel.delete(a.key); else PW.sel.add(a.key); pwRender(); }
+function pwSelTodos(v) { PW.sel = v ? new Set(PW.alvos.map(a => a.key)) : new Set(); pwRender(); }
+function pwRender() {
+  const box = pwEl('pw-list'); if (!box) return;
+  let marcadas = 0, mudam = 0;
+  const linhas = PW.alvos.map((a, i) => {
+    const n = pwNovo(a.peso), on = PW.sel.has(a.key);
+    if (on) { marcadas++; if (n != null && n !== a.peso) mudam++; }
+    return { a, i, n, on };
+  });
+  const pokes = new Set(PW.alvos.map(a => a.pid)).size;
+  pwEl('pw-info').textContent = PW.alvos.length
+    ? `${PW.alvos.length} regra(s) em ${pokes} Pokémon · ${marcadas} marcada(s) · ${mudam} mudam de peso`
+    : '';
+  const bt = pwEl('pw-aplicar'); bt.disabled = !mudam; bt.textContent = mudam ? `⚖️ Aplicar em ${mudam} regra(s)` : '⚖️ Aplicar';
+  if (!PW.alvos.length) { box.innerHTML = '<div class="encl-help">Nenhuma regra encontrada com esses filtros. Só aparecem Pokémon que já têm Local cadastrado (aba “Encontros por Local”).</div>'; return; }
+  box.innerHTML = linhas.slice(0, PW.limite).map(({ a, i, n, on }) => `
+    <label class="pw-row${on ? '' : ' off'}">
+      <input type="checkbox" ${on ? 'checked' : ''} onchange="pwToggle(${i})">
+      ${a.sprite ? `<img src="${enclEsc(a.sprite)}" loading="lazy" alt="">` : '<span></span>'}
+      <div><div class="pw-nome">${enclEsc(a.nome)}</div><div class="pw-sub">${enclEsc(a.pid)}</div></div>
+      <div><div class="pw-loc">${enclEsc(a.local)}</div><div class="pw-sub">${enclEsc(a.cond)}</div></div>
+      <span class="encl-chip r-${a.rar}">${enclEsc((RARIDADE_OPTS.find(o => o[0] === a.rar) || [a.rar, a.rar])[1].replace(/\s*\(.*\)/, ''))}</span>
+      <div class="pw-peso"><span>${a.peso}</span><span>→</span><span class="pw-novo${n != null && n !== a.peso ? ' mudou' : ''}">${n == null ? '—' : n}</span></div>
+    </label>`).join('')
+    + (PW.alvos.length > PW.limite ? `<div style="text-align:center;margin:8px 0"><button type="button" class="btn btn-outline btn-sm" onclick="PW.limite+=150;pwRender()">Mostrar mais (${PW.alvos.length - PW.limite} restantes)</button></div>` : '');
+}
+function pwAtualizarOutrasAbas() { if (typeof ENCL !== 'undefined' && ENCL.loaded && ENCL.local) ENCL.rows = enclLinhasDoLocal(ENCL.local); }
+function pwAplicar() {
+  try { pkjCheck(); } catch (e) { toast(e.message, 'err'); return; }
+  const muda = [];
+  PW.alvos.forEach(a => { if (!PW.sel.has(a.key)) return; const n = pwNovo(a.peso); if (n != null && n !== a.peso) muda.push({ a, n }); });
+  if (!muda.length) { toast('Nada para alterar.'); return; }
+  const pokes = new Set(muda.map(m => m.a.pid)).size;
+  if (!confirm(`Alterar o peso de ${muda.length} regra(s) em ${pokes} Pokémon?\n\nDepois é só clicar em “Commit pokemon.json” para gravar no GitHub. Antes disso você ainda pode usar “Desfazer última”.`)) return;
+  const grupos = new Map();
+  muda.forEach(({ a, n }) => {
+    const k = a.pid + '\u0000' + a.local;
+    if (!grupos.has(k)) grupos.set(k, { pid: a.pid, local: a.local, itens: [] });
+    grupos.get(k).itens.push({ ri: a.ri, n });
+  });
+  const desfazer = []; let ok = 0;
+  grupos.forEach(g => {
+    const t = enclAlvo(g.pid), e = t && (t.obj.encontros_local || []).find(x => x.local === g.local);
+    if (!e) return;
+    const antes = JSON.parse(JSON.stringify(e.regras || []));
+    const novas = JSON.parse(JSON.stringify(e.regras || []));
+    g.itens.forEach(it => { if (novas[it.ri]) { novas[it.ri].peso = it.n; ok++; } });
+    if (enclSetRegras(g.pid, g.local, novas)) desfazer.push({ pid: g.pid, local: g.local, regras: antes });
+  });
+  PW.undo = desfazer.length ? desfazer : null;
+  pwEl('pw-desfazer').disabled = !PW.undo;
+  pwAtualizarOutrasAbas(); pwReset();
+  toast(`${ok} peso(s) alterado(s) — falta o Commit pokemon.json para gravar no GitHub.`, 'ok');
+}
+function pwDesfazer() {
+  if (!PW.undo || !PW.undo.length) return;
+  if (!confirm(`Desfazer a última aplicação (${PW.undo.length} Pokémon/Local voltam como estavam)?`)) return;
+  try { PW.undo.forEach(u => enclSetRegras(u.pid, u.local, u.regras)); }
+  catch (e) { toast('Erro ao desfazer: ' + e.message, 'err'); return; }
+  PW.undo = null; pwEl('pw-desfazer').disabled = true;
+  pwAtualizarOutrasAbas(); pwReset();
+  toast('Última aplicação desfeita.', 'ok');
 }
 
 /* ══════════════════════════════════════════
@@ -6893,7 +7093,6 @@ async function runPokeapiPhotos(){
   const original = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Lendo pokemon.json...';
   try {
-    if (PKJ.dirty) await pkjFlush();   // grava antes o que estiver pendente
     const r = await fetch(`https://raw.githubusercontent.com/${KP_GH_REPO}/main/pokemon.json?v=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error('Não consegui ler o pokemon.json do GitHub (HTTP ' + r.status + ')');
     const rows = await r.json();
@@ -6912,7 +7111,7 @@ async function runPokeapiPhotos(){
     if (!confirm(`${tocados.length} Pokémon oficiais estão sem foto (${nNormal} normal, ${nShiny} shiny). Preencher com a PokeAPI e gravar no pokemon.json?`)) return;
     btn.textContent = '⏳ Gravando pokemon.json...';
     await kpCommitPokemonJson(rows);
-    // espelha na memória do ADM p/ a próxima gravação automática não apagar o que foi preenchido
+    // espelha na memória do ADM p/ o próximo Commit pokemon.json não apagar o que foi preenchido
     tocados.forEach(p => { const m = S.pk && S.pk.dbMap && S.pk.dbMap[p.id]; if (m) { m.sprite = p.sprite; m.sprite_shiny = p.sprite_shiny; } });
     alert(`✅ Pronto! ${nNormal} foto(s) normais e ${nShiny} shiny preenchidas em ${tocados.length} Pokémon e gravadas no pokemon.json.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
   } catch (e) {
@@ -7929,7 +8128,7 @@ async function ccSalvar(i, silencioso) {
     pkjCheck();
     ccGravarLocais(it.pid, it.locais);
     it.dirty = false;
-    if (!silencioso) { await pkjFlush(); toast(`“${it.nome}” salvo no pokemon.json.`, 'ok'); }
+    if (!silencioso) { await pkjFlush(); toast(`“${it.nome}” salvo — falta o Commit pokemon.json.`, 'ok'); }
     const el = ccEl('cc-item-' + i); if (el) el.outerHTML = ccItemHtml(i);
     ccStats();
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
@@ -7940,7 +8139,7 @@ async function ccSalvarTudo() {
   try {
     idx.forEach(i => ccSalvar(i, true));
     await pkjFlush();
-    toast(`${idx.length} Pokémon salvos no pokemon.json.`, 'ok');
+    toast(`${idx.length} Pokémon salvos — falta o Commit pokemon.json.`, 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
 
