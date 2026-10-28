@@ -646,6 +646,28 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .loc-pill:hover{border-color:var(--brand-mid);background:var(--surface2)}
 .loc-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
 .loc-pill.sem-zona .dot{background:#e0a020}
+
+/* ── Aba Condições de captura ── */
+.cc-wrap{display:flex;flex-direction:column;gap:12px;padding:6px 0 30px}
+.cc-textos{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.cc-tx{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) auto;gap:6px;align-items:center;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:6px 8px}
+.cc-tx-txt{font-size:12px;font-weight:800;color:var(--brand)}
+.cc-tx-txt small{font-weight:600;color:var(--muted)}
+.cc-item{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;display:flex;flex-direction:column;gap:8px}
+.cc-item.dirty{border-color:var(--accent);box-shadow:0 0 0 2px rgba(232,160,32,.25)}
+.cc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cc-head img{width:38px;height:38px;object-fit:contain;image-rendering:pixelated}
+.cc-nome{font-weight:800;font-size:13px;color:var(--brand);flex:1;min-width:140px}
+.cc-nome small{display:block;font-size:10px;color:var(--muted);font-weight:600}
+.cc-local{border-left:4px solid var(--brand-mid);background:var(--surface2);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.cc-local-nome{font-size:12px;font-weight:800;color:var(--brand-mid);display:flex;justify-content:space-between;align-items:center}
+.cc-leg{font-size:11px;background:#fff8e1;border:1px dashed #e0a800;color:#8a5a00;border-radius:6px;padding:4px 8px;margin-bottom:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cc-leg b{font-weight:800}
+.cc-sug{font-size:10px;font-weight:700;border:1px solid var(--green);background:var(--green-light);color:var(--green-dark);border-radius:99px;padding:2px 8px;cursor:pointer}
+.cc-badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;text-transform:uppercase}
+.cc-badge.leg{background:#fff3cd;color:#8a5a00}
+.cc-badge.ok{background:var(--green-light);color:var(--green-dark)}
+@media(max-width:760px){.cc-tx{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -679,6 +701,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <button class="tab active" id="tab-pokemon" onclick="switchTab('pokemon')">Pokémon <span class="tab-badge" id="badge-pokemon">—</span></button>
     <button class="tab" id="tab-rpg" onclick="switchTab('rpg')">＋</button>
     <button class="tab" id="tab-encl" onclick="switchTab('encl')">Encontros por Local</button>
+    <button class="tab" id="tab-cc" onclick="switchTab('cc')">Condições</button>
   </div>
 
   <!-- ENCONTROS POR LOCAL (lista de Pokémon de cada Local — banco principal ucbkod) -->
@@ -708,7 +731,32 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     </div>
   </div>
 
-  <!-- POKÉMON -->
+    <!-- CONDIÇÕES DE CAPTURA -->
+  <div class="panel" id="panel-cc">
+    <div class="cc-wrap">
+      <div class="encl-help">Mostra os Pokémon (e formas alternativas) cujas <b>condições de captura</b> ainda estão em <b>texto livre</b> (ex.: “Superfície”, “Dive”, “Noite, Farol”). Escolha a <b>categoria</b> e a <b>condição</b> nos selects para padronizar. Tudo é gravado no <code>pokemon.json</code>, no campo <code>encontros_local</code>.</div>
+      <div id="cc-stats" class="stats-bar"></div>
+      <details id="cc-textos-box" open>
+        <summary style="cursor:pointer;font-weight:800;font-size:12px;color:var(--brand)">📝 Textos livres encontrados — converter em massa</summary>
+        <div style="margin-top:8px"><button type="button" class="btn btn-purple btn-sm" onclick="ccAplicarSugestoes()">✨ Aplicar todas as sugestões automáticas</button></div>
+        <div id="cc-textos" class="cc-textos"></div>
+      </details>
+      <div class="toolbar">
+        <select class="mv-meta-input" id="cc-filtro" style="width:auto" onchange="ccReset()">
+          <option value="legado">⚠️ Texto livre (precisa organizar)</option>
+          <option value="estrut">✓ Com condição organizada</option>
+          <option value="sempre">Sem condição (Sempre)</option>
+          <option value="todos">Todos com encontros</option>
+        </select>
+        <select class="mv-meta-input" id="cc-local" style="width:auto;max-width:240px" onchange="ccReset()"><option value="">Todos os Locais</option></select>
+        <div class="sinput-wrap"><input class="sinput" id="cc-busca" placeholder="Buscar Pokémon…" oninput="ccReset()"></div>
+        <button type="button" class="btn btn-success btn-sm" onclick="ccSalvarTudo()">💾 Salvar todos alterados</button>
+      </div>
+      <div id="cc-list"></div>
+    </div>
+  </div>
+
+<!-- POKÉMON -->
   <div class="panel active" id="panel-pokemon">
     <div id="pk-list-view">
     <div class="stats-bar">
@@ -2749,6 +2797,7 @@ function switchTab(tab) {
   // true desde o carregamento inicial da página (ver INIT no fim do arquivo),
   // então reaproveitá-la aqui deixava o dropdown travado em "— Carregando —".
   if (tab === 'encl') enclInit();
+  if (tab === 'cc') ccInit();
   if (tab === 'rpg' && !S.rpg._formInit) { S.rpg._formInit = true; openNewRpgPokemon(); }
 }
 
@@ -3103,6 +3152,10 @@ const CONDICAO_OPTS = {
     ['sewers', 'Sewers (Neo Techland)'],
     ['outskirts', 'Outskirts (Neo Techland)'],
     ['power_plant', 'Power Plant'],
+    ['superficie', 'Superfície'],
+    ['dive', 'Dive'],
+    ['deep_dive', 'Deep Dive'],
+    ['farol', 'Farol'],
   ],
   recursos: [
     ['arvores_frutiferas', 'Árvores frutíferas'],
@@ -7566,6 +7619,263 @@ function cbRead(id) {
     if (el) el.innerHTML = comportamentoSazonalOptionsHtml('normal');
   });
 });
+
+/* ══════════════════════════════════════════
+   ██ ABA CONDIÇÕES DE CAPTURA
+   Acha regras de encontro em texto livre (legado) e permite organizá-las com selects.
+══════════════════════════════════════════ */
+const CC = { items: [], textos: [], limite: 40, vis: [] };
+const ccEl = id => document.getElementById(id);
+const ccLimpa = r => { const o = {}; Object.keys(r).forEach(k => { if (k[0] !== '_') o[k] = r[k]; }); return o; };
+
+function ccSugerir(txt) {
+  const k = kpSemAcento(txt);
+  if (!k) return null;
+  for (const [cat] of CONDICAO_CATEGORIAS)
+    for (const [v, l] of (CONDICAO_OPTS[cat] || [])) {
+      if (kpSemAcento(l) === k || kpSemAcento(l.replace(/\s*\(.*\)\s*$/, '')) === k || v === k.replace(/\s+/g, '_'))
+        return { categoria: cat, condicao: v };
+    }
+  return null;
+}
+function ccLabel(cat, cond) {
+  const c = CONDICAO_CATEGORIAS.find(x => x[0] === cat);
+  const o = (CONDICAO_OPTS[cat] || []).find(x => x[0] === cond);
+  return `${o ? o[1] : cond}${c ? ' (' + c[1] + ')' : ''}`;
+}
+
+async function ccInit() {
+  try { if (!PKJ.loaded) await pkjLoad(); }
+  catch (e) { ccEl('cc-list').innerHTML = `<div class="encl-help">Não consegui carregar o pokemon.json: ${enclEsc(e.message)}</div>`; return; }
+  if (CC.items.some(x => x.dirty)) { ccRender(); return; }   // não descarta edições pendentes
+  ccCarregar();
+}
+
+function ccCarregar() {
+  CC.items = []; const tx = {}; const locais = new Set();
+  enclTodos((pid, obj, row) => {
+    const ls = JSON.parse(JSON.stringify(locaisDoRegistro(obj)));
+    if (!ls.length) return;
+    ls.forEach(l => {
+      locais.add(l.nome);
+      l.regras = (l.regras && l.regras.length ? l.regras : [regraPadrao()]).map(r => {
+        if (!r.legado) {
+          const ok = (CONDICAO_OPTS[r.categoria] || []).some(o => o[0] === r.condicao);
+          if (!ok) {
+            if (r.condicao) { r.legado = true; }                    // categoria/condição inválida → trata como texto livre
+            else { r.categoria = 'clima'; r.condicao = 'sempre'; }
+          }
+        }
+        if (r.legado) tx[r.condicao || ''] = (tx[r.condicao || ''] || 0) + 1;
+        return r;
+      });
+    });
+    const isAlt = pid.includes('::alt');
+    CC.items.push({
+      pid, baseId: pid.split('::')[0],
+      nome: isAlt ? `${row.name || row.id} › ${obj.nome || 'forma'}` : (obj.name || row.name || pid),
+      sprite: obj.sprite || row.sprite || '', locais: ls, dirty: false
+    });
+  });
+  CC.items.sort((a, b) => String(a.pid).localeCompare(String(b.pid), undefined, { numeric: true }));
+  CC.textos = Object.entries(tx).map(([txt, n]) => ({ txt, n })).sort((a, b) => b.n - a.n);
+  const sel = ccEl('cc-local'), ant = sel.value;
+  sel.innerHTML = '<option value="">Todos os Locais</option>' + [...locais].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(n => `<option value="${enclEsc(n)}"${n === ant ? ' selected' : ''}>${enclEsc(n)}</option>`).join('');
+  ccRenderTextos(); ccReset();
+}
+
+function ccRegras(it) { return it.locais.flatMap(l => l.regras); }
+function ccStats() {
+  let leg = 0, est = 0, sem = 0;
+  CC.items.forEach(it => {
+    const rs = ccRegras(it);
+    if (rs.some(r => r.legado)) leg++;
+    if (rs.some(r => !r.legado && r.condicao && r.condicao !== 'sempre')) est++;
+    if (rs.every(r => !r.legado && (!r.condicao || r.condicao === 'sempre'))) sem++;
+  });
+  const pend = CC.items.filter(x => x.dirty).length;
+  ccEl('cc-stats').innerHTML =
+    `<div class="stat-item"><span class="stat-val">${CC.items.length}</span><span class="stat-lbl">Com encontros</span></div><div class="sdiv"></div>` +
+    `<div class="stat-item"><span class="stat-val o">${leg}</span><span class="stat-lbl">Texto livre</span></div><div class="sdiv"></div>` +
+    `<div class="stat-item"><span class="stat-val g">${est}</span><span class="stat-lbl">Organizados</span></div><div class="sdiv"></div>` +
+    `<div class="stat-item"><span class="stat-val">${sem}</span><span class="stat-lbl">Só “Sempre”</span></div><div class="sdiv"></div>` +
+    `<div class="stat-item"><span class="stat-val" style="color:var(--accent)">${pend}</span><span class="stat-lbl">Não salvos</span></div>`;
+}
+
+function ccPassa(it) {
+  const f = ccEl('cc-filtro').value, loc = ccEl('cc-local').value, q = kpSemAcento(ccEl('cc-busca').value);
+  if (q && !kpSemAcento(it.nome + ' ' + it.pid).includes(q)) return false;
+  if (loc && !it.locais.some(l => l.nome === loc)) return false;
+  const rs = ccRegras(it);
+  if (f === 'legado') return rs.some(r => r.legado);
+  if (f === 'estrut') return rs.some(r => !r.legado && r.condicao && r.condicao !== 'sempre');
+  if (f === 'sempre') return rs.every(r => !r.legado && (!r.condicao || r.condicao === 'sempre'));
+  return true;
+}
+function ccReset() { CC.limite = 40; ccRender(); }
+function ccMais() { CC.limite += 40; ccRender(); }
+function ccRender() {
+  CC.vis = CC.items.map((_, i) => i).filter(i => ccPassa(CC.items[i]));
+  ccStats();
+  const box = ccEl('cc-list');
+  if (!CC.vis.length) { box.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">Nada por aqui</div><div class="empty-desc">Nenhum Pokémon com esse filtro.</div></div>'; return; }
+  box.innerHTML = `<div class="encl-info" style="margin-bottom:6px">${CC.vis.length} Pokémon</div>` +
+    CC.vis.slice(0, CC.limite).map(i => ccItemHtml(i)).join('') +
+    (CC.vis.length > CC.limite ? `<button type="button" class="btn btn-outline" style="width:100%" onclick="ccMais()">Mostrar mais (${CC.vis.length - CC.limite})</button>` : '');
+}
+
+function ccRegraHtml(i, li, ri, r) {
+  const leg = !!r.legado;
+  const cat = leg ? (r._cat || '') : (r.categoria || 'clima');
+  const catHtml = (leg && !cat ? '<option value="">— categoria —</option>' : '') + condicaoCategoriaOptionsHtml(cat);
+  const condHtml = leg
+    ? '<option value="">— condição —</option>' + (cat ? condicaoOptsHtml(cat, null) : '')
+    : condicaoOptsHtml(cat, r.condicao);
+  const sug = leg ? ccSugerir(r.condicao) : null;
+  const banner = leg ? `<div class="cc-leg">⚠️ Texto livre: <b>${enclEsc(r.condicao || '(vazio)')}</b>${sug ? `<button type="button" class="cc-sug" onclick="ccUsarSug(${i},${li},${ri})">✨ usar ${enclEsc(ccLabel(sug.categoria, sug.condicao))}</button>` : ''}</div>` : '';
+  return `<div>${banner}<div class="regra-row rar-${r.raridade || 'comum'}">
+    <select class="mv-meta-input" onchange="ccSetCat(${i},${li},${ri},this.value)">${catHtml}</select>
+    <select class="mv-meta-input" onchange="ccSetCond(${i},${li},${ri},this.value)">${condHtml}</select>
+    <select class="mv-meta-input" onchange="ccSetRar(${i},${li},${ri},this.value)">${raridadeOptionsHtml(r.raridade || 'comum')}</select>
+    <button type="button" class="regra-row-remove" onclick="ccRemRegra(${i},${li},${ri})" title="Remover">✕</button>
+  </div></div>`;
+}
+function ccItemHtml(i) {
+  const it = CC.items[i];
+  const nLeg = ccRegras(it).filter(r => r.legado).length;
+  return `<div class="cc-item${it.dirty ? ' dirty' : ''}" id="cc-item-${i}">
+    <div class="cc-head">
+      ${it.sprite ? `<img src="${enclEsc(it.sprite)}" loading="lazy" alt="">` : ''}
+      <div class="cc-nome">${enclEsc(it.nome)}<small>#${enclEsc(it.pid)}</small></div>
+      <span class="cc-badge ${nLeg ? 'leg' : 'ok'}">${nLeg ? nLeg + ' texto(s) livre(s)' : 'organizado'}</span>
+      <button type="button" class="btn btn-outline btn-xs" onclick="switchTab('pokemon');openEditPokemon('${jsEsc(it.baseId)}')">✏️ Abrir</button>
+      <button type="button" class="btn btn-success btn-sm" ${it.dirty ? '' : 'disabled'} onclick="ccSalvar(${i})">💾 Salvar</button>
+    </div>
+    ${it.locais.map((l, li) => `<div class="cc-local">
+      <div class="cc-local-nome"><span>📍 ${enclEsc(l.nome)}</span><button type="button" class="btn btn-outline btn-xs" onclick="ccAddRegra(${i},${li})">+ condição</button></div>
+      ${l.regras.map((r, ri) => ccRegraHtml(i, li, ri, r)).join('')}
+    </div>`).join('')}
+  </div>`;
+}
+function ccRerender(i) {
+  CC.items[i].dirty = true;
+  const el = ccEl('cc-item-' + i);
+  if (el) el.outerHTML = ccItemHtml(i);
+  ccStats();
+}
+const ccR = (i, li, ri) => CC.items[i].locais[li].regras[ri];
+function ccSetCat(i, li, ri, v) {
+  const r = ccR(i, li, ri);
+  if (r.legado) r._cat = v;
+  else { r.categoria = v; r.condicao = ((CONDICAO_OPTS[v] || [])[0] || [''])[0]; }
+  ccRerender(i);
+}
+function ccSetCond(i, li, ri, v) {
+  const r = ccR(i, li, ri);
+  if (r.legado) {
+    if (!v || !r._cat) return;
+    r.categoria = r._cat; r.condicao = v; delete r.legado; delete r._cat;
+  } else r.condicao = v;
+  ccRerender(i);
+}
+function ccUsarSug(i, li, ri) {
+  const r = ccR(i, li, ri), s = ccSugerir(r.condicao); if (!s) return;
+  r.categoria = s.categoria; r.condicao = s.condicao; delete r.legado; delete r._cat;
+  ccRerender(i);
+}
+function ccSetRar(i, li, ri, v) { ccR(i, li, ri).raridade = v; ccRerender(i); }
+function ccAddRegra(i, li) { CC.items[i].locais[li].regras.push(regraPadrao()); ccRerender(i); }
+function ccRemRegra(i, li, ri) {
+  const rs = CC.items[i].locais[li].regras; rs.splice(ri, 1);
+  if (!rs.length) rs.push(regraPadrao());
+  ccRerender(i);
+}
+
+// grava a lista de Locais de um Pokémon/forma (migra o campo antigo `biomas` se ainda existir)
+function ccGravarLocais(pid, lista) {
+  const t = enclAlvo(pid); if (!t) throw new Error(`Pokémon ${pid} não encontrado no pokemon.json`);
+  const salvar = locaisParaSalvar(lista.map(l => ({ nome: l.nome, regras: l.regras.map(ccLimpa) })));
+  if (salvar) t.obj.encontros_local = salvar; else delete t.obj.encontros_local;
+  if (t.obj.biomas) t.obj.biomas = null;
+  t.row.updated_at = new Date().toISOString();
+  pkjSujo();
+}
+async function ccSalvar(i, silencioso) {
+  const it = CC.items[i];
+  try {
+    pkjCheck();
+    ccGravarLocais(it.pid, it.locais);
+    it.dirty = false;
+    if (!silencioso) { await pkjFlush(); toast(`“${it.nome}” salvo no pokemon.json.`, 'ok'); }
+    const el = ccEl('cc-item-' + i); if (el) el.outerHTML = ccItemHtml(i);
+    ccStats();
+  } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
+}
+async function ccSalvarTudo() {
+  const idx = CC.items.map((x, i) => x.dirty ? i : -1).filter(i => i >= 0);
+  if (!idx.length) { toast('Nada pendente para salvar.'); return; }
+  try {
+    idx.forEach(i => ccSalvar(i, true));
+    await pkjFlush();
+    toast(`${idx.length} Pokémon salvos no pokemon.json.`, 'ok');
+  } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+/* ── conversão em massa por texto ── */
+function ccRenderTextos() {
+  const box = ccEl('cc-textos');
+  if (!CC.textos.length) { box.innerHTML = '<div class="encl-help">🎉 Nenhum texto livre restante.</div>'; return; }
+  box.innerHTML = CC.textos.map((t, i) => {
+    const s = ccSugerir(t.txt);
+    const catSel = (s ? '' : '<option value="">— categoria —</option>') + condicaoCategoriaOptionsHtml(s ? s.categoria : '');
+    const condSel = s ? condicaoOptsHtml(s.categoria, s.condicao) : '<option value="">— condição —</option>';
+    return `<div class="cc-tx">
+      <div class="cc-tx-txt">${enclEsc(t.txt || '(vazio)')} <small>× ${t.n}</small></div>
+      <select class="mv-meta-input" id="cc-tx-cat-${i}" onchange="ccTxCat(${i},this.value)">${catSel}</select>
+      <select class="mv-meta-input" id="cc-tx-cond-${i}">${condSel}</select>
+      <button type="button" class="btn btn-primary btn-sm" onclick="ccAplicarTexto(${i})">Aplicar a todos</button>
+    </div>`;
+  }).join('');
+}
+function ccTxCat(i, v) { ccEl('cc-tx-cond-' + i).innerHTML = '<option value="">— condição —</option>' + (v ? condicaoOptsHtml(v, null) : ''); }
+
+// aplica `mapa(textoLivre) → {categoria, condicao} | null` em todos os Pokémon do pokemon.json
+async function ccAplicarMapa(mapa) {
+  pkjCheck(); let n = 0;
+  enclTodos((pid, obj) => {
+    const ls = locaisDoRegistro(obj); let ch = false;
+    ls.forEach(l => (l.regras || []).forEach(r => {
+      if (!r.legado) return;
+      const m = mapa(r.condicao); if (!m) return;
+      delete r.legado; r.categoria = m.categoria; r.condicao = m.condicao; ch = true; n++;
+    }));
+    if (ch) ccGravarLocais(pid, ls);
+  });
+  if (n) await pkjFlush();
+  return n;
+}
+function ccConfirmaDescarte() { return !CC.items.some(x => x.dirty) || confirm('Há edições não salvas nesta aba que serão descartadas. Continuar?'); }
+async function ccAplicarTexto(i) {
+  const t = CC.textos[i], cat = ccEl('cc-tx-cat-' + i).value, cond = ccEl('cc-tx-cond-' + i).value;
+  if (!cat || !cond) { toast('Escolha a categoria e a condição.', 'err'); return; }
+  if (!ccConfirmaDescarte()) return;
+  if (!confirm(`Trocar o texto livre “${t.txt}” por ${ccLabel(cat, cond)} em ${t.n} regra(s)?`)) return;
+  try {
+    const n = await ccAplicarMapa(x => x === t.txt ? { categoria: cat, condicao: cond } : null);
+    ccCarregar(); toast(`${n} regra(s) organizadas.`, 'ok');
+  } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+async function ccAplicarSugestoes() {
+  const aplicaveis = CC.textos.filter(t => ccSugerir(t.txt));
+  if (!aplicaveis.length) { toast('Nenhum texto tem sugestão automática. Use os selects.', 'err'); return; }
+  if (!ccConfirmaDescarte()) return;
+  const qtd = aplicaveis.reduce((s, t) => s + t.n, 0);
+  if (!confirm(`Aplicar sugestões automáticas em ${qtd} regra(s) (${aplicaveis.length} textos)?\n\n` + aplicaveis.map(t => { const s = ccSugerir(t.txt); return `• ${t.txt} → ${ccLabel(s.categoria, s.condicao)}`; }).join('\n'))) return;
+  try {
+    const n = await ccAplicarMapa(ccSugerir);
+    ccCarregar(); toast(`${n} regra(s) organizadas.`, 'ok');
+  } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
 
 loadPokemon();
 S.rpg._loaded = true;
