@@ -5628,8 +5628,8 @@ const POKEMON_JSON_FALLBACK = 'https://raw.githubusercontent.com/alphx-r/kingdom
 // que o rolador e o admin do site NÃO usam). Aqui baixamos só as colunas necessárias
 // (~1 MB) e guardamos no navegador por alguns minutos. ADM nunca usa o cache.
 // Se alguma tela nova precisar de outra coluna, é só acrescentar o nome em PK_COLS.
-const PK_COLS = 'id,name,tipo1,tipo2,habilidade1,habilidade2,habilidade_oculta,sprite,sprite_shiny,genero,biomas,estacao,estacao_boost,evolucoes,formas_alt,formas_alt_count,formas_alfa,forca_alfa,sazonal,afinidade_biomas,is_fakemon,approved,source,url_slug';
-const PK_CACHE_KEY = 'pk_cache_v1';
+const PK_COLS = 'id,name,tipo1,tipo2,habilidade1,habilidade2,habilidade_oculta,sprite,sprite_shiny,genero,biomas,estacao,estacao_boost,evolucoes,formas_alt,formas_alt_count,formas_alfa,forca_alfa,sazonal,afinidade_biomas,is_fakemon,approved,source,url_slug,encontros_local';
+const PK_CACHE_KEY = 'pk_cache_v2';   // v2: inclui a coluna encontros_local
 const PK_CACHE_TTL = 5 * 60 * 1000;   // 5 min — aumente pra economizar mais, diminua pra atualizar mais rápido
 function pkCacheLer(){
   try{
@@ -7734,15 +7734,28 @@ async function carregarLocaisEncontro(){
 let ENC_LOCAL_TAB = {};      // local -> { pokemon_id: regras[] }
 let _encLocalTs = {};        // local -> quando foi buscado (cache curto, só dos Locais já usados)
 async function garantirEncontrosLocal(local, forcar){
-  if(!local || !LOCAIS_COMPOSICAO[local]) return;                 // não é um Local (é bioma de evento etc.)
-  if(!forcar && _encLocalTs[local] && Date.now()-_encLocalTs[local] < 60000) return;
-  try{
-    const rows=await dbGet('encontros_local','select=pokemon_id,regras&local=eq.'+encodeURIComponent(local));
-    const mapa={};
-    (rows||[]).forEach(r=>{ mapa[String(r.pokemon_id)]=Array.isArray(r.regras)?r.regras:[]; });
-    ENC_LOCAL_TAB[local]=Object.keys(mapa).length?mapa:undefined;
-    _encLocalTs[local]=Date.now();
-  }catch(e){ console.warn('[encontros_local] usando dedução por bioma em', local, e); }
+  // A lista de cada Local vem do campo `encontros_local` de cada Pokémon (pokemons / pokemon.json),
+  // montada por pkReconstruirEncontrosLocal() sempre que getEncounterUnits() é chamado. Nada a buscar.
+}
+// Monta ENC_LOCAL_TAB (local -> {pokemon_id: regras[]}) a partir de pokemonDB[].encontros_local
+// (e formas_alt[].encontros_local, id "<id>::alt<i>").
+function pkReconstruirEncontrosLocal(db){
+  const tab={};
+  const add=(uid,lista)=>{
+    if(typeof lista==='string'){ try{ lista=JSON.parse(lista); }catch(e){ return; } }
+    if(!Array.isArray(lista)) return;
+    for(const e of lista){
+      if(!e||!e.local) continue;
+      const rg=Array.isArray(e.regras)?e.regras:[];
+      if(!rg.length) continue;
+      (tab[e.local]=tab[e.local]||{})[String(uid)]=rg;
+    }
+  };
+  for(const p of (db||[])){
+    add(p.id,p.encontros_local);
+    (p.formas_alt||[]).forEach((f,i)=>add(`${p.id}::alt${i}`,f&&f.encontros_local));
+  }
+  ENC_LOCAL_TAB=tab;
 }
 // Chamar sempre que o estado de ADM mudar (login, logout, sessão restaurada).
 function atualizarSeletoresLocais(){
@@ -11455,6 +11468,7 @@ function pkAltFormUnits(p){
 // Retorna a lista "achatada" de pokemonDB + todas as formas alternativas
 // roláveis (com bioma próprio), pronta pra usar nos pools do roller.
 function getEncounterUnits(db){
+  pkReconstruirEncontrosLocal(db);
   pkLocaisCuradosRecalc(db);
   const units=[];
   for(const p of db){
