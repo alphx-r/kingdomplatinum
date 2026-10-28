@@ -536,22 +536,31 @@ function openHeroSpriteModal(stackEl,name,ev){
 ═══════════════════════════════════════ */
 const TL={normal:'Normal',fire:'Fire',water:'Water',electric:'Electric',grass:'Grass',ice:'Ice',fighting:'Fighting',poison:'Poison',ground:'Ground',flying:'Flying',psychic:'Psychic',bug:'Bug',rock:'Rock',ghost:'Ghost',dragon:'Dragon',dark:'Dark',steel:'Steel',fairy:'Fairy',light:'Light',scent:'Scent'};
 const TC={normal:{bg:'#c8c8a0',c:'#4a4a2a'},fire:{bg:'#ff9b4a',c:'#7a2a00'},water:{bg:'#6ab8ff',c:'#003a6a'},electric:{bg:'#ffe030',c:'#5a4a00'},grass:{bg:'#78d878',c:'#1a5a1a'},ice:{bg:'#96d8d8',c:'#1a4a4a'},fighting:{bg:'#c03030',c:'#fff'},poison:{bg:'#a060c0',c:'#fff'},ground:{bg:'#e0c060',c:'#3a2a00'},flying:{bg:'#88aaee',c:'#1a1a5a'},psychic:{bg:'#ff8fb0',c:'#6a0030'},bug:{bg:'#a0c020',c:'#2a3a00'},rock:{bg:'#b8a050',c:'#3a2a00'},ghost:{bg:'#9090c0',c:'#1a1a4a'},dragon:{bg:'#7060f0',c:'#fff'},dark:{bg:'#705040',c:'#fff'},steel:{bg:'#aababb',c:'#2a3a3a'},fairy:{bg:'#ffaad8',c:'#6a0050'},light:{bg:'#e5d38a',c:'#4a3a10'},scent:{bg:'#3cc492',c:'#fff'}};
-// Tipos homebrew (fora dos 18 canônicos) não existem no repo do GitHub
-// (partywhale/pokemon-type-icons), então o ícone deles vem do Supabase
-// Storage (bucket "pokemons", pasta "types/") — mesmo lugar onde o adm
-// (datadex_adm.html) faz o upload desses SVGs customizados.
+// Tipos homebrew (fora dos 18 canônicos) não existem no repo partywhale/pokemon-type-icons,
+// então o ícone deles vem do nosso GitHub: sprites/type/<tipo>.svg (repo alphx-r/kingdomplatinum).
 const CUSTOM_TYPE_ICONS=new Set(['light','scent']);
-// Ícones embutidos (SVG inline) para os tipos homebrew: não dependem do Storage, não quebram por
-// arquivo ausente/viewBox errado e seguem o mesmo estilo dos 18 canônicos (selo redondo + glifo branco).
+const KP_TYPE_SPRITE_BASE='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/sprites/type/';
+// SVG embutido: só entra como ÚLTIMO fallback, se o arquivo do GitHub não carregar (.svg e .png falharam).
 const CUSTOM_TYPE_SVG={
   light:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#e0b92e"/><circle cx="16" cy="16" r="5" fill="#fff"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M16 4.5v3.2M16 24.3v3.2M4.5 16h3.2M24.3 16h3.2M7.9 7.9l2.3 2.3M21.8 21.8l2.3 2.3M7.9 24.1l2.3-2.3M21.8 10.2l2.3-2.3"/></g></svg>',
   scent:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2fb485"/><g fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 24c-2.6-3 2.6-5 0-8s2.6-5 0-8"/><path d="M16 26c-2.6-3 2.6-5 0-8s2.6-5 0-8"/><path d="M21.5 24c-2.6-3 2.6-5 0-8s2.6-5 0-8"/></g></svg>'
 };
 function typeIconSrc(t){
-  return CUSTOM_TYPE_SVG[t]
-    ? 'data:image/svg+xml;utf8,'+encodeURIComponent(CUSTOM_TYPE_SVG[t])
+  return CUSTOM_TYPE_ICONS.has(t)
+    ? `${KP_TYPE_SPRITE_BASE}${t}.svg`
     : `https://cdn.jsdelivr.net/gh/partywhale/pokemon-type-icons@main/icons/${t}.svg`;
 }
+// Cascata de fallback dos ícones de light/scent (vale p/ qualquer <img> que use typeIconSrc):
+// sprites/type/<t>.svg → sprites/type/<t>.png → SVG embutido.
+document.addEventListener('error',e=>{
+  const img=e.target;
+  if(!img||img.tagName!=='IMG'||!img.src||!img.src.startsWith(KP_TYPE_SPRITE_BASE)) return;
+  const t=(img.src.slice(KP_TYPE_SPRITE_BASE.length).split(/[.?#]/)[0]||'');
+  if(!CUSTOM_TYPE_SVG[t]) return;
+  const step=img.dataset.tyFb||'0';
+  if(step==='0'){ img.dataset.tyFb='1'; img.src=`${KP_TYPE_SPRITE_BASE}${t}.png`; }
+  else if(step==='1'){ img.dataset.tyFb='2'; img.src='data:image/svg+xml;utf8,'+encodeURIComponent(CUSTOM_TYPE_SVG[t]); }
+},true);
 
 const TYPE_THEME={
   normal:  {dark:'#6b6b50',mid:'#9a9a78',light:'#f0f0e0',bg:'#f7f7f2',text:'#fff'},
