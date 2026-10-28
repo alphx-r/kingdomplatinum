@@ -2929,14 +2929,17 @@ async function openEditPokemon(id) {
   document.getElementById('epk-classificacao').value = db.classification || '';
 
   // Sprites (URL)
-  document.getElementById('epk-sprite').value = db.sprite || '';
-  document.getElementById('epk-sprite_shiny').value = db.sprite_shiny || '';
+  const _ehOf = /^\d+$/.test(idStr) && !pk._isRpg;
+  const _artBase = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/';
+  document.getElementById('epk-sprite').value = db.sprite || (_ehOf ? `${_artBase}${+idStr}.png` : '');
+  document.getElementById('epk-sprite_shiny').value = db.sprite_shiny || (_ehOf ? `${_artBase}shiny/${+idStr}.png` : '');
   // Reset previews de arquivo
   const spPrev = document.getElementById('epk-sprite-preview');
   spPrev.innerHTML = artUrl ? `<img src="${artUrl}" style="width:100%;height:100%;object-fit:contain">` : `<span style="font-size:18px;opacity:.3">🖼</span>`;
   delete spPrev.dataset.b64;
   document.getElementById('epk-sprite-file').value = '';
-  document.getElementById('epk-sprite-shiny-preview').innerHTML = db.sprite_shiny ? `<img src="${db.sprite_shiny}" style="width:100%;height:100%;object-fit:contain">` : `<span style="font-size:20px;opacity:.35">✨</span>`;
+  const _shinyUrl = document.getElementById('epk-sprite_shiny').value;
+  document.getElementById('epk-sprite-shiny-preview').innerHTML = _shinyUrl ? `<img src="${_shinyUrl}" style="width:100%;height:100%;object-fit:contain">` : `<span style="font-size:20px;opacity:.35">✨</span>`;
   delete document.getElementById('epk-sprite-shiny-preview').dataset.b64;
   document.getElementById('epk-sprite-shiny-file').value = '';
 
@@ -5870,12 +5873,18 @@ async function savePkModal(approve) {
   const isOficial = /^\d+$/.test(String(newId).trim());
   let sprite     = document.getElementById('epk-sprite').value.trim() || null;
   let spriteShiny = document.getElementById('epk-sprite_shiny').value.trim() || null;
+  if (isOficial) {
+    const _n = parseInt(String(newId).trim(), 10);
+    const _art = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/';
+    if (!sprite) sprite = `${_art}${_n}.png`;
+    if (!spriteShiny) spriteShiny = `${_art}shiny/${_n}.png`;
+  }
   const b64      = document.getElementById('epk-sprite-preview').dataset.b64;
   const b64Shiny = document.getElementById('epk-sprite-shiny-preview').dataset.b64;
   try {
     if (b64 && b64.startsWith('data:')) {
       if (isOficial) {
-        toast('Pokémon oficial: a sprite já vem da PokeAPI automaticamente, upload ignorado.', 'ok');
+        toast('Pokémon oficial: upload de arquivo ignorado — o pokemon.json usa a artwork da PokeAPI (ou a URL colada).', 'ok');
         delete document.getElementById('epk-sprite-preview').dataset.b64;
       } else {
         toast('Enviando sprite…', 'ok');
