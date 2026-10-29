@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
 <!-- Arquivo único: lista (/fichas), desativadas (/fichas/desativadas), ficha (/fichas/<slug>), nova (/fichas/nova).
      Estrutura (menu lateral, cores, fontes, tela de carregamento) igual à do index.html.
-     vercel.json: rewrites de /fichas e /fichas/:slug* para /fichas/fichas.html -->>
+     vercel.json: rewrites de /fichas e /fichas/:slug* para /fichas/fichas.html -->
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -804,7 +804,7 @@ function mny(e){const v=e.value,c=e.selectionStart??v.length,nd=v.slice(0,c).rep
 /* players com poder de admin: podem editar qualquer ficha */
 const ADM_PLAYERS=['ricky','jef','lucas'];
 const admPlayer=()=>!!ses&&!ses.admin&&ADM_PLAYERS.includes(nrm(ses.nome));
-const dono=()=>f&&ses&&(ses.admin||admPlayer()||ses.player_id===f.player_id);
+const dono=()=>f&&ses&&(ses.admin||admPlayer()||(ses.player_id!=null&&String(ses.player_id)===String(f.player_id)));
 const has=a=>(a||[]).some(x=>x&&x.nome);
 /* texto rico (negrito / itálico / link) */
 function clean(h){const t=document.createElement('div');t.innerHTML=h||'';let st=0;(function w(n){[...n.childNodes].forEach(c=>{if(c.nodeType===3){if(/\S/.test(c.nodeValue))st=1;return}if(c.nodeType!==1){c.remove();return}const g=c.tagName;
@@ -1445,7 +1445,7 @@ async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;co
 async function salvarFicha(x){if(x.d)x.d.ranking=String(rankDe(x.d.pts_ranking));
  let mud,bd;const F0=x._F;   /* merge por campo: manda só QUAIS campos de d este usuário mudou + o valor-base deles */
  if(F0&&F0._bd&&F0.slug&&F0.slug===x.slug&&x.d){mud=[];bd={};x._bdNovo={};new Set([...Object.keys(x.d),...Object.keys(F0._bd)]).forEach(k=>{if(JSON.stringify(x.d[k])!==JSON.stringify(F0._bd[k])){mud.push(k);if(F0._bd[k]!==undefined)bd[k]=F0._bd[k];x._bdNovo[k]=x.d[k]===undefined?undefined:JSON.parse(JSON.stringify(x.d[k]))}})}
-const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,player_id:x.player_id??null,d:x.d,base:x.base||undefined,mud,bd,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);if(j&&x._bdNovo)Object.entries(j.pk||{}).forEach(([k,u])=>{const[K,n]=k.split('.'),v=x._bdNovo[K]?.[+n];if(v&&typeof v==='object'&&typeof v.foto==='string'&&v.foto.startsWith('data:'))v.foto=u});return j}
+const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:ses.token,slug:x.slug,nome:x.nome,foto:x.foto||null,banner:x.banner||null,thumb:x.thumb||null,...(x.player_id!=null&&x.player_id!==''?{player_id:x.player_id}:{}),d:x.d,base:x.base||undefined,mud,bd,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);if(j&&x._bdNovo)Object.entries(j.pk||{}).forEach(([k,u])=>{const[K,n]=k.split('.'),v=x._bdNovo[K]?.[+n];if(v&&typeof v==='object'&&typeof v.foto==='string'&&v.foto.startsWith('data:'))v.foto=u});if(j&&F0&&F0.slug===x.slug){if('player_id' in j)F0.player_id=j.player_id;if(F0.d&&'player' in j){F0.d.player=j.player;if(F0._bd)F0._bd.player=j.player}}return j}
 async function apagarFicha(slug){const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',token:ses.token,slug,por:ses?.nome||undefined})});const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.error||'HTTP '+r.status)}
 async function lerFicha(slug){const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(slug)+'&_='+Date.now(),{cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
 function aplicaSalvo(j,F=f){if(!j||!F)return;if(j.pk&&F.d)Object.entries(j.pk).forEach(([k,u])=>{const[K,n]=k.split('.'),x=F.d[K]?.[+n];if(x&&typeof x.foto==='string'&&x.foto.startsWith('data:'))x.foto=u});F.foto=j.foto;F.banner=j.banner;F.thumb=j.thumb;F.atualizado_em=j.atualizado_em}
