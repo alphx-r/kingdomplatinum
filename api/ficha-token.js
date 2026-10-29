@@ -1,403 +1,72 @@
-// POST /api/ficha-salvar
-//   { action:'save',   token, slug, nome, foto, banner, thumb, player_id, d }
-//   { action:'delete', token, slug }
-// A validação do token/permissão é feita pelas MESMAS funções que já existem no Supabase
-// (ficha_salvar / ficha_excluir). Se o Supabase recusar, nada é gravado no GitHub.
-const crypto = require('crypto');
-const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
-const { aplicar } = require('./_itens');
-const { diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
-// Uma função só (plano Hobby da Vercel: máx. 12 funções):
-//   GET  /api/ficha-salvar?lista=1      -> data/index.json
-//   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
-//   POST /api/ficha-salvar              -> salvar / excluir
-//   POST {action:'consumir',  token, slug, itens:[{nome,qtd}], op}          -> desconta itens do inventário (index: captura)
-//   POST {action:'adicionar', token, slug, itens:[{nome,qtd}], custo?, op}  -> soma itens (e debita `custo` do dinheiro) (loja)
-
-const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabase.co';
-const SB_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indob21ocHh6a2hzZGhzeGxjY3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzcxMzQsImV4cCI6MjEwNjU1MzEzNH0.bgHV3aR3PMSgN6ZvWtC3HICHZWC_xWLmKpY7sf2UFSQ';
-const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${REPO}/${BRANCH}`).replace(/\/$/, '');
-const MAX_IMG = 1.5 * 1024 * 1024;
-const LIM_ATIVAS = 2;   // máximo de fichas ativas por player
-
-async function sbRpc(nome, body) {
-  const r = await fetch(SB_URL + '/rest/v1/rpc/' + nome, {
-    method: 'POST',
-    headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
-  if (!r.ok) { const e = new Error(j?.message || 'Permissão negada (HTTP ' + r.status + ')'); e.status = r.status === 401 || r.status === 403 ? 403 : 400; throw e; }
-  return j;
-}
-
-// "data:image/jpeg;base64,..." -> {buf, ext}; URL http(s) -> mantém; vazio -> null
-function parseImg(v) {
-  if (!v) return null;
-  if (typeof v !== 'string') throw new Error('Imagem inválida.');
-  if (/^https?:\/\//i.test(v)) return { url: v };
-  const m = v.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
-  if (!m) throw new Error('Formato de imagem inválido.');
-  const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > MAX_IMG) throw new Error('Imagem grande demais.');
-  return { buf, ext: m[1] === 'jpeg' ? 'jpg' : m[1] };
-}
-const hash = b => crypto.createHash('sha1').update(b).digest('hex').slice(0, 10);
-
-function indexEntry(f) {
-  const d = f.d || {};
-  return {
-    slug: f.slug, nome: f.nome,
-    foto: f.thumb || f.foto || null,
-    classe: d.classe || null, player: d.player || null,
-    player_id: f.player_id ?? null,
-    desativada: d.desativada ? 'true' : null,
-    cor: d.cor_pri || null,
-    time: (Array.isArray(d.time) ? d.time : []).slice(0, 6).map(t => ({ nome: t?.nome || '', apelido: t?.apelido || '', feature: t?.feature || '' })),
-    atualizado_em: f.atualizado_em,
-  };
-}
-const sortIdx = a => a.sort((x, y) => String(x.nome).localeCompare(String(y.nome), 'pt-BR'));
-const parseIdx = t => { try { const j = JSON.parse(t); return Array.isArray(j) ? j : []; } catch { return []; } };
-
-// quantas fichas ATIVAS o dono já tem (sem contar a ficha `slug`).
-// Compara por player_id; entradas antigas do índice (sem player_id) caem no nome do player.
-async function fichasAtivasDoDono(slug, pid, nomePlayer) {
-  const nome = String(nomePlayer || '').trim().toLowerCase();
-  return parseIdx(await readFile('data/index.json')).filter(e => e && e.slug !== slug && e.desativada !== 'true'
-    && (e.player_id != null ? String(e.player_id) === String(pid) : !!nome && String(e.player || '').trim().toLowerCase() === nome)).length;
-}
-
-
-// ---- migração única (Supabase -> GitHub), chamada pelo navegador ----
-// Abra:  /api/ficha-salvar?migrar=1&chave=SUA_CHAVE   (repita até aparecer "restam": 0)
-// Precisa da variável MIGRAR_KEY na Vercel. Depois de migrar, apague essa variável.
-async function migrar(q, res) {
-  const KEY = process.env.MIGRAR_KEY;
-  if (!KEY || q.chave !== KEY) return res.status(403).json({ error: 'Chave inválida ou MIGRAR_KEY não configurada.' });
-  const lim = Math.max(1, Math.min(+q.n || 3, 6));
-  const sbGet = async p => {
-    const r = await fetch(SB_URL + '/rest/v1/' + p, { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } });
-    if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
-    return r.json();
-  };
-  const todas = (await sbGet('fichas?select=slug&order=slug.asc')).map(x => x.slug);
-  const validas = todas.filter(sl => /^[a-z0-9][a-z0-9-]{0,59}$/.test(sl || ''));
-  const feitas = new Set(parseIdx(await readFile('data/index.json')).map(x => x.slug));
-  const pend = validas.filter(sl => !feitas.has(sl));
-  const lote = pend.slice(0, lim);
-  if (!lote.length) return res.json({ ok: true, restam: 0, total: todas.length, ignoradas: todas.length - validas.length, msg: 'Nada a migrar.' });
-
-  const rows = [];
-  for (const sl of lote) { const r = await sbGet('fichas?slug=eq.' + encodeURIComponent(sl)); if (r[0]) rows.push(r[0]); }
-  let sharp = null; try { sharp = require('sharp'); } catch {}
-
-  await commit(async parent => {
-    const ch = [];
-    const idx = parseIdx(await readFile('data/index.json', parent));
-    for (const x of rows) {
-      const slug = x.slug, urls = {}, d = x.d || {};
-      let fotoBuf = null;
-      for (const kind of ['foto', 'banner']) {
-        let p = null; try { p = parseImg(x[kind]); } catch {}
-        if (!p) urls[kind] = null;
-        else if (p.url) urls[kind] = p.url;
-        else {
-          const path = `img/fichas/${slug}/${kind}-${hash(p.buf)}.${p.ext}`;
-          ch.push({ path, content: p.buf }); urls[kind] = `${IMG_BASE}/${path}`;
-          if (kind === 'foto') fotoBuf = p.buf;
-        }
-      }
-      urls.thumb = null;
-      if (sharp && fotoBuf) {
-        try {
-          const tb = await sharp(fotoBuf).resize(200, 200, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
-          const path = `img/fichas/${slug}/thumb-${hash(tb)}.jpg`;
-          ch.push({ path, content: tb }); urls.thumb = `${IMG_BASE}/${path}`;
-        } catch {}
-      }
-      const ficha = { slug, nome: x.nome, player_id: x.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d, atualizado_em: x.atualizado_em || new Date().toISOString() };
-      ch.push({ path: `data/fichas/${slug}.json`, content: JSON.stringify(ficha) });
-      const i = idx.findIndex(e => e.slug === slug); if (i >= 0) idx.splice(i, 1);
-      idx.push(indexEntry(ficha));
-    }
-    ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
-    return ch;
-  }, 'ficha: migrar ' + lote.join(', '));
-
-  return res.json({ ok: true, migradas: rows.map(r => r.slug), restam: pend.length - rows.length, total: todas.length, miniaturas: !!sharp, msg: pend.length - rows.length > 0 ? 'Recarregue esta página para continuar.' : 'Pronto! Todas migradas.' });
-}
-
-// ---- ADM atribui a ficha a um player ----
-// POST { action:'atribuir', adm_nome, adm_senha, slug, player_id, player, por }
-// player_id 'admin' (ou player vazio) = tira o player da ficha.
-// Confere o ADM no projeto do index (admin_login, igual ao ficha-token) e troca o dono nos DOIS lugares:
-// na tabela `fichas` do Supabase (é lá que o ficha_salvar confere "esta ficha pertence a outro player")
-// e no GitHub (JSON da ficha + índice). Precisa das variáveis INDEX_SUPA_URL, INDEX_SUPA_KEY e FICHAS_SUPA_SERVICE_KEY.
-async function atribuir(b, res) {
-  const { adm_nome, adm_senha, slug } = b;
-  if (!adm_nome || !adm_senha) return res.status(401).json({ error: 'Informe o nome e a senha do admin.' });
-  if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
-  const IU = process.env.INDEX_SUPA_URL, IK = process.env.INDEX_SUPA_KEY, FK = process.env.FICHAS_SUPA_SERVICE_KEY;
-  const FU = (process.env.FICHAS_SUPA_URL || SB_URL).replace(/\/$/, '');
-  if (!IU || !IK || !FK) return res.status(500).json({ error: 'Servidor sem configuração (INDEX_SUPA_URL, INDEX_SUPA_KEY ou FICHAS_SUPA_SERVICE_KEY).' });
-  const H = k => ({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' });
-
-  // 1) é ADM mesmo?
-  const a = await fetch(`${IU}/rest/v1/rpc/admin_login`, { method: 'POST', headers: H(IK), body: JSON.stringify({ p_nome: adm_nome, p_senha: adm_senha }) });
-  let adm = a.ok ? await a.json().catch(() => null) : null; adm = Array.isArray(adm) ? adm[0] : adm;
-  if (!adm || !adm.nome) return res.status(403).json({ error: 'Nome ou senha de admin incorretos.' });
-
-  // 2) novo dono
-  const semPlayer = b.player_id === 'admin' || !String(b.player || '').trim();
-  const pid = semPlayer ? 'admin' : String(b.player_id ?? '').trim();
-  const nomePlayer = semPlayer ? '' : String(b.player).trim().slice(0, 60);
-  if (!pid) return res.status(400).json({ error: 'Player inválido.' });
-
-  // 3) ficha atual
-  const caminho = `data/fichas/${slug}.json`;
-  const atual = await readFile(caminho);
-  if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
-  const f0 = JSON.parse(atual);
-
-  // 4) Supabase primeiro: se recusar, nada muda no GitHub
-  const p = await fetch(`${FU}/rest/v1/fichas?slug=eq.${encodeURIComponent(slug)}`, {
-    method: 'PATCH', headers: { ...H(FK), Prefer: 'return=representation' },
-    body: JSON.stringify({ player_id: pid, d: { ...(f0.d || {}), player: nomePlayer } }),
-  });
-  if (!p.ok) { const t = await p.text().catch(() => ''); return res.status(502).json({ error: 'O Supabase recusou a troca de dono: ' + (t.slice(0, 200) || 'HTTP ' + p.status) }); }
-  const linhas = await p.json().catch(() => []);
-
-  // 5) GitHub: ficha + histórico + índice num commit só
-  let saida = null;
-  await commit(async parent => {
-    const t = await readFile(caminho, parent);
-    if (t == null) throw Object.assign(new Error('Ficha não encontrada.'), { status: 404 });
-    const f = JSON.parse(t);
-    f.d = f.d || {}; f.d.player = nomePlayer; f.player_id = pid; f.atualizado_em = new Date().toISOString();
-    saida = f;
-    const ch = [{ path: caminho, content: JSON.stringify(f) }];
-    try {
-      const hist = await mudancaHist(readFile, parent, entradas(f, b.por || adm.nome, [{ cat: 'ficha', txt: semPlayer ? 'Tirou o player da ficha' : `Atribuiu a ficha a ${nomePlayer}` }]));
-      if (hist) ch.push(hist);
-    } catch (e) { console.warn('ficha-salvar: histórico (atribuir) falhou:', e.message); }
-    const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
-    idx.push(indexEntry(f));
-    ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
-    return ch;
-  }, `ficha: atribuir ${slug}`);
-
-  return res.json({ ok: true, slug, player_id: pid, player: nomePlayer, atualizado_em: saida.atualizado_em, supabase_linhas: Array.isArray(linhas) ? linhas.length : 0 });
-}
+// Vercel serverless: valida o player (ou o ADM) no projeto do index e emite o token no projeto das fichas.
+// Variáveis de ambiente (Vercel > Settings > Environment Variables, marcadas para Production):
+//   INDEX_SUPA_URL, INDEX_SUPA_KEY            -> projeto do index (URL e chave anon)
+//   FICHAS_SUPA_URL, FICHAS_SUPA_SERVICE_KEY  -> projeto das fichas (URL e chave service_role, NUNCA no front)
+const H = k => ({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' });
+// Players com poder de admin (mesma lista do fichas.html): entram com a senha de player, mas o token sai como 'admin',
+// que é o que o ficha_salvar do Supabase aceita para editar ficha de outro player.
+const ADM_PLAYERS = ['ricky', 'jef', 'lucas'];
+const nrm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase();
+const ENV = ['INDEX_SUPA_URL', 'INDEX_SUPA_KEY', 'FICHAS_SUPA_URL', 'FICHAS_SUPA_SERVICE_KEY'];
 
 module.exports = async (req, res) => {
-  if (req.method === 'GET') {
-    try {
-      const q = req.query || {};
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      if (q.migrar) { res.setHeader('Cache-Control', 'no-store'); return await migrar(q, res); }
-      if (q.historico) {   // GET /api/ficha-salvar?historico=2026-10  -> data/historico/2026-10.json
-        const mes = String(q.historico);
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return res.status(400).json({ error: 'Mês inválido.' });
-        const t = await readFile(`data/historico/${mes}.json`);
-        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5');
-        return res.status(200).send(t || '[]');
-      }
-      if (q.lista) {
-        const t = await readFile('data/index.json');
-        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
-        return res.status(200).send(t || '[]');
-      }
-      const sl = String(q.slug || '');
-      if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(sl)) return res.status(400).json({ error: 'Slug inválido.' });
-      const t = await readFile(`data/fichas/${sl}.json`);
-      if (t == null) { res.setHeader('Cache-Control', 's-maxage=5'); return res.status(404).json({ error: 'Ficha não encontrada.' }); }
-      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=2');
-      return res.status(200).send(t);
-    } catch (e) { return res.status(500).json({ error: e.message }); }
-  }
-  res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
+
+  const falta = ENV.filter(k => !process.env[k]);
+  if (falta.length) {
+    console.error('ficha-token: variáveis de ambiente faltando:', falta.join(', '));
+    return res.status(500).json({ error: 'Servidor sem configuração.' });
+  }
+
+  const { nome, senha } = req.body || {};
+  if (!nome || !senha) return res.status(400).json({ error: 'Informe nome e senha.' });
+
   try {
-    const b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    const { action = 'save', token, slug } = b;
-    if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
-    if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
-    if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
-
-    if (action === 'consumir' || action === 'adicionar') {
-      const itens = (Array.isArray(b.itens) ? b.itens : [])
-        .map(i => ({ nome: String(i?.nome || '').trim().slice(0, 80), qtd: Math.floor(Number(i?.qtd) || 0) }))
-        .filter(i => i.nome && i.qtd > 0 && i.qtd <= 999).slice(0, 20);
-      if (!itens.length) return res.status(400).json({ error: 'Nenhum item informado.' });
-      const custo = action === 'adicionar' ? Math.max(0, Math.floor(Number(b.custo) || 0)) : 0;
-      const op = String(b.op || '').slice(0, 64);
-      const caminho = `data/fichas/${slug}.json`;
-      const atual = await readFile(caminho);
-      if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
-      const f0 = JSON.parse(atual);
-      // o Supabase confere token/permissão (mesma regra de editar a ficha); aqui regrava os dados iguais, sem mudar nada
-      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: f0.d || {} });
-      let saida = null;
-      await commit(async parent => {
-        const t = await readFile(caminho, parent);
-        if (t == null) throw Object.assign(new Error('Ficha não encontrada.'), { status: 404 });
-        const f = JSON.parse(t);
-        const r = aplicar(f.d, action, itens, custo, op);
-        saida = { f, d: r.d, repetida: !!r.repetida, atualizado_em: f.atualizado_em };
-        if (r.repetida) return [];
-        f.d = r.d; f.atualizado_em = saida.atualizado_em = new Date().toISOString();
-        const ch = [{ path: caminho, content: JSON.stringify(f) }];
-        const hist = await mudancaHist(readFile, parent, entradas(f, b.por, eventosItens(action, itens, custo, op)));
-        if (hist) ch.push(hist);
-        return ch;
-      }, `ficha: ${action === 'consumir' ? 'usar' : 'receber'} item (${slug})`);
-      if (!saida.repetida) {   // espelho no Supabase (se falhar, o GitHub continua sendo a fonte da verdade)
-        try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: saida.f.nome, p_foto: saida.f.foto ?? null, p_banner: saida.f.banner ?? null, p_d: saida.d }); }
-        catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }
-      }
-      return res.json({ ok: true, repetida: saida.repetida, inventario: saida.d.inventario || [], dinheiro: saida.d.dinheiro ?? null, atualizado_em: saida.atualizado_em });
+    // 1) player comum
+    let id = null, nomeFinal = nome;
+    const a = await fetch(`${process.env.INDEX_SUPA_URL}/rest/v1/rpc/player_login`, {
+      method: 'POST', headers: H(process.env.INDEX_SUPA_KEY),
+      body: JSON.stringify({ p_nome: nome, p_senha: senha })
+    });
+    if (a.ok) {
+      let r = await a.json().catch(() => null); r = Array.isArray(r) ? r[0] : r;
+      if (r && r.id != null) { id = String(r.id); nomeFinal = r.nome || nome; }
     }
-
-    if (action === 'delete') {
-      await sbRpc('ficha_excluir', { p_token: token, p_slug: slug });
-      await commit(async parent => {
-        const ch = [{ path: `data/fichas/${slug}.json`, content: null }];
-        try {
-          const t = await readFile(`data/fichas/${slug}.json`, parent);
-          const hist = await mudancaHist(readFile, parent, entradas(t ? JSON.parse(t) : { slug, nome: slug, d: {} }, b.por, [{ cat: 'ficha', txt: 'Excluiu a ficha' }]));
-          if (hist) ch.push(hist);
-        } catch {}
-        for (const f of await listDir(`img/fichas/${slug}`, parent)) ch.push({ path: f.path, content: null });
-        const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
-        ch.push({ path: 'data/index.json', content: JSON.stringify(idx) });
-        return ch;
-      }, `ficha: excluir ${slug}`);
-      return res.json({ ok: true });
-    }
-
-    // ---- salvar ----
-    const nome = String(b.nome || '').trim();
-    if (!nome) return res.status(400).json({ error: 'Nome obrigatório.' });
-    if (!b.d || typeof b.d !== 'object') return res.status(400).json({ error: 'Dados inválidos.' });
-
-    // uma única leitura da ficha atual (serve ao teste de conflito e ao limite de fichas)
-    let exCache;
-    const lerEx = async () => {
-      if (exCache === undefined) { const t = await readFile(`data/fichas/${slug}.json`); exCache = t ? JSON.parse(t) : null; }
-      return exCache;
-    };
-
-    // a ficha pode ter mudado em outro lugar (index gastou item, loja entregou item): não sobrescreve às cegas
-    if (b.base && !Array.isArray(b.mud)) {   // cliente antigo: trava total. Cliente novo manda `mud` e é mesclado dentro do commit
-      const atualN = (await lerEx())?.atualizado_em || null;
-      // só é conflito se o servidor está MAIS NOVO que a base do cliente; leitura atrasada do GitHub (mais antiga) não deve bloquear
-      if (atualN && atualN !== b.base && !(Date.parse(atualN) < Date.parse(b.base))) return res.status(409).json({ error: 'A ficha foi alterada em outro lugar (uso de item, compra...). Recarregue a página antes de salvar para não perder essas mudanças.', code: 'conflito' });
-    }
-
-    // limite: cada player só pode ter LIM_ATIVAS fichas ativas (vale para criar ficha nova e para reativar uma desativada).
-    // fichas criadas pelo ADM (player_id 'admin') não têm limite
-    if (!b.d.desativada) {
-      const ex = await lerEx();
-      if (!ex || ex.d?.desativada) {   // ficha nova ou sendo reativada (já ativa e só editando: não conta)
-        const pid = ex ? ex.player_id : b.player_id;   // numa ficha existente vale o dono gravado, não o que o navegador mandou
-        if (pid != null && pid !== 'admin' && await fichasAtivasDoDono(slug, pid, ex?.d?.player ?? b.d.player) >= LIM_ATIVAS)
-          return res.status(409).json({ error: `Limite atingido: cada player só pode ter ${LIM_ATIVAS} fichas ativas. Desative uma das fichas antigas para criar ou reativar outra.`, code: 'limite' });
-      }
-    }
-
-    const novas = {};   // kind -> {path, buf}
-    const urls = {};
-    for (const kind of ['foto', 'banner', 'thumb']) {
-      const p = parseImg(b[kind]);
-      if (!p) urls[kind] = null;
-      else if (p.url) urls[kind] = p.url;
-      else {
-        const path = `img/fichas/${slug}/${kind}-${hash(p.buf)}.${p.ext}`;
-        novas[kind] = { path, buf: p.buf };
-        urls[kind] = `${IMG_BASE}/${path}`;
-      }
-    }
-    // fotos dos Pokémon "Modified" (d.time[i].foto / d.box[i].foto): data URI vira arquivo no GitHub e o JSON guarda só a URL
-    const pkUrls = {}, pkEmUso = [];
-    for (const K of ['time', 'box']) {
-      const arr = Array.isArray(b.d[K]) ? b.d[K] : [];
-      arr.forEach((x, i) => {
-        if (!x || typeof x !== 'object' || !x.foto) return;
-        let p; try { p = parseImg(x.foto); } catch (e) { e.status = 400; throw e; }
-        if (!p) { delete x.foto; return; }
-        if (p.url) { pkEmUso.push(p.url); return; }
-        const path = `img/fichas/${slug}/pk-${hash(p.buf)}.${p.ext}`;
-        novas['pk' + K + i] = { path, buf: p.buf };
-        x.foto = `${IMG_BASE}/${path}`; pkUrls[K + '.' + i] = x.foto; pkEmUso.push(x.foto);
+    // 2) não é player: tenta como ADM (mesma função que o login da Área ADM do index usa).
+    //    O id 'admin' é o que o servidor de fichas já espera para fichas criadas pelo ADM.
+    if (id == null) {
+      const ad = await fetch(`${process.env.INDEX_SUPA_URL}/rest/v1/rpc/admin_login`, {
+        method: 'POST', headers: H(process.env.INDEX_SUPA_KEY),
+        body: JSON.stringify({ p_nome: nome, p_senha: senha })
       });
+      if (ad.ok) {
+        let y = await ad.json().catch(() => null); y = Array.isArray(y) ? y[0] : y;
+        if (y && y.nome) { id = 'admin'; nomeFinal = y.nome; }
+      }
     }
-    const atualizado_em = new Date().toISOString();
-
-    // 1) o Supabase confere o token e a permissão. Guarda só texto e URLs (sem base64).
-    await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: (await lerEx())?.d ?? b.d });
-
-    // 2) um único commit no GitHub: JSON + imagens novas + índice (+ apaga imagens antigas)
-    const ficha = { slug, nome, player_id: b.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d: b.d, atualizado_em };
-    let mesclado = null;   // {d, outros} quando houve merge com mudanças de outra pessoa
-    await commit(async parent => {
-      let fin = ficha; mesclado = null;
-      // DONO: salvar nunca troca o dono de uma ficha que já existe (quem troca é a ação 'atribuir').
-      // Vale o que está gravado no commit-pai; o player_id/d.player que o navegador mandou só vale para ficha NOVA.
-      const tCur = await readFile(`data/fichas/${slug}.json`, parent);
-      const cur0 = tCur ? JSON.parse(tCur) : null;
-      if (cur0) { ficha.player_id = cur0.player_id ?? null; b.d.player = cur0.d?.player ?? ''; }
-      // MERGE POR CAMPO: se a ficha mudou desde que o navegador a carregou (b.base), aplica por cima da versão atual
-      // só os campos de `d` que ESTE usuário mexeu (b.mud). Só há conflito se o mesmo campo mudou dos dois lados.
-      if (Array.isArray(b.mud) && b.base) {
-        const cur = cur0;   // leitura exata do commit-pai (nunca atrasada)
-        if (cur && cur.atualizado_em && cur.atualizado_em !== b.base) {
-          const J = v => JSON.stringify(v);
-          const sd = cur.d || {}, bd = (b.bd && typeof b.bd === 'object') ? b.bd : {}, nd = { ...sd }, conf = [];
-          const mud = b.mud.map(String).filter(k => !['__proto__', 'constructor', 'prototype', 'player'].includes(k));
-          for (const k of mud) {
-            if (J(sd[k]) !== J(bd[k]) && J(sd[k]) !== J(b.d[k])) conf.push(k);   // mudou no servidor E no navegador, com valores diferentes
-            if (b.d[k] === undefined) delete nd[k]; else nd[k] = b.d[k];
-          }
-          if (conf.length) throw Object.assign(new Error(`Os campos (${conf.join(', ')}) foram alterados em outro lugar ao mesmo tempo que você (uso de item, compra, outra pessoa...). Recarregue a página antes de salvar para não perder essas mudanças.`), { status: 409, code: 'conflito', campos: conf });
-          const outros = {};   // campos que a outra pessoa mudou e que o navegador ainda não tem
-          for (const k of Object.keys(nd)) if (!mud.includes(k) && J(nd[k]) !== J(b.d[k])) outros[k] = nd[k];
-          fin = { ...ficha, d: nd };
-          mesclado = { d: nd, outros };
-        }
+    // Player desativado pelo ADM (players.ativo = false) não recebe token. Se a coluna ainda não existe ou a consulta falha, segue normalmente.
+    if (id != null && id !== 'admin') {
+      const dz = await fetch(`${process.env.INDEX_SUPA_URL}/rest/v1/players?id=eq.${encodeURIComponent(id)}&select=ativo`, { headers: H(process.env.INDEX_SUPA_KEY) });
+      if (dz.ok) {
+        const rows = await dz.json().catch(() => []);
+        if (Array.isArray(rows) && rows[0] && rows[0].ativo === false) return res.status(403).json({ error: 'Este player está desativado. Fale com a administração.' });
       }
-      const ch = [{ path: `data/fichas/${slug}.json`, content: JSON.stringify(fin) }];
-      // as 3 leituras são independentes: disparam juntas (antes eram em fila)
-      const pExist = listDir(`img/fichas/${slug}`, parent);
-      const pIdx = readFile('data/index.json', parent);
-      const pHist = (async () => {   // histórico: compara com a versão que está no GitHub agora
-        try {
-          const t = await readFile(`data/fichas/${slug}.json`, parent);
-          return await mudancaHist(readFile, parent, entradas(fin, b.por, diffFicha(t ? JSON.parse(t) : null, fin)));
-        } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); return null; }
-      })();
-      const [hist, existentes, idxTxt] = await Promise.all([pHist, pExist, pIdx]);
-      if (hist) ch.push(hist);
-      const manter = new Set(Object.values(novas).map(n => n.path));
-      for (const [kind, n] of Object.entries(novas)) {
-        ch.push({ path: n.path, content: n.buf });
-      }
-      for (const f of existentes) {
-        const kind = f.name.split('-')[0];
-        const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path)) || pkEmUso.some(u => u.endsWith('/' + f.path));
-        if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb', 'pk'].includes(kind)) ch.push({ path: f.path, content: null });
-      }
-      const idx = parseIdx(idxTxt).filter(x => x.slug !== slug);
-      idx.push(indexEntry(fin));
-      ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
-      return ch;
-    }, `ficha: ${slug}`);
+    }
+    if (id != null && id !== 'admin' && (ADM_PLAYERS.includes(nrm(nomeFinal)) || ADM_PLAYERS.includes(nrm(nome)))) id = 'admin';
+    if (id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
-    try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: mesclado ? mesclado.d : b.d }); }
-    catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }   // o GitHub é a fonte da verdade
-
-    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em, outros: mesclado ? mesclado.outros : undefined, player_id: ficha.player_id, player: (mesclado ? mesclado.d : b.d).player ?? '' });
+    // p_admin: grava player_tokens.admin = true; é essa coluna que o ficha_salvar/ficha_excluir conferem para liberar edição de ficha alheia.
+    const b = await fetch(`${process.env.FICHAS_SUPA_URL}/rest/v1/rpc/ficha_emitir_token`, {
+      method: 'POST', headers: H(process.env.FICHAS_SUPA_SERVICE_KEY),
+      body: JSON.stringify({ p_player_id: id, p_nome: nomeFinal, p_admin: id === 'admin' })
+    });
+    if (!b.ok) {
+      console.error('ficha-token: ficha_emitir_token falhou:', b.status, await b.text().catch(() => ''));
+      return res.status(500).json({ error: 'Falha ao iniciar a sessão.' });
+    }
+    return res.status(200).json(await b.json());
   } catch (e) {
-    return res.status(e.status || 500).json({ error: e.message || 'Erro ao salvar.', code: e.code, campos: e.campos });
+    console.error('ficha-token:', e);
+    return res.status(500).json({ error: 'Erro no servidor.' });
   }
 };
