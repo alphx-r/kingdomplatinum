@@ -1763,7 +1763,10 @@ async function initList(){
   // da PokeAPI (ver gridCard/listRow, ramo `!pref`).
   if(!_officialList.length){
     try{
-      const r=await fetch('https://pokeapi.co/api/v2/pokemon?limit=1025');
+      // Nomes de ESPÉCIE (/pokemon-species): "palafin", "deoxys", "mimikyu"… — o /pokemon devolve o nome da
+      // variedade padrão ("palafin-zero", "deoxys-normal", "mimikyu-disguised"), que não bate com o slug do
+      // cadastro (rpgUrlSlug) e jogava a URL/ficha para o caminho da PokéAPI. O id da espécie = id do Pokémon (1–1025).
+      const r=await fetch('https://pokeapi.co/api/v2/pokemon-species?limit=1025');
       const d=await r.json();
       _officialList=d.results.map((x,i)=>({id:i+1,name:x.name}));
     }catch(e){ _officialList=[]; }
@@ -2136,15 +2139,37 @@ async function loadPokemon(slug){
 
   try{
     if(!detailCache[slug]){
-      const[pRes,sRes]=await Promise.all([
-        fetch(`https://pokeapi.co/api/v2/pokemon/${slug}`),
-        fetch(`https://pokeapi.co/api/v2/pokemon-species/${slug}`)
-      ]);
-      if(!pRes.ok)throw new Error('not found');
-      detailCache[slug]={p:await pRes.json(),s:await sRes.json()};
+      // 1) slug de ESPÉCIE (padrão do site: "palafin", "deoxys"): a espécie manda e o Pokémon exibido é a variedade padrão.
+      let pk=null, sp=null;
+      const sRes=await fetch(`https://pokeapi.co/api/v2/pokemon-species/${slug}`);
+      if(sRes.ok){
+        sp=await sRes.json();
+        const def=(sp.varieties||[]).find(v=>v.is_default)||(sp.varieties||[])[0];
+        const pRes=await fetch(def?def.pokemon.url:`https://pokeapi.co/api/v2/pokemon/${sp.id}`);
+        if(!pRes.ok)throw new Error('not found');
+        pk=await pRes.json();
+      } else {
+        // 2) compat: links antigos/salvos com nome de Pokémon ("palafin-zero", "deoxys-normal", "charizard-mega-x")
+        const pRes=await fetch(`https://pokeapi.co/api/v2/pokemon/${slug}`);
+        if(!pRes.ok)throw new Error('not found');
+        pk=await pRes.json();
+        const spRes=await fetch(pk.species.url);
+        if(!spRes.ok)throw new Error('not found');
+        sp=await spRes.json();
+        // Link antigo com o nome da variedade padrão ("palafin-zero") → vai para o slug da espécie ("palafin"),
+        // que passa pelo mesmo caminho dos demais Pokémon (cadastro do ADM) e corrige a URL.
+        if(pk.is_default&&sp.name&&sp.name!==slugify(slug)){
+          const _b=window.location.pathname.replace(/\/nationaldex(\/.*)?$/,'')||'';
+          history.replaceState({pokemon:sp.name},'',`${_b}/nationaldex/${encodeURIComponent(sp.name)}`);
+          showDetail(sp.name);
+          return;
+        }
+      }
+      detailCache[slug]={p:pk,s:sp};
     }
     if(navToken!==_detailNavToken)return; // já navegou pra outro Pokémon
     const{p,s}=detailCache[slug];
+
     renderDetail(p,s,dc,navToken);
   }catch{
     if(navToken===_detailNavToken) showNotFound(dc);
@@ -3013,8 +3038,9 @@ function toggleRpgShiny(){
 
 async function renderDetail(p,s,container,navToken){
   const id=p.id;
+  const _nm=(p.is_default===false)?p.name:((s&&s.name)||p.name);   // nome de exibição/slug: espécie ("palafin"), não "palafin-zero"
   const types=p.types.map(t=>t.type.name);
-  document.title=`${cap(p.name)} — NationalDex`;
+  document.title=`${cap(_nm)} — NationalDex`;
   const primaryType=types[0]||'normal';
   const TT=TYPE_THEME[primaryType]||TYPE_THEME.normal;
   applyTypeTheme(primaryType);
@@ -3117,12 +3143,12 @@ async function renderDetail(p,s,container,navToken){
     }
     collectSpecies(cd.chain);
   }catch{}
-  const _speciesName=p.name;
+  const _speciesName=_nm;
 
   // Prev / Next
   let prevHtml='',nextHtml='';
-  if(id>1){try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id-1}`);const d=await r.json();const dispName=_pkDbMap[String(id-1)]?.name||cap(d.name);prevHtml=`<button class="nav-arrow" onclick="goDetail('${d.name}')"><span class="adir">‹</span><span class="aname"><strong>#${String(id-1).padStart(3,'0')}</strong> ${dispName}</span></button>`;}catch{}}else{prevHtml=`<span></span>`;}
-  if(id<1025){try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id+1}`);const d=await r.json();const dispName=_pkDbMap[String(id+1)]?.name||cap(d.name);nextHtml=`<button class="nav-arrow right" onclick="goDetail('${d.name}')"><span class="adir">›</span><span class="aname"><strong>#${String(id+1).padStart(3,'0')}</strong> ${dispName}</span></button>`;}catch{}}
+  if(id>1){try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id-1}`);const d=await r.json();const _dn=(d.species&&d.species.name)||d.name;const dispName=_pkDbMap[String(id-1)]?.name||cap(_dn);prevHtml=`<button class="nav-arrow" onclick="goDetail('${_dn}')"><span class="adir">‹</span><span class="aname"><strong>#${String(id-1).padStart(3,'0')}</strong> ${dispName}</span></button>`;}catch{}}else{prevHtml=`<span></span>`;}
+  if(id<1025){try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${id+1}`);const d=await r.json();const _dn=(d.species&&d.species.name)||d.name;const dispName=_pkDbMap[String(id+1)]?.name||cap(_dn);nextHtml=`<button class="nav-arrow right" onclick="goDetail('${_dn}')"><span class="adir">›</span><span class="aname"><strong>#${String(id+1).padStart(3,'0')}</strong> ${dispName}</span></button>`;}catch{}}
 
   // Moves
   let levelMoves=[],tmMoves=[],eggMoves=[];
@@ -3240,11 +3266,11 @@ async function renderDetail(p,s,container,navToken){
   // forms[0] = espécie base (dados oficiais já computados acima); demais
   // vêm de dbRec.formas_alt, cada uma com seu próprio moveset ("moves").
   const officialFormsPkKey=String(id);
-  const officialBaseUrlSlug=p.name;
+  const officialBaseUrlSlug=_nm;
   const officialSpriteMain=`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${id}.png`;
   const officialShinyMain=`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/shiny/${id}.png`;
   const officialForms=[{
-    nome:dbRec?.name||cap(p.name), tipo1:types[0], tipo2:types[1],
+    nome:dbRec?.name||cap(_nm), tipo1:types[0], tipo2:types[1],
     abilityEntries:sortedAbs.map(a=>({name:a.ability.name,ha:a.is_hidden})),
     abilitiesHtmlCache:abHtml.join(''),
     sprite:officialSpriteMain, sprite_shiny:officialShinyMain,
@@ -3297,21 +3323,21 @@ async function renderDetail(p,s,container,navToken){
   <div class="breadcrumb">
     <button onclick="goList()">NationalDex</button>
     <span>›</span>
-    <span>#${String(id).padStart(4,'0')} ${cap(p.name)}</span>
+    <span>#${String(id).padStart(4,'0')} ${cap(_nm)}</span>
   </div>
 
   <div class="main-card" style="border-color:${TT.mid}40" id="official-main-card">
     <div class="hero">
       <div class="hero-left" style="background:${TT.light};border-color:${TT.mid}40">
         <div class="hero-dex-num">#${String(id).padStart(3,'0')}</div>
-        <div class="form-switch-wrap" id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(p.name),TT)}</div>
+        <div class="form-switch-wrap" id="official-form-switch">${formSwitchButtonsHtml(officialForms,0,officialFormsPkKey,cap(_nm),TT)}</div>
         <div class="hero-art-stack sprite-zoomable" onclick="openHeroSpriteModal(this,document.getElementById('hero-name-main')?.textContent,event)" title="Ver imagem ampliada">
           <img class="hero-art hero-art-active" id="main-art"
             src="https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${id}.png"
-            onerror="this.onerror=function(){this.style.opacity='.3'};this.src='https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/${id}.png'" alt="${p.name}">
+            onerror="this.onerror=function(){this.style.opacity='.3'};this.src='https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/${id}.png'" alt="${_nm}">
           <img class="hero-art" id="main-art-shiny"
             src="${officialShinyMain}"
-            onerror="this.dataset.broken='1'" alt="${p.name} shiny">
+            onerror="this.dataset.broken='1'" alt="${_nm} shiny">
         </div>
         <div class="hero-type-icons" id="type-icons-main">
           ${types.map(t=>`<img class="type-icon" src="${typeIconSrc(t)}" alt="${t}" title="${(TL[t]||t)}">`).join('')}
@@ -3328,7 +3354,7 @@ async function renderDetail(p,s,container,navToken){
 
       <div class="hero-right">
         <div class="hero-header" style="background:${TT.dark}" id="hero-header-main">
-          <div class="hero-name" id="hero-name-main">${cap(p.name)}</div>
+          <div class="hero-name" id="hero-name-main">${cap(_nm)}</div>
         </div>
         <div class="info-flat">
           <div class="info-flat-row"><span class="info-flat-lbl" style="color:${TT.mid}">CLASSIFICATION:</span> <span id="classification-val">${genus}</span></div>
@@ -3371,7 +3397,7 @@ async function renderDetail(p,s,container,navToken){
 
   ${(flavorText||(dbBiomasOfficial&&dbBiomasOfficial.length)||sazonalTemComportamentoNaoNormal(dbSazonalOfficial))?`<div class="section" style="border-color:${TT.mid}40" id="official-bio-section">
     <div class="sec-header" style="background:${TT.dark}" id="official-bio-header"><div class="sec-title">Biology</div></div>
-    <div class="sec-body" id="official-bio-body">${buildBioBodyHtml(flavorText,dbBiomasOfficial,cap(p.name),types,genus,TT,dbSazonalOfficial,dbAfinidadeOfficial)}</div>
+    <div class="sec-body" id="official-bio-body">${buildBioBodyHtml(flavorText,dbBiomasOfficial,cap(_nm),types,genus,TT,dbSazonalOfficial,dbAfinidadeOfficial)}</div>
   </div>`:`<div class="section" style="border-color:${TT.mid}40;display:none" id="official-bio-section">
     <div class="sec-header" style="background:${TT.dark}" id="official-bio-header"><div class="sec-title">Biology</div></div>
     <div class="sec-body" id="official-bio-body"></div>
