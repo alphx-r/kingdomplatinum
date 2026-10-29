@@ -342,15 +342,19 @@ module.exports = async (req, res) => {
     let mesclado = null;   // {d, outros} quando houve merge com mudanças de outra pessoa
     await commit(async parent => {
       let fin = ficha; mesclado = null;
+      // DONO: salvar nunca troca o dono de uma ficha que já existe (quem troca é a ação 'atribuir').
+      // Vale o que está gravado no commit-pai; o player_id/d.player que o navegador mandou só vale para ficha NOVA.
+      const tCur = await readFile(`data/fichas/${slug}.json`, parent);
+      const cur0 = tCur ? JSON.parse(tCur) : null;
+      if (cur0) { ficha.player_id = cur0.player_id ?? null; b.d.player = cur0.d?.player ?? ''; }
       // MERGE POR CAMPO: se a ficha mudou desde que o navegador a carregou (b.base), aplica por cima da versão atual
       // só os campos de `d` que ESTE usuário mexeu (b.mud). Só há conflito se o mesmo campo mudou dos dois lados.
       if (Array.isArray(b.mud) && b.base) {
-        const tAtual = await readFile(`data/fichas/${slug}.json`, parent);   // leitura exata do commit-pai (nunca atrasada)
-        const cur = tAtual ? JSON.parse(tAtual) : null;
+        const cur = cur0;   // leitura exata do commit-pai (nunca atrasada)
         if (cur && cur.atualizado_em && cur.atualizado_em !== b.base) {
           const J = v => JSON.stringify(v);
           const sd = cur.d || {}, bd = (b.bd && typeof b.bd === 'object') ? b.bd : {}, nd = { ...sd }, conf = [];
-          const mud = b.mud.map(String).filter(k => !['__proto__', 'constructor', 'prototype'].includes(k));
+          const mud = b.mud.map(String).filter(k => !['__proto__', 'constructor', 'prototype', 'player'].includes(k));
           for (const k of mud) {
             if (J(sd[k]) !== J(bd[k]) && J(sd[k]) !== J(b.d[k])) conf.push(k);   // mudou no servidor E no navegador, com valores diferentes
             if (b.d[k] === undefined) delete nd[k]; else nd[k] = b.d[k];
@@ -392,7 +396,7 @@ module.exports = async (req, res) => {
     try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: mesclado ? mesclado.d : b.d }); }
     catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }   // o GitHub é a fonte da verdade
 
-    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em, outros: mesclado ? mesclado.outros : undefined });
+    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em, outros: mesclado ? mesclado.outros : undefined, player_id: ficha.player_id, player: (mesclado ? mesclado.d : b.d).player ?? '' });
   } catch (e) {
     return res.status(e.status || 500).json({ error: e.message || 'Erro ao salvar.', code: e.code, campos: e.campos });
   }
