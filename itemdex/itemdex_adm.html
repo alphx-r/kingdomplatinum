@@ -785,6 +785,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
+        <button class="btn btn-outline btn-sm" id="it-tm-price-btn" onclick="setAllTmPrices(3000)" title="Muda o preço de todos os TMs para 3000 (mantém as flags PokéMart/Venda como estão)">💿 TMs → 3000</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -1983,6 +1984,35 @@ async function saveItem(name) {
     }
     toast(renaming ? `💾 Item renomeado para "${newName}"!` : '💾 Item salvo!', 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
+}
+
+// Muda o preço de todos os TMs de uma vez (mesmo critério de TM da PokéMart:
+// categoria TM/TMs/Technical Machine(s)/Machine(s) ou nome "TM 001…"; o TM Voucher fica de fora).
+async function setAllTmPrices(valor) {
+  const isTm = it => /^(tms?|technicalmachines?|machines?)$/.test(String(it.category || '').toLowerCase().replace(/[^a-z0-9]/g, '')) || /^tm\s?\d/i.test(it.name || '');
+  const tms = S.it.all.filter(it => it && it.name && isTm(it) && it.price !== valor);
+  const total = S.it.all.filter(it => it && it.name && isTm(it)).length;
+  if (!total) { toast('Nenhum TM encontrado.', 'err'); return; }
+  if (!tms.length) { toast(`Os ${total} TMs já custam ${valor}.`, 'ok'); return; }
+  if (!confirm(`Mudar o preço de ${tms.length} TM(s) para ${valor}?`)) return;
+  const btn = document.getElementById('it-tm-price-btn');
+  const orig = btn?.innerHTML;
+  if (btn) btn.disabled = true;
+  let ok = 0, falhas = 0;
+  for (const it of tms) {
+    try {
+      const row = { ...(S.it.dbMap[it.name] || it), price: valor, updated_at: new Date().toISOString() };
+      await sbUpsert('items', row);
+      S.it.dbMap[it.name] = row;
+      const idx = S.it.all.findIndex(i => i.name === it.name);
+      if (idx >= 0) S.it.all[idx] = row;
+      ok++;
+    } catch (e) { falhas++; }
+    if (btn) btn.innerHTML = `⏳ ${ok + falhas}/${tms.length}`;
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  applyItFilter();
+  toast(falhas ? `💿 ${ok} TMs atualizados, ${falhas} falharam.` : `💿 ${ok} TMs agora custam ${valor}!`, falhas ? 'err' : 'ok');
 }
 
 async function deleteItem(name) {
