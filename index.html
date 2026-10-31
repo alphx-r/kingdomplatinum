@@ -3669,7 +3669,7 @@ function calcSyncSelects(){
     </div>
 
     <!-- Controles -->
-    <div class="dice-controls" id="dice-controls-main" style="grid-template-columns:1.8fr 1fr 1.8fr auto auto">
+    <div class="dice-controls" id="dice-controls-main" style="grid-template-columns:1.8fr 1fr .7fr 1.8fr auto auto">
       <div class="ctrl-group">
         <label>Personagem</label>
         <select id="dice-personagem" onchange="if(this.value.trim())localStorage.setItem('ultimo_personagem',this.value.trim())">
@@ -3680,6 +3680,10 @@ function calcSyncSelects(){
       <div class="ctrl-group" id="dice-lados-group">
         <label>Lados do dado</label>
         <input type="number" id="dice-lados" value="100" min="2" max="10000" oninput="sincLadosBtns()"/>
+      </div>
+      <div class="ctrl-group" id="dice-qtd-group">
+        <label>Qtd. de dados</label>
+        <input type="number" id="dice-qtd" value="1" min="1" max="100" inputmode="numeric" title="Quantos dados rolar de uma vez (ex.: 3 = 3d20)"/>
       </div>
       <div class="ctrl-group" id="dice-motivo-group">
         <label id="dice-motivo-label">Motivo</label>
@@ -13020,24 +13024,25 @@ function _rolDetailHtml(mapa,key){
     } else {
       const max=e.lados||'?';
       const res=e.resultado;
+      const qd=_qtdDados(e);
       const pct=max>1?Math.round((res/max)*100):100;
       const barColor=pct>=80?'#1a7a1a':pct>=50?'var(--brand-mid)':pct>=20?'var(--accent)':'var(--red)';
       return`<div class="rol-entry">
         <div class="rol-entry-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · d${max}</span>
+            <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · ${qd>1?qd:''}d${max}</span>
             ${e.evento_slug?`<span class="rol-entry-bioma">${e.evento_slug}</span>`:''}
           </div>
           <span class="rol-entry-hora">${e.hora||''} · ${e.data||''}</span>
         </div>
         <div style="display:flex;align-items:center;gap:16px;padding:4px 0">
-          <div style="font-family:var(--font-title);font-size:38px;font-weight:700;color:var(--brand);line-height:1;min-width:52px;text-align:center">${res}</div>
+          ${qd>1?'':`<div style="font-family:var(--font-title);font-size:38px;font-weight:700;color:var(--brand);line-height:1;min-width:52px;text-align:center">${res}</div>`}
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px"><strong>${e.personagem||g.canon}</strong> rolou <strong>1d${max}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${res}</strong></div>
-            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+            <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px"><strong>${e.personagem||g.canon}</strong> rolou <strong>${qd}d${max}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)||'—'}</strong> e obteve: <strong style="color:var(--brand-mid)">${qd>1?e.lote.map(r=>r.resultado).join(', '):res}</strong></div>
+            ${qd>1?'':`<div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
               <div style="height:6px;border-radius:4px;background:${barColor};width:${pct}%;transition:width .4s"></div>
             </div>
-            <div style="font-size:11px;color:var(--muted)">${res} de ${max} (${pct}%)</div>
+            <div style="font-size:11px;color:var(--muted)">${res} de ${max} (${pct}%)</div>`}
           </div>
         </div>
       </div>`;
@@ -13594,6 +13599,11 @@ function rollerSetModo(modo){
 let historicoDados=[], dadosPagina=0;
 const DADOS_POR_PAG=15;
 
+// Rolagem com vários dados: cada resultado fica em `lote` (não há soma).
+function _qtdDados(e){ return (Array.isArray(e.lote)&&e.lote.length>1)?e.lote.length:1; }
+function _dadosTxt(e){ return _qtdDados(e)+'d'+e.lados; }
+function _dadosLista(e){ return _qtdDados(e)>1?e.lote.map(r=>r.resultado).join(', '):''; }
+
 function setLados(n){
   document.getElementById('dice-lados').value=n;
   sincLadosBtns();
@@ -13642,6 +13652,8 @@ function togglePickupMode(){
   if(motivoInput) motivoInput.style.display=on?'none':'';
   if(pickupInput) pickupInput.style.display=on?'':'none';
   if(label) label.textContent=on?`Pokémon com ${habilidade}`:'Motivo';
+  const qtdInput=document.getElementById('dice-qtd');
+  if(qtdInput){ qtdInput.disabled=on; if(on) qtdInput.value=1; }
   const ladosInput=document.getElementById('dice-lados');
   if(ladosInput){
     if(on){
@@ -13692,13 +13704,16 @@ async function rolarDado(){
   }
 
   if(!lados||lados<2){alert('O dado precisa ter ao menos 2 lados.');return;}
+  // Quantidade de dados (Pickup sempre rola 1)
+  const qtd=isPickup?1:Math.min(Math.max(parseInt(document.getElementById('dice-qtd')?.value)||1,1),100);
   if(!isPickup && !motivo){alert('Preencha o motivo da rolagem!');document.getElementById('dice-motivo').focus();return;}
 
   // Lê os competidores se estiver no modo Juiz
   const competidor1=isJuiz?(document.getElementById('dice-competidor1')?.value.trim()||''):'';
   const competidor2=isJuiz?(document.getElementById('dice-competidor2')?.value.trim()||''):'';
 
-  const resultado=Math.floor(Math.random()*lados)+1;
+  const rolagensDados=Array.from({length:qtd},()=>Math.floor(Math.random()*lados)+1);
+  const resultado=rolagensDados[0]; // sem soma: com vários dados, cada resultado fica em `lote`
   const agora=new Date();
   const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const data=agora.toLocaleDateString('pt-BR');
@@ -13710,6 +13725,8 @@ async function rolarDado(){
   }
 
   const entry={personagem,lados,motivo:motivoFinal,resultado,hora,data};
+  // Mais de 1 dado: guarda cada resultado em `lote` (mesma coluna usada pelas rolagens em lote de evento)
+  if(qtd>1) entry.lote=rolagensDados.map(r=>({resultado:r}));
 
   if(isPickup){
     // Busca o item correspondente ao número sorteado na tabela de Pickup
@@ -13725,6 +13742,9 @@ async function rolarDado(){
     if(savedRow) historicoDados.unshift(savedRow);
     else historicoDados.unshift({...entry,id:Date.now()});
     document.getElementById('dice-pickup-pokemon').value='';
+  } else if(qtd>1){
+    const savedRow=await _postHistoricoColetivo(entry);
+    historicoDados.unshift(savedRow?savedRow:{...entry,id:Date.now()});
   } else {
     const res=await dbPost('historico_dados',entry);
     if(res&&res[0])historicoDados.unshift(res[0]);
@@ -13764,7 +13784,7 @@ function renderHistDados(){
     const obteve=pickupInfo?(pickupInfo.item||'Nada'):e.resultado;
     return`<div class="dice-hist-entry" style="animation-delay:${i*0.04}s">
       <div class="dice-hist-msg">
-        [${e.data} ${e.hora}] <strong>${e.personagem}</strong> rolou <strong>1d${e.lados}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)}</strong> e obteve: <strong>${obteve}</strong>
+        [${e.data} ${e.hora}] <strong>${e.personagem}</strong> rolou <strong>${_dadosTxt(e)}</strong> para <strong>${_pickupMotivoDisplay(e.motivo)}</strong> e obteve: <strong>${_qtdDados(e)>1?_dadosLista(e):obteve}</strong>
       </div>
       <div class="dice-hist-num" style="display:none">${e.resultado}</div>
       ${btnDel}
