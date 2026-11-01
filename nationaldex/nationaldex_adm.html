@@ -5922,10 +5922,12 @@ function movesetAddRow(listId, type, data = {}) {
   const dispVal = rawVal ? rawVal.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
   const dragHandle = `<span class="mv-drag-handle" title="Arrastar para reordenar">⠿</span>`;
   const comboHtml = `<div class="cb-wrap mv-name"><input class="cb-input mv-name-input" list="dl-move" autocomplete="off" placeholder="— Move —" value="${dispVal}" data-raw="${rawVal}"><span class="cb-arrow">▾</span></div>`;
-  const levelHtml = '';
+  const levelHtml = type === 'level'
+    ? `<input type="number" class="mv-lvl" min="0" max="100" placeholder="Nv" title="Nível" value="${data.level ?? ''}">`
+    : '';
   const delBtn = `<button type="button" class="mv-del" onclick="this.closest('.moveset-row').remove()" title="Remover">✕</button>`;
 
-  row.innerHTML = dragHandle + comboHtml + levelHtml + delBtn;
+  row.innerHTML = dragHandle + levelHtml + comboHtml + delBtn;
   const inp = row.querySelector('.mv-name-input');
   if (inp) {
     const syncHasVal = () => inp.classList.toggle('has-val', inp.value.trim() !== '');
@@ -6010,7 +6012,7 @@ function movesetReadList(listId, type) {
     const inp = row.querySelector('.mv-name-input'); const move = inp ? moveToSlug(inp.value.trim()) : '';
     if (!move) return null;
     if (type === 'level') {
-      const level = parseInt(row.querySelector('input')?.value) || 0;
+      const level = parseInt(row.querySelector('.mv-lvl')?.value) || 0;
       return { move, level };
     }
     return { move };
@@ -6061,9 +6063,12 @@ function faltToggleSameMoveset(cb) {
 async function movesetCopyList(listId, btnEl) {
   const list = document.getElementById(listId);
   if (!list) return;
-  const nomes = [...list.querySelectorAll('.mv-name-input')]
-    .map(inp => inp.value.trim())
-    .filter(Boolean);
+  const nomes = [...list.querySelectorAll('.moveset-row')].map(row => {
+    const nome = row.querySelector('.mv-name-input')?.value.trim();
+    if (!nome) return '';
+    const lv = row.querySelector('.mv-lvl');
+    return lv ? `${nome} ${parseInt(lv.value) || 0}` : nome;   // Por Nível: "Gust 1"
+  }).filter(Boolean);
   if (!nomes.length) {
     if (btnEl) {
       const original = btnEl.textContent;
@@ -6109,9 +6114,14 @@ function movesetImportBulk(listId, type, bulkId) {
   const lines = ta.value.split('\n').map(l => l.trim()).filter(Boolean);
   if (!lines.length) { area.classList.remove('open'); return; }
   lines.forEach(line => {
+    let level = 0;
+    if (type === 'level') {
+      const m = line.match(/^(\d+)\s*[-–:,]?\s*(.+)$/) || line.match(/^(.+?)\s*[-–:,]?\s*(\d+)$/);
+      if (m) { if (/^\d+$/.test(m[1])) { level = parseInt(m[1]); line = m[2].trim(); } else { line = m[1].trim(); level = parseInt(m[2]); } }
+    }
     // Aceita nome display ("Flamethrower") ou slug ("flamethrower", "fire-blast")
     const slug = moveToSlug(line) || line.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    movesetAddRow(listId, type, { move: slug });
+    movesetAddRow(listId, type, { move: slug, level });
   });
   ta.value = '';
   area.classList.remove('open');
