@@ -6158,25 +6158,31 @@ function pkapiMovesetUltimaGeracao(d, category) {
   const ord = n => { const i = PKAPI_VG_ORDEM.indexOf(n); return i < 0 ? 999 : i; };
   const principais = [...todos].filter(n => !PKAPI_VG_SPINOFF.has(n));
   const cand = principais.length ? principais : [...todos];
-  const geracao = cand.length ? Math.max(...cand.map(gerDe)) : 0;
-  const grupos = cand.filter(n => gerDe(n) === geracao).sort((a, b) => ord(a) - ord(b));
-  const gs = new Set(grupos);
-  const moves = [];
-  (d.moves || []).forEach(mv => {
-    const vgd = (mv.version_group_details || []).filter(v => gs.has(v.version_group.name));
-    if (!vgd.length) return;
-    if (category === 'level') {
-      const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
-      if (!lvlUp.length) return;
-      lvlUp.sort((a, b) => ord(a.version_group.name) - ord(b.version_group.name));
-      moves.push({ move: mv.move.name, level: lvlUp[lvlUp.length - 1].level_learned_at }); // nível do jogo mais recente
-    } else {
-      const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
-      if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
-    }
-  });
-  if (category === 'level') moves.sort((a, b) => a.level - b.level);
-  return { moves, geracao, grupos };
+  const gens = [...new Set(cand.map(gerDe))].sort((a, b) => b - a);   // da mais nova pra mais antiga
+  let res = { moves: [], geracao: 0, grupos: [] };
+  // Tenta a geração mais nova; se vier vazia (jogo novo sem golpes na PokéAPI), cai pra anterior.
+  for (const geracao of gens) {
+    const grupos = cand.filter(n => gerDe(n) === geracao).sort((a, b) => ord(a) - ord(b));
+    const gs = new Set(grupos);
+    const moves = [];
+    (d.moves || []).forEach(mv => {
+      const vgd = (mv.version_group_details || []).filter(v => gs.has(v.version_group.name));
+      if (!vgd.length) return;
+      if (category === 'level') {
+        const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
+        if (!lvlUp.length) return;
+        lvlUp.sort((a, b) => ord(a.version_group.name) - ord(b.version_group.name));
+        moves.push({ move: mv.move.name, level: lvlUp[lvlUp.length - 1].level_learned_at }); // nível do jogo mais recente
+      } else {
+        const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
+        if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
+      }
+    });
+    if (category === 'level') moves.sort((a, b) => a.level - b.level);
+    res = { moves, geracao, grupos };
+    if (moves.length) break;
+  }
+  return res;
 }
 
 const EPK_MOVESET_FIELD = { level: 'moves_level', tm: 'moves_tm', egg: 'moves_egg' };
