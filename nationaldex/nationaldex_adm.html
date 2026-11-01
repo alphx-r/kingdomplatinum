@@ -6232,6 +6232,7 @@ async function epkBuscarMovesetsTodos() {
   showProgress('Buscando movesets na PokéAPI…');
   let feitos = 0, ok = 0, semDados = 0, parar = false;
   const falhas = [];
+  const semGolpes = [];
   const fila = alvo.slice();
   const worker = async () => {
     while (fila.length && !parar) {
@@ -6244,7 +6245,7 @@ async function epkBuscarMovesetsTodos() {
         const nivel = pkapiMovesetUltimaGeracao(d, 'level').moves;
         const tm    = pkapiMovesetUltimaGeracao(d, 'tm').moves;
         const egg   = pkapiMovesetUltimaGeracao(d, 'egg').moves;
-        if (!nivel.length && !tm.length && !egg.length) { semDados++; }
+        if (!nivel.length && !tm.length && !egg.length) { semDados++; semGolpes.push(`${pk.name || id} (#${id})`); }
         else {
           const patch = {
             moves_level: nivel.length ? nivel : null,
@@ -6268,6 +6269,10 @@ async function epkBuscarMovesetsTodos() {
   await Promise.all(Array.from({ length: 4 }, worker));
   hideProgress();
   if (btn) btn.disabled = false;
+  if (semGolpes.length) {
+    console.log('Sem golpes na PokéAPI:', semGolpes);
+    try { await navigator.clipboard.writeText(semGolpes.join('\n')); } catch (e) {}
+  }
   alert(`✅ ${ok} Pokémon atualizados.${semDados ? `\n${semDados} sem golpes na PokéAPI (mantidos como estavam).` : ''}${falhas.length ? `\n\n❌ ${falhas.length} falha(s):\n` + falhas.slice(0, 8).join('\n') : ''}\n\nPara refletir no pokemon.json, clique em “Commit pokemon.json”.`);
 }
 
