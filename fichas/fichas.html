@@ -677,6 +677,14 @@ a.rlpav{position:relative;overflow:hidden;-webkit-tap-highlight-color:transparen
   .bxp{left:6px}.bxx{right:6px}
   .bxw.bx-first .bxp,.bxw.bx-last .bxx{display:none}
 }
+
+/* ── Cor primária clara: menu lateral e vetores em tom escuro da própria cor ── */
+html.pri-clara .nav-hamburger{color:var(--on-pri);background:rgba(0,0,0,.08);border-color:var(--on-pri-mu)}
+html.pri-clara .nav-logo{color:var(--on-pri)}
+html.pri-clara .nav-link,html.pri-clara .nav-drop-btn,html.pri-clara .nav-drop-item{color:var(--on-pri-mu)}
+html.pri-clara .nav-link:hover,html.pri-clara .nav-drop-item:hover{background:rgba(0,0,0,.08);color:var(--on-pri)}
+html.pri-clara .nav-link.active,html.pri-clara .nav-drop-btn:hover,html.pri-clara .nav-drop-btn.open,html.pri-clara .nav-drop-btn.active{background:rgba(0,0,0,.12);color:var(--on-pri)}
+html.pri-clara .nav-login{color:var(--on-pri);border-color:var(--on-pri-mu)}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
@@ -1319,8 +1327,16 @@ function toast(m,ms){tst.textContent=m;tst.style.display='block';clearTimeout(ts
 /* cor da ficha: fica em localStorage (kp_ficha_cor) enquanto a mesma ficha estiver aberta; some ao abrir outra ficha ou a lista /fichas */
 const KCOR='kp_ficha_cor',corLer=()=>{try{return JSON.parse(localStorage.getItem(KCOR))}catch{return null}},corLimpa=()=>{try{localStorage.removeItem(KCOR)}catch{}};
 function corSave(){try{if(f&&f.slug&&!ed)localStorage.setItem(KCOR,JSON.stringify({slug:f.slug,cor_pri:f.d?.cor_pri||'',cor_sec:f.d?.cor_sec||''}))}catch{}}
-function setColors(d,nav){const r=document.documentElement.style;if(nav)r.setProperty('--nav-bg',d.cor_pri||'#1a1a1a');else r.removeProperty('--nav-bg');r.setProperty('--pri',d.cor_pri||'#1a1a1a');r.setProperty('--sec',d.cor_sec||'#3a3a3a');r.setProperty('--tab',d.cor_pri||'#1a1a1a');const cp=onCor(d.cor_pri||'#1a1a1a'),cs=onCor(d.cor_sec||'#3a3a3a');r.setProperty('--on-pri',cp.c);r.setProperty('--on-pri-mu',cp.m);r.setProperty('--ico-pri',cp.f);r.setProperty('--on-sec',cs.c);r.setProperty('--ico-sec',cs.f)}
-function onCor(h){let m=/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(h||'').trim());if(!m)return{c:'#fff',m:'rgba(255,255,255,.7)',f:'none'};let x=m[1];if(x.length===3)x=x.replace(/./g,'$&$&');const l=[0,2,4].map(i=>parseInt(x.substr(i,2),16)/255).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4));const L=.2126*l[0]+.7152*l[1]+.0722*l[2];return L>.6?{c:'#111',m:'rgba(0,0,0,.65)',f:'brightness(0)'}:{c:'#fff',m:'rgba(255,255,255,.7)',f:'none'}}
+function setColors(d,nav){const r=document.documentElement.style;if(nav)r.setProperty('--nav-bg',d.cor_pri||'#1a1a1a');else r.removeProperty('--nav-bg');r.setProperty('--pri',d.cor_pri||'#1a1a1a');r.setProperty('--sec',d.cor_sec||'#3a3a3a');r.setProperty('--tab',d.cor_pri||'#1a1a1a');const cp=onCor(d.cor_pri||'#1a1a1a','ico-pri'),cs=onCor(d.cor_sec||'#3a3a3a','ico-sec');document.documentElement.classList.toggle('pri-clara',!!nav&&cp.light);r.setProperty('--on-pri',cp.c);r.setProperty('--on-pri-mu',cp.m);r.setProperty('--ico-pri',cp.f);r.setProperty('--on-sec',cs.c);r.setProperty('--ico-sec',cs.f)}
+function onCor(h,id){const m=/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(h||'').trim());if(!m)return{c:'#fff',m:'rgba(255,255,255,.7)',f:'none',light:false};let x=m[1];if(x.length===3)x=x.replace(/./g,'$&$&');const rgb=[0,2,4].map(i=>parseInt(x.substr(i,2),16));const l=rgb.map(v=>v/255).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4));const L=.2126*l[0]+.7152*l[1]+.0722*l[2];if(L<=.4)return{c:'#fff',m:'rgba(255,255,255,.7)',f:'none',light:false};const d=corEscura(rgb);return{c:'rgb('+d.join(',')+')',m:'rgba('+d.join(',')+',.75)',f:icoFiltro(id||'ico-x',d),light:true}}
+/* Cor muito clara: vetores/textos passam a um tom ESCURO da própria cor (mesmo matiz), em vez de preto. */
+function corHsl(rgb){const r=rgb[0]/255,g=rgb[1]/255,b=rgb[2]/255,mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0,s=0;const l=(mx+mn)/2;if(d){s=d/(1-Math.abs(2*l-1));h=mx===r?((g-b)/d)%6:mx===g?(b-r)/d+2:(r-g)/d+4;h*=60;if(h<0)h+=360}return[h,s,l]}
+function hslRgb(h,s,l){const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;const t=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];return t.map(v=>Math.round((v+m)*255))}
+function corEscura(rgb){const[h,s]=corHsl(rgb);return hslRgb(h,Math.min(s,.6),.17)}
+/* Filtro SVG que pinta qualquer <img> (ícone) com a cor dada, preservando a transparência. */
+function icoFiltro(id,rgb){let svg=document.getElementById('svg-'+id);if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='svg-'+id;svg.setAttribute('width','0');svg.setAttribute('height','0');svg.setAttribute('aria-hidden','true');svg.style.cssText='position:absolute;width:0;height:0;pointer-events:none';svg.innerHTML='<filter id="'+id+'" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%"><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"/></filter>';(document.body||document.documentElement).appendChild(svg)}svg.querySelector('feColorMatrix').setAttribute('values','0 0 0 0 '+(rgb[0]/255).toFixed(4)+' 0 0 0 0 '+(rgb[1]/255).toFixed(4)+' 0 0 0 0 '+(rgb[2]/255).toFixed(4)+' 0 0 0 1 0');return 'url(#'+id+')'}
+/* Fundo da página: tom suave e dessaturado do matiz da cor primária (neutro quando a cor é cinza/escura). */
+function bgDaCor(h){const m=/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(h||'').trim());if(!m)return'#808080';let x=m[1];if(x.length===3)x=x.replace(/./g,'$&$&');const[hh,s]=corHsl([0,2,4].map(i=>parseInt(x.substr(i,2),16)));const c=hslRgb(hh,Math.min(s*.5,.3),.5);return'#'+c.map(v=>v.toString(16).padStart(2,'0')).join('')}
 function abrirCores(){const d=f.d;cbk={p:d.cor_pri,s:d.cor_sec};cp.value=cph.value=d.cor_pri||'#1a1a1a';cs.value=csh.value=d.cor_sec||'#3a3a3a';cm.showModal()}
 function corIn(k,v){v=v.trim();if(/^[0-9a-f]{6}$/i.test(v))v='#'+v;if(!/^#[0-9a-f]{6}$/i.test(v))return;f.d[k]=v;setColors(f.d,true);const[a,b]=k==='cor_pri'?[cp,cph]:[cs,csh];a.value=v;if(document.activeElement!==b)b.value=v}
 function cancelaCores(){f.d.cor_pri=cbk.p;f.d.cor_sec=cbk.s;setColors(f.d,true);cm.close()}
