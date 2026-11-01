@@ -6160,6 +6160,52 @@ function movesetResetAll(prefix) {
 // resultado na hora. Pra ids não-numéricos (formas regionais/fakemon), tenta
 // pelo url_slug ou nome — a PokéAPI aceita nome-slug (ex: "raichu-alola") no
 // lugar do número.
+/* ── Moveset da PokéAPI: SÓ a última geração em que o Pokémon aparece (sem misturar gerações) ──
+   A PokéAPI devolve os golpes de todos os jogos juntos (version_group_details). Aqui descobrimos a
+   geração mais recente em que este Pokémon existe e usamos só os jogos principais dela.
+   Spin-offs/remakes de moveset diferente (Colosseum, XD, Let's Go, Brilliant Diamond/Shining Pearl,
+   Legends Arceus/Z-A) só são usados se o Pokémon não aparecer em nenhum jogo principal. */
+const PKAPI_VG_GERACAO = {
+  'red-blue':1,'yellow':1,
+  'gold-silver':2,'crystal':2,
+  'ruby-sapphire':3,'emerald':3,'firered-leafgreen':3,'colosseum':3,'xd':3,
+  'diamond-pearl':4,'platinum':4,'heartgold-soulsilver':4,
+  'black-white':5,'black-2-white-2':5,
+  'x-y':6,'omega-ruby-alpha-sapphire':6,
+  'sun-moon':7,'ultra-sun-ultra-moon':7,'lets-go-pikachu-lets-go-eevee':7,
+  'sword-shield':8,'the-isle-of-armor':8,'the-crown-tundra':8,'brilliant-diamond-shining-pearl':8,'legends-arceus':8,
+  'scarlet-violet':9,'the-teal-mask':9,'the-indigo-disk':9,'legends-za':9
+};
+const PKAPI_VG_SPINOFF = new Set(['colosseum','xd','lets-go-pikachu-lets-go-eevee','brilliant-diamond-shining-pearl','legends-arceus','legends-za']);
+const PKAPI_VG_ORDEM = Object.keys(PKAPI_VG_GERACAO); // ordem aproximada de lançamento
+function pkapiMovesetUltimaGeracao(d, category) {
+  const todos = new Set();
+  (d.moves || []).forEach(mv => (mv.version_group_details || []).forEach(v => todos.add(v.version_group.name)));
+  const gerDe = n => PKAPI_VG_GERACAO[n] ?? 9;                      // jogo novo ainda não listado: assume geração 9
+  const ord = n => { const i = PKAPI_VG_ORDEM.indexOf(n); return i < 0 ? 999 : i; };
+  const principais = [...todos].filter(n => !PKAPI_VG_SPINOFF.has(n));
+  const cand = principais.length ? principais : [...todos];
+  const geracao = cand.length ? Math.max(...cand.map(gerDe)) : 0;
+  const grupos = cand.filter(n => gerDe(n) === geracao).sort((a, b) => ord(a) - ord(b));
+  const gs = new Set(grupos);
+  const moves = [];
+  (d.moves || []).forEach(mv => {
+    const vgd = (mv.version_group_details || []).filter(v => gs.has(v.version_group.name));
+    if (!vgd.length) return;
+    if (category === 'level') {
+      const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
+      if (!lvlUp.length) return;
+      lvlUp.sort((a, b) => ord(a.version_group.name) - ord(b.version_group.name));
+      moves.push({ move: mv.move.name, level: lvlUp[lvlUp.length - 1].level_learned_at }); // nível do jogo mais recente
+    } else {
+      const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
+      if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
+    }
+  });
+  if (category === 'level') moves.sort((a, b) => a.level - b.level);
+  return { moves, geracao, grupos };
+}
+
 const EPK_MOVESET_FIELD = { level: 'moves_level', tm: 'moves_tm', egg: 'moves_egg', tutor: 'moves_tutor' };
 const EPK_MOVESET_LABEL = { level: 'Por Nível', tm: 'TM', egg: 'Egg Moves', tutor: 'Tutor Moves' };
 async function epkFetchMovesetFromPokeapi(category) {
@@ -6182,18 +6228,7 @@ async function epkFetchMovesetFromPokeapi(category) {
     if (!r.ok) throw new Error(`PokeAPI HTTP ${r.status} — não achou "${query}"`);
     const d = await r.json();
 
-    const moves = [];
-    (d.moves || []).forEach(mv => {
-      const vgd = mv.version_group_details || [];
-      if (category === 'level') {
-        const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
-        if (lvlUp.length) moves.push({ move: mv.move.name, level: Math.max(...lvlUp.map(v => v.level_learned_at)) });
-      } else {
-        const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
-        if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
-      }
-    });
-    if (category === 'level') moves.sort((a, b) => a.level - b.level);
+    const { moves, geracao, grupos } = pkapiMovesetUltimaGeracao(d, category);
 
     const patch = { [field]: moves.length ? moves : null, updated_at: new Date().toISOString() };
     await sbPatch('pokemons', id, patch);
@@ -6204,7 +6239,7 @@ async function epkFetchMovesetFromPokeapi(category) {
     if (pk) Object.assign(pk, patch);
     if (S.pk.dbMap && S.pk.dbMap[id]) Object.assign(S.pk.dbMap[id], patch);
 
-    toast(`✓ Moveset "${label}" de "${query}" atualizado — falta o Commit pokemon.json!`, 'ok');
+    toast(`✓ Moveset "${label}" de "${query}" atualizado (Geração ${geracao}: ${grupos.join(", ")}) — falta o Commit pokemon.json!`, 'ok');
   } catch (e) {
     toast('Erro ao buscar moveset: ' + e.message, 'err');
   } finally {
@@ -6235,21 +6270,10 @@ async function faltFetchMovesetFromPokeapi(btn, category) {
     if (!r.ok) throw new Error(`PokeAPI HTTP ${r.status} — não achou "${slug}"`);
     const d = await r.json();
 
-    const moves = [];
-    (d.moves || []).forEach(mv => {
-      const vgd = mv.version_group_details || [];
-      if (category === 'level') {
-        const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
-        if (lvlUp.length) moves.push({ move: mv.move.name, level: Math.max(...lvlUp.map(v => v.level_learned_at)) });
-      } else {
-        const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
-        if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
-      }
-    });
-    if (category === 'level') moves.sort((a, b) => a.level - b.level);
+    const { moves, geracao, grupos } = pkapiMovesetUltimaGeracao(d, category);
 
     movesetPopulateList(`falt-mv-${category}-${uid}`, category, moves);
-    toast(`✓ Moveset "${label}" de "${nome}" preenchido a partir de "${slug}" — salve o Pokémon pra gravar.`, 'ok');
+    toast(`✓ Moveset "${label}" de "${nome}" preenchido a partir de "${slug}" (Geração ${geracao}: ${grupos.join(", ")}) — salve o Pokémon pra gravar.`, 'ok');
   } catch (e) {
     toast('Erro ao buscar moveset: ' + e.message, 'err');
   } finally {
