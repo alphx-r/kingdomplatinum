@@ -976,7 +976,7 @@ async function sbDeleteByName(table, name) {
   catch (e) { if (!supaDownFallback(e)) throw e; }
   scheduleItemsCommit();
 }
-const ITEMS_COMMIT_MS = 8000;
+const ITEMS_COMMIT_MS = 3000;
 let _itemsCommitTimer = null, _itemsCommitBusy = false, _itemsCommitAgain = false;
 function scheduleItemsCommit() {
   if (!S.it.jsonReady) return;   // só sobrescreve o items.json depois de ter carregado a lista inteira
@@ -997,15 +997,33 @@ function buildItemsPayload() {
 async function pushItemsJson() {
   if (_itemsCommitBusy) { _itemsCommitAgain = true; return; }
   if (!S.it.jsonReady || !S.it.all.length) return;
-  if (PENDING_IMGS.size) return; // há ícones na fila: só o botão 📤 commita (json + imagens juntos)
   _itemsCommitBusy = true; S.it.commitPending = false;
   try {
     const data = buildItemsPayload();
-    const res = await fetch('/api/commit-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: data }) });
-    let result = {};
-    try { result = await res.json(); } catch (e) {}
-    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
-    toast(`✅ items.json atualizado no GitHub (${data.length} itens).`, 'ok');
+    let admin = null;
+    try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
+    // Commita o items.json junto com os ícones que estão na fila (PENDING_IMGS),
+    // em lotes de ~3,5 MB (limite do corpo da Vercel). Antes, ter qualquer ícone
+    // na fila fazia o commit automático ser ignorado em silêncio.
+    const fila = [...PENDING_IMGS.entries()];
+    let total = 0;
+    do {
+      const lote = []; let tam = 0;
+      while (fila.length) {
+        const b64 = fila[0][1].split(',')[1] || '';
+        if (lote.length && tam + b64.length > 3_500_000) break;
+        const [path] = fila.shift();
+        lote.push({ path, contentBase64: b64 }); tam += b64.length;
+      }
+      const res = await fetch('/api/commit-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: data, images: lote, admin }) });
+      let result = {};
+      try { result = await res.json(); } catch (e) {}
+      if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
+      lote.forEach(i => PENDING_IMGS.delete(i.path));
+      total += lote.length;
+    } while (fila.length);
+    if (!PENDING_IMGS.size) ITEMS_DIRTY = false;
+    toast(`✅ items.json atualizado no GitHub (${data.length} itens${total ? ` + ${total} imagem(ns)` : ''}).`, 'ok');
   } catch (e) {
     S.it.commitPending = true;
     toast('Erro ao commitar items.json: ' + e.message + ' — use "Commitar items.json" para tentar de novo.', 'err');
