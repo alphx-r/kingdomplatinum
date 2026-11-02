@@ -628,6 +628,29 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .loc-pill:hover{border-color:var(--brand-mid);background:var(--surface2)}
 .loc-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
 .loc-pill.sem-zona .dot{background:#e0a020}
+
+/* Botão flutuante de pendências */
+.pend-fab{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:9500;display:none;flex-direction:column;align-items:center;width:min(440px,calc(100vw - 20px))}
+.pend-fab.show{display:flex}
+.pend-pill{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;border:none;border-radius:99px;padding:8px 18px;font-family:var(--font-body);font-size:12.5px;font-weight:800;letter-spacing:.2px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:transform .15s}
+.pend-pill:hover{transform:translateY(1px)}
+.pend-pill .pend-chev{font-size:9px;transition:transform .2s}
+.pend-fab.open .pend-chev{transform:rotate(180deg)}
+.pend-panel{display:none;width:100%;margin-top:8px;background:var(--surface);border:1.5px solid var(--accent);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.22);overflow:hidden}
+.pend-fab.open .pend-panel{display:block}
+.pend-list{max-height:min(46vh,380px);overflow-y:auto;padding:6px 0}
+.pend-sec{font-family:var(--font-title);font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 14px 3px}
+.pend-row{display:flex;align-items:baseline;gap:8px;padding:5px 14px;font-size:12.5px;cursor:default}
+.pend-row:hover{background:var(--surface2)}
+.pend-tag{flex-shrink:0;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.3px}
+.pend-tag.add{background:var(--green-light);color:var(--green-dark)}
+.pend-tag.mod{background:var(--brand-light);color:var(--brand-mid)}
+.pend-tag.del{background:var(--red-light);color:var(--red)}
+.pend-tag.img{background:var(--purple-light);color:var(--purple)}
+.pend-name{font-weight:700;color:var(--text)}
+.pend-what{color:var(--muted);font-size:11.5px}
+.pend-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface2)}
+.pend-note{font-size:11px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -794,6 +817,13 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 </div>
 
+<div class="pend-fab" id="pend-fab">
+  <button type="button" class="pend-pill" onclick="togglePendPanel()"><span>📤</span><span id="pend-count">0 pendentes</span><span class="pend-chev">▼</span></button>
+  <div class="pend-panel">
+    <div class="pend-list" id="pend-list"></div>
+    <div class="pend-foot"><span class="pend-note">Só no navegador até commitar.</span><button type="button" class="btn btn-success btn-sm" id="pend-commit-btn" onclick="backupItemsNow()">Commitar agora</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -978,11 +1008,70 @@ async function sbDeleteByName(table, name) {
 }
 const ITEMS_COMMIT_MS = 3000;
 let _itemsCommitTimer = null, _itemsCommitBusy = false, _itemsCommitAgain = false;
-function scheduleItemsCommit() {
-  if (!S.it.jsonReady) return;   // só sobrescreve o items.json depois de ter carregado a lista inteira
+const IT_DRAFT_KEY = 'it_draft_items';
+function scheduleItemsCommit() {   // NÃO commita mais sozinho: só guarda no navegador e marca como pendente
+  if (!S.it.jsonReady) return;
   S.it.commitPending = true;
+  updateCommitBtn();
+  // adia o snapshot: quem chama atualiza S.it.all logo depois do await
   clearTimeout(_itemsCommitTimer);
-  _itemsCommitTimer = setTimeout(pushItemsJson, ITEMS_COMMIT_MS);
+  _itemsCommitTimer = setTimeout(() => { try { localStorage.setItem(IT_DRAFT_KEY, JSON.stringify(buildItemsPayload())); } catch (e) {} }, 50);
+}
+function clearItemsDraft() {
+  try { localStorage.removeItem(IT_DRAFT_KEY); } catch (e) {}
+  saveItemsBaseline(buildItemsPayload());
+  S.it.commitPending = false;
+  updateCommitBtn();
+}
+const IT_BASE_KEY = 'it_baseline_items';
+function saveItemsBaseline(arr) { try { localStorage.setItem(IT_BASE_KEY, JSON.stringify(arr)); } catch (e) {} }
+function loadItemsBaseline() { try { const d = JSON.parse(localStorage.getItem(IT_BASE_KEY) || 'null'); return Array.isArray(d) ? d : null; } catch (e) { return null; } }
+function togglePendPanel(force) {
+  const f = document.getElementById('pend-fab'); if (!f) return;
+  f.classList.toggle('open', typeof force === 'boolean' ? force : !f.classList.contains('open'));
+}
+document.addEventListener('click', e => { const f = document.getElementById('pend-fab'); if (f && f.classList.contains('open') && !f.contains(e.target)) togglePendPanel(false); });
+function computePending() {
+  const cur = buildItemsPayload(), base = loadItemsBaseline();
+  const out = { add: [], mod: [], del: [], img: [...PENDING_IMGS.keys()].map(k => k.split('/').pop()), noBase: !base };
+  if (!base) return out;
+  const bm = new Map(base.map(x => [x.name, x])), cm = new Map(cur.map(x => [x.name, x]));
+  cur.forEach(c => {
+    const b = bm.get(c.name);
+    if (!b) { out.add.push(c.name); return; }
+    const diffs = [];
+    if ((c.category || '') !== (b.category || '')) diffs.push('categoria');
+    if ((c.item_desc || '') !== (b.item_desc || '')) diffs.push('descrição');
+    if ((c.sprite || '') !== (b.sprite || '')) diffs.push('ícone');
+    if ((c.price ?? null) !== (b.price ?? null)) diffs.push('preço');
+    if (JSON.stringify(c.flags || {}) !== JSON.stringify(b.flags || {})) diffs.push('flags');
+    if (diffs.length) out.mod.push({ name: c.name, diffs });
+  });
+  base.forEach(b => { if (!cm.has(b.name)) out.del.push(b.name); });
+  return out;
+}
+function renderPendingFab() {
+  const fab = document.getElementById('pend-fab'); if (!fab || !S.it.jsonReady) return;
+  const p = computePending();
+  const n = p.add.length + p.mod.length + p.del.length;
+  const total = p.noBase ? (S.it.commitPending ? 1 : 0) + p.img.length : n + (p.img.length && !n ? p.img.length : 0);
+  if (!S.it.commitPending && !p.img.length && !n) { fab.classList.remove('show', 'open'); return; }
+  fab.classList.add('show');
+  document.getElementById('pend-count').textContent = p.noBase ? 'Alterações pendentes' : `${n + p.img.length} pendente${n + p.img.length === 1 ? '' : 's'}`;
+  const row = (tag, cls, name, what) => `<div class="pend-row"><span class="pend-tag ${cls}">${tag}</span><span class="pend-name">${nbEsc(name)}</span>${what ? `<span class="pend-what">${nbEsc(what)}</span>` : ''}</div>`;
+  let h = '';
+  if (p.noBase) h += '<div class="pend-row"><span class="pend-what">Há alterações guardadas no navegador, mas não tenho a lista anterior para comparar. Elas entram no próximo commit.</span></div>';
+  if (p.add.length) h += `<div class="pend-sec">Novos (${p.add.length})</div>` + p.add.map(x => row('novo', 'add', x)).join('');
+  if (p.mod.length) h += `<div class="pend-sec">Editados (${p.mod.length})</div>` + p.mod.map(x => row('editado', 'mod', x.name, x.diffs.join(', '))).join('');
+  if (p.del.length) h += `<div class="pend-sec">Excluídos (${p.del.length})</div>` + p.del.map(x => row('excluído', 'del', x)).join('');
+  if (p.img.length) h += `<div class="pend-sec">Imagens na fila (${p.img.length})</div>` + p.img.map(x => row('imagem', 'img', x)).join('');
+  document.getElementById('pend-list').innerHTML = h || '<div class="pend-row"><span class="pend-what">Nada pendente.</span></div>';
+}
+function updateCommitBtn() {
+  setTimeout(renderPendingFab, 80);
+  const b = document.getElementById('it-backup-btn');
+  if (!b || b.disabled) return;
+  b.innerHTML = S.it.commitPending ? '📤 Commitar items.json <b style="color:var(--accent)">● pendente</b>' : '📤 Commitar items.json';
 }
 function buildItemsPayload() {
   return S.it.all.map(it => ({
@@ -998,6 +1087,7 @@ async function pushItemsJson() {
   if (_itemsCommitBusy) { _itemsCommitAgain = true; return; }
   if (!S.it.jsonReady || !S.it.all.length) return;
   _itemsCommitBusy = true; S.it.commitPending = false;
+  console.log('[commit-items] iniciando commit automático…');
   try {
     const data = buildItemsPayload();
     let admin = null;
@@ -1026,6 +1116,7 @@ async function pushItemsJson() {
     toast(`✅ items.json atualizado no GitHub (${data.length} itens${total ? ` + ${total} imagem(ns)` : ''}).`, 'ok');
   } catch (e) {
     S.it.commitPending = true;
+    console.error('[commit-items] falhou:', e);
     toast('Erro ao commitar items.json: ' + e.message + ' — use "Commitar items.json" para tentar de novo.', 'err');
   } finally {
     _itemsCommitBusy = false;
@@ -1072,7 +1163,7 @@ function toast(msg, type = '') {
   el.textContent = msg; el.className = 'toast ' + type;
   void el.offsetWidth;
   el.classList.add('show');
-  toastT = setTimeout(() => el.classList.remove('show'), 2800);
+  toastT = setTimeout(() => el.classList.remove('show'), type === 'err' ? 9000 : 2800);
 }
 
 /* ══════════════════════════════════════════
@@ -1320,7 +1411,12 @@ async function fetchItemsJson() {
 
 async function loadItems() {
   try {
-    let rows = await fetchItemsJson();
+    let rows = null;
+    try {
+      const d = JSON.parse(localStorage.getItem(IT_DRAFT_KEY) || 'null');
+      if (Array.isArray(d) && d.length) { rows = d; S.it.fromDraft = true; S.it.commitPending = true; toast('📝 Alterações salvas no navegador ainda não commitadas — clique em "Commitar items.json".', 'ok'); }
+    } catch (e) {}
+    if (!rows) rows = await fetchItemsJson();
     S.it.source = rows ? 'json' : 'supabase';
     if (!rows) rows = await sbSelect('items');   // reserva: só se o items.json não carregar
     S.it.dbMap = {};
@@ -1331,6 +1427,8 @@ async function loadItems() {
     S.it.jsonReady = true;
     populateItemCategoryFilter();
     applyItFilter();
+    if (!S.it.fromDraft) saveItemsBaseline(buildItemsPayload());
+    updateCommitBtn();
     // Varredura de sprites usa Supabase Storage: só roda quando a lista veio do Supabase
     // (com o items.json, os ícones vêm do GitHub e não se gasta cota).
     if (S.it.source === 'supabase') autoFetchMissingItemSprites();
@@ -2099,14 +2197,14 @@ async function backupItemsNow() {
     let result = {}; try { result = await res.json(); } catch (e) {}
     if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
     lote.forEach(i => PENDING_IMGS.delete(i.path));
-    if (!PENDING_IMGS.size) { ITEMS_DIRTY = false; S.it.commitPending = false; clearTimeout(_itemsCommitTimer); }
+    if (!PENDING_IMGS.size) { ITEMS_DIRTY = false; clearItemsDraft(); }
     toast(PENDING_IMGS.size
       ? `✅ Commit feito (${lote.length} imagens). Restam ${PENDING_IMGS.size} na fila: clique de novo.`
       : `✅ items.json + ${lote.length} imagem(ns) commitados num commit só (${data.length} itens).`, 'ok');
   } catch (e) {
     toast('Erro ao commitar: ' + e.message, 'err');
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; updateCommitBtn(); }
   }
 }
 
