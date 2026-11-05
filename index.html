@@ -549,6 +549,19 @@ body.edit-mode .page.active{padding-top:48px}
 .ed-img-ctx{position:fixed;z-index:8960;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:5px 7px;display:none;align-items:center;gap:3px;box-shadow:0 6px 20px rgba(0,0,0,.18);flex-wrap:wrap}
 .ed-img-ctx.visible{display:flex}
 .ed-img-selected{outline:2px solid var(--brand-mid)!important;outline-offset:2px;cursor:pointer}
+body.edit-mode [data-editing="1"] img{cursor:move;-webkit-user-drag:none;user-select:none}
+body.edit-mode .ed-img-selected{outline:none!important}
+.ed-img-dragging{opacity:.35}
+#ed-img-box{position:fixed;z-index:8950;display:none;pointer-events:none;border:2px solid var(--brand-mid);box-sizing:border-box}
+.ed-img-h{position:absolute;width:12px;height:12px;background:#fff;border:2px solid var(--brand-mid);border-radius:2px;pointer-events:auto;touch-action:none;box-sizing:border-box}
+.ed-img-h-nw{left:-7px;top:-7px;cursor:nwse-resize}
+.ed-img-h-ne{right:-7px;top:-7px;cursor:nesw-resize}
+.ed-img-h-sw{left:-7px;bottom:-7px;cursor:nesw-resize}
+.ed-img-h-se{right:-7px;bottom:-7px;cursor:nwse-resize}
+#ed-img-drop{position:fixed;z-index:9000;width:3px;background:var(--brand-mid);border-radius:2px;pointer-events:none;display:none}
+#ed-img-ghost{position:fixed;z-index:9001;pointer-events:none;opacity:.7;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.3);max-width:200px;height:auto}
+.ed-img-ctx.is-frame [data-only="free"]{display:none}
+.ed-img-ctx:not(.is-frame) [data-only="frame"]{display:none}
 
 /* ── Blocks insert panel ── */
 
@@ -1295,17 +1308,24 @@ body.edit-mode .ganhos-example-header{cursor:text}
 <div class="ed-img-ctx" id="ed-img-ctx">
   <span style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:0 2px">Imagem</span>
   <div class="ed-sep"></div>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgResize(0.5)"  title="50%">50%</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgResize(0.75)" title="75%">75%</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgResize(1)"    title="100%">100%</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgResize('full')" title="Largura total">Full</button>
+  <button class="ed-btn" onmousedown="event.preventDefault();edImgReplace()" title="Trocar a imagem mantendo posição e tamanho">🖼 Trocar</button>
   <div class="ed-sep"></div>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgAlign('left')"   title="Alinhar esquerda">⫷</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgAlign('center')" title="Centralizar">≡</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgAlign('right')"  title="Alinhar direita">⫸</button>
-  <div class="ed-sep"></div>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgRound()"   title="Arredondar bordas">◎ Round</button>
-  <button class="ed-btn" onmousedown="event.preventDefault();edImgShadow()"  title="Adicionar sombra">◫ Sombra</button>
+  <span data-only="frame" style="font-size:10px;color:var(--muted);padding:0 4px">Arraste p/ mover · roda do mouse ou cantos p/ zoom</span>
+  <button class="ed-btn" data-only="frame" onmousedown="event.preventDefault();edImgZoom(-0.25)" title="Diminuir zoom">−</button>
+  <button class="ed-btn" data-only="frame" onmousedown="event.preventDefault();edImgZoom(0.25)" title="Aumentar zoom">+</button>
+  <button class="ed-btn" data-only="frame" onmousedown="event.preventDefault();edImgResetFrame()" title="Centralizar e zerar zoom">⟲</button>
+  <span data-only="free" style="font-size:10px;color:var(--muted);padding:0 4px">Arraste p/ mover · cantos p/ redimensionar</span>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgResize(0.5)"  title="50%">50%</button>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgResize(0.75)" title="75%">75%</button>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgResize(1)"    title="100%">100%</button>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgResize('full')" title="Largura total">Full</button>
+  <div class="ed-sep" data-only="free"></div>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgAlign('left')"   title="Alinhar esquerda">⫷</button>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgAlign('center')" title="Centralizar">≡</button>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgAlign('right')"  title="Alinhar direita">⫸</button>
+  <div class="ed-sep" data-only="free"></div>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgRound()"   title="Arredondar bordas">◎ Round</button>
+  <button class="ed-btn" data-only="free" onmousedown="event.preventDefault();edImgShadow()"  title="Adicionar sombra">◫ Sombra</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edImgLink()"    title="Colocar imagem dentro de link">🔗</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edImgAlt()"     title="Editar texto alternativo">Alt</button>
   <button class="ed-btn" onmousedown="event.preventDefault();edImgDelete()" class="danger" title="Remover imagem">✕</button>
@@ -8769,6 +8789,8 @@ let editOriginalHTML = {};
 let _edCropper = null;
 let _edSavedRange = null;
 let _edSelectedImg = null;
+let _edReplaceImg = null;
+let _edCropRatio = NaN;
 let _edDraftKey = null;
 
 function showEditBtnIfAdm(){
@@ -9213,13 +9235,15 @@ function edImgClickHandler(e){
 function edShowImgCtx(img){
   const ctx = document.getElementById('ed-img-ctx');
   if(_edSelectedImg) _edSelectedImg.classList.remove('ed-img-selected');
-  if(!img){ ctx.classList.remove('visible'); _edSelectedImg=null; return; }
+  if(!img){ ctx.classList.remove('visible'); _edSelectedImg=null; if(window.edImgBoxUpdate) edImgBoxUpdate(); return; }
   _edSelectedImg = img;
   img.classList.add('ed-img-selected');
+  ctx.classList.toggle('is-frame', !!img.closest('.cls-frame'));
   ctx.classList.add('visible');
   const r = img.getBoundingClientRect();
   ctx.style.top  = Math.max(100, r.top - (ctx.offsetHeight||40) - 6) + 'px';
-  ctx.style.left = Math.min(r.left, window.innerWidth - (ctx.offsetWidth||300) - 12) + 'px';
+  ctx.style.left = Math.max(8, Math.min(r.left, window.innerWidth - (ctx.offsetWidth||300) - 12)) + 'px';
+  if(window.edImgBoxUpdate) edImgBoxUpdate();
 }
 function edImgResize(factor){
   const img = _edSelectedImg; if(!img) return;
@@ -9275,6 +9299,218 @@ function edImgDelete(){
   else img.remove();
   edShowImgCtx(null);
 }
+
+
+// ── Imagens: mover, redimensionar, trocar, pan/zoom em molduras ───
+function edImgCommit(){
+  const page = document.querySelector('[data-editing="1"]');
+  if(page) page.dispatchEvent(new Event('input', {bubbles:true}));
+  if(typeof edPushUndo === 'function') edPushUndo();
+}
+function edImgReplace(){
+  const img = _edSelectedImg; if(!img) return;
+  _edReplaceImg = img;
+  const fr = img.closest('.cls-frame');
+  _edCropRatio = (fr && fr.clientWidth && fr.clientHeight) ? fr.clientWidth / fr.clientHeight : NaN;
+  edOpenUploadModal();
+}
+function edImgApplyReplace(img, src, alt){
+  img.src = src;
+  if(alt) img.alt = alt;
+  edImgResetFrame(true);
+  edShowImgCtx(img);
+  edImgCommit();
+}
+function edImgResetFrame(silent){
+  const img = _edSelectedImg || null; if(!img || !img.closest('.cls-frame')) return;
+  ['--px','--py','--z'].forEach(k=>img.style.removeProperty(k));
+  if(!silent){ edShowImgCtx(img); edImgCommit(); }
+}
+function edImgZoom(delta){
+  const img = _edSelectedImg; if(!img || !img.closest('.cls-frame')) return;
+  const z = Math.min(4, Math.max(1, (parseFloat(img.style.getPropertyValue('--z'))||1) + delta));
+  img.style.setProperty('--z', z.toFixed(2));
+  edShowImgCtx(img); edImgCommit();
+}
+(function(){
+  const D = document;
+  const PAGE = () => D.querySelector('[data-editing="1"]');
+  const editing = () => D.body.classList.contains('edit-mode') && PAGE();
+  const isFrame = img => !!(img && img.closest && img.closest('.cls-frame'));
+  const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+  const num = (img,k,def) => { const v = parseFloat(img.style.getPropertyValue(k)); return isNaN(v) ? def : v; };
+  const scaleOf = el => { const r = el.getBoundingClientRect(); const w = el.offsetWidth || r.width || 1; return (r.width / w) || 1; };
+  let box = null, drop = null, ghost = null, drag = null, swallow = false;
+
+  function ensureBox(){
+    if(box) return box;
+    box = D.createElement('div'); box.id = 'ed-img-box';
+    ['nw','ne','sw','se'].forEach(d=>{
+      const h = D.createElement('div'); h.className = 'ed-img-h ed-img-h-'+d; h.dataset.dir = d; box.appendChild(h);
+    });
+    D.body.appendChild(box);
+    box.addEventListener('pointerdown', onHandleDown);
+    return box;
+  }
+  window.edImgBoxUpdate = function(){
+    const img = _edSelectedImg;
+    if(!img || !editing() || !img.isConnected){ if(box) box.style.display = 'none'; return; }
+    ensureBox();
+    const r = img.getBoundingClientRect();
+    box.style.display = 'block';
+    box.style.left = r.left+'px'; box.style.top = r.top+'px';
+    box.style.width = r.width+'px'; box.style.height = r.height+'px';
+  };
+  window.addEventListener('resize', ()=>{ if(_edSelectedImg) edShowImgCtx(_edSelectedImg); });
+
+  // ── alças: redimensionar (imagem livre) ou zoom (moldura) ──
+  function onHandleDown(e){
+    const h = e.target.closest('.ed-img-h'); const img = _edSelectedImg;
+    if(!h || !img || e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    h.setPointerCapture(e.pointerId);
+    const r = img.getBoundingClientRect();
+    drag = {kind: isFrame(img) ? 'zoom' : 'resize', img, dir: h.dataset.dir, x0: e.clientX, w0: r.width || 1, k: scaleOf(img), z0: num(img,'--z',1)};
+    h.onpointermove = onHandleMove; h.onpointerup = h.onpointercancel = onHandleUp;
+  }
+  function onHandleMove(e){
+    if(!drag) return;
+    const sign = drag.dir.indexOf('w') >= 0 ? -1 : 1;
+    const dx = (e.clientX - drag.x0) * sign;
+    const img = drag.img;
+    if(drag.kind === 'resize'){
+      img.style.width = Math.max(30, Math.round((drag.w0 + dx) / drag.k)) + 'px';
+      img.style.height = 'auto'; img.style.maxWidth = '100%';
+    } else {
+      img.style.setProperty('--z', clamp(drag.z0 * (1 + dx / drag.w0), 1, 4).toFixed(2));
+    }
+    edShowImgCtx(img);
+  }
+  function onHandleUp(e){
+    const h = e.target;
+    if(h){ h.onpointermove = h.onpointerup = h.onpointercancel = null; try{ h.releasePointerCapture(e.pointerId); }catch(_){} }
+    if(drag){ drag = null; edImgCommit(); }
+  }
+
+  // ── arrastar a imagem: mover (livre) ou deslocar dentro da moldura ──
+  function rangeAt(x, y){
+    if(D.caretRangeFromPoint) return D.caretRangeFromPoint(x, y);
+    if(D.caretPositionFromPoint){
+      const p = D.caretPositionFromPoint(x, y); if(!p) return null;
+      const r = D.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r;
+    }
+    return null;
+  }
+  function validTarget(range, img){
+    if(!range) return false;
+    const page = PAGE(); const c = range.startContainer;
+    if(!page || !page.contains(c)) return false;
+    if(img.contains(c)) return false;
+    const el = c.nodeType === 1 ? c : c.parentElement;
+    if(!el || el.closest('.ed-drag-handle,style,script,.ed-spacer,.cls-frame')) return false;
+    return true;
+  }
+  D.addEventListener('pointerdown', e=>{
+    if(e.button !== 0 || !editing() || drag) return;
+    const t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#ed-img-box')) return;
+    const img = t.closest('img');
+    if(!img || !PAGE().contains(img)) return;
+    edShowImgCtx(img);
+    e.preventDefault();
+    const frame = isFrame(img);
+    drag = {kind: frame ? 'pan' : 'move', img, x0: e.clientX, y0: e.clientY, started: false, pid: e.pointerId};
+    if(frame){
+      const fr = img.closest('.cls-frame');
+      drag.fw = fr.clientWidth || 1; drag.fh = fr.clientHeight || 1;
+      drag.px0 = num(img,'--px',50); drag.py0 = num(img,'--py',50); drag.z = num(img,'--z',1);
+      const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
+      const s = (nw && nh) ? Math.max(drag.fw/nw, drag.fh/nh) : 0;
+      drag.ox = s ? Math.max(0, nw*s - drag.fw) : 0;
+      drag.oy = s ? Math.max(0, nh*s - drag.fh) : 0;
+    }
+    D.addEventListener('pointermove', onDocMove);
+    D.addEventListener('pointerup', onDocUp);
+    D.addEventListener('pointercancel', onDocUp);
+  }, true);
+
+  function onDocMove(e){
+    if(!drag || drag.kind === 'zoom' || drag.kind === 'resize') return;
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if(!drag.started && Math.hypot(dx, dy) < 4) return;
+    const img = drag.img;
+    if(drag.kind === 'pan'){
+      drag.started = true;
+      const z = drag.z;
+      const rx = drag.ox * z + drag.fw * (z - 1), ry = drag.oy * z + drag.fh * (z - 1);
+      if(rx > 1) img.style.setProperty('--px', clamp(drag.px0 - dx * 100 / rx, 0, 100).toFixed(1) + '%');
+      if(ry > 1) img.style.setProperty('--py', clamp(drag.py0 - dy * 100 / ry, 0, 100).toFixed(1) + '%');
+      return;
+    }
+    // mover
+    if(!drag.started){
+      drag.started = true;
+      img.classList.add('ed-img-dragging');
+      ghost = img.cloneNode(false);
+      ghost.removeAttribute('id'); ghost.className = ''; ghost.id = 'ed-img-ghost';
+      ghost.style.cssText = 'width:'+Math.min(200, img.getBoundingClientRect().width)+'px';
+      D.body.appendChild(ghost);
+      drop = D.createElement('div'); drop.id = 'ed-img-drop'; D.body.appendChild(drop);
+      if(box) box.style.display = 'none';
+    }
+    ghost.style.left = (e.clientX + 12) + 'px'; ghost.style.top = (e.clientY + 12) + 'px';
+    ghost.style.display = 'none';
+    const range = rangeAt(e.clientX, e.clientY);
+    ghost.style.display = '';
+    drag.range = validTarget(range, img) ? range : null;
+    if(drag.range){
+      const rects = drag.range.getClientRects();
+      let r = rects && rects[0];
+      if(!r || (!r.height && !r.width)){
+        const c = drag.range.startContainer; const el = c.nodeType === 1 ? c : c.parentElement;
+        const b = el.getBoundingClientRect(); r = {left: b.left, top: b.top, height: Math.min(b.height, 24)};
+      }
+      drop.style.display = 'block';
+      drop.style.left = r.left + 'px'; drop.style.top = r.top + 'px'; drop.style.height = Math.max(16, r.height) + 'px';
+    } else {
+      drop.style.display = 'none';
+    }
+  }
+  function onDocUp(){
+    D.removeEventListener('pointermove', onDocMove);
+    D.removeEventListener('pointerup', onDocUp);
+    D.removeEventListener('pointercancel', onDocUp);
+    const d = drag; drag = null;
+    if(ghost){ ghost.remove(); ghost = null; }
+    if(drop){ drop.remove(); drop = null; }
+    if(!d) return;
+    const img = d.img;
+    img.classList.remove('ed-img-dragging');
+    if(!d.started) return;
+    swallow = true; setTimeout(()=>{ swallow = false; }, 0);
+    if(d.kind === 'move' && d.range && img.isConnected){
+      const node = (img.parentElement && img.parentElement.tagName === 'A') ? img.parentElement : img;
+      d.range.insertNode(node);
+      const page = PAGE(); if(page && typeof edAddDragHandles === 'function') edAddDragHandles(page);
+    }
+    edShowImgCtx(img);
+    edImgCommit();
+  }
+  D.addEventListener('click', e=>{ if(swallow){ e.preventDefault(); e.stopPropagation(); swallow = false; } }, true);
+  D.addEventListener('dragstart', e=>{ if(editing() && e.target && e.target.tagName === 'IMG') e.preventDefault(); }, true);
+
+  // ── roda do mouse: zoom na moldura ──
+  let wheelT = 0;
+  D.addEventListener('wheel', e=>{
+    if(!editing()) return;
+    const img = e.target && e.target.closest ? e.target.closest('.cls-frame img') : null;
+    if(!img || img !== _edSelectedImg) return;
+    e.preventDefault();
+    const z = clamp(num(img,'--z',1) - e.deltaY * 0.002, 1, 4);
+    img.style.setProperty('--z', z.toFixed(2));
+    clearTimeout(wheelT); wheelT = setTimeout(edImgCommit, 400);
+  }, {passive:false});
+})();
 
 // ── Toolbar state update ──────────────────────────────────────────
 function edUpdateToolbar(){
@@ -9391,6 +9627,7 @@ function edCloseUploadModal(){
   document.getElementById('ed-upload-drop').style.display='';
   document.getElementById('ed-file-input').value='';
   _edSavedRange = null;
+  _edReplaceImg = null; _edCropRatio = NaN;
 }
 function edSwitchUploadTab(tab){
   document.getElementById('ed-utab-upload').classList.toggle('active', tab==='upload');
@@ -9408,7 +9645,7 @@ function edHandleFileSelect(input){
     document.getElementById('ed-crop-section').style.display = '';
     if(_edCropper){ _edCropper.destroy(); }
     if(typeof Cropper !== 'undefined'){
-      _edCropper = new Cropper(img, {viewMode:1, autoCropArea:1, responsive:true});
+      _edCropper = new Cropper(img, {viewMode:1, autoCropArea:1, responsive:true, aspectRatio:_edCropRatio});
     }
   };
   reader.readAsDataURL(file);
@@ -9442,16 +9679,18 @@ function edInsertCroppedImg(){
   if(!_edCropper){ return; }
   const canvas = _edCropper.getCroppedCanvas({maxWidth:1200,maxHeight:1200});
   const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-  const range = _edSavedRange;
+  const range = _edSavedRange, rep = _edReplaceImg;
   edCloseUploadModal();
+  if(rep){ edImgApplyReplace(rep, dataUrl, ''); return; }
   _edRestoreAndInsertImg(dataUrl, '', range);
 }
 function edInsertImgFromUrl(){
   const url = document.getElementById('ed-url-input').value.trim();
   const alt = document.getElementById('ed-url-alt').value.trim();
   if(!url) return;
-  const range = _edSavedRange;
+  const range = _edSavedRange, rep = _edReplaceImg;
   edCloseUploadModal();
+  if(rep){ edImgApplyReplace(rep, url, alt); return; }
   _edRestoreAndInsertImg(url, alt, range);
 }
 function _edRestoreAndInsertImg(src, alt, range){
