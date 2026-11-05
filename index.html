@@ -8958,7 +8958,7 @@ function edAddDragHandles(page){
   if(!page) return;
   page.querySelectorAll('.ed-drag-handle').forEach(h=>h.remove());
   Array.from(page.children).forEach(child=>{
-    if(child.classList.contains('ed-drag-handle') || child.hasAttribute('data-ed-tail')) return;
+    if(child.classList.contains('ed-drag-handle') || child.hasAttribute('data-ed-tail') || /^(STYLE|SCRIPT)$/.test(child.tagName)) return;
     const handle = document.createElement('span');
     handle.className = 'ed-drag-handle';
     handle.setAttribute('contenteditable','false');
@@ -9345,12 +9345,15 @@ function edConfirmLink(){
   const txt = document.getElementById('ed-link-text').value.trim();
   const blank = document.getElementById('ed-link-blank').checked;
   if(!url) return;
+  const _linkRange = _edSavedRange;
   edCloseLinkModal();
   // Restore selection
-  if(_edSavedRange){
+  const _pg = document.querySelector('[data-editing="1"]');
+  if(_pg) _pg.focus();
+  if(_linkRange){
     const sel = window.getSelection();
     sel.removeAllRanges();
-    sel.addRange(_edSavedRange);
+    sel.addRange(_linkRange);
   }
   const target = blank ? ' target="_blank" rel="noopener"' : '';
   if(txt){
@@ -9377,6 +9380,7 @@ function edOpenUploadModal(){
   // Save selection range so we can insert after modal closes
   const sel = window.getSelection();
   if(sel && sel.rangeCount>0) _edSavedRange = sel.getRangeAt(0).cloneRange();
+  edSwitchUploadTab('upload');
   document.getElementById('ed-upload-modal').classList.add('visible');
 }
 function edCloseUploadModal(){
@@ -9438,23 +9442,48 @@ function edInsertCroppedImg(){
   if(!_edCropper){ return; }
   const canvas = _edCropper.getCroppedCanvas({maxWidth:1200,maxHeight:1200});
   const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  const range = _edSavedRange;
   edCloseUploadModal();
-  _edRestoreAndInsertImg(dataUrl, '');
+  _edRestoreAndInsertImg(dataUrl, '', range);
 }
 function edInsertImgFromUrl(){
   const url = document.getElementById('ed-url-input').value.trim();
   const alt = document.getElementById('ed-url-alt').value.trim();
   if(!url) return;
+  const range = _edSavedRange;
   edCloseUploadModal();
-  _edRestoreAndInsertImg(url, alt);
+  _edRestoreAndInsertImg(url, alt, range);
 }
-function _edRestoreAndInsertImg(src, alt){
-  if(_edSavedRange){
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(_edSavedRange);
+function _edRestoreAndInsertImg(src, alt, range){
+  const page = document.querySelector('[data-editing="1"]');
+  if(!page) return;
+  page.focus();
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  if(range && page.contains(range.commonAncestorContainer)){
+    sel.addRange(range);
+  } else {
+    // sem cursor válido na página: insere no fim
+    const r = document.createRange();
+    r.selectNodeContents(page); r.collapse(false);
+    sel.addRange(r);
   }
-  document.execCommand('insertHTML', false, `<img src="${src}" alt="${alt}" style="max-width:100%;height:auto;display:block;margin:8px 0"/>`);
+  const esc = v => String(v||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const html = `<img src="${esc(src)}" alt="${esc(alt)}" style="max-width:100%;height:auto;display:block;margin:8px 0"/>`;
+  let ok = false;
+  try{ ok = document.execCommand('insertHTML', false, html); }catch(e){}
+  if(!ok){
+    const r = sel.rangeCount ? sel.getRangeAt(0) : null;
+    if(r){
+      const tpl = document.createElement('template'); tpl.innerHTML = html;
+      r.deleteContents(); r.insertNode(tpl.content);
+    } else {
+      page.insertAdjacentHTML('beforeend', html);
+    }
+  }
+  edAddDragHandles(page);
+  page.dispatchEvent(new Event('input', {bubbles:true}));
+  edPushUndo();
 }
 
 // ── Insert video embed ────────────────────────────────────────────
