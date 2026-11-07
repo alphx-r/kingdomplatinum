@@ -34,10 +34,10 @@ function limpa(m) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
-  const { GITHUB_TOKEN, GITHUB_REPO } = process.env;
+  const { GITHUB_QG_TOKEN, GITHUB_QG_REPO } = process.env;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const path = process.env.MISSOES_PATH || 'missoes/missoes.json';
-  if (!GITHUB_TOKEN || !GITHUB_REPO) return res.status(500).json({ error: 'Servidor sem GITHUB_TOKEN/GITHUB_REPO configurados na Vercel.' });
+  if (!GITHUB_QG_TOKEN || !GITHUB_QG_REPO) return res.status(500).json({ error: 'Servidor sem GITHUB_TOKEN/GITHUB_REPO configurados na Vercel.' });
 
   let b = req.body;
   try { if (typeof b === 'string') b = JSON.parse(b || '{}'); } catch { b = {}; }
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
   } catch {}
   if (!adm || !adm.nome) return res.status(401).json({ error: 'E-mail ou senha de admin incorretos.' });
 
-  const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const url = `https://api.github.com/repos/${GITHUB_QG_REPO}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
   const gh = { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'quests-guild' };
 
   // lê o arquivo atual, aplica por id (nada além das missões enviadas é tocado) e commita; 1 nova tentativa se alguém commitou no meio
