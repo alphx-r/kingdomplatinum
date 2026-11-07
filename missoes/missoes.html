@@ -191,9 +191,9 @@ dialog#acm::backdrop,dialog#pbm::backdrop,dialog#cfg::backdrop{background:rgba(1
 .pms{-webkit-appearance:none;appearance:none;min-height:42px;padding:10px 38px 10px 14px;border:0;border-radius:10px;background-color:var(--surface);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23778' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;color:var(--text);font:800 13px var(--font-body);box-shadow:0 1px 6px rgba(0,0,0,.1);cursor:pointer;outline:none;text-overflow:ellipsis}
 .pms{min-width:0;max-width:100%}
 .pms:focus-visible{box-shadow:0 0 0 2px var(--brand-mid)}
-.fabm{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:300;display:flex;align-items:center;justify-content:center;width:54px;height:54px;border:0;border-radius:50%;padding:0;background:var(--brand-mid);color:#fff;font:800 13px var(--font-body);cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.35);transition:transform .15s}
+.fabm{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:300;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border:0;border-radius:50%;padding:0;background:var(--brand-mid);background:color-mix(in srgb,var(--brand-mid) 50%,transparent);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);color:#fff;font:800 13px var(--font-body);cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);transition:transform .15s}
 .fabm:active{transform:scale(.96)}
-.fabb{position:absolute;top:-6px;right:-4px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--red,#c0392b);color:#fff;font:800 11px/20px var(--font-body);text-align:center;box-sizing:border-box}
+.fabb{position:absolute;top:-5px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--red,#c0392b);color:#fff;font:800 9px/16px var(--font-body);text-align:center;box-sizing:border-box}
 dialog#mym{width:min(720px,96vw);max-height:88vh;padding:0;border:0;border-radius:16px;overflow:hidden;background:var(--bg,var(--surface2));color:var(--text);box-shadow:0 16px 60px rgba(0,0,0,.45)}
 dialog#mym[open]{display:flex;flex-direction:column}
 dialog#mym::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
@@ -310,7 +310,7 @@ dialog#imp{width:min(680px,94vw)}
   <div class="pmg" id="board"><div class="empty">Carregando missões…</div></div>
 </div>
 
-<button type="button" class="fabm" id="fab-min" title="Minhas missões" aria-label="Minhas missões" style="display:none" onclick="abrirMinhas()"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg><span class="fabb" id="fab-bd" style="display:none"></span></button>
+<button type="button" class="fabm" id="fab-min" title="Minhas missões" aria-label="Minhas missões" style="display:none" onclick="abrirMinhas()"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg><span class="fabb" id="fab-bd" style="display:none"></span></button>
 <dialog id="mym" onclick="if(event.target===this)this.close()">
   <div class="mymh"><h3>Minhas missões</h3><button type="button" class="mymx" aria-label="Fechar" onclick="mym.close()">✕</button></div>
   <div class="pmg mymc" id="mym-list"></div>
@@ -889,9 +889,21 @@ $('f-q').addEventListener('input',()=>{if(!qDig&&$('f-q').value){$('f-q').value=
 function pmSc(){const h=document.querySelector('.pmh');if(!h)return;const y=scrollY;if(y>90)h.classList.add('sm');else if(y<15)h.classList.remove('sm')}
 addEventListener('scroll',pmSc,{passive:true});
 
+/* personagens do player logado: tenta por id, depois por nome (sem diferenciar maiúsculas) e, por último, varre a tabela comparando sem acento/caixa */
+async function carregarPersonagens(){
+ const nomes=new Map(),add=l=>(l||[]).forEach(p=>{if(p&&p.nome)nomes.set(nrm(p.nome),p.nome)});
+ const tenta=async q=>{try{return await api(q)}catch(e){console.warn('personagens:',q,e.message);return null}};
+ add(await tenta('personagens?player_id=eq.'+encodeURIComponent(me.id)+'&select=nome&order=nome.asc'));
+ add(await tenta('personagens?player=ilike.'+encodeURIComponent(String(me.nome).replace(/[*%]/g,''))+'&select=nome&order=nome.asc'));
+ if(!nomes.size){
+  const todos=await tenta('personagens?select=*&limit=5000')||[],alvo=nrm(me.nome);
+  add(todos.filter(p=>[p.player,p.player_nome,p.jogador,p.dono].some(v=>v!=null&&nrm(v)===alvo)||(p.player_id!=null&&String(p.player_id)===String(me.id))));
+ }
+ return [...nomes.values()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
 async function boot(){
  mostrarBadge();me=meAtual();meusPers=[];$('btn-cfg').style.display=isAdm()?'flex':'none';
- if(me){try{meusPers=(await api('personagens?player=eq.'+encodeURIComponent(me.nome)+'&select=nome&order=nome.asc')).map(p=>p.nome)}catch{}}
+ if(me)meusPers=await carregarPersonagens();
  if(await carregarDados())render();
  fim();
 }
