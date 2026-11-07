@@ -1905,16 +1905,7 @@ body.edit-mode .ganhos-example-header{cursor:text}
       <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Bônus Adicionais</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
 
-        <div class="calc-auto-cel">
-          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">STAB</div>
-          <div style="display:flex;flex-direction:column;gap:4px" id="calc-stab-list">
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0" checked onchange="calcDano()"/> Sem STAB</label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.20" onchange="calcDano()"/> STAB normal (+20%)</label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.40" onchange="calcDano()"/> Adaptability (+40%)</label>
-          </div>
-        </div>
-
-        <div class="calc-auto-cel">
+        <div>
           <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Diferença de Estágios de Status</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada estágio = +4 de dano. Positivo = atacante buff, negativo = defensor buff.</div>
           <div style="display:flex;align-items:center;gap:8px">
@@ -2083,8 +2074,7 @@ const CALC_DEFAULTS = {
   ],
   stab: [
     {label:'Sem STAB',        value:0},
-    {label:'STAB normal',     value:0.20},
-    {label:'Adaptability',    value:0.40}
+    {label:'STAB normal',     value:0.20}
   ]
 };
 
@@ -2102,7 +2092,7 @@ async function calcAdmLoad(){
       situ:  map['calc_situ']  || JSON.parse(JSON.stringify(CALC_DEFAULTS.situ)),
       tiers: map['calc_tiers'] || JSON.parse(JSON.stringify(CALC_DEFAULTS.tiers)),
       bonus: map['calc_bonus'] || JSON.parse(JSON.stringify(CALC_DEFAULTS.bonus)),
-      stab:  map['calc_stab']  || JSON.parse(JSON.stringify(CALC_DEFAULTS.stab)),
+      stab:  (map['calc_stab']  || JSON.parse(JSON.stringify(CALC_DEFAULTS.stab))).filter(s => !/adaptab/i.test(s && s.label)), // Adaptability é habilidade: automática pelo Pokémon
     };
   } catch(e) {
     _calcAdmData = JSON.parse(JSON.stringify(CALC_DEFAULTS));
@@ -2358,8 +2348,9 @@ function calcSyncSelects(){
 
   // Sync STAB radio buttons from data
   const stabList = document.getElementById('calc-stab-list');
-  if(stabList && data.stab && data.stab.length){
-    stabList.innerHTML = data.stab.map((s,i) =>
+  const stabOpts = (data.stab || []).filter(s => !/adaptab/i.test(s && s.label));
+  if(stabList && stabOpts.length){
+    stabList.innerHTML = stabOpts.map((s,i) =>
       `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer">
         <input type="radio" name="calc-stab" value="${s.value}" ${i===0?'checked':''} onchange="calcDano()"/> ${s.label}${s.value>0?' (+'+(s.value*100)+'%)':''}
       </label>`
@@ -2881,8 +2872,8 @@ function calcSyncSelects(){
     if(res.status) return 'sem dano';
     if(res.imune) return res.bloqueado ? 'Bloqueado pelo clima' : 'Imune';
     const hp = hpEfetivo(D);
-    const pct = hp ? ' ('+(Math.round(res.min/hp*1000)/10)+'–'+(Math.round(res.max/hp*1000)/10)+'%)' : '';
-    return res.min+'–'+res.max+pct+' · T'+res.tier+(res.manual ? ' (manual)' : '');
+    const pct = (hp && hp !== 100) ? ' ('+(Math.round(res.min/hp*1000)/10)+'–'+(Math.round(res.max/hp*1000)/10)+'% do HP)' : '';
+    return res.min+'–'+res.max+' HP'+pct+' · T'+res.tier+(res.manual ? ' (manual)' : '');
   }
 
   // ── API usada pelo calcDano ──────────────────────────────
@@ -2899,7 +2890,7 @@ function calcSyncSelects(){
       status: auto && !!r.status,
       bloqueado: auto && !!r.bloqueado,
       clima: (auto && m.tipo && !r.status) ? {mult: r.climaMult, nome: window.calcClimaNome(climaAtual())} : null,
-      stab: auto ? r.stab : null,
+      stab: r.stab, // STAB sempre automático: tipos do atacante × tipo do golpe (+ Adaptability / Tera)
       situ: (auto && r.crit) ? 3 : null,
       rotulo: (A.nivel != null ? 'Lv '+A.nivel : 'Lv ?') + ' → ' + (D.nivel != null ? 'Lv '+D.nivel : 'Lv ?')
     };
@@ -2953,10 +2944,10 @@ function calcSyncSelects(){
       let hpAtual = D.hpAtual > 0 ? D.hpAtual * (D.dyn ? 2 : 1) : hpMax;
       hpAtual = Math.min(hpAtual, hpMax);
       const pMin = Math.round(r.danoMin/hpMax*1000)/10, pMax = Math.round(r.danoMax/hpMax*1000)/10;
-      partes.push('<b>'+r.danoMin+'–'+r.danoMax+'</b> de '+hpAtual+(hpAtual !== hpMax ? '/'+hpMax : '')+' HP ('+pMin+'–'+pMax+'% do HP máx.)');
+      // dano em pontos de HP; a % só aparece quando o HP máx. não é 100 (senão seria o mesmo número)
+      partes.push('causa <b>'+r.danoMin+'–'+r.danoMax+' de dano</b> · alvo ('+hpAtual+(hpAtual !== hpMax ? '/'+hpMax : '')+'HP) fica com <b>'+Math.max(0, hpAtual-r.danoMax)+'–'+Math.max(0, hpAtual-r.danoMin)+'</b>'+(hpMax !== 100 ? ' ('+pMin+'–'+pMax+'% do HP máx.)' : ''));
       if(r.danoMin >= hpAtual) partes.push('<b>nocaute garantido em 1 golpe</b>');
       else if(r.danoMax >= hpAtual) partes.push('<b>possível nocaute em 1 golpe</b>');
-      else partes.push('nocaute em <b>'+Math.ceil(hpAtual/r.danoMax)+'–'+Math.ceil(hpAtual/Math.max(1, r.danoMin))+'</b> golpes');
     }
     const vel = velocidades(A, D);
     if(vel) partes.push(vel);
@@ -3053,8 +3044,7 @@ function calcSyncSelects(){
     box.style.display = '';
     const {A, D} = papeis();
     const fa = forcaLado(A, D, A.golpes[A.ativo-1]), fd = forcaLado(D, A, D.golpes[D.ativo-1]);
-    let html = '<div style="border:1.5px solid var(--border);background:var(--surface2);border-radius:10px;padding:12px 14px;margin-top:10px">'
-      + '<div style="font-size:11px;font-weight:700;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Disputa de Força</div>'
+    let html = '<div style="border:1.5px solid var(--brand-mid);border-top:0;background:var(--surface2);border-radius:0 0 10px 10px;padding:12px 14px;margin-bottom:12px">'
       + '<div style="display:flex;flex-direction:column;gap:8px">' + linhaForca(fa) + linhaForca(fd) + '</div>';
     if(fa.ok && fd.ok){
       const tot = fa.forca + fd.forca;
@@ -3614,6 +3604,16 @@ function calcSyncSelects(){
     .cpk-btn{font-size:11px;padding:5px 10px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-weight:700}
     .cpk-btn.mut{color:var(--muted);font-weight:600}
     .cpk-auto{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer}
+    .cpk-disp-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1.5px solid var(--border);background:var(--surface2);border-radius:10px;padding:9px 12px;margin-bottom:12px;cursor:pointer}
+    .cpk-disp-bar:has(input:checked){border-color:var(--brand-mid);margin-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}
+    .cpk-disp-title{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.5px}
+    .cpk-disp-sub{font-size:11px;color:var(--muted);flex:1;min-width:0}
+    .cpk-switch{position:relative;width:36px;height:20px;flex:none}
+    .cpk-switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+    .cpk-knob{position:absolute;inset:0;border-radius:20px;background:var(--border);transition:background .15s;pointer-events:none}
+    .cpk-knob::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}
+    .cpk-switch input:checked+.cpk-knob{background:var(--brand)}
+    .cpk-switch input:checked+.cpk-knob::after{transform:translateX(16px)}
     .cpk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:12px;margin-bottom:12px}
     .cpk-panel,.cpk-body,.cpk-grid{min-width:0;max-width:100%;box-sizing:border-box}
     .cpk-card{min-width:0;box-sizing:border-box;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:12px}
@@ -3644,7 +3644,7 @@ function calcSyncSelects(){
     .cpk-card .cpk-mv2 input{width:auto}
     .cpk-ficha{border-bottom:1.5px dashed var(--border);margin-bottom:10px;padding-bottom:2px}
     .cpk-mv.bola{background:var(--brand-light);border-radius:8px;padding:6px}
-    .cpk-addmv{justify-self:start}
+    .cpk-addmv{justify-self:stretch;width:100%;padding:8px 10px;border-style:dashed;text-align:center}
     .cpk-res{font-weight:800;color:var(--brand);font-size:12px;margin-left:auto}
     .cpk-info{font-size:12px;color:var(--text);line-height:1.6}
     .cpk-mv + .cpk-mv{border-top:1px dashed var(--border);padding-top:8px}
@@ -3674,6 +3674,9 @@ function calcSyncSelects(){
   const optTipos = ph => '<option value="">'+ph+'</option>' + TIPOS.map(t => '<option value="'+t+'">'+cap(t)+'</option>').join('');
   const stageSel = id => '<select id="'+id+'" class="cpk-st" title="Estágio">'+[6,5,4,3,2,1,0,-1,-2,-3,-4,-5,-6].map(v => '<option value="'+v+'"'+(v===0?' selected':'')+'>'+(v>0?'+':'')+v+'</option>').join('')+'</select>';
 
+  // Atacante = espada vermelha · Defensor = escudo azul
+  const ICO_ATK = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:#d32f2f"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><path d="M19 21l2-2"/></svg>';
+  const ICO_DEF = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:#1e6fd9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
   function cardHtml(s, titulo){
     const id = x => 'cpk-'+s+'-'+x;
     const stat = (k, rot) => '<div class="cpk-stat"><span>'+rot+'</span><input id="'+id(k)+'" type="number" min="1" max="255" placeholder="base"/>'+stageSel(id('e'+k))+'</div>';
@@ -3722,7 +3725,7 @@ function calcSyncSelects(){
           <label title="Net Ball libera String Shot · Dive Ball libera Dive (1× por batalha)">Ball <select id="${id('bola')}"><option value="">—</option>${[...Object.keys(BOLAS), ...BOLAS_SEM_GOLPE].map(k => '<option value="'+k+'">'+rotuloBola(k)+'</option>').join('')}</select></label>
         </div>
         <div class="cpk-status" id="${id('status')}"></div>
-        <div class="cpk-moves" id="${id('moves')}" data-n="${GOLPES_INICIAIS}">${SLOTS.map(mv).join('')}<button type="button" class="cpk-btn mut cpk-addmv" data-s="${s}" id="${id('addmv')}">+ golpe (até ${GOLPES_MAX})</button></div>
+        <div class="cpk-moves" id="${id('moves')}" data-n="${GOLPES_INICIAIS}">${SLOTS.map(mv).join('')}<button type="button" class="cpk-btn mut cpk-addmv" data-s="${s}" id="${id('addmv')}">+ golpe</button></div>
       </div>`;
   }
 
@@ -3798,12 +3801,16 @@ function calcSyncSelects(){
         <input type="checkbox" id="cpk-auto" checked hidden/>
         <button type="button" class="cpk-btn" id="cpk-swap" title="Troca todos os dados entre Pokémon 1 e 2">⇄ Trocar</button>
         <button type="button" class="cpk-btn mut" id="cpk-clear">Limpar</button>
-        <label class="cpk-auto" style="margin-left:auto"><input type="checkbox" id="cpk-disputa-on"/> Disputa de força</label>
       </div>
-      <div class="cpk-grid">${cardHtml('p1','Pokémon 1')}${cardHtml('p2','Pokémon 2')}</div>
+      <div class="cpk-grid">${cardHtml('p1', ICO_ATK+' Atacante · Pokémon 1')}${cardHtml('p2', ICO_DEF+' Defensor · Pokémon 2')}</div>
+      <label class="cpk-disp-bar" for="cpk-disputa-on">
+        <span class="cpk-disp-title"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5v11M1 9v6M17.5 6.5v11M23 9v6M6.5 12h11"/></svg>Disputa de Força</span>
+        <span class="cpk-disp-sub">compara o golpe ativo dos dois lados</span>
+        <span class="cpk-switch"><input type="checkbox" id="cpk-disputa-on"/><span class="cpk-knob"></span></span>
+      </label>
+      <div id="cpk-disputa" style="display:none"></div>
       <div class="cpk-info" id="cpk-nivel-info"></div>
       <div class="cpk-hints" id="cpk-hints"></div>
-      <div id="cpk-disputa" style="display:none"></div>
       <datalist id="cpk-nomes"></datalist>
       <datalist id="cpk-golpes"></datalist>
       <datalist id="cpk-fichas"></datalist>
@@ -10438,7 +10445,7 @@ function _ensureCalcDano(){
   const box = document.createElement('div');
   box.innerHTML = `
   <div style="background:var(--surface);border:2px solid var(--brand-mid);border-radius:14px;padding:24px 26px;margin-bottom:8px" id="calc-dano-box">
-    <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:4px;letter-spacing:.4px">🧮 CALCULADORA DE DANO</div>
+    <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:4px;letter-spacing:.4px">CALCULADORA DE DANO</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Preencha os campos abaixo para calcular o Tier e o alcance de dano do turno.</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
 
@@ -10528,15 +10535,7 @@ function _ensureCalcDano(){
     <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
       <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Bônus Adicionais</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
-        <div class="calc-auto-cel">
-          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">STAB</div>
-          <div style="display:flex;flex-direction:column;gap:4px" id="calc-stab-list">
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0" checked onchange="calcDano()"/> Sem STAB</label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.20" onchange="calcDano()"/> STAB normal (+20%)</label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="radio" name="calc-stab" value="0.40" onchange="calcDano()"/> Adaptability (+40%)</label>
-          </div>
-        </div>
-        <div class="calc-auto-cel">
+        <div>
           <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Diferença de Estágios de Status</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada estágio = +4 de dano. Positivo = atacante buff, negativo = defensor buff.</div>
           <div style="display:flex;align-items:center;gap:8px">
@@ -10586,6 +10585,45 @@ function _semCalcDano(key, html){
   return t.innerHTML;
 }
 
+// O HTML salvo no banco (config.batalhas_v2) é a cópia que aparece no site e ainda traz emojis.
+// Aqui os emojis são removidos; nos títulos de seção viram ícone SVG (mesmo traço do arquivo).
+const _EMO_RE   = /[\u{1F000}-\u{1FAFF}\u26A1\u2699\u26A0\u2694\u2728\u2705\u274C\u2B50\u26D4\u2764][\uFE0F\u200D]*|[\u2600-\u27BF\u2B05-\u2B07]\uFE0F/u;
+const _EMO_REG  = new RegExp(_EMO_RE.source, 'gu');
+const _EMO_SVG  = {
+  '📋':'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  '📐':'<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/>',
+  '⚡':'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  '🎯':'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  '📊':'<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
+  '🛡':'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  '💪':'<path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/>',
+  '⚙':'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  '✨':'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4"/>',
+  '🔧':'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/>',
+  '📜':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>',
+  '🧮':'<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><path d="M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/>'
+};
+function _semEmoji(key, html){
+  if(key!=='batalhas_v2' || typeof html!=='string') return html;
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), nos = [];
+  while(w.nextNode()) nos.push(w.currentNode);
+  nos.forEach(n => {
+    const par = n.parentElement;
+    if(!par || /^(SCRIPT|STYLE|TEXTAREA|OPTION)$/.test(par.tagName) || !_EMO_RE.test(n.nodeValue)) return;
+    const titulo = /font-title/.test(par.getAttribute('style') || '');
+    const base = (n.nodeValue.match(_EMO_RE) || [''])[0].replace(/[\uFE0F\u200D]/g, '');
+    if(titulo && _EMO_SVG[base] && !par.querySelector('svg')){
+      const s = document.createElement('span');
+      s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">' + _EMO_SVG[base] + '</svg>';
+      par.insertBefore(s.firstChild, n);
+    }
+    n.nodeValue = n.nodeValue.replace(_EMO_REG, '').replace(/^\s+/, '');
+  });
+  return root.innerHTML;
+}
+
 async function carregarPaginaEditavel(page){
   const pageEl = edGetPageEl(page);
   if(!pageEl) return;
@@ -10608,7 +10646,7 @@ async function carregarPaginaEditavel(page){
     } else {
       const res = await dbGet('config', `chave=eq.${key}`);
       if(res && res[0] && res[0].valor){
-        const v = _semCalcDano(key, res[0].valor);
+        const v = _semEmoji(key, _semCalcDano(key, res[0].valor));
         pageEl.innerHTML = v;
         editOriginalHTML[key] = v;
       }
