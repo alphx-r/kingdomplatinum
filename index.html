@@ -2733,7 +2733,7 @@ function calcSyncSelects(){
       tipos: [g('t1')?.value, g('t2')?.value].filter(Boolean),
       hp: n('hp'), hpBase: (() => { const d = parseFloat(g('hp')?.dataset.base); return Number.isFinite(d) ? d : null; })(), hpAtual: n('hpatual'), atk: b('atk'), def: b('def'), spa: b('spa'), spd: b('spd'), spe: b('spe'),
       st: {atk: e('eatk'), def: e('edef'), spa: e('espa'), spd: e('espd'), spe: e('espe')},
-      mega: c('mega'), dyn: c('dyn'), adapt: c('adapt'),
+      mega: c('mega'), dyn: c('dyn'), adapt: !!g('hab')?.dataset.adapt,
       tera: {on: c('tera'), tipo: g('teratipo')?.value || ''},
       golpes, ativo: parseInt(document.querySelector('input[name="cpk-'+s+'-ativo"]:checked')?.value) || 1
     };
@@ -3300,6 +3300,23 @@ function calcSyncSelects(){
       });
     });
   }
+  // Adaptability é habilidade: reconhecida direto do Pokémon (ficha, senão dex), sem checkbox.
+  const ehAdapt = h => /^adaptab/.test(normNome(h && h.name ? h.name : h));
+  function setAdapt(s, on){
+    const el = $('cpk-'+s+'-hab'); if(!el) return;
+    if(on){ el.dataset.adapt = '1'; el.hidden = false; } else { delete el.dataset.adapt; el.hidden = true; }
+  }
+  function adaptDoDex(reg){ return !!reg && [reg.habilidade1, reg.habilidade2, reg.habilidade_oculta].some(ehAdapt); }
+  // Não depende do nome exato do campo: pega qualquer chave da ficha que pareça "habilidade/ability".
+  function habDaFicha(p){
+    const out = [];
+    Object.keys(p || {}).forEach(k => {
+      if(!/habil|abilit|^hab\d*$|^ab\d*$/i.test(k)) return;
+      const v = p[k], arr = Array.isArray(v) ? v : [v];
+      arr.forEach(x => { const s = (x && typeof x === 'object') ? (x.nome || x.name || '') : x; if(String(s ?? '').trim()) out.push(s); });
+    });
+    return out;
+  }
   function setTipos(s, ts){
     const l = (ts||[]).map(normTipo).filter(Boolean);
     setV('cpk-'+s+'-t1', l[0] || ''); setV('cpk-'+s+'-t2', l[1] || '');
@@ -3310,12 +3327,14 @@ function calcSyncSelects(){
     const status = $('cpk-'+s+'-status');
     _ultimo[s] = nome.toLowerCase();
     ['hp','hpatual','atk','def','spa','spd','spe'].forEach(k => setV('cpk-'+s+'-'+k, '')); // evita stats "fantasma"
+    setAdapt(s, false);
     if(!nome){ setTipos(s, []); if(status) status.textContent = ''; atualizar(); return; }
     if(status) status.textContent = 'Buscando…';
     // garante que o pokemon.json / tabela pokemons já foi carregado
     try{ if(typeof pokemonDB !== 'undefined' && !pokemonDB.length && typeof PK !== 'undefined'){ const d = await PK.load(); if(Array.isArray(d)) pokemonDB = d; } }catch(e){}
     if(token !== _tok[s]) return;
     const info = acharInfo(nome), reg = info.reg;
+    setAdapt(s, adaptDoDex(reg));
     let tipos = reg ? [reg.tipo1, reg.tipo2].map(normTipo).filter(Boolean) : [];
     let st = statsDoRegistro(reg), foraDoDex = false;
     if(reg && !st && tipos.length){ st = await statsExtra(reg); if(token !== _tok[s]) return; }
@@ -3559,6 +3578,7 @@ function calcSyncSelects(){
     { const delta = /delta/.test(normNome(p.feature || p.caracteristica || ''));
       const tf = tiposDaFicha(p);
       if(delta && tf.length) setTipos(s, tf); }
+    { const hf = habDaFicha(p); if(hf.length) setAdapt(s, hf.some(ehAdapt)); } // habilidade da ficha prevalece sobre o dex
     const status = $('cpk-'+s+'-status');
     if(status) status.textContent = (_statsOk[s] ? '' : 'Sem stats base no pokemon.json — preencha à mão · ')+'Ficha: '+rotuloPk(p)+' · '+nomes.length+' golpe(s)'+(BOLAS[$('cpk-'+s+'-bola')?.value] ? ' + '+BOLAS[$('cpk-'+s+'-bola').value].nome+' ('+BOLAS[$('cpk-'+s+'-bola').value].label+')' : '');
     atualizar();
@@ -3610,6 +3630,8 @@ function calcSyncSelects(){
     .cpk-stat.hp{grid-template-columns:54px minmax(0,1fr) 40px minmax(0,1fr)}
     .cpk-flags{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text)}
     .cpk-flags label{display:flex;align-items:center;gap:5px;cursor:pointer}
+    .cpk-hab{font-size:11px;font-weight:800;padding:2px 9px;border-radius:999px;background:var(--brand-light);border:1.5px solid var(--brand-mid);color:var(--brand);letter-spacing:.3px}
+    .cpk-hab[hidden]{display:none}
     .cpk-card .cpk-flags select{width:auto;padding:3px 6px;font-size:12px}
     .cpk-efetivo{font-size:11px;color:var(--muted);line-height:1.5;margin:-2px 0 8px;min-height:2px}
     .cpk-efetivo b{color:var(--brand)}
@@ -3695,7 +3717,7 @@ function calcSyncSelects(){
         <div class="cpk-flags">
           <label><input type="checkbox" id="${id('mega')}"/> Mega (+1 estágio)</label>
           <label><input type="checkbox" id="${id('dyn')}"/> Dynamax (HP ×2)</label>
-          <label><input type="checkbox" id="${id('adapt')}"/> Adaptability</label>
+          <span class="cpk-hab" id="${id('hab')}" hidden title="Habilidade reconhecida automaticamente: STAB +40% (+80% com Tera no mesmo tipo)">Adaptability</span>
           <label><input type="checkbox" id="${id('tera')}"/> Tera <select id="${id('teratipo')}">${optTipos('tipo')}</select></label>
           <label title="Net Ball libera String Shot · Dive Ball libera Dive (1× por batalha)">Ball <select id="${id('bola')}"><option value="">—</option>${[...Object.keys(BOLAS), ...BOLAS_SEM_GOLPE].map(k => '<option value="'+k+'">'+rotuloBola(k)+'</option>').join('')}</select></label>
         </div>
@@ -3704,7 +3726,7 @@ function calcSyncSelects(){
       </div>`;
   }
 
-  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','spe','eatk','edef','espa','espd','espe','mega','dyn','adapt','tera','teratipo','bola','ficha'];
+  const CAMPOS = ['nome','nivel','t1','t2','hp','hpatual','atk','def','spa','spd','spe','eatk','edef','espa','espd','espe','mega','dyn','tera','teratipo','bola','ficha'];
   const MOVS = ['nome','tipo','cat','poder','sem','crit','usado','charge'];
 
   // Mostra só os slots necessários: 4 de início, até 8 conforme o preenchimento (ou o "+ golpe"),
@@ -3742,6 +3764,7 @@ function calcSyncSelects(){
       }
     };
     CAMPOS.forEach(k => troca('cpk-p1-'+k, 'cpk-p2-'+k));
+    { const a1 = !!$('cpk-p1-hab')?.dataset.adapt, a2 = !!$('cpk-p2-hab')?.dataset.adapt; setAdapt('p1', a2); setAdapt('p2', a1); }
     SLOTS.forEach(i => MOVS.forEach(k => troca('cpk-p1-m'+i+'-'+k, 'cpk-p2-m'+i+'-'+k)));
     { // lista de Pokémon da ficha + nº de slots visíveis acompanham o lado
       const f1 = $('cpk-p1-fpk'), f2 = $('cpk-p2-fpk'), b1 = $('cpk-p1-moves'), b2 = $('cpk-p2-moves');
