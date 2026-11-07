@@ -6,7 +6,7 @@
 //   GITHUB_TOKEN   token fine-grained com "Contents: Read and write" no repositório do site
 //   GITHUB_REPO    "dono/repositorio" (ex.: "alphx-r/meu-site")
 //   GITHUB_BRANCH  opcional, padrão "main"
-//   MISSOES_PATH   opcional, padrão "missoes.json" (use "public/missoes.json" se o arquivo estiver em public/)
+//   MISSOES_PATH   opcional, padrão "missoes/missoes.json"
 // Só admin: confere e-mail+senha pela função admin_login do Supabase (a mesma do login de admin do index).
 const SUPA = 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
   const { GITHUB_TOKEN, GITHUB_REPO } = process.env;
   const branch = process.env.GITHUB_BRANCH || 'main';
-  const path = process.env.MISSOES_PATH || 'missoes.json';
+  const path = process.env.MISSOES_PATH || 'missoes/missoes.json';
   if (!GITHUB_TOKEN || !GITHUB_REPO) return res.status(500).json({ error: 'Servidor sem GITHUB_TOKEN/GITHUB_REPO configurados na Vercel.' });
 
   let b = req.body;
