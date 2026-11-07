@@ -6252,12 +6252,15 @@ async function navegarPara(page, replace=false){
   showEditBtnIfAdm();
   if(EDITABLE_PAGES.includes(page)) carregarPaginaEditavel(page).then(()=>{
     if(page==='batalhas') _ensureCalcDano();
+    if(typeof sisAplicarAbaDaUrl==='function') sisAplicarAbaDaUrl(page);
   });
   // Highlight Guias dropdown btn when on a guias page
   const dropBtn = document.getElementById('nav-drop-btn');
   if(dropBtn) dropBtn.classList.toggle('active', ['sistemas','subsistemas','ganhos','nature','batalhas'].includes(page));
   const path = page==='roller' ? (rollerEncontroTravado ? '/dados' : '/') : page==='eventos-hub' ? '/calendario' : page==='bioma' ? '/porlocal' : '/'+page;
-  if(replace) history.replaceState(null,'', path);
+  // Sistemas/Subsistemas: mantém o #aba da URL ao abrir direto por link / voltar do navegador
+  const _sisHash = (replace && (page==='sistemas'||page==='subsistemas')) ? location.hash : '';
+  if(replace) history.replaceState(null,'', path + _sisHash);
   else history.pushState(null,'', path);
   // Checa manutenção específica desta aba (admins logados nunca são bloqueados)
   if(page!=='adm') await checarManutencaoAba(page);
@@ -18928,6 +18931,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const btn = document.querySelector('.nav-links > .nav-link[onclick*="\'' + pageParam + '\'"]')
            || document.querySelector('.nav-drop-item[onclick*="\'' + pageParam + '\'"]');
   if(typeof goTo === 'function') goTo(pageParam, btn || null);
+});
+</script>
+<script>
+// ── Abas de Sistemas/Subsistemas refletidas na URL: /sistemas#ambientacao ──
+function sisSlug(t){
+  return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+}
+function sisAplicarAbaDaUrl(page){
+  if(page!=='sistemas' && page!=='subsistemas') return;
+  const want = sisSlug(decodeURIComponent((location.hash||'').slice(1)));
+  if(!want) return;
+  const root = document.getElementById('page-'+page);
+  if(!root) return;
+  const radios = [...root.querySelectorAll('input.sis-r[name="sis-tab"]')];
+  const r = radios.find(x=>{
+    const lb = root.querySelector('label[for="'+CSS.escape(x.id)+'"]');
+    return sisSlug(lb ? lb.textContent : '') === want || sisSlug(x.id.replace(/^sis-t-/,'')) === want;
+  });
+  if(r) r.checked = true;
+}
+document.addEventListener('change', e=>{
+  const r = e.target;
+  if(!r || !r.matches || !r.matches('input.sis-r[name="sis-tab"]') || !r.checked) return;
+  if(currentPage!=='sistemas' && currentPage!=='subsistemas') return;
+  const root = r.closest('.page');
+  const lb = root && root.querySelector('label[for="'+CSS.escape(r.id)+'"]');
+  const slug = sisSlug(lb ? lb.textContent : r.id.replace(/^sis-t-/,''));
+  if(slug) history.replaceState(history.state, '', location.pathname + location.search + '#' + slug);
 });
 </script>
 </body>
