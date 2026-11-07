@@ -1,3 +1,5 @@
+import publicarMissoes from './_missoes_publicar.js';
+
 const ALLOWED_ENDPOINTS = new Set([
   'sessoes',
   'estado',
@@ -60,6 +62,9 @@ async function upstreamRequest(endpoint, method, token, body) {
 }
 
 export default async function handler(req, res) {
+  // Quests Guild: /api/missoes_publicar é reescrito pelo vercel.json para cá
+  if (req.query.acao === 'missoes_publicar') return publicarMissoes(req, res);
+
   const endpoint = String(req.query.endpoint || '');
   if (!ALLOWED_ENDPOINTS.has(endpoint)) {
     return res.status(404).json({ message: 'Endpoint de integração não encontrado.' });
