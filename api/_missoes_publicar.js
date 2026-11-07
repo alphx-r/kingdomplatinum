@@ -45,8 +45,11 @@ export default async function handler(req, res) {
   b = b || {};
   const { nome, senha } = b;
   if (typeof nome !== 'string' || typeof senha !== 'string' || !nome || !senha) return res.status(400).json({ error: 'Informe e-mail e senha de admin.' });
-  if (!Array.isArray(b.missoes) || !b.missoes.length || b.missoes.length > 50) return res.status(400).json({ error: 'Nada para publicar (máx. 50 por vez).' });
-  const novas = b.missoes.map(limpa);
+  const enviadas = Array.isArray(b.missoes) ? b.missoes : [];
+  const apagar = Array.isArray(b.apagar) ? b.apagar.map(String) : [];
+  if ((!enviadas.length && !apagar.length) || enviadas.length > 50 || apagar.length > 50) return res.status(400).json({ error: 'Nada para publicar (máx. 50 por vez).' });
+  if (apagar.some(id => !/^[\w-]{1,60}$/.test(id))) return res.status(400).json({ error: 'Alguma missão para apagar tem id inválido.' });
+  const novas = enviadas.map(limpa);
   if (novas.some(x => !x)) return res.status(400).json({ error: 'Alguma missão está inválida (id/título/campos).' });
 
   // só admin
@@ -82,19 +85,24 @@ export default async function handler(req, res) {
       if (i >= 0) { const base = { ...lista[i] }; CAMPOS.forEach(k => delete base[k]); lista[i] = { ...base, ...n }; }
       else lista.push(n);
     }
+    let removidas = 0;
+    for (const id of apagar) {
+      const i = lista.findIndex(x => String(x?.id) === id);
+      if (i >= 0) { lista.splice(i, 1); removidas++; }
+    }
     const out = isArr ? lista : { ...data, missoes: lista };
     const p = await fetch(url, {
       method: 'PUT',
       headers: { ...gh, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: `Quests Guild: ${novas.length} missão(ões) publicada(s) por ${adm.nome}`,
+        message: `Quests Guild: ${novas.length} publicada(s), ${removidas} apagada(s) por ${adm.nome}`,
         content: Buffer.from(JSON.stringify(out, null, 2) + '\n', 'utf8').toString('base64'),
         sha: f.sha, branch
       })
     });
     if ((p.status === 409 || p.status === 422) && t === 0) continue;
     if (!p.ok) { const e = await p.json().catch(() => null); return res.status(502).json({ error: 'GitHub recusou o commit: ' + (e?.message || 'HTTP ' + p.status) }); }
-    return res.status(200).json({ ok: true, count: novas.length });
+    return res.status(200).json({ ok: true, count: novas.length, apagadas: removidas });
   }
   return res.status(409).json({ error: 'O arquivo mudou durante a publicação. Tente de novo.' });
 }
