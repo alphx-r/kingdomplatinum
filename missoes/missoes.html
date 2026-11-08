@@ -246,6 +246,7 @@ button.pc-act:hover{background:var(--green);color:#fff;transform:scale(1.07);box
 .pc-act.lock{border-color:var(--border);color:var(--muted);background:var(--surface2);cursor:default}
 .pc-act.taken{border-color:var(--rc);cursor:default}.pc-act.taken.me{border-color:var(--green)}
 .pc-act.taken img{width:100%;height:100%;object-fit:cover;display:block}.pc-act.taken .ini{font:800 20px var(--font-title);color:var(--rc)}
+.pc-actw{position:relative;flex:none}.pc-cnt{position:absolute;right:-6px;bottom:-4px;min-width:22px;padding:1px 5px;border-radius:10px;background:var(--rc);color:#fff;font:800 10px/16px var(--font-body);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .foot:empty{display:none}.pc>:last-child{margin-bottom:16px}
 .foot .btn[data-act=editar],.foot .btn[data-act=apagar]{padding:9px 14px;font-size:12px;border-radius:10px}
 dialog#mqm,dialog#imp{width:min(560px,94vw);padding:0;border-radius:16px;overflow:hidden;background:var(--surface);color:var(--text);box-shadow:0 16px 60px rgba(0,0,0,.45)}
@@ -340,7 +341,8 @@ dialog#imp{width:min(680px,94vw)}
     <div><label>Regra de repetição</label><select id="mq-repeticao"><option value="semanal">1x por semana</option><option value="nao">Não repetível</option></select></div></div>
     <label>Descrição</label><textarea id="mq-descricao"></textarea>
     <label>Recompensas</label><textarea id="mq-recompensas"></textarea>
-    <div class="mq2"><div><label>Ordem (menor aparece primeiro)</label><input id="mq-ordem" type="number"/></div><div><label class="ck" style="margin-top:28px"><input type="checkbox" id="mq-ativa" checked/> Missão ativa</label></div></div>
+    <div class="mq2"><div><label>Ordem (menor aparece primeiro)</label><input id="mq-ordem" type="number"/></div><div><label>Vagas (pessoas ao mesmo tempo)</label><input id="mq-vagas" type="number" min="1" step="1" placeholder="1"/></div></div>
+    <label class="ck" style="margin-top:10px"><input type="checkbox" id="mq-ativa" checked/> Missão ativa</label>
     <div class="le2" id="mq-err"></div>
   </div>
   <div class="cfa"><button type="button" class="btn d" id="mq-del" style="flex:none;display:none">Descartar</button><button type="button" class="btn" onclick="mqm.close()">Cancelar</button><button type="button" class="btn p" id="mq-save">Salvar</button></div>
@@ -576,7 +578,9 @@ async function carregarFotos(){
  try{(await carregaLista()).forEach(x=>{const f=x&&(x.thumb||x.foto);if(!f)return;if(x.nome)FOTOS.set('p:'+nrm(x.nome),f);if(x.player_id!=null&&!FOTOS.has('u:'+x.player_id))FOTOS.set('u:'+x.player_id,f)})}catch(e){console.warn('fotos:',e.message)}
 }
 const fotoAc=a=>FOTOS.get('p:'+nrm(a.personagem||''))||FOTOS.get('u:'+a.player_id)||null;
-const ocupada=m=>aceitas.some(a=>a.missao_id===m.id&&a.status==='aceita');
+const nVagas=m=>Math.max(1,parseInt(m.vagas)||1);
+const emAndamento=m=>aceitas.filter(a=>a.missao_id===m.id&&a.status==='aceita');
+const ocupada=m=>emAndamento(m).length>=nVagas(m);
 function indisponivel(m){
  if(m.ativa===false||ocupada(m))return true;
  if(!me)return false;
@@ -617,25 +621,26 @@ function card(m){
  const SV=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
  const IC={ok:SV('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),user:SV('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.4 7-5.4s6.2 1.8 7 5.4"/>'),lock:SV('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>')};
  let acao='',btn='';
- const tomada=aqui.find(a=>a.status==='aceita');
+ const tomadas=aqui.filter(a=>a.status==='aceita'),vg=nVagas(m),minha=tomadas.find(souEu),cheia=tomadas.length>=vg;
+ const av=(a,me_)=>{const nm=a.personagem||a.player_nome||'',ft=fotoAc(a),ini=esc((nm[0]||'?').toUpperCase());
+  return `<div class="pc-act taken ${me_?'me':''}" title="Em andamento com ${esc(tomadas.map(x=>x.personagem||x.player_nome).join(', '))}">${ft?`<img src="${esc(ft)}" alt="${esc(nm)}" loading="lazy" onerror="this.outerHTML='<span class=&quot;ini&quot;>${ini}</span>'">`:`<span class="ini">${ini}</span>`}</div>`};
  if(m.ativa===false){acao=`<span class="hint">Missão desativada — só admins veem</span>`}
- else if(tomada){
-  const nm=tomada.personagem||tomada.player_nome||'',ft=fotoAc(tomada);
-  btn=`<div class="pc-act taken ${souEu(tomada)?'me':''}" title="Em andamento com ${esc(nm)}">${ft?`<img src="${esc(ft)}" alt="${esc(nm)}" loading="lazy" onerror="this.outerHTML='<span class=&quot;ini&quot;>${esc((nm[0]||'?').toUpperCase())}</span>'">`:`<span class="ini">${esc((nm[0]||'?').toUpperCase())}</span>`}</div>`;
- }
+ else if(minha)btn=av(minha,true);
+ else if(cheia&&tomadas.length)btn=av(tomadas[0],false);
  else if(!me){btn=`<button type="button" class="pc-act login" data-act="login" title="Entrar para aceitar" aria-label="Entrar para aceitar">${IC.user}</button>`}
  else{
   const ps=meusPers.length?meusPers:[''];
   if(ps.some(p=>!bloqueio(m,p)))btn=`<button type="button" class="pc-act go" data-act="aceitar" data-id="${m.id}" title="Aceitar missão" aria-label="Aceitar missão">${IC.ok}</button>`;
   else{const mb=bloqueio(m,ps[0]);btn=`<div class="pc-act lock" title="${esc(mb)}">${IC.lock}</div>`;acao=`<span class="hint">${esc(mb)}</span>`}
  }
+ if(btn&&vg>1)btn=`<div class="pc-actw">${btn}<span class="pc-cnt" title="Vagas ocupadas">${tomadas.length}/${vg}</span></div>`;
  const mine=aqui.some(a=>souEu(a)&&a.status==='aceita');
  const ativa=m.ativa!==false,rk=rkN(m.ranking)||'—';
  return `<article class="pc ${mine?'on':''} ${abertas.has(m.id)?'open':''}" data-id="${esc(m.id)}" style="--rc:${rkCor(m.ranking)}">
   <div class="pc-top">
    <div class="pc-rank"><small>RANK</small><b>${esc(rk)}</b></div>
    <div class="pc-head"><h3>${esc(m.titulo)}</h3>
-    <div class="pc-tags">${m.estilo?`<span class="tg st">${esc(m.estilo)}</span>`:''}${mine?'<span class="tg on">Em andamento</span>':''}${!ativa?'<span class="tg wr">Desativada</span>':''}${m._local?'<span class="tg dr">Não publicada</span>':''}</div>
+    <div class="pc-tags">${m.estilo?`<span class="tg st">${esc(m.estilo)}</span>`:''}${vg>1?`<span class="tg">Até ${vg} players</span>`:''}${mine?'<span class="tg on">Em andamento</span>':''}${!ativa?'<span class="tg wr">Desativada</span>':''}${m._local?'<span class="tg dr">Não publicada</span>':''}</div>
    </div>
    ${btn}
   </div>
@@ -698,6 +703,9 @@ $('ac-go').onclick=async()=>{
  if(b){err.textContent=b;return}
  $('ac-go').disabled=true;
  try{
+  /* confere no banco, na hora, se alguém já pegou a missão (a tela pode estar desatualizada) */
+  const jaTem=await api('missoes_aceitas?select=id,personagem,player_nome&missao_id=eq.'+encodeURIComponent(m.id)+'&status=eq.aceita');
+  if(jaTem.length>=nVagas(m)){acm.close();await carregarDados();render();toast(nVagas(m)>1?'As vagas dessa missão acabaram de ser preenchidas.':'Essa missão acabou de ser aceita por '+(jaTem[0].personagem||jaTem[0].player_nome||'outro player')+'.');return}
   await api('missoes_aceitas',{method:'POST',body:JSON.stringify({missao_id:m.id,player_id:String(me.id),player_nome:me.nome,personagem:pers||null,status:'aceita'})});
   acm.close();await carregarDados();render();toast('Missão aceita! Boa sorte, '+(pers||me.nome)+'.');
  }catch(e){err.textContent=/duplicate|unique/i.test(e.message)?'Você já aceitou esta missão com esse personagem.':'Erro: '+e.message}
@@ -710,15 +718,15 @@ let editId=null;
 function abrirMissao(id){
  if(!isAdm())return;const m=id?missoes.find(x=>x.id===id):null;editId=m?m.id:null;
  $('mq-h').textContent=m?'Editar missão':'Nova missão';
- MQ.forEach(k=>$('mq-'+k).value=m?.[k]??'');$('mq-ranking').value=m?rkN(m.ranking):'1';$('mq-ordem').value=m?.ordem!=null?m.ordem:'';
+ MQ.forEach(k=>$('mq-'+k).value=m?.[k]??'');$('mq-ranking').value=m?rkN(m.ranking):'1';$('mq-ordem').value=m?.ordem!=null?m.ordem:'';$('mq-vagas').value=m&&nVagas(m)>1?nVagas(m):'';
  $('mq-repeticao').value=m?regra(m):'semanal';$('mq-ativa').checked=m?m.ativa!==false:true;
  $('mq-del').style.display=m&&m._local?'':'none';$('mq-err').textContent='';mqm.showModal();
 }
 const LK='kp_missoes_locais';
 const lerLocais=()=>{try{const a=JSON.parse(localStorage.getItem(LK));return Array.isArray(a)?a:[]}catch{return[]}};
 const salvarLocais=a=>{try{localStorage.setItem(LK,JSON.stringify(a))}catch{}};
-const CAMPOS=[...MQ,'ordem','repeticao','ativa'];
-function limpa(m){const o={id:String(m.id)};CAMPOS.forEach(k=>{const v=m[k];if(v==null||v==='')return;if(k==='ativa'&&v!==false)return;if(k==='repeticao'&&v==='livre')return;o[k]=v});return o}
+const CAMPOS=[...MQ,'ordem','repeticao','ativa','vagas'];
+function limpa(m){const o={id:String(m.id)};CAMPOS.forEach(k=>{const v=m[k];if(v==null||v==='')return;if(k==='ativa'&&v!==false)return;if(k==='repeticao'&&v==='livre')return;if(k==='vagas'&&!(parseInt(v)>1))return;o[k]=v});return o}
 /* rascunhos/alterações locais (só admin): somem sozinhos quando o missoes.json publicado já tem o mesmo conteúdo */
 function aplicarLocais(){
  atualizaBtns();if(!isAdm())return;
@@ -749,7 +757,7 @@ function desfazerApagar(){salvarApagar([]);cfg.close();render0();toast('Exclusõ
 const AK='kp_missoes_apagar';
 const lerApagar=()=>{try{const a=JSON.parse(localStorage.getItem(AK));return Array.isArray(a)?a.map(String):[]}catch{return[]}};
 const salvarApagar=a=>{try{localStorage.setItem(AK,JSON.stringify(a))}catch{}};
-const CAMPO_NOME={titulo:'Título',ranking:'Rank',estilo:'Estilo',pre_requisitos:'Pré-requisitos',local:'Local',mapa:'Mapa',capturavel:'Pokémon Capturável',repetivel:'Repetível',descricao:'Descrição',recompensas:'Recompensas',ordem:'Ordem',repeticao:'Repetição',ativa:'Ativa'};
+const CAMPO_NOME={vagas:'Vagas',titulo:'Título',ranking:'Rank',estilo:'Estilo',pre_requisitos:'Pré-requisitos',local:'Local',mapa:'Mapa',capturavel:'Pokémon Capturável',repetivel:'Repetível',descricao:'Descrição',recompensas:'Recompensas',ordem:'Ordem',repeticao:'Repetição',ativa:'Ativa'};
 function pendencias(){
  const raw=new Map(RAW.rl.map(r=>[String(r.id),r])),out={novas:[],editadas:[],apagar:[]};
  lerLocais().forEach(l=>{
@@ -785,7 +793,7 @@ $('mq-save').onclick=()=>{
  if(!isAdm())return;const err=$('mq-err'),g=k=>$('mq-'+k).value.trim();
  if(!g('titulo')){err.textContent='Informe o título.';return}
  const row={id:editId||'q'+Date.now().toString(36)};MQ.forEach(k=>row[k]=g(k));if(!/^[1-5]$/.test(row.ranking))row.ranking='1';
- const o=parseInt(g('ordem'));row.ordem=Number.isNaN(o)?null:o;row.repeticao=$('mq-repeticao').value;row.ativa=$('mq-ativa').checked;
+ const o=parseInt(g('ordem'));row.ordem=Number.isNaN(o)?null:o;row.repeticao=$('mq-repeticao').value;row.ativa=$('mq-ativa').checked;{const v=parseInt($('mq-vagas').value);row.vagas=v>1?v:null}
  const loc=lerLocais().filter(x=>String(x.id)!==row.id);loc.push(limpa(row));salvarLocais(loc);
  const novo=!editId;mqm.close();render0();toast(novo?'Missão criada. Clique em Publicar para ir ao ar.':'Alteração salva. Clique em Publicar para ir ao ar.');
 };
