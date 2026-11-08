@@ -311,6 +311,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hist-poke{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:16px 10px 14px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
 .hist-lvl{position:absolute;top:8px;right:8px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;background:color-mix(in srgb,var(--brand-mid) 14%,#fff);color:var(--brand);border:1px solid color-mix(in srgb,var(--brand-mid) 38%,#fff);letter-spacing:.3px;line-height:1.3}
 .hist-poke:hover{border-color:var(--border2);box-shadow:0 4px 16px rgba(20,30,50,.09)}
+/* Penalidade de rolagem: Pokémon não capturável fica opaco; só a etiqueta continua nítida */
+.pk-bloq>*:not(.pk-bloq-tag){opacity:.35;filter:grayscale(.85)}
+.pk-bloq-tag{font-size:9px;font-weight:800;color:var(--red);background:#fdeaea;border:1px solid var(--red);border-radius:8px;padding:2px 7px;line-height:1.3;opacity:1!important;filter:none!important}
 /* ROLADOR DE DADOS */
 .dice-roller-wrap{margin:0 auto}
 /* Seletor Encontro / Dados do Rolador */
@@ -4453,6 +4456,7 @@ function calcSyncSelects(){
             <button type="button" class="adm-pill active" data-pt="fichas" role="tab" onclick="admPlayersTab('fichas')">Fichas</button>
             <button type="button" class="adm-pill" data-pt="gerenciar" id="adm-pill-gerenciar" role="tab" onclick="admPlayersTab('gerenciar')">Gerenciar</button>
             <button type="button" class="adm-pill" data-pt="cadastrados" role="tab" onclick="admPlayersTab('cadastrados')">Players</button>
+            <button type="button" class="adm-pill" data-pt="penalidades" role="tab" onclick="admPlayersTab('penalidades')">Penalidades</button>
           </div>
           <div class="adm-ptab active" data-pt="fichas">
           <div class="box" id="box-fichas-players">
@@ -4518,6 +4522,23 @@ function calcSyncSelects(){
             <div style="font-size:11px;color:var(--muted);margin-top:6px">"Resetar" apaga a senha do player — no próximo login ele poderá entrar com o mesmo nome de usuário e criar uma nova senha (igual ao primeiro acesso).</div>
             <div class="fb fb-ok" id="adm-senha-fb" style="margin-top:8px">✓ Senha salva!</div>
             <div class="fb fb-err" id="adm-senha-fb-err" style="margin-top:8px">—</div>
+          </div>
+          </div>
+          <div class="adm-ptab" data-pt="penalidades">
+          <div class="box">
+            <div class="box-title">Penalidades de rolagem</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Enquanto a penalidade vale, o personagem rola normalmente, mas os Pokémon fora dos tipos permitidos saem opacos ("Fugiu") e não são capturáveis. A marca fica gravada na rolagem, então continua depois do prazo.</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px">
+              <div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Personagem</label><input type="text" id="pen-personagem" list="pen-personagens-list" placeholder="Nome do personagem" autocomplete="off" style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;width:100%;box-sizing:border-box"/><datalist id="pen-personagens-list"></datalist></div>
+              <div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Motivo</label><input type="text" id="pen-motivo" placeholder="Ex: Explosão de fedor" style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;width:100%;box-sizing:border-box"/></div>
+              <div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Vale até (horário de Brasília)</label><input type="datetime-local" id="pen-ate" style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:13px;width:100%;box-sizing:border-box"/></div>
+            </div>
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Só estes tipos continuam capturáveis</label>
+            <div class="tipos-wrap" id="pen-tipos-wrap" style="margin-bottom:14px"></div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="admPenalAdicionar()">Adicionar penalidade</button>
+            <div class="fb fb-ok" id="pen-fb">✓ Salvo!</div>
+            <div class="fb fb-err" id="pen-fb-err">—</div>
+            <div id="pen-lista" style="margin-top:16px"></div>
           </div>
           </div>
           <div class="adm-ptab" data-pt="cadastrados">
@@ -7811,7 +7832,93 @@ function admPlayersTab(nome){
   window._admPlayersTab = nome;
   document.querySelectorAll('#adm-players-pills .adm-pill').forEach(b=>b.classList.toggle('active', b.dataset.pt===nome));
   document.querySelectorAll('#sec-personagens .adm-ptab').forEach(p=>p.classList.toggle('active', p.dataset.pt===nome));
+  if(nome==='penalidades') admPenalInit();
 }
+// ══════════════════════════════════════
+// ADM: PENALIDADES DE ROLAGEM (Players > Penalidades)
+// ══════════════════════════════════════
+function admPenalMsg(txt, ok){
+  const el=document.getElementById(ok?'pen-fb':'pen-fb-err'); if(!el) return;
+  el.textContent=txt; el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; }, ok?2500:6000);
+}
+function admPenalFmt(iso){
+  return new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function admPenalInit(){
+  const w=document.getElementById('pen-tipos-wrap');
+  if(w && !w.children.length) w.innerHTML=Object.keys(tcls).map(t=>`<span class="tipo-tag" data-tipo="${t}" onclick="this.classList.toggle('sel')">${t}</span>`).join('');
+  const dl=document.getElementById('pen-personagens-list');
+  if(dl){
+    const nomes=new Set();
+    (personagens||[]).forEach(p=>{ if(p&&p.nome) nomes.add(p.nome); });
+    (typeof admFichasLista!=='undefined'&&Array.isArray(admFichasLista)?admFichasLista:[]).forEach(f=>{ const n=f&&(f.nome||f.name); if(n) nomes.add(n); });
+    dl.innerHTML=[...nomes].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(n=>`<option value="${_fcEsc(n)}"></option>`).join('');
+  }
+  admPenalRender();
+  carregarPenalidadesRoll().then(admPenalRender);
+}
+function admPenalRender(){
+  const box=document.getElementById('pen-lista'); if(!box) return;
+  const agora=Date.now();
+  const lista=[...PENALIDADES_ROLL].sort((a,b)=>new Date(b.ate)-new Date(a.ate));
+  if(!lista.length){ box.innerHTML='<div style="color:var(--muted);font-size:13px">Nenhuma penalidade cadastrada.</div>'; return; }
+  box.innerHTML=lista.map(p=>{
+    const ativa=agora<new Date(p.ate).getTime();
+    const badge=ativa
+      ?'<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;background:#fdeaea;color:var(--red);border:1px solid var(--red)">ATIVA</span>'
+      :'<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)">EXPIRADA</span>';
+    const tipos=(p.tiposPermitidos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${_fcEsc(t)}</span>`).join(' ');
+    return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:8px;${ativa?'':'opacity:.6'}">
+      <div style="flex:1;min-width:180px">
+        <div style="font-size:13px;font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${_fcEsc(p.personagem)} ${badge}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px">${_fcEsc(p.motivo||'—')} · capturável só: ${tipos} · até ${admPenalFmt(p.ate)}</div>
+      </div>
+      <button type="button" class="btn btn-danger btn-sm" onclick="admPenalRemover('${_fcEsc(p.id)}')">Remover</button>
+    </div>`;
+  }).join('');
+}
+async function admPenalAdicionar(){
+  const personagem=(document.getElementById('pen-personagem').value||'').trim();
+  const motivo=(document.getElementById('pen-motivo').value||'').trim();
+  let ateLocal=document.getElementById('pen-ate').value;
+  const tipos=[...document.querySelectorAll('#pen-tipos-wrap .tipo-tag.sel')].map(e=>e.dataset.tipo);
+  if(!personagem) return admPenalMsg('Informe o personagem.',false);
+  if(!ateLocal) return admPenalMsg('Informe até quando a penalidade vale.',false);
+  if(!tipos.length) return admPenalMsg('Escolha ao menos um tipo que continua capturável.',false);
+  if(ateLocal.length===16) ateLocal+=':00';
+  const ate=ateLocal+'-03:00'; // horário de Brasília
+  if(isNaN(new Date(ate).getTime())) return admPenalMsg('Data inválida.',false);
+  if(new Date(ate).getTime()<=Date.now()) return admPenalMsg('O prazo precisa estar no futuro.',false);
+  await carregarPenalidadesRoll();
+  const antes=PENALIDADES_ROLL;
+  PENALIDADES_ROLL=[...antes,{id:Date.now().toString(36), personagem, ate, tiposPermitidos:tipos, motivo}];
+  try{
+    await salvarPenalidadesRoll();
+    document.getElementById('pen-personagem').value='';
+    document.getElementById('pen-motivo').value='';
+    document.getElementById('pen-ate').value='';
+    document.querySelectorAll('#pen-tipos-wrap .tipo-tag.sel').forEach(e=>e.classList.remove('sel'));
+    admPenalRender(); admPenalMsg('✓ Penalidade salva!',true);
+  }catch(e){
+    PENALIDADES_ROLL=antes; admPenalRender();
+    admPenalMsg('Erro ao salvar: '+(e&&e.message||e),false);
+  }
+}
+async function admPenalRemover(id){
+  if(!confirm('Remover esta penalidade? As rolagens já feitas continuam marcadas.')) return;
+  await carregarPenalidadesRoll();
+  const antes=PENALIDADES_ROLL;
+  PENALIDADES_ROLL=antes.filter(p=>String(p.id)!==String(id));
+  try{
+    await salvarPenalidadesRoll();
+    admPenalRender(); admPenalMsg('✓ Penalidade removida.',true);
+  }catch(e){
+    PENALIDADES_ROLL=antes; admPenalRender();
+    admPenalMsg('Erro ao remover: '+(e&&e.message||e),false);
+  }
+}
+
 function admPlayersTabsInit(){
   const pg = document.getElementById('adm-pill-gerenciar');
   if(pg) pg.style.display = isSuperAdmin() ? '' : 'none';   // renomear/senha: só super admin
@@ -12718,8 +12825,9 @@ function buildCardHtml(pk,delay){
   const nomeEsc=(pk.nome||'').replace(/'/g,"\\'");
   const clicavel=!!(pk.nome && pk.nome!=='???');
   const clickAttr=clicavel?` onclick="abrirNationaldex('${nomeEsc}')" title="Ver no National Dex"`:'';
-  return`<div class="poke-card"${clickAttr} style="${clicavel?'cursor:pointer;':''}animation-delay:${delay}s;${shinyStyle};${honeyStyle};position:relative">
+  return`<div class="poke-card${pk.naoCapturavel?' pk-bloq':''}"${clickAttr} style="${clicavel?'cursor:pointer;':''}animation-delay:${delay}s;${shinyStyle};${honeyStyle};position:relative">
     ${shinyBadge}
+    ${pkBloqTag(pk,true)}
     ${honeyBadge}
     ${condOrbsHtml(pk.condicao,(pk.isHoney&&pk.isShiny)?20:0,pk.saz)}
     <div class="poke-card-left">
@@ -13386,6 +13494,48 @@ function pkDiagnosticoLocal(local, personagem){
   const disp=porRanking.filter(p=>!p.estacao||p.estacao===estacaoAtiva);
   return {local,ranking:rk,estacao:estacaoAtiva,listaDoLocal:!!ENC_LOCAL_TAB[local],noLocal:noLocal.length,aposRanking:porRanking.length,disponiveis:disp.length};
 }
+// ══════════════════════════════════════
+// PENALIDADES TEMPORÁRIAS DE ROLAGEM
+// ══════════════════════════════════════
+// Enquanto a penalidade vale, só Pokémon de tipos permitidos continuam capturáveis.
+// Os demais SAEM na rolagem normalmente, mas ficam marcados (naoCapturavel) e opacos.
+// A marca é gravada no próprio Pokémon do histórico: continua valendo depois do prazo.
+const PENALIDADES_PADRAO=[
+  {id:'seed-kaito', personagem:'Tsujiryū Kaito', ate:'2026-11-14T21:30:00-03:00', tiposPermitidos:['bug'], motivo:'Explosão de fedor'}
+];
+let PENALIDADES_ROLL=PENALIDADES_PADRAO.map(p=>({...p}));
+// A lista vive na tabela config (chave penalidades_roll) e é gerenciada em Adm > Players > Penalidades.
+// Enquanto essa chave não existir, vale a lista padrão acima.
+async function carregarPenalidadesRoll(){
+  try{
+    const r=await dbGet('config','chave=eq.penalidades_roll');
+    if(r&&r[0]){ const arr=JSON.parse(r[0].valor); if(Array.isArray(arr)) PENALIDADES_ROLL=arr; }
+  }catch(e){ console.warn('[penalidades] falha ao carregar; usando a última lista conhecida', e); }
+}
+async function salvarPenalidadesRoll(){ await salvarConfigChave('penalidades_roll', JSON.stringify(PENALIDADES_ROLL)); }
+function _penNorm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');}
+function penalidadesRollAtivas(personagem, quando){
+  let t=quando?new Date(quando).getTime():Date.now();
+  if(isNaN(t)) t=Date.now();
+  const k=_penNorm(personagem);
+  return PENALIDADES_ROLL.filter(p=>_penNorm(p.personagem)===k && t<new Date(p.ate).getTime());
+}
+function aplicarPenalidadeRoll(personagem, pokes, quando){
+  const pens=penalidadesRollAtivas(personagem, quando);
+  if(!pens.length) return;
+  (pokes||[]).forEach(pk=>{
+    if(!pk||pk.nome==='???') return;
+    const pen=pens.find(p=>!(pk.tipos||[]).some(t=>p.tiposPermitidos.includes(String(t).toLowerCase())));
+    if(pen){ pk.naoCapturavel=true; pk.penalidade=pen.motivo; pk.penalidadeAte=pen.ate; }
+  });
+}
+function pkBloqTag(pk, abs){
+  if(!pk||!pk.naoCapturavel) return '';
+  const ate=pk.penalidadeAte?new Date(pk.penalidadeAte).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+  const tip=_rolEsc(`Fugiu — ${pk.penalidade||'penalidade'}${ate?` (até ${ate})`:''}`);
+  return `<div class="pk-bloq-tag" title="${tip}"${abs?' style="position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);z-index:3;white-space:nowrap"':''}>Fugiu</div>`;
+}
+
 async function rolarEncontro(){
   if(rollerEncontroTravado) return;
   // Trava de segurança: o overlay de loading tem um timeout de 8s que pode
@@ -13528,6 +13678,8 @@ async function rolarEncontro(){
       if(base) pk.condicao=pkInfoNoBioma(base,bioma)?.condicao||null;
     }
   });
+  await carregarPenalidadesRoll();
+  aplicarPenalidadeRoll(personagem,pokes); // penalidades temporárias (ex.: Explosão de fedor)
   if(niveisAtivo()) await aplicarNiveisAosPokes(pokes,personagem); // níveis: oculto do público por enquanto
   const bonusAtivos=[];
   SHINY_BONUS_CONFIG.forEach(b=>{
@@ -13710,7 +13862,7 @@ function _rolDetailHtml(mapa,key){
         const rClickAttr=rClicavel?` onclick="abrirNationaldex('${rNomeEsc}')" title="Ver no National Dex"`:'';
         const rerollBtn=rFalhou?`<button class="reroll-falha-btn" onclick="event.stopPropagation();rerollarPokeFalho('${e.id}',${pkIdx},this)" style="margin-top:2px;font-size:9px;font-weight:700;padding:3px 8px;border-radius:8px;border:1.5px solid var(--red);background:#fdeaea;color:var(--red);cursor:pointer;white-space:nowrap">🔄 Re-rolar</button>`:'';
         return`
-        <div class="hist-poke"${rClickAttr} style="${rClicavel?'cursor:pointer;':''}${rShiny}">
+        <div class="hist-poke${pk.naoCapturavel?' pk-bloq':''}"${rClickAttr} style="${rClicavel?'cursor:pointer;':''}${rShiny}">
           ${condOrbsHtml(pk.condicao,0,pk.saz)}
         ${(pk.nivel!=null&&niveisAtivo())?`<span class="hist-lvl" title="">lvl ${pk.nivel}</span>`:''}
           <div style="width:64px;height:64px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:2px">
@@ -13723,7 +13875,7 @@ function _rolDetailHtml(mapa,key){
           <div style="font-size:11px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
           ${pk.nature?.en?`<div style="font-size:10px;color:var(--muted);font-style:italic">${pk.nature.en}</div>`:''}
           ${rerollBtn}
-        </div>`;}).join('');
+        ${pkBloqTag(pk)}</div>`;}).join('');
       return`<div class="rol-entry">
         <div class="rol-entry-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -13932,6 +14084,8 @@ async function rerollarPokeFalho(entryId, pkIdx, btnEl){
       alert(`O bioma "${bioma}" continua sem nenhum Pokémon disponível para ${personagem}. Verifique o cadastro do bioma (raridade/estação/ranking) antes de tentar de novo.`);
       return;
     }
+    await carregarPenalidadesRoll();
+    aplicarPenalidadeRoll(personagem,[novo],entry.criado_em);
     entry.pokes[pkIdx]=novo;
     try{
       await dbPatch('historico',`id=eq.${entry.id}`,{pokes:entry.pokes});
@@ -14071,7 +14225,7 @@ function renderHistorico(){
       // passo — sempre pula direto pra tentativa na PokeAPI.
       const onloadAttr=needsApiLookup?`onload="if(!this.dataset.apiTried){this.dataset.apiTried='1';pkResolvePokeApiSprite(this,'${nomeEsc}',${pk.isShiny?'true':'false'});}" `:'';
       return`
-      <div class="hist-poke"${hClickAttr} style="${!hFalhou?'cursor:pointer;':''}${hShiny};${hHoney}">
+      <div class="hist-poke${pk.naoCapturavel?' pk-bloq':''}"${hClickAttr} style="${!hFalhou?'cursor:pointer;':''}${hShiny};${hHoney}">
           ${condOrbsHtml(pk.condicao,0,pk.saz)}
         ${(pk.nivel!=null&&niveisAtivo())?`<span class="hist-lvl" title="">lvl ${pk.nivel}</span>`:''}
         <div style="width:64px;height:64px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:2px">
@@ -14084,7 +14238,7 @@ function renderHistorico(){
         <div><span class="poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]||''}</span></div>
         <div style="font-size:11px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
         ${pk.nature?.en?`<div style="font-size:10px;color:var(--muted);font-style:italic">${pk.nature.en}</div>`:''}
-      </div>`;}).join('');
+      ${pkBloqTag(pk)}</div>`;}).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -17416,7 +17570,9 @@ async function rolarEncontroEvento(){
         });
       }
     }
-    finalizarBonusConsumido(null, shinyCharmCheckbox, false, shinyCharmMarcadoAgora);
+    await carregarPenalidadesRoll();
+  aplicarPenalidadeRoll(personagem,pokes);
+  finalizarBonusConsumido(null, shinyCharmCheckbox, false, shinyCharmMarcadoAgora);
     const section=document.getElementById('evento-results');
     section.innerHTML='';
     const grid=document.createElement('div');
@@ -17919,7 +18075,7 @@ function renderHistoricoEvento(){
       const evFalhou=(pk.nome==='???');
       const evClickAttr=!evFalhou?` onclick="abrirNationaldex('${evNomeEsc}')" title="Ver no National Dex"`:'';
       return `
-      <div class="hist-poke"${evClickAttr} style="${!evFalhou?'cursor:pointer':''}">
+      <div class="hist-poke${pk.naoCapturavel?' pk-bloq':''}"${evClickAttr} style="${!evFalhou?'cursor:pointer':''}">
           ${condOrbsHtml(pk.condicao,0,pk.saz)}
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
           <div style="width:56px;height:56px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden">
@@ -17933,7 +18089,7 @@ function renderHistoricoEvento(){
           <div style="font-size:10px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
           ${pk.nature?.en?`<div style="font-size:9px;color:var(--muted);font-style:italic;text-align:center">${pk.nature.en}</div>`:''}
         </div>
-      </div>`;}).join('');
+      ${pkBloqTag(pk)}</div>`;}).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
