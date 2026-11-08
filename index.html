@@ -2456,6 +2456,7 @@ window.calcSituSoma = function(){
 
     if(nv && (nv.imune || nv.status)){ danoMin = 0; danoMax = 0; }
     else { danoMin = Math.max(1, danoMin); danoMax = Math.max(1, danoMax); }
+    if(nv && nv.fixo){ danoMin = nv.fixo.min; danoMax = nv.fixo.max; }
 
     const lines = [];
     if(poderVal  !== 0) lines.push('Poder: '+(poderVal>0?'+':'')+poderVal);
@@ -2466,6 +2467,7 @@ window.calcSituSoma = function(){
     if(stabVal   >  0)  lines.push('STAB: +'+Math.round(stabVal*100)+'%');
     if(nv && nv.mult !== 1) lines.push('Nível ('+nv.rotulo+'): ×'+nv.mult.toFixed(2));
     bonusApplied.forEach(b => lines.push(b.label+': '+(b.pct >= 0 ? '+' : '')+b.pct+'%'));
+    if(nv && nv.fixo) lines.push(nv.fixo.rotulo);
 
     const bgs = ['','linear-gradient(135deg,#1a7a1a,#2e9e50)','linear-gradient(135deg,#1a4a8a,#2563a8)','linear-gradient(135deg,#7a4a00,#c07a00)','linear-gradient(135deg,#8a1a1a,#c03030)','linear-gradient(135deg,#5a1a9a,#8a30d8)','linear-gradient(135deg,#0f1a3a,#1a3a6a)'];
     const bg = tierFinal <= 6 ? bgs[tierFinal] : bgs[6];
@@ -2473,7 +2475,8 @@ window.calcSituSoma = function(){
     const mods = [];
     if(stabVal > 0) mods.push('STAB +'+Math.round(stabVal*100)+'%');
     if(nv && nv.mult !== 1) mods.push('nível ×'+nv.mult.toFixed(2));
-    bonusApplied.forEach(b => mods.push(b.label+' '+(b.pct >= 0 ? '+' : '')+b.pct+'%'));
+    if(nv && nv.fixo){ mods.length = 0; mods.push('dano fixo'); }
+    if(!(nv && nv.fixo)) bonusApplied.forEach(b => mods.push(b.label+' '+(b.pct >= 0 ? '+' : '')+b.pct+'%'));
 
     const res = document.getElementById('calc-resultado');
     if(res) res.style.background = bg;
@@ -2739,17 +2742,55 @@ window.calcSituSoma = function(){
   const hpEfetivo = P => P.hp > 0 ? P.hp * (P.dyn ? 2 : 1) : null;
 
   // ── Derivação (info dos Pokémon → Tiers) ─────────────────
+  // ── Movimentos adaptados (regras da casa) ─────────────────
+  // Edite as listas abaixo para incluir/remover golpes. A busca ignora maiúsculas, acentos, espaços e hífens.
+  let _ADAPT = null;
+  function adaptadoInfo(m){
+    if(!m || !m.nome) return null;
+    if(!_ADAPT){
+      _ADAPT = {};
+      const add = (lista, info) => lista.forEach(n => { _ADAPT[chaveGolpe(n)] = info; });
+      add(['Sheer Cold'], {poder:130, nota:'1HKO adaptado: <b>100% de chance de Freeze</b> · 30 Accuracy · poder 130'});
+      add(['Fissure','Horn Drill','Guillotine'], {poder:130, nota:'1HKO adaptado: <b>−2 Speed</b> no alvo · 30 Accuracy · poder 130'});
+      add(['Sonic Boom','Dragon Rage','Night Shade','Seismic Toss'], {fixo:'max15', nota:'Dano fixo adaptado: <b>15% do HP máximo</b> do alvo'});
+      add(['Super Fang'], {fixo:'atual3', nota:'Super Fang adaptado: <b>⅓ do HP atual</b> do alvo'});
+      add(['Spikes','Stealth Rock','Toxic Spikes','Sticky Web'], {nota:'Hazard adaptado: causa <b>5 de dano</b> quando o inimigo não der a devida importância'});
+      add(['Protect','Detect','Kings Shield','Spiky Shield','Baneful Bunker','Obstruct','Silk Trap','Burning Bulwark'], {nota:'Proteção garantida: <b>recarga de 4 turnos</b> a partir do uso'});
+      add(['Recover','Roost','Soft-Boiled','Milk Drink','Slack Off','Synthesis','Moonlight','Morning Sun','Shore Up','Heal Order','Wish','Rest','Heal Pulse','Life Dew','Jungle Healing','Strength Sap','Lunar Blessing','Floral Healing','Swallow','Purify'], {nota:'Golpe de cura: <b>recarga de 4 turnos</b> a partir do uso'});
+      add(['Fly','Dig','Dive','Bounce','Phantom Force','Shadow Force','Sky Drop'], {semCharge:true, nota:'Invulnerabilidade adaptada: dura <b>apenas 1 turno</b> — movimento de mobilidade especial (sem turno de carga, sem +25% de Charge)'});
+    }
+    return _ADAPT[chaveGolpe(m.nome)] || null;
+  }
+  // Dano fixo / proporcional ao HP do alvo (dependem do HP preenchido no painel)
+  function danoFixo(m, D){
+    const ad = adaptadoInfo(m);
+    if(!ad || !ad.fixo) return null;
+    const hpMax = hpEfetivo(D);
+    if(!(hpMax > 0)) return null;
+    let hpAt = D.hpAtual > 0 ? D.hpAtual * (D.dyn ? 2 : 1) : hpMax;
+    hpAt = Math.min(hpAt, hpMax);
+    if(ad.fixo === 'max15'){ const v = Math.max(1, Math.floor(hpMax * 0.15 + 1e-9)); return {min:v, max:v, rotulo:'Dano fixo: 15% de '+hpMax+' HP = '+v}; }
+    const v = Math.max(1, Math.floor(hpAt / 3 + 1e-9));
+    return {min:v, max:v, rotulo:'Super Fang: ⅓ de '+hpAt+' HP = '+v};
+  }
+
   function derivar(A, D, m){
     const r = {notas: []};
     const tipo = m.tipo, cat = m.cat;
     // Golpe de status: reconhecido, mas não causa dano (nenhum bônus se aplica)
+    const ad = adaptadoInfo(m);
     if(cat === 'sta'){
+      if(ad && ad.nota) r.notas.push(ad.nota);
       r.status = true; r.poder = null; r.semAplica = false; r.tp = null; r.stab = null;
       r.te = null; r.mult = null; r.imune = false; r.efetManual = false;
       r.a = null; r.d = null; r.ts = null; r.crit = false; r.climaMult = 1; r.charge = false;
       return r;
     }
     let poder = m.poder;
+    if(ad){
+      if(ad.poder) poder = ad.poder;
+      r.notas.push(ad.nota + ((ad.fixo && !(hpEfetivo(D) > 0)) ? ' — HP do alvo não preenchido: usando o Tier normal' : ''));
+    }
     if(A.tera.on && A.tera.tipo && tipo && tipo === A.tera.tipo && poder > 0 && poder < 60){
       r.notas.push('Tera: poder '+poder+' → 60'); poder = 60;
     }
@@ -2760,6 +2801,7 @@ window.calcSituSoma = function(){
       if(cl.solar === 'sol'){ r.semCharge = true; r.notas.push(cl.nome+': '+(m.nome || 'golpe')+' não precisa carregar (sem +25% de Charge)'); }
       else if(cl.solar === 'half' && poder > 0){ const p0 = poder; poder = Math.floor(poder/2); r.notas.push(cl.nome+': poder '+p0+' → '+poder); }
     }
+    if(ad && ad.semCharge) r.semCharge = true;
     r.charge = !!m.charge && !r.semCharge;
     r.poder = poder;
     r.semAplica = false;   // regra nova: 81–120 é sempre +3 (não há mais "sem efeito")
@@ -2864,6 +2906,8 @@ window.calcSituSoma = function(){
     if(stab > 0){ mn = Math.round(mn*(1+stab)); mx = Math.round(mx*(1+stab)); }
     [mn, mx] = bonusPct(mn, mx, r.charge);
     if(r.climaMult !== 1){ mn = Math.round(mn*r.climaMult); mx = Math.round(mx*r.climaMult); }
+    const fx = r.imune ? null : danoFixo(m, D);
+    if(fx){ mn = fx.min; mx = fx.max; }
     if(r.imune){ mn = 0; mx = 0; } else { mn = Math.max(1, mn); mx = Math.max(1, mx); }
     return {tier, min: mn, max: mx, imune: r.imune, bloqueado: !!r.bloqueado, manual: r.efetManual};
   }
@@ -2890,6 +2934,7 @@ window.calcSituSoma = function(){
       status: auto && !!r.status,
       bloqueado: auto && !!r.bloqueado,
       clima: (auto && m.tipo && !r.status) ? {mult: r.climaMult, nome: window.calcClimaNome(climaAtual())} : null,
+      fixo: (auto && !r.imune && !r.status) ? danoFixo(m, D) : null,
       stab: r.stab, // STAB sempre automático: tipos do atacante × tipo do golpe (+ Adaptability / Tera)
       situ: (auto && r.crit) ? tierCrit() : null,
       rotulo: (A.nivel != null ? 'Lv '+A.nivel : 'Lv ?') + ' → ' + (D.nivel != null ? 'Lv '+D.nivel : 'Lv ?')
