@@ -1876,12 +1876,17 @@ body.edit-mode .ganhos-example-header{cursor:text}
     </div>
 
     <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Bônus Adicionais</div>
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Modificadores Especiais</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
 
 
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Modificadores Especiais</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Situações de Combate</div>
+          <div style="display:flex;flex-direction:column;gap:5px" id="calc-situ-list"></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-style:italic">Somatório: marque todas as que se aplicam. Nenhuma marcada = Ataque Limpo (0).</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Bônus</div>
           <div style="display:flex;flex-direction:column;gap:5px" id="calc-bonus-list">
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-charge" onchange="calcDano()"/> Charge/Recharge (+25%)</label>
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-crit-stab" onchange="calcDano()"/> Desprevenido c/ +2 Crit (+2 em vez de +1)</label>
@@ -2294,6 +2299,21 @@ function calcSyncSelects(){
     ).join('');
   }
 
+  // Situações de Combate: checkboxes somatórios (cada uma soma ou subtrai pontos de nível)
+  const situList = document.getElementById('calc-situ-list');
+  if(situList){
+    const marcadas = new Set([...situList.querySelectorAll('.calc-situ-ck:checked')].map(c => c.dataset.desc));
+    const esc = t => String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    situList.innerHTML = (data.situ || []).filter(r => r.tier !== 0).map(r => {
+      const sinal = (r.tier > 0 ? '+' : '') + r.tier + (/desprevenid/i.test(r.desc) ? '*' : '');
+      const cor = r.tier > 0 ? '#2e9e50' : 'var(--red)';
+      return `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer">
+        <input type="checkbox" class="calc-situ-ck" data-tier="${r.tier}" data-desc="${esc(r.desc)}" ${marcadas.has(r.desc)?'checked':''} onchange="calcDano()"/>
+        <span style="flex:1">${esc(r.desc)}</span><strong style="color:${cor}">${sinal}</strong>
+      </label>`;
+    }).join('');
+  }
+
   // Patch calcDano to read tier values from option value prefix
   window._calcTiersData = data.tiers;
 
@@ -2323,6 +2343,26 @@ function calcSyncSelects(){
   window._calcBonusData = data.bonus || CALC_DEFAULTS.bonus;
 }
 
+// Soma das Situações de Combate marcadas (tabela completamente somatória)
+window.calcSituSoma = function(){
+  const cks = [...document.querySelectorAll('.calc-situ-ck')];
+  if(!cks.length){
+    // fallback: select legado
+    const sel = document.getElementById('calc-situacao');
+    let v = parseInt(String(sel?.value || '0').split('_')[0]) || 0;
+    if(document.getElementById('calc-crit-stab')?.checked && /desprevenid/i.test(sel?.selectedOptions?.[0]?.textContent || '')) v += 1;
+    return v;
+  }
+  let v = 0;
+  cks.forEach(c => {
+    if(!c.checked) return;
+    v += parseInt(c.dataset.tier) || 0;
+    // "Alvo sendo pego desprevenido" (+1*) vira +2 com +2 em chance crítica
+    if(/desprevenid/i.test(c.dataset.desc || '') && document.getElementById('calc-crit-stab')?.checked) v += 1;
+  });
+  return v;
+};
+
 // Override calcDano to read values from dynamic selects
 (function(){
   const _origCalcDano = window.calcDano;
@@ -2342,9 +2382,7 @@ function calcSyncSelects(){
     const statsVal  = getVal('calc-stats');
     const situVal_raw = document.getElementById('calc-situacao')?.value || '0';
     const critStab  = document.getElementById('calc-crit-stab')?.checked;
-    let situVal = parseInt(situVal_raw.split('_')[0]) || 0;
-    // "Alvo sendo pego desprevenido" (+1*) passa a +2 com +2 em chance crítica
-    if(critStab && /desprevenid/i.test(document.getElementById('calc-situacao')?.selectedOptions?.[0]?.textContent || '')) situVal += 1;
+    let situVal = window.calcSituSoma();
     if(nv && nv.situ != null) situVal = nv.situ;
 
 
@@ -2786,9 +2824,7 @@ function calcSyncSelects(){
   // ── Cálculo puro (golpes que não alimentam o resultado principal) ──
   const getSel = id => parseInt(String($(id)?.value || '0').split('_')[0]) || 0;
   function situSelect(){
-    let v = getSel('calc-situacao');
-    if($('calc-crit-stab')?.checked && /desprevenid/i.test($('calc-situacao')?.selectedOptions?.[0]?.textContent || '')) v += 1;
-    return v;
+    return window.calcSituSoma();
   }
   function bonusPct(mn, mx, charge){
     let data = [];
@@ -4805,7 +4841,7 @@ function calcSyncSelects(){
 
           <!-- BÔNUS ADICIONAIS -->
           <div class="box" style="margin-bottom:16px">
-            <div class="box-title">Bônus Adicionais (Modificadores Especiais)</div>
+            <div class="box-title">Modificadores Especiais</div>
             <div class="sec-sub" style="margin:0 0 12px">Checkboxes de bônus exibidos na calculadora. O campo "%" é o bônus percentual de dano aplicado quando marcado (0 = sem bônus de dano %, apenas efeito especial).</div>
             <div class="adm-table-wrap"><table class="adm-table">
               <thead><tr><th>Nome</th><th style="width:90px">Bônus (%)</th><th style="width:90px">Especial</th><th style="width:60px">Ações</th></tr></thead>
@@ -10451,10 +10487,15 @@ function _ensureCalcDano(){
     </div>
 
     <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Bônus Adicionais</div>
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Modificadores Especiais</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Modificadores Especiais</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Situações de Combate</div>
+          <div style="display:flex;flex-direction:column;gap:5px" id="calc-situ-list"></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-style:italic">Somatório: marque todas as que se aplicam. Nenhuma marcada = Ataque Limpo (0).</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">Bônus</div>
           <div style="display:flex;flex-direction:column;gap:5px" id="calc-bonus-list">
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-charge" onchange="calcDano()"/> Charge/Recharge (+25%)</label>
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer"><input type="checkbox" id="calc-crit-stab" onchange="calcDano()"/> Desprevenido c/ +2 Crit (+2 em vez de +1)</label>
