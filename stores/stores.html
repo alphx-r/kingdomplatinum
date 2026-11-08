@@ -538,8 +538,13 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf .
  .pmtl .pms{flex:1 1 100%;width:100%!important;min-height:44px;font-size:16px}
 }
 /* Trocar ficha: discreto, meio opaco */
-.card.lh>.btn{background:color-mix(in srgb,var(--brand-mid) 10%,transparent);border-color:color-mix(in srgb,var(--brand-mid) 22%,transparent);color:var(--brand);opacity:.7;transition:opacity .15s}
-.card.lh>.btn:hover,.card.lh>.btn:focus-visible{opacity:1}
+.card.lh>.btn{background:color-mix(in srgb,var(--brand-mid) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--brand-mid) 30%,transparent);color:var(--text);border-radius:8px;padding:7px 14px;font-weight:800;opacity:.78;transition:opacity .15s,background .15s}
+.card.lh>.btn:hover,.card.lh>.btn:focus-visible{opacity:1;background:color-mix(in srgb,var(--brand-mid) 16%,var(--surface))}
+/* editor de claro/escuro das cores da loja */
+.se-cc{display:flex;flex-direction:column;gap:6px;min-width:130px;flex:1 1 130px}
+.se-lz{-webkit-appearance:none;appearance:none;width:100%;height:10px;border-radius:6px;border:1px solid rgba(0,0,0,.18);outline:none;cursor:pointer;margin:0;padding:0}
+.se-lz::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid #555;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.se-lz::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #555;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 </style>
 </head>
 <body>
@@ -897,6 +902,20 @@ const REC_OPT=[['reciclagem','Reciclagem'],['tm_voucher','TM Voucher']];
 const admEmail=()=>{try{return JSON.parse(localStorage.getItem('adm_session')||'null')?.email||null}catch{return null}};
 const slugify=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
 let EDL=null;
+/* cor secundária sugerida: principal clara -> secundária mais escura; principal escura -> mais clara (mesmo tom) */
+function hex2hsl(h){const m=/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h||'');if(!m)return null;const[r,g,b]=[1,2,3].map(i=>parseInt(m[i],16)/255),mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2,d=mx-mn;let hh=0,ss=0;
+ if(d){ss=l>.5?d/(2-mx-mn):d/(mx+mn);hh=mx===r?(g-b)/d+(g<b?6:0):mx===g?(b-r)/d+2:(r-g)/d+4;hh*=60}
+ return{h:hh,s:ss,l,lum:(r*299+g*587+b*114)/1000}}
+function hsl2hex(h,s,l){const k=n=>(n+h/30)%12,a=s*Math.min(l,1-l),f=n=>l-a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1)));return'#'+[f(0),f(8),f(4)].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')}
+function sugereSec(c1){const c=hex2hsl(c1);if(!c)return null;const claro=c.lum>.55,l=claro?Math.max(.14,c.l-.22):Math.min(.86,c.l+.22);return hsl2hex(c.h,c.s,l)}
+function seSync(n,deSlider){const c=$('se-c'+n),sl=$('se-l'+n);if(!c||!sl)return;const k=hex2hsl(c.value);if(!k)return;
+ if(!deSlider){c.dataset.h=k.h;c.dataset.s=k.s;sl.value=Math.round(k.l*100)}
+ const h=+c.dataset.h||0,st=+c.dataset.s||0;
+ sl.style.background='linear-gradient(to right,'+hsl2hex(h,st,.05)+','+hsl2hex(h,st,.5)+','+hsl2hex(h,st,.95)+')'}
+function seLz(n){const c=$('se-c'+n),sl=$('se-l'+n);if(!hex2hsl(c.value))return;if(c.dataset.h==null)seSync(n);
+ c.value=hsl2hex(+c.dataset.h||0,+c.dataset.s||0,sl.value/100);
+ if(n===2)c.dataset.m=1;seSync(n,true);if(n===1)seSug()}
+function seSug(){const c2=$('se-c2');if(c2.dataset.m)return;const v=sugereSec($('se-c1').value);if(v){c2.value=v;seSync(2)}}
 function seAuto(){if(EDL)return;const sl=$('se-slug');if(!sl.dataset.m)sl.value=slugify($('se-nome').value)}
 function seTema(){$('se-cl').classList.toggle('off',!$('se-tema').checked)}
 function editLoja(slug){
@@ -918,14 +937,14 @@ function editLoja(slug){
   <label class="se-f">Promoção até (opcional)<input class="in" id="se-pate" type="date" value="${esc(o.promo_ate||'')}"></label><span></span>
   <label class="se-f">Logo (URL)<input class="in" id="se-logo" value="${esc(o.logo||'')}" placeholder="https://… ou /sprites/…"></label>
   <label class="se-f">Banner (URL)<input class="in" id="se-ban" value="${esc(o.banner||'')}" placeholder="https://… ou /sprites/…"></label>
-  <div class="se-f se-w">${ck('se-tema','Usar cores próprias na loja',!!o.tema)}<div class="se-cl ${o.tema?'':'off'}" id="se-cl"><label>Principal <input type="color" id="se-c1" value="${esc(t.brand||'#1a3a5c')}"></label><label>Secundária <input type="color" id="se-c2" value="${esc(t.brandMid||'#2563a8')}"></label><label>Destaque <input type="color" id="se-c3" value="${esc(t.accent||'#e8a020')}"></label></div></div>
+  <div class="se-f se-w">${ck('se-tema','Usar cores próprias na loja',!!o.tema)}<div class="se-cl ${o.tema?'':'off'}" id="se-cl"><div class="se-cc"><label>Principal <input type="color" id="se-c1" value="${esc(t.brand||'#1a3a5c')}"></label><input type="range" class="se-lz" id="se-l1" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer principal" oninput="seLz(1)"></div><div class="se-cc"><label>Secundária <input type="color" id="se-c2" value="${esc(t.brandMid||'#2563a8')}"></label><input type="range" class="se-lz" id="se-l2" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer secundária" oninput="seLz(2)"></div><div class="se-cc"><label>Destaque <input type="color" id="se-c3" value="${esc(t.accent||'#e8a020')}"></label><input type="range" class="se-lz" id="se-l3" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer destaque" oninput="seLz(3)"></div></div></div>
   <label class="se-f">Tipo<select class="in" id="se-modo"><option value="loja">Loja (compra e venda)</option><option value="catalogo" ${o.modo==='catalogo'?'selected':''}>Só catálogo (sem carrinho)</option></select></label>
   <label class="se-f">Pagamento na revenda (%)<input class="in" id="se-sell" type="number" min="0" max="100" value="${Math.round((o.sell_pct??0.5)*100)}"></label>
   <div class="se-f se-w"><div class="se-ckr">${ck('se-compra','A loja compra itens do jogador',o.compra!==false)}${ck('se-vip','Exclusiva VIP',!!o.requisitos?.vip)}${ck('se-ativa','Visível no hub',o.ativa!==false)}</div></div>
   <div class="se-f se-w">Abre nas estações (nenhuma marcada = o ano todo)<div class="se-ckr">${EST_OPT.map(([k,n])=>ck('se-e-'+k,n,(o.estacoes||[]).includes(k))).join('')}</div></div>
   <div class="se-f se-w">Recursos especiais<div class="se-ckr">${REC_OPT.map(([k,n])=>ck('se-r-'+k,n,recs(o).includes(k))).join('')}</div></div>
  </div><div class="le2" id="se-err"></div><div class="mb">${l&&l.slug!=='pokemart'?'<button type="button" class="btn s" style="margin-right:auto;color:#c03030" onclick="delLoja()">Excluir</button>':''}<button type="button" class="btn s" onclick="slm.close()">Cancelar</button><button type="button" class="btn p s" id="se-ok" onclick="saveLoja()">Salvar</button></div>`;
- $('se-tema').onchange=seTema;
+ $('se-tema').onchange=seTema;$('se-c1').oninput=()=>{seSync(1);seSug()};$('se-c2').oninput=function(){this.dataset.m=1;seSync(2)};$('se-c3').oninput=()=>seSync(3);[1,2,3].forEach(n=>seSync(n));
  d.showModal()}
 /* painel do adm: lista de lojas (engrenagem do hub) */
 function openLojasAdm(){
