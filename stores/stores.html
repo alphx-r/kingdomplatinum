@@ -489,6 +489,9 @@ a.sh-c:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(0,0,0,.18)}
 .sh-ed{position:absolute;right:12px;bottom:-34px;z-index:2;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:14px;padding:4px 11px;font:800 11px var(--font-body);cursor:pointer}
 .sh-ed:hover{background:var(--surface2)}
 .sh-new{border:0;background:var(--accent);color:#1a1a1a;border-radius:18px;padding:8px 16px;font:800 12px var(--font-body);cursor:pointer}
+dialog#slg{width:min(480px,95vw);max-height:92vh;overflow:auto;text-align:left}
+.sg-r{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
+.sg-r small{display:block;color:var(--muted);font:600 11px var(--font-body)}
 dialog#slm{width:min(640px,95vw);max-height:92vh;overflow:auto;text-align:left}
 .se-g{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
 .se-f{display:flex;flex-direction:column;gap:4px;font:700 12px var(--font-body);color:#555}
@@ -793,7 +796,8 @@ async function boot(){
  else{F=null;CB={};CS={};CUP=null;VCH={};render();openQm()}
  fim()}
 /* hub /stores — catálogo de lojas */
-let HUBM=null;
+let HUBM=null,HQ='',HF='t';
+function setHF(f){HF=f;$('shf-t')?.classList.toggle('on',f==='t');$('shf-a')?.classList.toggle('on',f==='a');drawHubGrid()}
 const lojasHub=()=>(LOJAS||[]).filter(x=>x&&x.slug&&(x.ativa!==false||isAdm())).sort((a,b)=>(a.ordem??99)-(b.ordem??99));
 const lojaItens=l=>HUBM?[...HUBM.values()].filter(it=>isNaLoja(it,l.slug)&&(l.modo==='catalogo'||(it.price!=null&&+it.price>0))):null;
 /* faixa de promoção: texto em loja.promocao, some depois de loja.promo_ate (AAAA-MM-DD, opcional) */
@@ -819,13 +823,18 @@ function fillHub(){
   const n=lojaItens(l).length;
   c.querySelector('[data-n]').textContent=n+(n===1?' item':' itens')})}
 function drawHubGrid(){
- const L=lojasHub();
- $('sh-grid').innerHTML=L.length?L.map(cardLoja).join(''):'<div class="lt" style="grid-column:1/-1">Nenhuma loja disponível.</div>';
+ const q=nrm(HQ||'');
+ const L=lojasHub().filter(l=>(HF!=='a'||lojaAberta(l))&&(!q||nrm((l.nome||'')+' '+(l.empresa||'')+' '+(l.descricao||'')).includes(q)));
+ $('sh-grid').innerHTML=L.length?L.map(cardLoja).join(''):'<div class="lt" style="grid-column:1/-1">'+(q||HF==='a'?'Nenhuma loja encontrada.':'Nenhuma loja disponível.')+'</div>';
  fillHub()}
 function drawHub(){
  document.title='Stores | Kingdom Platinum';document.body.classList.remove('catalogo');
  const L=lojasHub(),ab=L.filter(lojaAberta).length;
- $('app').innerHTML=`<div class="pmw"><div class="sh-hero"><div><h1>Stores</h1><p>Catálogo de lojas e empresas de Kingdom Platinum. Escolha onde fazer suas compras.</p></div><div class="sh-st"><span>${L.length} ${L.length===1?'loja':'lojas'}</span><span>${ab} ${ab===1?'aberta':'abertas'}</span>${isAdm()?'<button type="button" class="sh-new" onclick="editLoja()">＋ Nova loja</button>':''}</div></div><div class="sh-grid" id="sh-grid"></div></div>`;
+ const plus='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+ $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>Stores</b><span>Catálogo de lojas e empresas · ${L.length} ${L.length===1?'loja':'lojas'} · ${ab} ${ab===1?'aberta':'abertas'}</span></div>
+ <input class="in pmq" id="sh-q" type="search" autocomplete="off" placeholder="Buscar loja ou empresa..." value="${esc(HQ)}" oninput="HQ=this.value;drawHubGrid()">
+ ${isAdm()?`<button type="button" class="pmbt pmcart" onclick="openLojasAdm()" title="Gerenciar lojas" aria-label="Gerenciar lojas"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button><button type="button" class="pmbt pmcart" onclick="editLoja()" title="Nova loja" aria-label="Nova loja">${plus}</button>`:''}</div></div>
+ <div class="pmw"><div class="sh-bar"><div class="sh-ch"><button type="button" id="shf-t" class="${HF==='t'?'on':''}" onclick="setHF('t')">Todas</button><button type="button" id="shf-a" class="${HF==='a'?'on':''}" onclick="setHF('a')">Abertas</button></div></div><div class="sh-grid" id="sh-grid"></div></div>`;
  drawHubGrid();
  ITL().then(m=>{HUBM=m;fillHub()}).catch(()=>{})}
 
@@ -864,6 +873,13 @@ function editLoja(slug){
   <div class="se-f se-w">Recursos especiais<div class="se-ckr">${REC_OPT.map(([k,n])=>ck('se-r-'+k,n,recs(o).includes(k))).join('')}</div></div>
  </div><div class="le2" id="se-err"></div><div class="mb">${l&&l.slug!=='pokemart'?'<button type="button" class="btn s" style="margin-right:auto;color:#c03030" onclick="delLoja()">Excluir</button>':''}<button type="button" class="btn s" onclick="slm.close()">Cancelar</button><button type="button" class="btn p s" id="se-ok" onclick="saveLoja()">Salvar</button></div>`;
  $('se-tema').onchange=seTema;
+ d.showModal()}
+/* painel do adm: lista de lojas (engrenagem do hub) */
+function openLojasAdm(){
+ if(!isAdm())return;
+ let d=$('slg');if(!d){d=document.createElement('dialog');d.id='slg';d.onclick=e=>{if(e.target===d)d.close()};document.body.appendChild(d)}
+ const L=[...(LOJAS||[])].sort((a,b)=>(a.ordem??99)-(b.ordem??99));
+ d.innerHTML=`<div class="mtl">Gerenciar lojas</div>${L.length?L.map(l=>`<div class="sg-r"><div><b>${esc(l.nome||l.slug)}</b><small>/stores/${esc(l.slug)}${l.ativa===false?' · oculta':''}</small></div><button type="button" class="btn s" data-s="${esc(l.slug)}" onclick="slg.close();editLoja(this.dataset.s)">Editar</button></div>`).join(''):'<div class="mu">Nenhuma loja cadastrada.</div>'}<div class="mb"><button type="button" class="btn s" onclick="slg.close()">Fechar</button><button type="button" class="btn p s" onclick="slg.close();editLoja()">＋ Nova loja</button></div>`;
  d.showModal()}
 async function gravaLojas(lista,okm){
  const er=m=>{const e=$('se-err');if(e)e.textContent=m||''},b=$('se-ok'),em=admEmail();
@@ -917,7 +933,7 @@ function render(){
  const th=F?(F.thumb||F.foto):null;
  $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>${esc(LJ.nome)}</b><span><a class="sh-back" href="/stores">‹ Stores</a>${LJ.descricao?' · '+esc(LJ.descricao):''}</span></div>
  <input class="in pmq" id="q" type="search" autocomplete="off" placeholder="Buscar em ${esc(LJ.nome)}..." value="${esc(Q)}" oninput="Q=this.value;drawList()">
- ${isAdm()?'<button type="button" class="pmbt pmcart" onclick="openHist()" title="Histórico" aria-label="Histórico"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button><button type="button" class="pmbt pmcart" onclick="openCup()" title="Cupons" aria-label="Cupons"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 1 0-6V6H3z"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg></button><button type="button" class="pmbt pmcart" onclick="editLoja(SL)" title="Editar loja" aria-label="Editar loja"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>':''}
+ ${isAdm()?'<button type="button" class="pmbt pmcart" onclick="openHist()" title="Histórico" aria-label="Histórico"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button><button type="button" class="pmbt pmcart" onclick="openCup()" title="Cupons" aria-label="Cupons"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 1 0-6V6H3z"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg></button><button type="button" class="pmbt pmcart" onclick="editLoja(SL)" title="Editar loja" aria-label="Editar loja"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>':''}
  <button type="button" class="pmbt pmcart" onclick="toggleCart(true)" aria-label="Carrinho"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2L21 7H6"/></svg><i id="pmn">0</i></button></div></div>
  <div class="pmw">${promoHtml(LJ,'sh-pr sh-pr2')}<div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):'Escolha uma ficha para comprar e vender'}</div></div></div>
  ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:''}
