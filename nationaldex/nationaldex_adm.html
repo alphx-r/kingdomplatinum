@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>POKÉMON — ADM</title>
+<title>ADM — NationalDex Kingdom Platinum</title>
     <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -892,6 +892,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     </div>
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-sync-pk" onclick="pkjSincronizarClick()" title="Traz para o ADM o que outros admins já commitaram, sem commitar nada. Suas alterações pendentes são preservadas.">🔄 Sincronizar</button>
+      <button class="btn btn-outline" id="btn-migrar-links" onclick="kpMigrarLinksSprites()" title="Troca todos os links de foto que ainda apontam para o repositório antigo (kingdomplatinum) pelo novo (kpfichas_db), para as fotos que já foram copiadas. Só altera no ADM; depois é preciso commitar o pokemon.json.">🖼️ Atualizar links das fotos</button>
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Grava no GitHub (pokemon.json) todas as alterações feitas no ADM. O commit só acontece quando você clica aqui — nada é commitado automaticamente.">📤 Commit pokemon.json</button>
     </div>
   </div>
@@ -1895,7 +1896,10 @@ const KP_ALFA_DIR='alfa';   // sprites das Formas Alfa: sprites/pokemon/alfa/006
 const KP_GH_REPO='alphx-r/kingdomplatinum';
 // O pokemon.json é commitado neste outro repositório (sem ligação com a Vercel). Sprites e demais arquivos seguem em KP_GH_REPO.
 const KP_JSON_REPO='alphx-r/kpfichas_db';
-const KP_SPRITE_BASE=`https://raw.githubusercontent.com/${KP_GH_REPO}/main/sprites/pokemon/`;
+// Sprites: a rota /api/admin/backup-pokemon-now commita em KP_SPRITE_REPO (kpfichas_db). O repo antigo (KP_GH_REPO) só guarda sprites legados.
+const KP_SPRITE_REPO='alphx-r/kpfichas_db';
+const KP_SPRITE_BASE=`https://raw.githubusercontent.com/${KP_SPRITE_REPO}/main/sprites/pokemon/`;
+const KP_SPRITE_BASE_OLD=`https://raw.githubusercontent.com/${KP_GH_REPO}/main/sprites/pokemon/`;   // legado (kingdomplatinum)
 function kpGhFileName(rec,ext){
   const m=/^N0*(\d+)$/i.exec(String(rec.id||'')); if(!m) return null;
   const slug=String(rec.url_slug||rec.name||'').trim().replace(/\s*\(.*\)\s*$/,'');
@@ -1905,7 +1909,7 @@ function kpGhFileName(rec,ext){
 }
 function kpGhSprite(rec,shiny){
   const f=kpGhFileName(rec); if(!f) return null;
-  return KP_SPRITE_BASE+(shiny?'shiny/':'')+encodeURIComponent(f);
+  return KP_SPRITE_BASE_OLD+(shiny?'shiny/':'')+encodeURIComponent(f);
 }
 // Formas alt/alfa: "7-alt-n-squirtle" → "007-n-squirtle-alt.png" (padrão novo; antigo: "[#007] - Alt N Squirtle.png")
 function kpGhFormFile(stem,ext){
@@ -1922,20 +1926,21 @@ function kpFixFormSprites(f){
     const u=f[k]; if(typeof u!=='string'||!u.includes('.supabase.co/storage/')) return;
     const m=/\/pokemons\/([^/?]+?)(-shiny)?\.(png|jpe?g)(\?|$)/i.exec(u); if(!m) return;
     const fn=kpGhFormFile(m[1],m[3].toLowerCase().replace('jpeg','jpg')); if(!fn) return;
-    f[k]=KP_SPRITE_BASE+(m[2]?'shiny/':'')+encodeURIComponent(fn);
+    f[k]=KP_SPRITE_BASE_OLD+(m[2]?'shiny/':'')+encodeURIComponent(fn);
   });
 }
 // Converte URLs de sprite do GitHub no padrão ANTIGO ("[#001] - Slug.png") para o novo ("001-slug.png").
 // Só roda pelo botão "Atualizar fotos" (não na abertura do adm), e só depois que os arquivos do repo foram renomeados.
 function kpRenameGhUrl(u){
-  if(!KP_NOME_NOVO||typeof u!=='string'||!u.startsWith(KP_SPRITE_BASE)) return u;
-  const [path,qs]=u.split('?'); const rest=path.slice(KP_SPRITE_BASE.length);
+  if(!KP_NOME_NOVO||typeof u!=='string') return u;
+  const base=u.startsWith(KP_SPRITE_BASE)?KP_SPRITE_BASE:(u.startsWith(KP_SPRITE_BASE_OLD)?KP_SPRITE_BASE_OLD:null); if(!base) return u;
+  const [path,qs]=u.split('?'); const rest=path.slice(base.length);
   const shiny=rest.startsWith('shiny/'); let fn=rest.slice(shiny?6:0);
   try{ fn=decodeURIComponent(fn); }catch(_){ return u; }
   const m=/^\[#(\d+)\]\s*-\s*(.+)\.(png|jpe?g|webp)$/i.exec(fn); if(!m) return u;
   const sl=kpSlugify(m[2]); if(!sl) return u;
   const novo=`${m[1].padStart(3,'0')}-${sl}.${m[3].toLowerCase().replace('jpeg','jpg')}`;
-  return KP_SPRITE_BASE+(shiny?'shiny/':'')+encodeURIComponent(novo)+(qs?'?'+qs:'');
+  return base+(shiny?'shiny/':'')+encodeURIComponent(novo)+(qs?'?'+qs:'');
 }
 function kpRenameGhUrls(rec){
   if(!rec||typeof rec!=='object') return rec;
@@ -3195,7 +3200,7 @@ async function limparBiomasPokemons() {
 let KP_GH_ARQUIVOS = null;
 async function kpGhArquivos() {
   if (KP_GH_ARQUIVOS) return KP_GH_ARQUIVOS;
-  const r = await fetch(`https://api.github.com/repos/${KP_GH_REPO}/git/trees/main?recursive=1`);
+  const r = await fetch(`https://api.github.com/repos/${KP_SPRITE_REPO}/git/trees/main?recursive=1`);
   if (!r.ok) throw new Error('GitHub respondeu HTTP ' + r.status + (r.status === 403 ? ' (limite de requisições — tente de novo em alguns minutos)' : ''));
   const j = await r.json();
   if (j.truncated) toast('A lista do GitHub veio incompleta (repositório grande).', 'err');
@@ -5059,6 +5064,7 @@ function kpAlfaSlug(pokeSlug, nome) {
   return pokeSlug ? `${pokeSlug}-${r}` : r;
 }
 async function alfaProcessAndRead(listId, baseId) {
+  const _errosUp = [];   // falha de upload NÃO pode passar em silêncio: aborta o salvamento no fim
   const list = document.getElementById(listId);
   if (!list) return [];
   const rows = [...list.querySelectorAll('.alfa-row')];
@@ -5075,7 +5081,7 @@ async function alfaProcessAndRead(listId, baseId) {
         row.querySelector('.alfa-sprite-url').value = url + '?t=' + Date.now();
         delete prev.dataset.b64;
       } catch (e) {
-        toast('Erro ao enviar sprite de "' + nome + '": ' + e.message, 'err');
+        _errosUp.push('sprite de "' + nome + '": ' + e.message);
       }
     }
     const prevShiny = row.querySelector('.alfa-sprite-shiny-prev');
@@ -5087,10 +5093,11 @@ async function alfaProcessAndRead(listId, baseId) {
         row.querySelector('.alfa-sprite-shiny-url').value = url + '?t=' + Date.now();
         delete prevShiny.dataset.b64;
       } catch (e) {
-        toast('Erro ao enviar sprite shiny de "' + nome + '": ' + e.message, 'err');
+        _errosUp.push('sprite shiny de "' + nome + '": ' + e.message);
       }
     }
   }
+  if (_errosUp.length) throw new Error('Falha ao enviar para o GitHub — ' + _errosUp.join(' | '));
   return alfaReadListSync(listId);
 }
 // Garante que a lista de formas alfa já apareça com pelo menos uma linha
@@ -5663,6 +5670,7 @@ function faltDuplicateRowByUid(listId, uid) {
 // Faz upload de qualquer sprite pendente (arquivo escolhido) para cada forma, e retorna a lista final pronta pra salvar.
 // baseId é usado pra montar um path único no Storage: pokemons/<baseId>-alt-<slug-do-nome>.<ext>
 async function faltProcessAndRead(listId, baseId) {
+  const _errosUp = [];   // falha de upload NÃO pode passar em silêncio: aborta o salvamento no fim
   const list = document.getElementById(listId);
   if (!list) return [];
   const rows = [...list.querySelectorAll('.falt-row')];
@@ -5678,7 +5686,7 @@ async function faltProcessAndRead(listId, baseId) {
         row.querySelector('.falt-sprite-url').value = url + '?t=' + Date.now();
         delete prev.dataset.b64;
       } catch (e) {
-        toast('Erro ao enviar sprite de "' + nome + '": ' + e.message, 'err');
+        _errosUp.push('sprite de "' + nome + '": ' + e.message);
       }
     }
     const prevShiny = row.querySelector('.falt-sprite-shiny-prev');
@@ -5690,7 +5698,7 @@ async function faltProcessAndRead(listId, baseId) {
         row.querySelector('.falt-sprite-shiny-url').value = url + '?t=' + Date.now();
         delete prevShiny.dataset.b64;
       } catch (e) {
-        toast('Erro ao enviar sprite shiny de "' + nome + '": ' + e.message, 'err');
+        _errosUp.push('sprite shiny de "' + nome + '": ' + e.message);
       }
     }
     // Força Alfa desta forma (Mega/Gigantamax/Tera exclusivos dela) — faz
@@ -5698,9 +5706,10 @@ async function faltProcessAndRead(listId, baseId) {
     const uid = row.dataset.uid;
     if (uid) {
       try { await alfaProcessAndRead(`falt-formas-alfa-${uid}`, `${baseId}-alt-${slug}`); }
-      catch (e) { toast('Erro ao processar força alfa de "' + nome + '": ' + e.message, 'err'); }
+      catch (e) { _errosUp.push('força alfa de "' + nome + '": ' + e.message); }
     }
   }
+  if (_errosUp.length) throw new Error('Falha ao enviar para o GitHub — ' + _errosUp.join(' | '));
   return faltReadListSync(listId);
 }
 function faltPopulateList(listId, items = []) {
@@ -6656,7 +6665,7 @@ async function savePkModal(approve) {
       }
     }
   } catch(uploadErr) {
-    toast('Erro no upload: ' + uploadErr.message, 'err');
+    alert('❌ Nada foi salvo.\n\nErro no upload do sprite: ' + uploadErr.message);
     return;
   }
 
@@ -6705,12 +6714,12 @@ async function savePkModal(approve) {
   // Formas Alfa (Mega X/Y, Gigantamax, Tera... com sprite próprio — faz upload se houver arquivo pendente)
   let formasAlfa = [];
   try { formasAlfa = await alfaProcessAndRead('epk-formas-alfa', newId); }
-  catch (e) { toast('Erro ao processar formas alfa: ' + e.message, 'err'); }
+  catch (e) { alert('❌ Nada foi salvo.\n\n' + e.message + '\n\nO sprite NÃO foi enviado ao GitHub. Corrija (chave de admin, tamanho da imagem, conexão) e salve de novo.'); return; }
 
   // Formas Alternativas (ex: Oricorio Estilo Pom-Pom — variações permanentes, sprite próprio)
   let formasAlt = [];
   try { formasAlt = await faltProcessAndRead('epk-formas-alt', newId); }
-  catch (e) { toast('Erro ao processar formas alternativas: ' + e.message, 'err'); }
+  catch (e) { alert('❌ Nada foi salvo.\n\n' + e.message + '\n\nO sprite NÃO foi enviado ao GitHub. Corrija (chave de admin, tamanho da imagem, conexão) e salve de novo.'); return; }
   // cada forma já traz seus Locais (`encontros_local`) do formulário; sem Locais, tira a chave vazia
   formasAlt.forEach(f => { if (f && f.encontros_local == null) delete f.encontros_local; });
 
@@ -8316,6 +8325,7 @@ async function saveNewRpgPokemon() {
     toast(`✓ "${id} — ${nomeRaw}" criado!${evoAutoFilled ? ' Cadeia evolutiva herdada automaticamente.' : ''}`, 'ok');
   } catch (e) {
     toast('Erro ao criar: ' + e.message, 'err');
+    if (/enviar para o GitHub|Upload falhou|Chave de admin/i.test(e.message)) alert('❌ O Pokémon NÃO foi criado.\n\n' + e.message);
   } finally {
     _nrpgSaving = false;
     if (btn) { btn.disabled = false; if (btn.dataset.origLabel) btn.textContent = btn.dataset.origLabel; }
@@ -8968,6 +8978,79 @@ window.CHG_ADAPTER = {
 });
 chgEnsureDom(); chgSoon();
 
+</script>
+<script>
+/* ── Links de sprite: repositório antigo (kingdomplatinum) → novo (kpfichas_db) ──
+   Só mexe em memória (marca como pendente → entra no próximo Commit pokemon.json). */
+function kpColetarLinksAntigos() {
+  const achados = [];   // { nome, obj, campo, rel, qs }
+  const ve = (obj, campo, nome) => {
+    const u = obj && obj[campo];
+    if (typeof u !== 'string' || !u.startsWith(KP_SPRITE_BASE_OLD)) return;
+    const [path, qs] = u.split('?'); let rel = path.slice(KP_SPRITE_BASE_OLD.length);
+    try { rel = decodeURIComponent(rel); } catch (_) { return; }
+    achados.push({ nome, obj, campo, rel, qs });
+  };
+  Object.values(S.pk.dbMap || {}).forEach(r => {
+    const nome = String(r.name || r.nome || r.id);
+    ve(r, 'sprite', nome); ve(r, 'sprite_shiny', nome);
+    ['formas_alt', 'formas_alfa'].forEach(k => { if (Array.isArray(r[k])) r[k].forEach(f => { if (f && typeof f === 'object') { const n2 = nome + ' · ' + (f.nome || f.name || k); ve(f, 'sprite', n2); ve(f, 'sprite_shiny', n2); } }); });
+  });
+  return achados;
+}
+function kpAplicarLinks(achados, existe) {
+  let n = 0; const ausentes = [];
+  achados.forEach(a => {
+    if (!existe.has(a.rel)) { ausentes.push(a); return; }
+    a.obj[a.campo] = KP_SPRITE_BASE + a.rel.split('/').map(encodeURIComponent).join('/') + (a.qs ? '?' + a.qs : '');
+    n++;
+  });
+  return { n, ausentes };
+}
+/* Ao abrir: só corrige sozinho poucos links (ex.: sprites recém-enviados). Em massa, usa o botão. */
+async function kpRepararRepoSprites() {
+  let arquivos;
+  try { arquivos = await kpGhArquivos(); } catch (e) { console.warn('[sprites] não consegui listar o repo de sprites:', e.message); return 0; }
+  const existe = new Set(arquivos), achados = kpColetarLinksAntigos();
+  const trocaveis = achados.filter(a => existe.has(a.rel));
+  if (!trocaveis.length) return 0;
+  if (trocaveis.length > 25) { toast(`ℹ️ ${trocaveis.length} fotos já estão no kpfichas_db — clique em “Atualizar links das fotos”.`, 'ok'); return 0; }
+  const { n } = kpAplicarLinks(trocaveis, existe);
+  if (n) { pkjSujo(); pkjAtualizarTela(); toast(`🔧 ${n} link(s) de foto corrigido(s) para o kpfichas_db — falta commitar.`, 'ok'); }
+  return n;
+}
+/* Botão "Atualizar links das fotos" */
+async function kpMigrarLinksSprites() {
+  const btn = document.getElementById('btn-migrar-links'), orig = btn ? btn.textContent : '';
+  if (typeof PKJ === 'undefined' || !PKJ.loaded) { alert('A lista de Pokémon ainda não carregou. Espere e tente de novo.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Conferindo…'; }
+  try {
+    KP_GH_ARQUIVOS = null;   // lista atualizada do repositório novo
+    const existe = new Set(await kpGhArquivos());
+    const achados = kpColetarLinksAntigos();
+    if (!achados.length) { alert('✅ Nenhuma foto aponta para o repositório antigo (kingdomplatinum). Nada a atualizar.'); return; }
+    const ok = achados.filter(a => existe.has(a.rel)), ausentes = achados.filter(a => !existe.has(a.rel));
+    const pokes = new Set(ok.map(a => a.nome.split(' · ')[0])).size;
+    const lista = ausentes.slice(0, 12).map(a => '• ' + a.nome + ' → ' + a.rel).join('\n');
+    const msg = `${ok.length} foto(s) de ${pokes} Pokémon vão passar a apontar para o repositório kpfichas_db.`
+      + (ausentes.length ? `\n\n⚠️ ${ausentes.length} foto(s) ainda NÃO estão no kpfichas_db e ficam como estão (rode a migração de sprites antes):\n${lista}${ausentes.length > 12 ? '\n…e mais ' + (ausentes.length - 12) + '.' : ''}` : '')
+      + '\n\nContinuar? (só altera no ADM; depois você commita o pokemon.json)';
+    if (!ok.length) { alert('Nenhuma das ' + ausentes.length + ' foto(s) do repositório antigo existe no kpfichas_db ainda.\n\nPrimeiro copie os sprites com a página migrar_sprites.\n\n' + lista); return; }
+    if (!confirm(msg)) return;
+    const { n } = kpAplicarLinks(ok, existe);
+    pkjSujo(); pkjAtualizarTela();
+    toast(`🔧 ${n} link(s) atualizado(s) — falta commitar o pokemon.json.`, 'ok');
+    if (confirm(`${n} link(s) atualizado(s) no ADM.\n\nCommitar o pokemon.json agora?`)) await runManualBackup();
+  } catch (e) {
+    alert('❌ Não consegui atualizar os links: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+(function () {
+  const f = window.loadPokemon; if (typeof f !== 'function') return;
+  window.loadPokemon = async function () { const r = await f.apply(this, arguments); kpRepararRepoSprites(); return r; };
+})();
 </script>
 </body>
 </html>
