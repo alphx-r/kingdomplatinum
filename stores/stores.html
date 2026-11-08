@@ -481,6 +481,8 @@ a.sh-c:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(0,0,0,.18)}
 .sh-pv em{margin-left:auto;font:800 11px var(--font-body);color:var(--muted);font-style:normal}
 .sh-ft{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);font:800 13px var(--font-body);color:var(--sm)}
 .sh-c.off .sh-ft{color:var(--muted)}
+.sh-sub{background:color-mix(in srgb,var(--brand-mid) 20%,transparent)}
+.sh-sub>div{max-width:1100px;margin:0 auto;padding:9px 12px;text-align:center;font:700 13px var(--font-body);color:var(--brand)}
 .sh-back{color:inherit;text-decoration:underline}
 .sh-pr{padding:8px 12px;text-align:center;font:800 12px var(--font-body);letter-spacing:.3px}
 .sh-pr small{font-weight:700;opacity:.75}
@@ -505,7 +507,7 @@ dialog#slm{width:min(640px,95vw);max-height:92vh;overflow:auto;text-align:left}
 .se-cl.off{opacity:.4;pointer-events:none}
 @media (max-width:560px){.se-g{grid-template-columns:1fr}}
 /* loja só-catálogo: sem carrinho, sem comprar/vender */
-body.catalogo .pmcart,body.catalogo .lh,body.catalogo .pmtabs,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf .btn,body.catalogo .pcf .stp{display:none!important}
+body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf .btn,body.catalogo .pcf .stp{display:none!important}
 </style>
 </head>
 <body>
@@ -643,6 +645,11 @@ const TEMAS_SAZ={
  inverno:{brand:'#0a1e3a',brandMid:'#3a80c8',accent:'#90c8f0',bg:'#f0f6ff',surface:'#ffffff',text:'#0a1428'}
 };
 const EST_MES={1:'primavera',2:'verao',3:'outono',4:'inverno',5:'primavera',6:'verao',7:'outono',8:'inverno',9:'primavera',10:'verao',11:'outono',12:'inverno'};
+const TEMA_LOJA={brand:'#1a3a5c',brandMid:'#2563a8',accent:'#e8a020'};
+/* dentro da loja vale só a cor da própria loja (ou o azul padrão), nunca a da estação */
+function aplicaTemaLoja(t){const c={...TEMA_LOJA,...(t||{})},r=document.documentElement.style;
+ aplicaTema({brand:c.brand,brandMid:c.brandMid,accent:c.accent,bg:'color-mix(in srgb,'+c.brandMid+' 7%,#fff)',surface:'#ffffff',text:'#1a1f2e'});
+ r.setProperty('--brand-light','color-mix(in srgb,'+c.brandMid+' 14%,#fff)');r.setProperty('--accent-light','color-mix(in srgb,'+c.accent+' 18%,#fff)')}
 function aplicaTema(t){if(!t)return;const r=document.documentElement.style;[['--brand','brand'],['--brand-mid','brandMid'],['--accent','accent'],['--bg','bg'],['--surface','surface'],['--text','text']].forEach(([v,k])=>{if(t[k])r.setProperty(v,t[k])})}
 const ESTP=(async()=>{
  try{aplicaTema(JSON.parse(localStorage.getItem('kp_tema')))}catch{}
@@ -779,12 +786,17 @@ async function boot(){
  LJ=LOJAS.find(x=>x.slug===SL&&(x.ativa!==false||isAdm()))||null;
  if(!LJ){$('app').innerHTML=msg('Loja não encontrada.<br><br><a href="/stores">Ver todas as lojas</a>');fim();return}
  document.title=LJ.nome+' | Kingdom Platinum';
- if(LJ.tema)aplicaTema(LJ.tema);
+ aplicaTemaLoja(LJ.tema);
  CATALOGO=LJ.modo==='catalogo';document.body.classList.toggle('catalogo',CATALOGO);
  if(!lojaAberta(LJ)){$('app').innerHTML=msg(`<b>${esc(LJ.nome)}</b> está fechada nesta estação.<br>Reabre na estação: ${esc(estTxt(LJ))}.<br><br><a href="/stores">Ver outras lojas</a>`);fim();return}
  if(TAB==='r'&&!temRec())TAB='b';
  if(TAB==='s'&&!temVender())TAB='b';
- if(CATALOGO){F=null;try{[ITM,MV]=await Promise.all([ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}render();fim();return}
+ if(CATALOGO){F=null;FL=[];CB={};CS={};CUP=null;VCH={};
+  try{[ITM,MV]=await Promise.all([ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
+  if(ses){try{LST=await carregaLista();FL=minhas(LST)}catch{FL=[]}
+   const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q)||FL.find(x=>x.slug===localStorage.getItem('kp_loja_ficha'))||(FL.length===1?FL[0]:null);
+   if(hit){await pick(hit.slug);fim();return}}
+  render();fim();return}
  if(!ses){$('app').innerHTML=msg('Entre com a sua conta para usar a loja <b>'+esc(LJ.nome)+'</b>.<br><br><button class="btn p" onclick="lg.showModal()">Entrar</button>');fim();try{lg.showModal()}catch{}return}
  F=null;$('app').innerHTML=msg('Carregando...');
  try{[LST,ITM,MV]=await Promise.all([carregaLista(),ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
@@ -829,12 +841,12 @@ function drawHubGrid(){
  fillHub()}
 function drawHub(){
  document.title='Stores | Kingdom Platinum';document.body.classList.remove('catalogo');
- const L=lojasHub(),ab=L.filter(lojaAberta).length;
  const plus='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
- $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>Stores</b><span>Catálogo de lojas e empresas · ${L.length} ${L.length===1?'loja':'lojas'} · ${ab} ${ab===1?'aberta':'abertas'}</span></div>
+ $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>Stores</b></div>
  <input class="in pmq" id="sh-q" type="search" autocomplete="off" placeholder="Buscar loja ou empresa..." value="${esc(HQ)}" oninput="HQ=this.value;drawHubGrid()">
  ${isAdm()?`<button type="button" class="pmbt pmcart" onclick="openLojasAdm()" title="Gerenciar lojas" aria-label="Gerenciar lojas"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button><button type="button" class="pmbt pmcart" onclick="editLoja()" title="Nova loja" aria-label="Nova loja">${plus}</button>`:''}</div></div>
- <div class="pmw"><div class="sh-bar"><div class="sh-ch"><button type="button" id="shf-t" class="${HF==='t'?'on':''}" onclick="setHF('t')">Todas</button><button type="button" id="shf-a" class="${HF==='a'?'on':''}" onclick="setHF('a')">Abertas</button></div></div><div class="sh-grid" id="sh-grid"></div></div>`;
+ <div class="sh-sub"><div>Catálogo de lojas de Nendo</div></div>
+ <div class="pmw"><div class="pmtl"><div class="pmtabs"><button type="button" id="shf-t" class="${HF==='t'?'on':''}" onclick="setHF('t')">Todas</button><button type="button" id="shf-a" class="${HF==='a'?'on':''}" onclick="setHF('a')">Abertas</button></div></div><div class="sh-grid" id="sh-grid"></div></div>`;
  drawHubGrid();
  ITL().then(m=>{HUBM=m;fillHub()}).catch(()=>{})}
 
@@ -931,14 +943,14 @@ async function pick(slug){
 function render(){
  if(F&&!isAdm()&&!reqOk(LJ,F)){$('app').innerHTML=msg(`A loja <b>${esc(LJ.nome)}</b> é exclusiva para jogadores <b>VIP</b>.<br>A ficha <b>${esc(F.nome||'')}</b> não tem acesso.<br><br>${FL.length>1?'<button class="btn s" onclick="openQm()">Trocar ficha</button> ':''}<a href="/stores">Ver outras lojas</a>`);ensureCart();return}
  const th=F?(F.thumb||F.foto):null;
- $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>${esc(LJ.nome)}</b><span><a class="sh-back" href="/stores">‹ Stores</a>${LJ.descricao?' · '+esc(LJ.descricao):''}</span></div>
+ $('app').innerHTML=`<div class="pmh"><div class="pmw pmht"><div class="pmb"><b>${esc(LJ.nome)}</b>${LJ.descricao?`<span>${esc(LJ.descricao)}</span>`:''}</div>
  <input class="in pmq" id="q" type="search" autocomplete="off" placeholder="Buscar em ${esc(LJ.nome)}..." value="${esc(Q)}" oninput="Q=this.value;drawList()">
  ${isAdm()?'<button type="button" class="pmbt pmcart" onclick="openHist()" title="Histórico" aria-label="Histórico"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button><button type="button" class="pmbt pmcart" onclick="openCup()" title="Cupons" aria-label="Cupons"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 1 0-6V6H3z"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg></button><button type="button" class="pmbt pmcart" onclick="editLoja(SL)" title="Editar loja" aria-label="Editar loja"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>':''}
  <button type="button" class="pmbt pmcart" onclick="toggleCart(true)" aria-label="Carrinho"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2L21 7H6"/></svg><i id="pmn">0</i></button></div></div>
- <div class="pmw">${promoHtml(LJ,'sh-pr sh-pr2')}<div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):'Escolha uma ficha para comprar e vender'}</div></div></div>
- ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:''}
+ <div class="pmw">${promoHtml(LJ,'sh-pr sh-pr2')}<div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):(CATALOGO?(ses?'Escolha uma ficha para ver o seu saldo':'Entre para ver a sua ficha'):'Escolha uma ficha para comprar e vender')}</div></div></div>
+ ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:(CATALOGO&&!ses?`<button type="button" class="btn s" onclick="lg.showModal()">Entrar</button>`:'')}
  <div class="lhs"><span>Saldo</span><b id="sal">${F?fm(saldo()):'—'}</b></div></div>
- <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">Comprar</button>${temVender()?`<button type="button" id="tb-s" onclick="setTab('s')">Vender</button>`:''}${temRec()?`<button type="button" id="tb-r" onclick="setTab('r')">Reciclagem</button>`:''}</div>
+ <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">${CATALOGO?'Catálogo':'Comprar'}</button>${temVender()?`<button type="button" id="tb-s" onclick="setTab('s')">Vender</button>`:''}${temRec()?`<button type="button" id="tb-r" onclick="setTab('r')">Reciclagem</button>`:''}</div>
  <select class="in pms" onchange="SORT=this.value;drawList()"><option value="n"${SORT==='n'?' selected':''}>Nome (A-Z)</option><option value="a"${SORT==='a'?' selected':''}>Menor preço</option><option value="d"${SORT==='d'?' selected':''}>Maior preço</option></select></div>
  <div class="chs" id="chs"></div><div class="pmg" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div><div id="rec" style="display:none;margin-top:14px"></div></div>`;
  ensureCart();drawList();drawSum();pmSc()}
