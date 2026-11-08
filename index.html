@@ -6369,6 +6369,7 @@ async function carregarAba(page){
     }
     else if(page==='adm'){
       if(!admLogado){ return; }
+      admFichasInit();   // independente do resto: se algo abaixo falhar, as fichas ainda carregam
       const [_admins,_players,_personagens,_biomas,_npcCidades] = await Promise.all([
         dbRpc('admin_list',{}),
         dbGet('players','select=id,nome'),
@@ -6386,6 +6387,10 @@ async function carregarAba(page){
       renderTbodyPersonagens(); renderTbodyPlayers();
       aplicarPermissoesSidebar();
       populateAdmSenhaSelect();
+      // A seção Players já abre ativa: carrega as fichas aqui (antes só carregava ao clicar no menu)
+      if(document.getElementById('sec-personagens')?.classList.contains('active')){
+        admFichasInit(); admPlayersTabsInit(); carregarPlayersInativos();
+      }
     }
     else if(page==='eventos-hub'){
       const res = await sb('eventos?order=criado_em.desc');
@@ -7881,22 +7886,23 @@ async function admEmitirSessaoFichas(nome, senha){
 }
 async function admFichasInit(force){
   if(admFichasLista && !force){ renderTbodyPersonagens(); return; }
-  if(admFichasCarregando) return;
-  admFichasCarregando = true;
+  if(admFichasCarregando && !force) return;
+  admFichasCarregando = true; window._admFichasTentouEm = Date.now();
   const box = document.getElementById('tbody-personagens');
   if(box && !admFichasLista) box.innerHTML = '<div class="apl-empty">Carregando fichas…</div>';
+  const ctrl = new AbortController(), to = setTimeout(()=>ctrl.abort(), 20000);
   try{
-    const r = await fetch('/api/ficha-salvar?lista=1',{cache:'no-store'});
+    const r = await fetch('/api/ficha-salvar?lista=1',{cache:'no-store',signal:ctrl.signal});
     if(!r.ok) throw new Error('HTTP '+r.status);
     const l = await r.json();
     admFichasLista = (Array.isArray(l)?l:[]).filter(e=>e && e.slug);
-    registrarRankingFichas(admFichasLista);
+    try{ registrarRankingFichas(admFichasLista); }catch(e){ console.warn('[ranking fichas]', e); }
   }catch(e){
-    admFichasCarregando = false;
-    if(!admFichasLista && box) box.innerHTML = `<div class="apl-empty" style="color:var(--red)">Erro ao carregar as fichas: ${_fcEsc(e.message)}</div>`;
+    console.warn('[admFichasInit]', e);
+    const msg = e.name==='AbortError' ? 'tempo esgotado' : e.message;
+    if(!admFichasLista && box) box.innerHTML = `<div class="apl-empty" style="color:var(--red)">Erro ao carregar as fichas: ${_fcEsc(msg)}. Clique em ↻ Recarregar.</div>`;
     return;
-  }
-  admFichasCarregando = false;
+  }finally{ clearTimeout(to); admFichasCarregando = false; }
   renderTbodyPersonagens();
 }
 // Mantida por compatibilidade: a lista de fichas agora vive dentro dos cards de Players.
@@ -7975,6 +7981,7 @@ async function uploadImgStorage(b64, bucket, path){
 function renderTbodyPersonagens(){
   const el=document.getElementById('tbody-personagens'); if(!el) return;
   const nk=normalizarNome, fichasOk=!!admFichasLista, fichas=admFichasLista||[];
+  if(!fichasOk && admLogado && !admFichasCarregando && Date.now()-(window._admFichasTentouEm||0)>8000) setTimeout(()=>admFichasInit(),0);
   const pt=(a,b)=>String(a||'').localeCompare(String(b||''),'pt-BR');
   const q=nk(document.getElementById('apl-q')?.value||'');
   const abertos=(window._aplOpen=window._aplOpen||new Set());
