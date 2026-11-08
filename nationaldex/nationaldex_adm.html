@@ -411,6 +411,20 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .loc-card .regra-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 52px 26px}
 .loc-card .bioma-add-regra{border:0;background:none;padding:3px 6px;font-size:11.5px;border-radius:6px}
 .loc-card .bioma-add-regra:hover{background:var(--brand-light);color:var(--brand-mid)}
+.loc-acoes{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.loc-acao{background:none;border:0;color:var(--brand-mid);font-family:var(--font-body);font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:6px;cursor:pointer;transition:all .15s}
+.loc-acao:hover{background:var(--brand-light)}
+.loc-acao.loc-vazio-clip{opacity:.45}
+.loc-dlg-ov{position:fixed;inset:0;z-index:9500;background:rgba(15,25,45,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.loc-dlg{background:var(--surface);border-radius:14px;width:min(460px,100%);max-height:86vh;display:flex;flex-direction:column;gap:10px;padding:18px 18px 14px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.loc-dlg h3{margin:0;font-size:15px;color:var(--brand)}
+.loc-dlg-sub{font-size:12px;color:var(--muted);line-height:1.5}
+.loc-dlg-lista{overflow:auto;min-height:90px;max-height:38vh;display:flex;flex-direction:column;gap:2px;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface2)}
+.loc-dlg-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:5px 7px;border-radius:7px;cursor:pointer}
+.loc-dlg-item:hover{background:var(--brand-light)}
+.loc-dlg-item em{margin-left:auto;font-size:10.5px;font-style:normal;font-weight:700;color:var(--muted)}
+.loc-dlg-linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+.loc-dlg-rod{display:flex;gap:8px;justify-content:flex-end}
 .bioma-regras{display:flex;flex-direction:column;gap:5px;margin-top:0}
 /* Cartão estreito (ex.: forma alternativa em 2 colunas): raridade desce pra uma 2ª linha */
 @container (max-width:470px){
@@ -3675,6 +3689,105 @@ function locFiltrar(inp) {
 }
 const LOC_RAR_LABEL = { comum: 'Comum', incomum: 'Incomum', raro: 'Raro', rarissimo: 'Raríssimo' };
 
+// ── Copiar / colar / replicar condições entre locais ──
+// A "área de transferência" fica em memória e no localStorage: vale entre locais, entre Pokémon e formas alternativas.
+const LOC_CLIP_KEY = 'kp_loc_clip_v1';
+let LOC_CLIP = (function () {
+  try { const o = JSON.parse(localStorage.getItem(LOC_CLIP_KEY) || 'null'); if (o && Array.isArray(o.regras) && o.regras.length) return o; } catch (e) { /* sem localStorage */ }
+  return null;
+})();
+function locClipSalvar() { try { if (LOC_CLIP) localStorage.setItem(LOC_CLIP_KEY, JSON.stringify(LOC_CLIP)); } catch (e) { /* segue só em memória */ } }
+const locClone = x => JSON.parse(JSON.stringify(x));
+const locRegraChave = r => `${r.legado ? 'txt' : (r.categoria || 'clima')}|${r.condicao || 'sempre'}|${r.raridade || 'comum'}|${pesoDe(r)}`;
+// um local recém-adicionado só tem a regra padrão (Clima · Sempre · Comum): colar por cima substitui em vez de somar
+function locEhPlaceholder(item) {
+  const r = item && item.regras;
+  return !r || !r.length || (r.length === 1 && !r[0].legado && (r[0].categoria || 'clima') === 'clima' && (r[0].condicao || 'sempre') === 'sempre' && (r[0].raridade || 'comum') === 'comum' && pesoDe(r[0]) === 100);
+}
+function locAplicarRegras(item, regras, modo) {
+  const novas = locClone(regras || []);
+  if (modo === 'substituir' || locEhPlaceholder(item)) { item.regras = novas; return; }
+  const ja = new Set(item.regras.map(locRegraChave));
+  novas.forEach(r => { if (!ja.has(locRegraChave(r))) { item.regras.push(r); ja.add(locRegraChave(r)); } });
+}
+// acesso à lista de locais de cada formulário (epk = edição, nrpg = novo, falt = forma alternativa)
+function locCtx(prefix, el) {
+  if (prefix === 'epk') return { get: () => epkBiomasSel, set: a => { epkBiomasSel = a; }, render: () => { epkRenderBiomaTags(); epkRenderBiomaSelect(); } };
+  if (prefix === 'nrpg') return { get: () => nrpgBiomasSel, set: a => { nrpgBiomasSel = a; }, render: () => { nrpgRenderBiomaTags(); nrpgRenderBiomaSelect(); } };
+  const row = el.closest('.falt-row');
+  return { get: () => faltGetBiomas(row), set: a => faltSetBiomas(row, a), render: () => { faltRenderBiomaSelect(row); faltRenderBiomaTags(row); } };
+}
+const locPlural = n => `${n} condiç${n === 1 ? 'ão' : 'ões'}`;
+function locAtualizarColar() {
+  document.querySelectorAll('.loc-colar').forEach(b => {
+    b.textContent = '📥 Colar' + (LOC_CLIP ? ` (${LOC_CLIP.regras.length})` : '');
+    b.title = LOC_CLIP ? `Colar ${locPlural(LOC_CLIP.regras.length)} copiadas de “${LOC_CLIP.de}”` : 'Nada copiado ainda — use “Copiar” em outro local';
+    b.classList.toggle('loc-vazio-clip', !LOC_CLIP);
+  });
+}
+function locCopiar(prefix, el, nome) {
+  const item = locCtx(prefix, el).get().find(b => b.nome === nome);
+  if (!item || !item.regras || !item.regras.length) { toast('Esse local não tem condições para copiar.', 'err'); return; }
+  LOC_CLIP = { de: nome, regras: locClone(item.regras) };
+  locClipSalvar(); locAtualizarColar();
+  toast(`Copiadas ${locPlural(LOC_CLIP.regras.length)} de “${nome}”.`, 'ok');
+}
+function locColar(prefix, el, nome) {
+  if (!LOC_CLIP) { toast('Nada copiado ainda. Use “Copiar” em outro local primeiro.', 'err'); return; }
+  const ctx = locCtx(prefix, el), arr = ctx.get();
+  const item = arr.find(b => b.nome === nome); if (!item) return;
+  const antes = (item.regras || []).length;
+  locAplicarRegras(item, LOC_CLIP.regras, 'somar');
+  ctx.set(arr); ctx.render();
+  toast(`Coladas em “${nome}” as condições de “${LOC_CLIP.de}”${antes > 1 ? ' (somadas às existentes, sem duplicar)' : ''}.`, 'ok');
+}
+// Janela: escolher vários locais de uma vez e aplicar as condições deste local neles
+function locReplicar(prefix, el, nome) {
+  const ctx = locCtx(prefix, el);
+  const item = ctx.get().find(b => b.nome === nome); if (!item) return;
+  const abrir = () => {
+    const outros = (S.locais.all || []).map(l => l.nome).filter(n => n !== nome);
+    if (!outros.length) { toast('Não há outros locais cadastrados.', 'err'); return; }
+    const jaTem = new Set(ctx.get().map(b => b.nome));
+    const n = (item.regras || []).length;
+    const ov = document.createElement('div'); ov.className = 'loc-dlg-ov';
+    ov.onclick = e => { if (e.target === ov) ov.remove(); };
+    ov.innerHTML = `<div class="loc-dlg" role="dialog" aria-label="Replicar condições">
+      <h3>Replicar condições de “${enclEsc(nome)}”</h3>
+      <div class="loc-dlg-sub">Aplica as ${locPlural(n)} deste local nos locais que você marcar. Os que ainda não foram adicionados a este Pokémon são criados.</div>
+      <input type="text" class="mv-meta-input loc-dlg-filtro" placeholder="🔍 Filtrar locais…">
+      <div class="loc-dlg-linha"><button type="button" class="loc-acao loc-dlg-todos">Marcar todos visíveis</button><button type="button" class="loc-acao loc-dlg-nenhum">Limpar</button><span class="loc-dlg-cont" style="margin-left:auto;color:var(--muted)">0 marcados</span></div>
+      <div class="loc-dlg-lista">${outros.map(o => `<label class="loc-dlg-item" data-nome="${enclEsc(o)}"><input type="checkbox" value="${enclEsc(o)}"><span>${enclEsc(o)}</span>${jaTem.has(o) ? '<em>já adicionado</em>' : ''}</label>`).join('')}</div>
+      <div class="loc-dlg-linha"><span>Nos que já existem:</span><select class="mv-meta-input loc-dlg-modo"><option value="somar">somar às condições atuais (sem duplicar)</option><option value="substituir">substituir as condições atuais</option></select></div>
+      <div class="loc-dlg-rod"><button type="button" class="btn btn-sm loc-dlg-cancelar">Cancelar</button><button type="button" class="btn btn-primary btn-sm loc-dlg-ok">Aplicar</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const q = c => ov.querySelector(c);
+    const itens = () => [...ov.querySelectorAll('.loc-dlg-item')];
+    const cont = () => { const k = ov.querySelectorAll('input:checked').length; q('.loc-dlg-cont').textContent = `${k} marcado${k === 1 ? '' : 's'}`; };
+    ov.addEventListener('change', cont);
+    q('.loc-dlg-filtro').addEventListener('input', e => { const t = kpSemAcento(e.target.value); itens().forEach(l => { l.style.display = (!t || kpSemAcento(l.dataset.nome).includes(t)) ? '' : 'none'; }); });
+    q('.loc-dlg-todos').onclick = () => { itens().forEach(l => { if (l.style.display !== 'none') l.querySelector('input').checked = true; }); cont(); };
+    q('.loc-dlg-nenhum').onclick = () => { ov.querySelectorAll('input[type=checkbox]').forEach(i => { i.checked = false; }); cont(); };
+    q('.loc-dlg-cancelar').onclick = () => ov.remove();
+    q('.loc-dlg-ok').onclick = () => {
+      const marcados = [...ov.querySelectorAll('input:checked')].map(i => i.value);
+      if (!marcados.length) { toast('Marque ao menos um local.', 'err'); return; }
+      const modo = q('.loc-dlg-modo').value, arr = ctx.get();
+      const fonte = arr.find(b => b.nome === nome) || item;
+      marcados.forEach(m => {
+        let it = arr.find(b => b.nome === m);
+        if (!it) { it = { nome: m, regras: [] }; arr.push(it); }
+        locAplicarRegras(it, fonte.regras, modo);
+      });
+      ctx.set(arr); ctx.render(); ov.remove();
+      toast(`Condições de “${nome}” aplicadas em ${marcados.length} local${marcados.length === 1 ? '' : 'is'}.`, 'ok');
+    };
+    q('.loc-dlg-filtro').focus();
+  };
+  if (S.locais.loaded) abrir(); else ensureLocaisLoaded().then(abrir);
+}
+
 // Um card por Local (grade): nome + resumo "condição · raridade". Clique abre as condições (o card ocupa a linha toda).
 // prefix é 'nrpg', 'epk' ou 'falt' — usado para chamar de volta as funções certas (ex.: nrpgSetRegraField).
 function locCardHtml(prefix, item) {
@@ -3702,7 +3815,12 @@ function locCardHtml(prefix, item) {
     <div class="loc-card-chips">${chips}</div>
     <div class="loc-card-body" onclick="event.stopPropagation()">
       <div class="bioma-regras">${regras.map((r, i) => regraRowHtml(prefix, nomeEsc, i, r)).join('')}</div>
-      <button type="button" class="bioma-add-regra" onclick="${addCall}">＋ condição</button>
+      <div class="loc-acoes">
+        <button type="button" class="bioma-add-regra" onclick="${addCall}">＋ condição</button>
+        <button type="button" class="loc-acao" onclick="locCopiar('${prefix}',this,'${nomeEsc}')" title="Copiar as condições deste local">📋 Copiar</button>
+        <button type="button" class="loc-acao loc-colar${LOC_CLIP ? '' : ' loc-vazio-clip'}" onclick="locColar('${prefix}',this,'${nomeEsc}')" title="${LOC_CLIP ? 'Colar ' + locPlural(LOC_CLIP.regras.length) + ' copiadas de “' + enclEsc(LOC_CLIP.de) + '”' : 'Nada copiado ainda — use “Copiar” em outro local'}">📥 Colar${LOC_CLIP ? ' (' + LOC_CLIP.regras.length + ')' : ''}</button>
+        <button type="button" class="loc-acao" onclick="locReplicar('${prefix}',this,'${nomeEsc}')" title="Aplicar estas condições em vários outros locais de uma vez">⇉ Replicar em…</button>
+      </div>
     </div>
   </div>`;
 }
