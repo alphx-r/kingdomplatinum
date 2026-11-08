@@ -2299,20 +2299,7 @@ function calcSyncSelects(){
     ).join('');
   }
 
-  // Situações de Combate: checkboxes somatórios (cada uma soma ou subtrai pontos de nível)
-  const situList = document.getElementById('calc-situ-list');
-  if(situList){
-    const marcadas = new Set([...situList.querySelectorAll('.calc-situ-ck:checked')].map(c => c.dataset.desc));
-    const esc = t => String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-    situList.innerHTML = (data.situ || []).filter(r => r.tier !== 0).map(r => {
-      const sinal = (r.tier > 0 ? '+' : '') + r.tier + (/desprevenid/i.test(r.desc) ? '*' : '');
-      const cor = r.tier > 0 ? '#2e9e50' : 'var(--red)';
-      return `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer">
-        <input type="checkbox" class="calc-situ-ck" data-tier="${r.tier}" data-desc="${esc(r.desc)}" ${marcadas.has(r.desc)?'checked':''} onchange="calcDano()"/>
-        <span style="flex:1">${esc(r.desc)}</span><strong style="color:${cor}">${sinal}</strong>
-      </label>`;
-    }).join('');
-  }
+  window.calcRenderSitu && window.calcRenderSitu(data);
 
   // Patch calcDano to read tier values from option value prefix
   window._calcTiersData = data.tiers;
@@ -2342,6 +2329,25 @@ function calcSyncSelects(){
   // Store bonus data for calcDano to use
   window._calcBonusData = data.bonus || CALC_DEFAULTS.bonus;
 }
+
+// Renderiza os checkboxes de Situações de Combate (somatórios) em #calc-situ-list
+window.calcRenderSitu = function(dataArg){
+  const situList = document.getElementById('calc-situ-list');
+  if(!situList) return;
+  let data = dataArg;
+  try{ if(!data) data = (typeof _calcAdmData !== 'undefined' && _calcAdmData) || CALC_DEFAULTS; }catch(e){}
+  const rows = (data && data.situ) || (typeof CALC_DEFAULTS !== 'undefined' ? CALC_DEFAULTS.situ : []) || [];
+  const marcadas = new Set([...situList.querySelectorAll('.calc-situ-ck:checked')].map(c => c.dataset.desc));
+  const esc = t => String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  situList.innerHTML = rows.filter(r => r.tier !== 0).map(r => {
+    const sinal = (r.tier > 0 ? '+' : '') + r.tier + (/desprevenid/i.test(r.desc) ? '*' : '');
+    const cor = r.tier > 0 ? '#2e9e50' : 'var(--red)';
+    return `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer">
+      <input type="checkbox" class="calc-situ-ck" data-tier="${r.tier}" data-desc="${esc(r.desc)}" ${marcadas.has(r.desc)?'checked':''} onchange="calcDano()"/>
+      <span style="flex:1">${esc(r.desc)}</span><strong style="color:${cor}">${sinal}</strong>
+    </label>`;
+  }).join('');
+};
 
 // Soma das Situações de Combate marcadas (tabela completamente somatória)
 window.calcSituSoma = function(){
@@ -2382,6 +2388,7 @@ window.calcSituSoma = function(){
     const statsVal  = getVal('calc-stats');
     const situVal_raw = document.getElementById('calc-situacao')?.value || '0';
     const critStab  = document.getElementById('calc-crit-stab')?.checked;
+    if(document.getElementById('calc-situ-list') && !document.querySelector('.calc-situ-ck')) window.calcRenderSitu();
     let situVal = window.calcSituSoma();
     if(nv && nv.situ != null) situVal = nv.situ;
 
@@ -10393,7 +10400,7 @@ async function salvarPaginaEditada(){
 // Garante que a calculadora de dano esteja presente no final de #page-batalhas
 // mesmo quando o conteúdo da página for sobrescrito pelo banco (carregarPaginaEditavel)
 function _ensureCalcDano(){
-  if(document.getElementById('calc-dano-box')) { window.calcDano && window.calcDano(); return; }
+  if(document.getElementById('calc-dano-box')) { window.calcRenderSitu && window.calcRenderSitu(); window.calcDano && window.calcDano(); return; }
   const pageEl = document.getElementById('page-batalhas');
   if(!pageEl) return;
   const box = document.createElement('div');
@@ -10521,6 +10528,7 @@ function _ensureCalcDano(){
     <div style="font-size:11px;color:var(--muted);margin-top:10px;font-style:italic">* Tiers acima de 6 incrementam de 8 em 8 pontos. Tier mínimo é sempre 1.</div>
   </div>`;
   pageEl.appendChild(box.firstElementChild);
+  window.calcRenderSitu && window.calcRenderSitu();
   window.calcDano && window.calcDano();
 }
 
