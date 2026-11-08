@@ -34,7 +34,8 @@
     var act = IDX ? it.k === 'roller' : at(it.m);
     var cls = 'nav-link' + (act ? ' active' : '');
     var inner = it.i + lab(it.l);
-    if (it.t === 'pokegram') return '<button class="' + cls + '" onclick="abrirPokegram()">' + inner + '</button>';
+    // páginas sem abrirPokegram() (ex.: mapa) abrem o Pokégram direto em outra aba
+    if (it.t === 'pokegram') return '<button class="' + cls + '" onclick="typeof abrirPokegram===\'function\'?abrirPokegram():window.open(\'https://pokegramrpg.vercel.app/\',\'_blank\',\'noopener\')">' + inner + '</button>';
     if (IDX && it.t === 'go') return '<button class="' + cls + '" onclick="goTo(\'' + it.k + '\',this)">' + inner + '</button>';
     if (IDX && it.t === 'fichas') return '<a class="' + cls + '" href="' + it.h + '" onclick="return abrirFichas(event)">' + inner + '</a>';
     // data-r: a página de fichas navega internamente (sem recarregar) nos links com esse atributo
