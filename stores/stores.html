@@ -508,6 +508,25 @@ dialog#slm{width:min(640px,95vw);max-height:92vh;overflow:auto;text-align:left}
 @media (max-width:560px){.se-g{grid-template-columns:1fr}}
 /* loja só-catálogo: sem carrinho, sem comprar/vender */
 body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf .btn,body.catalogo .pcf .stp{display:none!important}
+/* ===== mobile: botões e painéis do adm (hub e lojas) ===== */
+@media(max-width:768px){
+ .pmht{gap:8px}
+ .pmb{min-width:0;flex:1 1 0}.pmb b{font-size:21px;line-height:1.15;overflow-wrap:anywhere}
+ .pmq{order:9;flex:1 1 100%;min-width:0}
+ .pmcart{min-width:44px;height:44px;padding:0 10px;flex:none}
+ .sh-ed{padding:7px 14px;font-size:12px;bottom:-38px}
+ dialog#slg,dialog#slm,dialog#cpm,dialog#hsm{width:calc(100vw - 20px)!important;max-height:calc(100dvh - 24px);padding:16px;border-radius:14px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+ dialog#slg .in,dialog#slm .in,dialog#cpm .in,dialog#hsm .in,dialog#slm select{font-size:16px;padding:10px 12px;min-height:44px}
+ dialog#slm .se-f{font-size:13px}
+ dialog#slm .se-ck,dialog#slm .se-cl label{min-height:40px}
+ dialog#slm .se-ck input{width:20px;height:20px}
+ .se-cl input[type=color]{width:48px;height:38px}
+ .sg-r{padding:12px 0}.sg-r>div{min-width:0;overflow-wrap:anywhere}.sg-r .btn{min-height:40px;padding:0 16px;flex:none}
+ dialog#slg .mb,dialog#slm .mb,dialog#cpm .mb,dialog#hsm .mb{position:sticky;bottom:-16px;background:var(--surface);padding:12px 0 4px;margin-top:12px;flex-wrap:wrap}
+ dialog#slg .mb .btn,dialog#slm .mb .btn,dialog#cpm .mb .btn,dialog#hsm .mb .btn{flex:1 1 auto;min-height:44px}
+ .cpf{grid-template-columns:1fr}
+}
+@media(max-width:380px){.pmb b{font-size:18px}.pmcart{min-width:40px;height:40px}}
 </style>
 </head>
 <body>
@@ -669,7 +688,7 @@ let LST=null,FL=[],F=null,ITM=null,TAB='b',CAT='',Q='',CB={},CS={},busy=false;
 /* ===== Stores: rota, lojas, regras por loja ===== */
 let LOJAS=null,LJ=null,EST=null,CATALOGO=false;
 const PATH=location.pathname.replace(/\/+$/,'');
-const SL=(()=>{const m=PATH.match(/^\/stores\/([^\/]+)$/i);if(m)return decodeURIComponent(m[1]).toLowerCase();if(/^\/pokemart(\.html)?$/i.test(PATH))return'pokemart';const q=new URLSearchParams(location.search).get('slug');return q?q.toLowerCase():''})();
+let SL=(()=>{const m=PATH.match(/^\/stores\/([^\/]+)$/i);if(m)return decodeURIComponent(m[1]).toLowerCase();if(/^\/pokemart(\.html)?$/i.test(PATH))return'pokemart';const q=new URLSearchParams(location.search).get('slug');return q?q.toLowerCase():''})();
 const LJPEND=()=>{try{const p=JSON.parse(localStorage.getItem('kp_lojas_pend')||'null');if(p&&Array.isArray(p.l)&&Date.now()-p.t<180000)return p.l}catch{}return null};
 const LJL=()=>LJPEND()?Promise.resolve(LJPEND()):jl('/stores/stores.json').then(d=>Array.isArray(d)?d:jl('/stores.json')).then(d=>Array.isArray(d)?d:jl(CDN_REPO+'stores/stores.json')).then(d=>Array.isArray(d)?d:[]);
 const recs=l=>Array.isArray(l?.recursos)?l.recursos:[];
@@ -682,7 +701,10 @@ const estTxt=l=>(l.estacoes||[]).map(e=>e.charAt(0).toUpperCase()+e.slice(1)).jo
 const isVip=f=>!!f&&(f.d?.vip===true||f.d?.vip==='true'||(Array.isArray(f.d?.inventario)&&f.d.inventario.some(x=>x&&/^vip(card|pass)?$/.test(nk(x.nome)))));
 const reqOk=(l,f)=>{const r=l?.requisitos;if(!r)return true;if(r.vip&&!isVip(f))return false;return true};
 /* item pertence à loja: it.lojas inclui o slug (fallback da migração: flags.pokemart.enabled na PokéMart) */
-const isNaLoja=(it,slug)=>!!it&&(Array.isArray(it.lojas)&&it.lojas.includes(slug)||(slug==='pokemart'&&it.flags?.pokemart?.enabled===true));
+/* slug renomeado: a loja guarda os slugs antigos em "antigos"; itens, links, cupons e histórico seguem valendo */
+const lojaPorSlug=(sl,L)=>(L||[]).find(x=>x&&x.slug===sl)||(L||[]).find(x=>x&&Array.isArray(x.antigos)&&x.antigos.includes(sl))||null;
+const chaveLoja=()=>LJ?.antigos?.[0]||LJ?.slug||SL;
+const isNaLoja=(it,slug)=>{if(!it)return false;const ids=[slug,...((LOJAS||[]).find(x=>x&&x.slug===slug)?.antigos||[])];return Array.isArray(it.lojas)&&ids.some(i=>it.lojas.includes(i))||(slug==='pokemart'&&it.flags?.pokemart?.enabled===true)};
 /* histórico unificado: d.historico_lojas + legado d.historico_pokemart (lido como l:'pokemart'; convertido no próximo finaliza) */
 const histAll=d=>{const n=Array.isArray(d?.historico_lojas)?d.historico_lojas:[],o=Array.isArray(d?.historico_pokemart)?d.historico_pokemart.map(x=>({l:'pokemart',...x})):[];return[...n,...o].sort((a,b)=>String(b.t).localeCompare(String(a.t)))};
 const pr=r=>r.unit>0?fm(r.unit):'—';
@@ -738,7 +760,12 @@ async function entrar(){const le=$('le');le.style.display='none';
   ses=j;localStorage.setItem(SK,JSON.stringify(j));try{localStorage.setItem('player_session',JSON.stringify({nome:m.nome,id:m.id}))}catch{}
   $('ls').value='';lc.value='';$('lcw').style.display='none';$('lg').close();await idxSync();LST=null;boot()
  }catch(e){le.textContent=e.message;le.style.display='block'}}
-function sair(){localStorage.removeItem(SK);ses=null;F=null;LST=null;boot()}
+/* personagem escolhido: lembrado em sessionStorage (aba) e localStorage (navegador) */
+const FK='kp_loja_ficha';
+const fichaSalva=()=>{let v=null;try{v=sessionStorage.getItem(FK)}catch{}if(!v)try{v=localStorage.getItem(FK)}catch{}return v};
+const salvaFicha=sl=>{try{sessionStorage.setItem(FK,sl)}catch{}try{localStorage.setItem(FK,sl)}catch{}};
+const limpaFicha=()=>{try{sessionStorage.removeItem(FK)}catch{}try{localStorage.removeItem(FK)}catch{}};
+function sair(){limpaFicha();localStorage.removeItem(SK);ses=null;F=null;LST=null;boot()}
 function mostrarBadge(){const b=$('nav-player-badge');if(!b)return;const ad=!!ses?.admin;
  $('btn-entrar').style.display=ses?'none':'';
  if(ses){b.classList.toggle('is-admin',ad);$('nav-player-ico').innerHTML=ad?NAV_ICO_KEY:NAV_ICO_GAMEPAD;$('nav-player-name').textContent=ses.nome||(ad?'Admin':'');b.style.display='flex'}else b.style.display='none'}
@@ -783,7 +810,8 @@ async function boot(){
  mostrarBadge();
  try{if(!LOJAS)LOJAS=await LJL();EST=await ESTP}catch{LOJAS=LOJAS||[]}
  if(!SL){drawHub();fim();return}
- LJ=LOJAS.find(x=>x.slug===SL&&(x.ativa!==false||isAdm()))||null;
+ LJ=lojaPorSlug(SL,LOJAS);if(LJ&&LJ.ativa===false&&!isAdm())LJ=null;
+ if(LJ&&LJ.slug!==SL){SL=LJ.slug;try{history.replaceState(null,'','/stores/'+encodeURIComponent(SL)+location.search)}catch{}}
  if(!LJ){$('app').innerHTML=msg('Loja não encontrada.<br><br><a href="/stores">Ver todas as lojas</a>');fim();return}
  document.title=LJ.nome+' | Kingdom Platinum';
  aplicaTemaLoja(LJ.tema);
@@ -794,7 +822,7 @@ async function boot(){
  if(CATALOGO){F=null;FL=[];CB={};CS={};CUP=null;VCH={};
   try{[ITM,MV]=await Promise.all([ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
   if(ses){try{LST=await carregaLista();FL=minhas(LST)}catch{FL=[]}
-   const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q)||FL.find(x=>x.slug===localStorage.getItem('kp_loja_ficha'))||(FL.length===1?FL[0]:null);
+   const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q)||FL.find(x=>x.slug===fichaSalva())||(FL.length===1?FL[0]:null);
    if(hit){await pick(hit.slug);fim();return}}
   render();fim();return}
  if(!ses){$('app').innerHTML=msg('Entre com a sua conta para usar a loja <b>'+esc(LJ.nome)+'</b>.<br><br><button class="btn p" onclick="lg.showModal()">Entrar</button>');fim();try{lg.showModal()}catch{}return}
@@ -802,7 +830,7 @@ async function boot(){
  try{[LST,ITM,MV]=await Promise.all([carregaLista(),ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
  FL=minhas(LST);
  if(!FL.length){$('app').innerHTML=msg('Você não tem nenhuma ficha ativa. <a href="/fichas">Ir ao Fichário</a>');fim();return}
- const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q);
+ const q=new URLSearchParams(location.search).get('ficha'),hit=FL.find(x=>x.slug===q)||FL.find(x=>x.slug===fichaSalva());
  if(hit)await pick(hit.slug);
  else if(FL.length===1)await pick(FL[0].slug);
  else{F=null;CB={};CS={};CUP=null;VCH={};render();openQm()}
@@ -869,7 +897,7 @@ function editLoja(slug){
  const ck=(id,lbl,on)=>`<label class="se-ck"><input type="checkbox" id="${id}" ${on?'checked':''}> ${lbl}</label>`;
  d.innerHTML=`<div class="mtl">${l?'Editar loja':'Nova loja'}</div><div class="se-g">
   <label class="se-f">Nome<input class="in" id="se-nome" value="${esc(o.nome||'')}" oninput="seAuto()" autocomplete="off"></label>
-  <label class="se-f">Slug (endereço /stores/…)<input class="in" id="se-slug" value="${esc(o.slug||'')}" ${l?'readonly':''} oninput="this.dataset.m=1" placeholder="ex: loja-x" autocomplete="off"></label>
+  <label class="se-f">Slug (endereço /stores/…)<input class="in" id="se-slug" value="${esc(o.slug||'')}" ${l&&l.slug==='pokemart'?'readonly':''} oninput="this.dataset.m=1" placeholder="ex: loja-x" autocomplete="off"></label>
   <label class="se-f">Empresa<input class="in" id="se-emp" value="${esc(o.empresa||'')}"></label>
   <label class="se-f">Ordem no hub<input class="in" id="se-ord" type="number" value="${esc(o.ordem??99)}"></label>
   <label class="se-f se-w">Descrição<textarea class="in" id="se-desc" rows="2">${esc(o.descricao||'')}</textarea></label>
@@ -904,15 +932,15 @@ async function gravaLojas(lista,okm){
   LOJAS=j.lojas;try{localStorage.setItem('kp_lojas_pend',JSON.stringify({t:Date.now(),l:j.lojas}))}catch{}
   if($('slm')?.open)$('slm').close();
   toast(okm+' O site todo atualiza em cerca de 1 minuto.');
-  if(!SL)drawHub();else LJ=LOJAS.find(x=>x.slug===SL)||LJ;
+  if(!SL)drawHub();else LJ=lojaPorSlug(SL,LOJAS)||LJ;
   return true
  }catch(e){er(e.message);if(b){b.disabled=false;b.textContent='Salvar'}return false}}
 async function saveLoja(){
  const er=m=>{$('se-err').textContent=m||''};
- const nome=$('se-nome').value.trim(),slug=EDL||slugify($('se-slug').value);
+ const nome=$('se-nome').value.trim(),slug=EDL==='pokemart'?EDL:slugify($('se-slug').value);
  if(!nome)return er('Informe o nome.');
  if(!slug)return er('Informe o slug.');
- if(!EDL&&(LOJAS||[]).some(x=>x.slug===slug))return er('Já existe uma loja com esse slug.');
+ if((LOJAS||[]).some(x=>x.slug!==EDL&&(x.slug===slug||(x.antigos||[]).includes(slug))))return er('Já existe uma loja com esse slug.');
  const sp=parseFloat($('se-sell').value);
  const n={slug,nome,empresa:$('se-emp').value.trim(),descricao:$('se-desc').value.trim(),logo:$('se-logo').value.trim(),banner:$('se-ban').value.trim(),
   modo:$('se-modo').value,compra:$('se-compra').checked,sell_pct:Math.min(100,Math.max(0,isNaN(sp)?50:sp))/100,
@@ -922,8 +950,8 @@ async function saveLoja(){
  {const pr=$('se-promo').value.trim(),pa=$('se-pate').value;if(pr){n.promocao=pr;if(pa)n.promo_ate=pa}}
  if($('se-tema').checked)n.tema={brand:$('se-c1').value,brandMid:$('se-c2').value,accent:$('se-c3').value};
  const base=LOJAS||[];
- const lista=EDL?base.map(x=>{if(x.slug!==EDL)return x;const y={...x,...n};if(!n.tema)delete y.tema;if(!n.promocao){delete y.promocao;delete y.promo_ate}else if(!n.promo_ate)delete y.promo_ate;return y}):[...base,n];
- await gravaLojas(lista,EDL?'Loja salva.':'Loja criada.')}
+ const lista=EDL?base.map(x=>{if(x.slug!==EDL)return x;const y={...x,...n};if(slug!==EDL){const a=[...new Set([...(x.antigos||[]),EDL])].filter(v=>v!==slug);y.antigos=a}if(!n.tema)delete y.tema;if(!n.promocao){delete y.promocao;delete y.promo_ate}else if(!n.promo_ate)delete y.promo_ate;return y}):[...base,n];
+ const era=EDL,ok=await gravaLojas(lista,EDL?'Loja salva.':'Loja criada.');if(ok&&era&&slug!==era&&SL===era)location.href='/stores/'+encodeURIComponent(slug)}
 async function delLoja(){
  if(!EDL||EDL==='pokemart')return;
  if(!confirm('Excluir a loja "'+EDL+'"? Os itens continuam no items.json, só deixam de aparecer nela.'))return;
@@ -932,12 +960,12 @@ async function delLoja(){
 
 /* modal: quem está acessando a PokéMart (quando há mais de uma ficha ativa) */
 function openQm(){$('qq').value='';$('qq').style.display=FL.length>6?'':'none';drawQm();$('qmb').innerHTML='<button type="button" class="btn s" onclick="qm.close()">Cancelar</button>';if(!qm.open)qm.showModal()}
-function drawQm(){const q=nrm($('qq').value),sv=F?.slug||localStorage.getItem('kp_loja_ficha');
+function drawQm(){const q=nrm($('qq').value),sv=F?.slug||fichaSalva();
  $('qg').innerHTML=FL.filter(x=>!q||nrm((x.nome||'')+' '+(x.player||'')).includes(q)).map(x=>{const th=x.thumb||x.foto;return`<button type="button" class="qc${x.slug===sv?' on':''}" data-s="${esc(x.slug)}">${th?`<img src="${esc(th)}" alt="">`:`<span class="ph">${esc((x.nome||'?')[0])}</span>`}<b>${esc(x.nome)}</b><small>${esc(x.player||'')}</small></button>`}).join('')||'<div class="mu" style="grid-column:1/-1;text-align:center">Nenhuma ficha encontrada.</div>'}
 async function qmClick(e){const c=e.target.closest('.qc');if(!c)return;qm.close();$('app').innerHTML=msg('Carregando...');await pick(c.dataset.s)}
 async function pick(slug){
  CB={};CS={};CUP=null;VCH={};
- try{const r=await lerFicha(slug);if(!r)throw new Error('Ficha não encontrada.');r.d=r.d||{};F=r;localStorage.setItem('kp_loja_ficha',slug);history.replaceState(null,'','?ficha='+encodeURIComponent(slug))}
+ try{const r=await lerFicha(slug);if(!r)throw new Error('Ficha não encontrada.');r.d=r.d||{};F=r;salvaFicha(slug);history.replaceState(null,'','?ficha='+encodeURIComponent(slug))}
  catch(e){$('app').innerHTML=msg('Erro: '+esc(e.message));return}
  render()}
 function render(){
@@ -1532,18 +1560,18 @@ function limpa(){CB={};CS={};CUP=null;VCH={};drawList();drawSum()}
 /* histórico (só adm): últimas 30 transações por loja, gravadas na própria ficha em d.historico_lojas (campo l = slug da loja) */
 function openHist(){if(!isAdm())return;if(!F)return toast('Escolha uma ficha');
  let d=$('hsm');if(!d){d=document.createElement('dialog');d.id='hsm';d.style.width='min(520px,94vw)';document.body.appendChild(d)}
- const H=histAll(F.d).filter(x=>x.l===SL),ls=a=>a.map(x=>x[1]+'× '+esc(x[0])).join(', ');
+ const H=histAll(F.d).filter(x=>x.l===chaveLoja()||x.l===SL||(LJ.antigos||[]).includes(x.l)),ls=a=>a.map(x=>x[1]+'× '+esc(x[0])).join(', ');
  d.innerHTML=`<div class="mtl">Histórico · ${esc(LJ.nome)} · ${esc(F.nome||'')}</div>${H.length?H.map(h=>{const df=h.d-h.a;return`<div style="padding:8px 0;border-top:1px solid var(--bd);font:500 13px/1.45 var(--font-body)"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(new Date(h.t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}))}</b><b class="${df<0?'neg':'pos'}">${df<0?'−':'+'}${fm(Math.abs(df))}</b></div>${h.b?.length?`<div>Compra: ${ls(h.b)}</div>`:''}${h.s?.length?`<div>Venda: ${ls(h.s)}</div>`:''}${h.vd?`<div>TM Voucher${h.vn>1?' ×'+h.vn:''}: −${fm(h.vd)}</div>`:''}${h.cp?`<div>${esc(h.cn||'Cupom')}: −${fm(h.cp)}</div>`:''}<small style="color:var(--muted)">Saldo ${fm(h.a)} → ${fm(h.d)}</small></div>`}).join(''):'<div class="lt" style="padding:16px">Nenhuma transação registrada.</div>'}<div class="mb"><button type="button" class="btn s" onclick="hsm.close()">Fechar</button></div>`;d.showModal()}
 /* cupons */
 async function aplicaCupom(){const e=$('cpe'),c=$('cpi').value.trim().toUpperCase();if(!c)return;e.textContent='';
- try{const r=await irpc('pokemart_cupom_check',{p_codigo:c,p_loja:SL});if(!r||!r.codigo)throw new Error('Cupom inválido ou expirado.');CUP=r;toast('Cupom aplicado');drawSum()}catch(x){e.textContent=x.message}}
+ try{const r=await irpc('pokemart_cupom_check',{p_codigo:c,p_loja:chaveLoja()});if(!r||!r.codigo)throw new Error('Cupom inválido ou expirado.');CUP=r;toast('Cupom aplicado');drawSum()}catch(x){e.textContent=x.message}}
 function tiraCupom(){CUP=null;drawSum()}
 const irpcL=(n,b)=>fetch(IU+'/rest/v1/rpc/'+n,{method:'POST',headers:{apikey:IK,Authorization:'Bearer '+IK,'Content-Type':'application/json'},body:JSON.stringify(b)}).then(async r=>{const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.message||'HTTP '+r.status);return j||[]});
 let CPL=[];
 async function openCup(){let d=$('cpm');if(!d){d=document.createElement('dialog');d.id='cpm';d.style.width='min(520px,94vw)';document.body.appendChild(d)}
  d.innerHTML='<div class="mtl">Cupons</div><div class="lt">Carregando...</div>';d.showModal();await drawCup()}
 async function drawCup(err){const d=$('cpm');
- try{CPL=await irpcL('pokemart_cupom_listar',{p_admin:ses.nome,p_loja:SL})}catch(e){err=err||e.message;CPL=[]}
+ try{CPL=await irpcL('pokemart_cupom_listar',{p_admin:ses.nome,p_loja:chaveLoja()})}catch(e){err=err||e.message;CPL=[]}
  d.innerHTML=`<div class="mtl">Cupons</div>${CPL.length?CPL.map((c,i)=>`<div class="cpr"><span class="imn"><b>${esc(c.codigo)}</b> · ${c.tipo==='pct'?c.valor+'% OFF':fm(c.valor)+' OFF'}<small>${c.usos}${c.usos_max?'/'+c.usos_max:''} usos${c.expira_em?' · até '+esc(c.expira_em):''}</small></span><button type="button" class="btn s" onclick="cupSave(${i},true)">${c.ativo?'Ativo':'Inativo'}</button><button type="button" class="btn s" onclick="cupDel(${i})" aria-label="Excluir">🗑</button></div>`).join(''):'<div class="lt" style="padding:16px">Nenhum cupom criado.</div>'}
  <div class="cpf"><input class="in" id="cc" placeholder="CÓDIGO" autocomplete="off" style="text-transform:uppercase"><select class="in" id="ct"><option value="pct">Porcentagem (%)</option><option value="fixo">Valor fixo (C$)</option></select><input class="in" id="cv" type="number" min="1" placeholder="Valor"><input class="in" id="cx" type="number" min="1" placeholder="Limite de usos (opcional)"><input class="in" id="ce" type="date" style="grid-column:1/-1"></div>
  <div class="le2" id="cer">${esc(err||'')}</div><div class="mb"><button type="button" class="btn s" onclick="cpm.close()">Fechar</button><button type="button" class="btn p s" onclick="cupSave()">Criar cupom</button></div>`}
@@ -1551,8 +1579,8 @@ async function cupSave(i,tg){let c;
  if(tg){const o=CPL[i];c={p_codigo:o.codigo,p_tipo:o.tipo,p_valor:o.valor,p_expira:o.expira_em||null,p_usos_max:o.usos_max||null,p_ativo:!o.ativo}}
  else{const cd=$('cc').value.trim().toUpperCase().replace(/\s+/g,''),v=parseInt($('cv').value)||0;if(!cd||v<1)return drawCup('Informe código e valor.');if($('ct').value==='pct'&&v>100)return drawCup('Porcentagem máxima: 100.');
   c={p_codigo:cd,p_tipo:$('ct').value,p_valor:v,p_expira:$('ce').value||null,p_usos_max:parseInt($('cx').value)||null,p_ativo:true}}
- try{await irpcL('pokemart_cupom_salvar',{p_admin:ses.nome,p_loja:SL,...c});await drawCup()}catch(e){drawCup(e.message)}}
-async function cupDel(i){if(!confirm('Excluir o cupom '+CPL[i].codigo+'?'))return;try{await irpcL('pokemart_cupom_excluir',{p_admin:ses.nome,p_loja:SL,p_codigo:CPL[i].codigo});await drawCup()}catch(e){drawCup(e.message)}}
+ try{await irpcL('pokemart_cupom_salvar',{p_admin:ses.nome,p_loja:chaveLoja(),...c});await drawCup()}catch(e){drawCup(e.message)}}
+async function cupDel(i){if(!confirm('Excluir o cupom '+CPL[i].codigo+'?'))return;try{await irpcL('pokemart_cupom_excluir',{p_admin:ses.nome,p_loja:chaveLoja(),p_codigo:CPL[i].codigo});await drawCup()}catch(e){drawCup(e.message)}}
 
 /* modal de confirmação (itens, valores e saldo final); resolve true/false */
 function confirmaTx(t){return new Promise(res=>{
@@ -1590,12 +1618,12 @@ async function finaliza(){
   if(dsc>0&&CUP&&CUP.item){const i=inv.findIndex(x=>x&&dcNk(x.nome)&&dcPct(x)===CUP.valor);if(i<0)throw new Error('O Discount Coupon de '+CUP.valor+'% não está mais na Bag.');const q=parseInt(inv[i].qtd)||1;if(q>1)inv[i].qtd=q-1;else inv.splice(i,1)}
   if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente (o dinheiro da ficha mudou).');
   {const h=histAll(fr.d),nm=k=>ITM.get(k)?.name||k;
-   h.unshift({l:SL,t:new Date().toISOString(),b:Object.entries(CB).map(([k,q])=>[nm(k),q,+ITM.get(k)?.price||0]),s:Object.entries(CS).map(([k,q])=>[nm(k),q,ITM.get(k)?sellUnit(ITM.get(k)):0]),vd,vn,cp:dsc,cn:dsc>0&&CUP?CUP.codigo:'',a:sal,d:sal+ganho-gasto});
+   h.unshift({l:chaveLoja(),t:new Date().toISOString(),b:Object.entries(CB).map(([k,q])=>[nm(k),q,+ITM.get(k)?.price||0]),s:Object.entries(CS).map(([k,q])=>[nm(k),q,ITM.get(k)?sellUnit(ITM.get(k)):0]),vd,vn,cp:dsc,cn:dsc>0&&CUP?CUP.codigo:'',a:sal,d:sal+ganho-gasto});
    const ct={};fr.d.historico_lojas=h.filter(x=>{ct[x.l]=(ct[x.l]||0)+1;return ct[x.l]<=30});delete fr.d.historico_pokemart}
   fr.d.dinheiro=fnum(sal+ganho-gasto);
   const j=await salvarFicha({slug:fr.slug,nome:fr.nome,foto:fr.foto,banner:fr.banner,thumb:fr.thumb,player_id:fr.player_id,d:fr.d});
   if(j){fr.foto=j.foto;fr.banner=j.banner;fr.thumb=j.thumb;fr.atualizado_em=j.atualizado_em}
-  if(dsc>0&&CUP&&!CUP.item)try{await irpc('pokemart_cupom_usar',{p_codigo:CUP.codigo,p_loja:SL})}catch{}
+  if(dsc>0&&CUP&&!CUP.item)try{await irpc('pokemart_cupom_usar',{p_codigo:CUP.codigo,p_loja:chaveLoja()})}catch{}
   F=fr;CB={};CS={};CUP=null;VCH={};busy=false;toast('Transação concluída');toggleCart(false);render()
  }catch(e){busy=false;alert(e.message);try{await pick(F.slug)}catch{}}}
 
