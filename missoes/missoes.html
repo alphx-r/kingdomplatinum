@@ -231,7 +231,7 @@ dialog#mym::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
 .meta:empty{display:none}
 @media(max-width:700px){.pmg{grid-template-columns:minmax(0,1fr);gap:12px}.pc>*{margin-left:14px;margin-right:14px}.pc .desc{margin:8px 14px 0}.pc h3{font-size:16px}.meta{font-size:11.5px;padding:8px 10px}.desc{font-size:12.5px}.foot .btn{padding:8px 10px;font-size:12px}}
 .takers{font:600 12px var(--font-body);color:var(--muted)}
-.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:0}
 .chip{background:var(--surface2);border:1px solid var(--bd);border-radius:14px;padding:3px 10px;font:700 11px var(--font-body);color:var(--text);display:inline-flex;gap:5px;align-items:center}
 .chip.me{border-color:var(--accent);background:var(--accent-light)}
 .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}.chip.done .dot{background:var(--green)}
@@ -250,6 +250,8 @@ button.pc-act:hover{background:var(--green);color:#fff;transform:scale(1.07);box
 .mim-h{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:6px 2px 8px;border-bottom:2px solid var(--border);margin-top:8px}.mim-h:first-child{margin-top:0}
 .mim-av{flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:2px solid var(--rc);font:800 16px var(--font-title);color:var(--rc)}.mim-av img{width:100%;height:100%;object-fit:cover;display:block}
 .mim-h b{font:800 15px var(--font-body)}.mim-rk{font:800 13px var(--font-body);color:var(--rc)}
+.takers:empty{display:none}
+.pc-act.taken .xx{display:none}.pc-act.armed .xx{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(192,48,48,.93);color:#fff;font:800 22px/1 var(--font-body)}.pc-act.own{position:relative;cursor:pointer}button.pc-act.taken.own:hover{background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.2)}
 .foot:empty{display:none}.pc>:last-child{margin-bottom:16px}
 .foot .btn[data-act=editar],.foot .btn[data-act=apagar]{padding:9px 14px;font-size:12px;border-radius:10px}
 dialog#mqm,dialog#imp{width:min(560px,94vw);padding:0;border-radius:16px;overflow:hidden;background:var(--surface);color:var(--text);box-shadow:0 16px 60px rgba(0,0,0,.45)}
@@ -616,7 +618,7 @@ const info=(k,v,w,c)=>v?`<div class="pi${w?' w':''}${c?' '+c:''}"><span class="p
 const linha=(k,v)=>v?`<dt>${k}:</dt><dd>${esc(v)}</dd>`:'';
 function card(m){
  const adm=isAdm(),aqui=aceitas.filter(a=>a.missao_id===m.id);
- const chips=aqui.map(a=>{
+ const chips=aqui.filter(a=>adm||a.status==='concluida').map(a=>{
   const eu=souEu(a),feito=a.status==='concluida',nome=esc(a.personagem||a.player_nome);
   let ac='';
   if(adm&&!feito)ac+=`<button title="Marcar como concluída" data-act="concluir" data-id="${a.id}">✔</button>`;
@@ -628,8 +630,10 @@ function card(m){
  const IC={ok:SV('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),user:SV('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.4 7-5.4s6.2 1.8 7 5.4"/>'),lock:SV('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>')};
  let acao='',btn='';
  const tomadas=aqui.filter(a=>a.status==='aceita'),vg=nVagas(m),minha=tomadas.find(souEu),cheia=tomadas.length>=vg;
- const av=(a,me_)=>{const nm=a.personagem||a.player_nome||'',ft=fotoAc(a),ini=esc((nm[0]||'?').toUpperCase());
-  return `<div class="pc-act taken ${me_?'me':''}" title="Em andamento com ${esc(tomadas.map(x=>x.personagem||x.player_nome).join(', '))}">${ft?`<img src="${esc(ft)}" alt="${esc(nm)}" loading="lazy" onerror="this.outerHTML='<span class=&quot;ini&quot;>${ini}</span>'">`:`<span class="ini">${ini}</span>`}</div>`};
+ const av=(a,me_)=>{const nm=a.personagem||a.player_nome||'',ft=fotoAc(a),ini=esc((nm[0]||'?').toUpperCase()),tt=esc(tomadas.map(x=>x.personagem||x.player_nome).join(', '));
+  const im=ft?`<img src="${esc(ft)}" alt="${esc(nm)}" loading="lazy" onerror="this.outerHTML='<span class=&quot;ini&quot;>${ini}</span>'">`:`<span class="ini">${ini}</span>`;
+  return me_?`<button type="button" class="pc-act taken me own" data-act="armar" data-aid="${a.id}" title="Em andamento com ${tt} — toque para cancelar" aria-label="Cancelar participação">${im}<span class="xx">✕</span></button>`
+   :`<div class="pc-act taken" title="Em andamento com ${tt}">${im}</div>`};
  if(m.ativa===false){acao=`<span class="hint">Missão desativada — só admins veem</span>`}
  else if(minha)btn=av(minha,true);
  else if(cheia&&tomadas.length)btn=av(tomadas[0],false);
@@ -653,7 +657,7 @@ function card(m){
   <div class="pc-info">${info('Local',m.local)}${info('Mapa',m.mapa)}${info('Pokémon Capturável',m.capturavel,0,'cap')}${(r=>r?`<div class="pi-row">${r}</div>`:'')(info('Repetível',m.repetivel)+info('Quantas vezes',REPLBL[m.repeticao||'livre']))}${info('Pré-requisitos',m.pre_requisitos,1)}</div>
   <div class="dtg"></div>
   <div class="more">${m.descricao?`<p class="desc">${esc(m.descricao)}</p>`:''}<div class="pc-rew"><span class="rk">Recompensas</span>${m.recompensas?esc(m.recompensas):'<span class="none">a definir</span>'}</div></div>
-  <div class="takers">${aqui.length?`<b>${aqui.length}</b> ${aqui.length>1?'treinadores escolheram':'treinador escolheu'} esta missão`:'Ninguém escolheu esta missão ainda'}${chips?`<div class="chips">${chips}</div>`:''}</div>
+  <div class="takers">${chips?`<div class="chips">${chips}</div>`:''}</div>
   <div class="foot">${acao}${adm?`<button class="btn" data-act="editar" data-id="${m.id}">Editar</button><button class="btn d" data-act="apagar" data-id="${m.id}" title="Apagar missão">Apagar</button>`:''}</div>
  </article>`;
 }
@@ -667,7 +671,11 @@ async function onBoardClick(e){
   return;
  }
  const b=e.target.closest('[data-act]');if(!b)return;
- const act=b.dataset.act,id=b.dataset.id;
+ let act=b.dataset.act,id=b.dataset.id;
+ if(act==='armar'){/* 1º toque mostra o ✕; 2º toque cancela a participação */
+  if(!b.classList.contains('armed')){document.querySelectorAll('.pc-act.armed').forEach(x=>x.classList.remove('armed'));b.classList.add('armed');return}
+  act='cancelar';id=b.dataset.aid;
+ }
  if(act==='login')return lg.showModal();
  if(act==='editar')return isAdm()&&abrirMissao(id);
  if(act==='apagar')return apagarMissao(id);
@@ -691,6 +699,7 @@ async function onBoardClick(e){
   }catch(err){toast('Erro: '+err.message)}
  }
 }
+document.addEventListener('click',e=>{if(!e.target.closest('.pc-act.armed'))document.querySelectorAll('.pc-act.armed').forEach(x=>x.classList.remove('armed'))});
 $('board').addEventListener('click',onBoardClick);
 $('mym-list').addEventListener('click',onBoardClick);
 function abrirAceitar(m){
