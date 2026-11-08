@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Migrar sprites — kingdomplatinum → kpfichas_db</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
+  --accent:#e8a020;--accent-light:#fdf3dc;
+  --bg:#f0f3f8;--surface:#fff;--surface2:#f5f7fb;
+  --border:#dde3ee;--text:#1a1f2e;--muted:#6b7a99;
+  --green:#00c896;--green-dark:#007a5a;--green-light:#e0fff8;
+  --red:#e04040;--red-light:#fff0f0;
+  --font-title:'Cinzel',serif;--font-body:'Nunito',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-height:100vh}
+.nav{display:flex;align-items:center;padding:0 28px;height:52px;background:var(--brand);border-bottom:2px solid var(--accent);color:#fff;font-family:var(--font-title);font-weight:800;letter-spacing:.5px;font-size:14px}
+.nav span{color:var(--accent);margin-left:6px}
+.wrap{max-width:880px;margin:0 auto;padding:24px 18px 60px}
+h1{font-family:var(--font-title);font-size:20px;color:var(--brand);margin-bottom:4px}
+.sub{font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.5}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card h2{font-family:var(--font-title);font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:800;color:var(--muted);flex:1;min-width:200px}
+input[type=text],input[type=password]{padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font-body);font-size:13px;color:var(--text);background:var(--surface);outline:none}
+input[type=text]:focus,input[type=password]:focus{border-color:var(--brand-mid)}
+.btn{font-family:var(--font-body);font-weight:800;font-size:13px;padding:9px 16px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+.btn:hover:not(:disabled){background:var(--surface2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}.btn.p:hover:not(:disabled){background:var(--brand-mid)}
+.btn.g{background:var(--green);border-color:var(--green);color:#fff}.btn.g:hover:not(:disabled){background:var(--green-dark)}
+.btn.r{background:var(--red-light);border-color:#f0c0c0;color:var(--red)}
+.chk{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;margin-top:10px;cursor:pointer}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stat{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center}
+.stat b{display:block;font-family:var(--font-title);font-size:22px;color:var(--brand)}
+.stat small{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.stat.ok b{color:var(--green-dark)}.stat.warn b{color:var(--accent)}.stat.bad b{color:var(--red)}
+.bar{height:12px;background:var(--surface2);border:1px solid var(--border);border-radius:99px;overflow:hidden;margin:10px 0 6px}
+.bar>div{height:100%;width:0;background:var(--green);transition:width .2s}
+.pt{font-size:12px;color:var(--muted)}
+.log{background:#0f1b2d;color:#cfe3ff;border-radius:10px;padding:10px 12px;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;height:260px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.log .e{color:#ff9a9a}.log .o{color:#7ee2b8}.log .w{color:#ffd37a}
+.note{background:var(--accent-light);border:1px solid #f0d9a0;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:14px}
+.note.bad{background:var(--red-light);border-color:#f0c0c0}
+.lst{max-height:220px;overflow-y:auto;font-size:12px;border:1px solid var(--border);border-radius:8px}
+.lst div{padding:4px 10px;border-bottom:1px solid var(--surface2);word-break:break-all}
+.lst div:last-child{border-bottom:none}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="nav">PKMN <span>Kingdom Platinum</span><span style="color:#fff;opacity:.6">/ Migrar sprites</span></div>
+<div class="wrap">
+  <h1>Copiar sprites entre repositórios</h1>
+  <p class="sub">Copia tudo de <b>sprites/pokemon</b> (incluindo <code>shiny/</code> e <code>alfa/</code>) do repositório antigo para o novo. Só copia — <b>nada é apagado</b> do repositório de origem. Arquivos que já existem idênticos no destino são pulados.</p>
+
+  <div class="note hide" id="aviso-origin"></div>
+
+  <div class="card">
+    <h2>Configuração</h2>
+    <div class="row">
+      <label class="f">Repositório de origem<input type="text" id="src" value="alphx-r/kingdomplatinum"></label>
+      <label class="f">Repositório de destino<input type="text" id="dst" value="alphx-r/kpfichas_db"></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="f" style="flex:2">Endereço do servidor (rota de upload)<input type="text" id="api"></label>
+      <label class="f">Chave de admin<input type="password" id="key" placeholder="ADMIN_UPLOAD_KEY" autocomplete="off"></label>
+    </div>
+    <label class="chk"><input type="checkbox" id="over"> Sobrescrever arquivos que já existem no destino com conteúdo diferente</label>
+    <div class="row" style="margin-top:14px">
+      <button class="btn p" id="b-ana" onclick="analisar()">1. Analisar</button>
+      <button class="btn g" id="b-cop" onclick="copiar()" disabled>2. Copiar agora</button>
+      <button class="btn r hide" id="b-stop" onclick="parar()">Parar</button>
+    </div>
+  </div>
+
+  <div class="card hide" id="c-res">
+    <h2>Resultado da análise</h2>
+    <div class="stats">
+      <div class="stat"><b id="n-src">0</b><small>Na origem</small></div>
+      <div class="stat ok"><b id="n-same">0</b><small>Já iguais no destino</small></div>
+      <div class="stat warn"><b id="n-new">0</b><small>Para copiar</small></div>
+      <div class="stat bad"><b id="n-dif">0</b><small>Existem e diferem</small></div>
+      <div class="stat"><b id="n-mb">0</b><small>MB a enviar</small></div>
+    </div>
+    <div id="dif-box" class="hide" style="margin-top:12px">
+      <div class="pt" style="margin-bottom:6px">Mesmo nome, conteúdo diferente (só serão copiados se “Sobrescrever” estiver marcado):</div>
+      <div class="lst" id="dif-list"></div>
+    </div>
+  </div>
+
+  <div class="card hide" id="c-prog">
+    <h2>Progresso</h2>
+    <div class="bar"><div id="bar"></div></div>
+    <div class="pt" id="pt">—</div>
+  </div>
+
+  <div class="card">
+    <h2>Registro</h2>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const PRE = 'sprites/pokemon';
+const IMG = /\.(png|jpe?g|webp|gif)$/i;
+const MAX_B64 = 3_000_000;      // limite do corpo da Vercel ≈ 4,5 MB; fica folgado
+const MAX_FILES = 30;
+let PLAN = [], PARAR = false, BUSY = false;
+
+/* ── endereço do servidor ── */
+(function init() {
+  const isWeb = /^https?:$/.test(location.protocol);
+  $('api').value = (isWeb ? location.origin : 'https://kingdomplatinum.vercel.app') + '/api/admin/backup-pokemon-now';
+  try { $('key').value = localStorage.getItem('kp_admin_key') || ''; } catch (e) {}
+  if (!isWeb) {
+    const a = $('aviso-origin'); a.classList.remove('hide'); a.classList.add('bad');
+    a.innerHTML = '<b>Abra esta página pelo site</b> (ex.: <code>kingdomplatinum.vercel.app/migrar_sprites</code>). Aberta como arquivo local, o navegador bloqueia o envio para o servidor (CORS) e a cópia vai falhar.';
+  }
+})();
+
+function log(msg, cls) {
+  const l = $('log'), d = document.createElement('div');
+  if (cls) d.className = cls; d.textContent = msg; l.appendChild(d); l.scrollTop = l.scrollHeight;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const encPath = p => p.split('/').map(encodeURIComponent).join('/');
+
+/* ── GitHub: árvore de uma pasta (evita o limite de "truncated" do repo inteiro) ── */
+async function gh(url) {
+  const r = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } });
+  if (r.status === 404) return null;
+  if (!r.ok) {
+    const t = await r.text();
+    if (r.status === 403 && /rate limit/i.test(t)) throw new Error('Limite da API do GitHub atingido (60 consultas/hora sem login). Espere um pouco e tente de novo.');
+    throw new Error('GitHub HTTP ' + r.status + ': ' + t.slice(0, 160));
+  }
+  return r.json();
+}
+async function pastaArquivos(repo, path) {
+  let sha = 'main';
+  for (const seg of path.split('/')) {
+    const t = await gh(`https://api.github.com/repos/${repo}/git/trees/${sha}`);
+    if (!t) return null;
+    const e = (t.tree || []).find(x => x.type === 'tree' && x.path === seg);
+    if (!e) return null;
+    sha = e.sha;
+  }
+  const t = await gh(`https://api.github.com/repos/${repo}/git/trees/${sha}?recursive=1`);
+  if (!t) return null;
+  if (t.truncated) log('⚠️ A lista de ' + repo + ' veio incompleta (pasta muito grande).', 'w');
+  const m = new Map();
+  (t.tree || []).filter(x => x.type === 'blob').forEach(x => m.set(x.path, { sha: x.sha, size: x.size || 0 }));
+  return m;      // caminhos relativos a sprites/pokemon/
+}
+
+/* ── 1. analisar ── */
+async function analisar() {
+  if (BUSY) return;
+  BUSY = true; $('b-ana').disabled = true; $('b-cop').disabled = true;
+  $('log').innerHTML = ''; $('c-res').classList.add('hide'); $('c-prog').classList.add('hide');
+  try {
+    const src = $('src').value.trim(), dst = $('dst').value.trim();
+    log(`Lendo ${src}/${PRE} …`);
+    const S = await pastaArquivos(src, PRE);
+    if (!S) throw new Error(`Não achei ${PRE} em ${src} (o repositório é público?).`);
+    log(`Lendo ${dst}/${PRE} …`);
+    const D = (await pastaArquivos(dst, PRE)) || new Map();
+    let same = 0, ign = 0; const novos = [], difs = [];
+    S.forEach((v, p) => {
+      if (!IMG.test(p)) { ign++; return; }
+      const d = D.get(p);
+      if (!d) novos.push({ path: p, size: v.size, sha: v.sha });
+      else if (d.sha === v.sha) same++;
+      else difs.push({ path: p, size: v.size, sha: v.sha });
+    });
+    const over = $('over').checked;
+    PLAN = novos.concat(over ? difs : []);
+    PLAN.sort((a, b) => a.path.localeCompare(b.path, 'en', { numeric: true }));
+    $('n-src').textContent = S.size; $('n-same').textContent = same; $('n-new').textContent = novos.length;
+    $('n-dif').textContent = difs.length; $('n-mb').textContent = (PLAN.reduce((s, x) => s + x.size, 0) / 1048576).toFixed(1);
+    $('dif-box').classList.toggle('hide', !difs.length);
+    $('dif-list').innerHTML = difs.map(x => `<div>${x.path.replace(/</g, '&lt;')}</div>`).join('');
+    $('c-res').classList.remove('hide');
+    log(`Origem: ${S.size} arquivo(s)${ign ? ` (${ign} que não são imagem foram ignorados)` : ''} · já iguais: ${same} · novos: ${novos.length} · diferentes: ${difs.length}.`, 'o');
+    if (difs.length && !over) log('Os "diferentes" ficam de fora. Marque "Sobrescrever" e analise de novo se quiser trocá-los.', 'w');
+    $('b-cop').disabled = !PLAN.length;
+    if (!PLAN.length) log('Nada para copiar. ✓', 'o');
+  } catch (e) { log('❌ ' + e.message, 'e'); }
+  finally { BUSY = false; $('b-ana').disabled = false; }
+}
+
+/* ── 2. copiar ── */
+function b64(buf) {
+  const u = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+async function gitSha(buf) {
+  if (!(window.crypto && crypto.subtle)) return null;
+  const head = new TextEncoder().encode('blob ' + buf.byteLength + '\0');
+  const all = new Uint8Array(head.length + buf.byteLength); all.set(head, 0); all.set(new Uint8Array(buf), head.length);
+  const h = await crypto.subtle.digest('SHA-1', all);
+  return [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function baixar(item) {
+  const url = `https://raw.githubusercontent.com/${$('src').value.trim()}/main/${PRE}/${encPath(item.path)}?v=${item.sha.slice(0, 7)}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('download HTTP ' + r.status);
+  const buf = await r.arrayBuffer();
+  const s = await gitSha(buf);
+  if (s && s !== item.sha) throw new Error('conteúdo baixado não confere com o da origem (sha diferente)');
+  return { path: `${PRE}/${item.path}`, base64: b64(buf) };
+}
+async function enviar(files, msg) {
+  const api = $('api').value.trim();
+  for (let tent = 0; tent < 2; tent++) {
+    let key = $('key').value.trim();
+    if (!key) { key = (prompt('Cole a chave de admin (ADMIN_UPLOAD_KEY da Vercel):') || '').trim(); if (!key) throw new Error('Chave de admin não informada.'); $('key').value = key; }
+    const res = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ files, message: msg }) });
+    const ct = res.headers.get('content-type') || '';
+    const body = ct.includes('application/json') ? await res.json().catch(() => ({})) : { error: (await res.text()).slice(0, 200) };
+    if (res.status === 401) { $('key').value = ''; try { localStorage.removeItem('kp_admin_key'); } catch (e) {} continue; }
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + (body.error || 'falha no servidor'));
+    try { localStorage.setItem('kp_admin_key', key); } catch (e) {}
+    return body;
+  }
+  throw new Error('Chave de admin inválida.');
+}
+function parar() { PARAR = true; log('Parando depois do lote atual…', 'w'); }
+
+async function copiar() {
+  if (BUSY || !PLAN.length) return;
+  if (!confirm(`Copiar ${PLAN.length} arquivo(s) para ${$('dst').value.trim()}?\n\nIsso cria commits no repositório de destino. A origem não é alterada.`)) return;
+  BUSY = true; PARAR = false;
+  $('b-ana').disabled = true; $('b-cop').disabled = true; $('b-stop').classList.remove('hide'); $('c-prog').classList.remove('hide');
+  const total = PLAN.length, falhas = []; let feitos = 0, lote = [], tam = 0, loteItens = [];
+  const progresso = () => { $('bar').style.width = (feitos / total * 100) + '%'; $('pt').textContent = `${feitos} de ${total} copiado(s)${falhas.length ? ` · ${falhas.length} falha(s)` : ''}`; };
+  progresso();
+  const flush = async () => {
+    if (!lote.length) return;
+    const itens = loteItens, arq = lote; lote = []; loteItens = []; tam = 0;
+    const msg = `Migrar ${arq.length} sprite(s) de ${$('src').value.trim()} [skip ci]`;
+    try { await enviar(arq, msg); feitos += arq.length; log(`✓ lote de ${arq.length} enviado (${arq[0].path.slice(PRE.length + 1)} …)`, 'o'); }
+    catch (e) {
+      if (/Chave de admin/.test(e.message)) throw e;
+      log(`Lote falhou (${e.message}). Tentando um por um…`, 'w');
+      for (let i = 0; i < arq.length; i++) {
+        try { await enviar([arq[i]], `Migrar sprite ${itens[i].path} [skip ci]`); feitos++; }
+        catch (e2) { falhas.push(itens[i].path); log(`✗ ${itens[i].path}: ${e2.message}`, 'e'); }
+        await sleep(300);
+      }
+    }
+    progresso();
+  };
+  try {
+    for (const it of PLAN) {
+      if (PARAR) break;
+      let f;
+      try { f = await baixar(it); }
+      catch (e) { falhas.push(it.path); log(`✗ ${it.path}: ${e.message}`, 'e'); progresso(); continue; }
+      if (lote.length && (tam + f.base64.length > MAX_B64 || lote.length >= MAX_FILES)) await flush();
+      lote.push(f); loteItens.push(it); tam += f.base64.length;
+    }
+    if (!PARAR) await flush();
+  } catch (e) { log('❌ ' + e.message, 'e'); }
+  progresso();
+  if (PARAR) log(`Interrompido. ${feitos} de ${total} copiado(s). Rode "Analisar" e "Copiar" de novo para continuar de onde parou.`, 'w');
+  else if (falhas.length) log(`Terminou com ${falhas.length} falha(s). Rode "Analisar" e "Copiar" de novo para tentar só as que faltam.`, 'w');
+  else log(`✅ Pronto! ${feitos} arquivo(s) copiado(s). Agora, no NationalDex, use o botão “Atualizar links das fotos”.`, 'o');
+  BUSY = false; $('b-ana').disabled = false; $('b-stop').classList.add('hide');
+}
+</script>
+</body>
+</html>
