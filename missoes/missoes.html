@@ -519,7 +519,8 @@ function meAtual(){
  if(id==null){try{const p=JSON.parse(localStorage.getItem('player_session'));if(p&&p.id!=null&&nrm(p.nome)===nrm(ses.nome)){id=p.id;nome=p.nome}}catch{}}
  return id!=null?{nome,id}:null;
 }
-const souEu=a=>me&&String(a.player_id)===String(me.id);
+const meusIds=new Set();/* ids de todos os players com o mesmo nome (tratados como um só jogador) */
+const souEu=a=>!!me&&(String(a.player_id)===String(me.id)||meusIds.has(String(a.player_id)));
 
 async function carregarDados(){
  try{
@@ -572,12 +573,7 @@ function abrirMinhas(){if(!me)return lg.showModal();mym.showModal();renderMinhas
 const FOTOS=new Map(),FCAND=['foto','avatar','imagem','image','img','foto_url','avatar_url','imagem_url','icon','sprite'];
 const fotoDe=r=>{if(!r)return null;for(const k of FCAND){const v=r[k];if(typeof v==='string'&&/^(https?:)?\/|^data:image/.test(v.trim()))return v.trim()}return null};
 async function carregarFotos(){
- const at=aceitas.filter(a=>a.status==='aceita');if(!at.length)return;
- const nomes=[...new Set(at.map(a=>a.personagem).filter(Boolean))],ids=[...new Set(at.map(a=>a.player_id).filter(v=>v!=null))];
- const q=l=>'('+l.map(v=>'"'+String(v).replace(/["\\]/g,'')+'"').join(',')+')';
- const tenta=async u=>{try{return await api(u)}catch{return[]}};
- if(nomes.length)(await tenta('personagens?select=*&nome=in.'+encodeURIComponent(q(nomes)))).forEach(r=>{const f=fotoDe(r);if(f)FOTOS.set('p:'+nrm(r.nome),f)});
- if(ids.length)(await tenta('players?select=*&id=in.'+encodeURIComponent(q(ids)))).forEach(r=>{const f=fotoDe(r);if(f)FOTOS.set('u:'+r.id,f)});
+ try{(await carregaLista()).forEach(x=>{const f=x&&(x.thumb||x.foto);if(!f)return;if(x.nome)FOTOS.set('p:'+nrm(x.nome),f);if(x.player_id!=null&&!FOTOS.has('u:'+x.player_id))FOTOS.set('u:'+x.player_id,f)})}catch(e){console.warn('fotos:',e.message)}
 }
 const fotoAc=a=>FOTOS.get('p:'+nrm(a.personagem||''))||FOTOS.get('u:'+a.player_id)||null;
 const ocupada=m=>aceitas.some(a=>a.missao_id===m.id&&a.status==='aceita');
@@ -910,17 +906,20 @@ addEventListener('scroll',pmSc,{passive:true});
 
 /* personagens do player logado: tenta por id, depois por nome (sem diferenciar maiúsculas) e, por último, varre a tabela comparando sem acento/caixa */
 const meusRanks=new Set();
-const rankDe=p=>{for(const k of ['ranking','rank','rank_atual','rank_personagem','nivel_rank']){const v=p[k];if(v==null||v==='')continue;const m=String(v).match(/[1-5]/);if(m)return m[0]}return null};
+const rankDe=p=>{if(!p||typeof p!=='object')return null;for(const k of ['ranking','rank','rank_atual','rank_personagem','nivel_rank']){const v=p[k];if(v==null||v==='')continue;const m=String(v).match(/[1-5]/);if(m)return m[0]}return null};
+/* mesma fonte do stores: lista de fichas (/api/ficha-salvar?lista=1), filtrada pelo(s) id(s) do player da sessão */
+let LST=null;
+async function carregaLista(){if(!LST){const r=await fetch('/api/ficha-salvar?lista=1');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
 async function carregarPersonagens(){
- meusRanks.clear();
- const nomes=new Map(),add=l=>(l||[]).forEach(p=>{if(p&&p.nome){nomes.set(nrm(p.nome),p.nome);const r=rankDe(p);if(r)meusRanks.add(r)}});
- const tenta=async q=>{try{return await api(q)}catch(e){console.warn('personagens:',q,e.message);return null}};
- add(await tenta('personagens?player_id=eq.'+encodeURIComponent(me.id)+'&select=*&order=nome.asc'));
- add(await tenta('personagens?player=ilike.'+encodeURIComponent(String(me.nome).replace(/[*%]/g,''))+'&select=*&order=nome.asc'));
- {
-  const todos=await tenta('personagens?select=*&limit=5000')||[],alvo=nrm(me.nome);
-  add(todos.filter(p=>[p.player,p.player_nome,p.jogador,p.dono].some(v=>v!=null&&nrm(v)===alvo)||(p.player_id!=null&&String(p.player_id)===String(me.id))));
- }
+ meusRanks.clear();meusIds.clear();
+ const ids=[];if(ses?.player_id!=null)ids.push(String(ses.player_id));
+ try{const p=JSON.parse(localStorage.getItem('player_session'));if(p&&p.id!=null&&nrm(p.nome)===nrm(ses?.nome))ids.push(String(p.id))}catch{}
+ if(me&&me.id!=null)ids.push(String(me.id));
+ ids.forEach(x=>meusIds.add(x));
+ let lista=[];try{lista=await carregaLista()}catch(e){console.warn('fichas:',e.message)}
+ const nomes=new Map(),alvo=nrm(me.nome);
+ (Array.isArray(lista)?lista:[]).filter(x=>x&&x.desativada!=='true'&&(x.player_id!=null&&ids.length?ids.includes(String(x.player_id)):nrm(x.player)===alvo)).forEach(x=>{
+  if(!x.nome)return;nomes.set(nrm(x.nome),x.nome);const r=rankDe(x)||rankDe(x.d);if(r)meusRanks.add(r)});
  return [...nomes.values()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
 async function boot(){
