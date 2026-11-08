@@ -545,6 +545,7 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf .
 .se-lz{-webkit-appearance:none;appearance:none;width:100%;height:10px;border-radius:6px;border:1px solid rgba(0,0,0,.18);outline:none;cursor:pointer;margin:0;padding:0}
 .se-lz::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid #555;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .se-lz::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #555;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+#lst.cat .pcf .btn,#lst.cat .pcf .stp{display:none!important}
 </style>
 </head>
 <body>
@@ -712,7 +713,16 @@ const LJL=()=>LJPEND()?Promise.resolve(LJPEND()):jl('/stores/stores.json').then(
 const recs=l=>Array.isArray(l?.recursos)?l.recursos:[];
 const temRec=()=>recs(LJ).includes('reciclagem');
 const temVch=()=>recs(LJ).includes('tm_voucher');
-const temVender=()=>!CATALOGO&&LJ?.compra!==false;
+/* o que a loja faz: vende (aba Comprar), compra (aba Vender) e/ou catálogo (aba de consulta). Lojas antigas: modo catalogo|loja + compra */
+const caps=l=>{if(!l)return{vende:false,compra:false,online:false,cat:false};let v,c,o;
+ if(l.online!==undefined){v=!!l.vende;c=!!l.compra;o=!!l.online}
+ else if(l.vende!==undefined){v=!!l.vende;c=!!l.compra;o=v||c}
+ else{const cm=l.modo==='catalogo';v=!cm;c=!cm&&l.compra!==false;o=!cm}
+ return{vende:v,compra:c,online:o,cat:!o}};
+const temVender=()=>{const c=caps(LJ);return c.online&&c.compra};
+const tabsLoja=()=>{const c=caps(LJ),t=[];if(c.online){if(c.vende)t.push('b');if(c.compra)t.push('s')}else t.push('c');if(temRec())t.push('r');return t.length?t:['b']};
+const notaPres=l=>{const c=caps(l);if(c.online)return'';return c.vende&&c.compra?'Compra e venda feitas presencialmente.':c.vende?'Vendas feitas presencialmente.':c.compra?'Compras feitas presencialmente.':''};
+const tabOk=t=>tabsLoja().includes(t)?t:tabsLoja()[0];
 const lojaAberta=l=>!Array.isArray(l?.estacoes)||!l.estacoes.length||l.estacoes.includes(EST);
 const estTxt=l=>(l.estacoes||[]).map(e=>e.charAt(0).toUpperCase()+e.slice(1)).join(' / ');
 /* requisito VIP: ficha com d.vip verdadeiro ou item VIP Card/VIP Pass na Bag (checagem no cliente, como o resto do sistema) */
@@ -833,10 +843,9 @@ async function boot(){
  if(!LJ){$('app').innerHTML=msg('Loja não encontrada.<br><br><a href="/stores">Ver todas as lojas</a>');fim();return}
  document.title=LJ.nome+' | Kingdom Platinum';
  aplicaTemaLoja(LJ.tema);
- CATALOGO=LJ.modo==='catalogo';document.body.classList.toggle('catalogo',CATALOGO);
+ CATALOGO=!caps(LJ).online;document.body.classList.toggle('catalogo',CATALOGO);
  if(!lojaAberta(LJ)){$('app').innerHTML=msg(`<b>${esc(LJ.nome)}</b> está fechada nesta estação.<br>Reabre na estação: ${esc(estTxt(LJ))}.<br><br><a href="/stores">Ver outras lojas</a>`);fim();return}
- if(TAB==='r'&&!temRec())TAB='b';
- if(TAB==='s'&&!temVender())TAB='b';
+ TAB=tabOk(TAB);
  if(CATALOGO){F=null;FL=[];CB={};CS={};CUP=null;VCH={};
   try{[ITM,MV]=await Promise.all([ITL(),MVL()]);tmSprites()}catch(e){$('app').innerHTML=msg('Erro ao carregar: '+esc(e.message));fim();return}
   if(ses){try{LST=await carregaLista();FL=minhas(LST)}catch{FL=[]}
@@ -857,7 +866,7 @@ async function boot(){
 let HUBM=null,HQ='',HF='t';
 function setHF(f){HF=f;$('shf-t')?.classList.toggle('on',f==='t');$('shf-a')?.classList.toggle('on',f==='a');drawHubGrid()}
 const lojasHub=()=>(LOJAS||[]).filter(x=>x&&x.slug&&(x.ativa!==false||isAdm())).sort((a,b)=>(a.ordem??99)-(b.ordem??99));
-const lojaItens=l=>HUBM?[...HUBM.values()].filter(it=>isNaLoja(it,l.slug)&&(l.modo==='catalogo'||(it.price!=null&&+it.price>0))):null;
+const lojaItens=l=>HUBM?[...HUBM.values()].filter(it=>isNaLoja(it,l.slug)&&(caps(l).cat||(it.price!=null&&+it.price>0))):null;
 /* faixa de promoção: texto em loja.promocao, some depois de loja.promo_ate (AAAA-MM-DD, opcional) */
 const hojeSP=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());
 const promoTxt=l=>{const t=String(l?.promocao||'').trim();if(!t)return'';if(l.promo_ate&&hojeSP()>l.promo_ate)return'';return t};
@@ -867,12 +876,12 @@ function promoHtml(l,c){
  const ac=/^#[0-9a-f]{6}$/i.test(l.tema?.accent||'')?l.tema.accent:'#e8a020';
  return`<div class="${c}" style="background:${ac};color:${inkOn(ac)}">🏷️ ${esc(t)}${l.promo_ate?` <small>até ${esc(String(l.promo_ate).split('-').reverse().join('/'))}</small>`:''}</div>`}
 function cardLoja(l){
- const ab=lojaAberta(l),cat=l.modo==='catalogo',vip=!!l.requisitos?.vip,saz=Array.isArray(l.estacoes)&&l.estacoes.length>0,t=l.tema||{};
+ const ab=lojaAberta(l),cp=caps(l),cat=cp.cat,vip=!!l.requisitos?.vip,saz=Array.isArray(l.estacoes)&&l.estacoes.length>0,t=l.tema||{};
  const st=`--sb:${esc(t.brand||'#1a3a5c')};--sm:${esc(t.brandMid||'#2563a8')};--sa:${esc(t.accent||'#e8a020')}`;
  const tl=[l.ativa===false?'<span>Oculta</span>':'',cat?'<span>Catálogo</span>':'',vip?'<span class="v">★ VIP</span>':'',saz?'<span>Sazonal</span>':''].join('');
  const cta=!ab?`Fechada · volta em ${esc(estTxt(l))}`:cat?'Ver catálogo <span>→</span>':'Entrar na loja <span>→</span>';
  const b=promoHtml(l,'sh-pr')+`<div class="sh-hd"><div class="sh-bn" data-i="${esc((l.nome||'?')[0])}">${l.banner?`<img class="sh-ban" src="${esc(l.banner)}" alt="" onerror="this.remove()">`:''}<div class="sh-tl">${tl}</div><span class="sh-pl ${ab?'on':'fc'}">${ab?'● Aberta':'Fechada'}</span></div>${isAdm()?`<button type="button" class="sh-ed" onclick="event.preventDefault();event.stopPropagation();editLoja('${esc(l.slug)}')">✎ Editar</button>`:''}<span class="sh-lg">${l.logo?`<img src="${esc(l.logo)}" alt="" onerror="this.parentNode.textContent='${esc((l.nome||'?')[0]).replace(/'/g,'')}'">`:esc((l.nome||'?')[0])}</span></div>`
-  +`<div class="sh-bd"><div><b>${esc(l.nome)}</b>${l.localizacao?`<small>📍 ${esc(l.localizacao)}</small>`:''}</div>${l.descricao?`<p>${esc(l.descricao)}</p>`:''}<div class="sh-mt"><span data-n>&nbsp;</span><span>${cat?'Só catálogo':'Compra e venda'}</span></div></div><div class="sh-ft">${cta}</div>`;
+  +`<div class="sh-bd"><div><b>${esc(l.nome)}</b>${l.localizacao?`<small>📍 ${esc(l.localizacao)}</small>`:''}</div>${l.descricao?`<p>${esc(l.descricao)}</p>`:''}<div class="sh-mt"><span data-n>&nbsp;</span><span>${[cp.vende&&'Vende',cp.compra&&'Compra',cat&&((cp.vende||cp.compra)?'Presencial':'Só catálogo')].filter(Boolean).join(' · ')||'—'}</span></div></div><div class="sh-ft">${cta}</div>`;
  return ab?`<a class="sh-c" style="${st}" data-s="${esc(l.slug)}" href="/stores/${encodeURIComponent(l.slug)}">${b}</a>`:`<div class="sh-c off" style="${st}" data-s="${esc(l.slug)}">${b}</div>`}
 function fillHub(){
  if(!HUBM)return;
@@ -923,7 +932,7 @@ function editLoja(slug){
  EDL=slug||null;
  const l=slug?(LOJAS||[]).find(x=>x.slug===slug):null;
  if(slug&&!l)return;
- const o=l||{modo:'loja',compra:true,sell_pct:0.5,ativa:true,ordem:(LOJAS||[]).reduce((m,x)=>Math.max(m,+x.ordem||0),0)+1,recursos:[]};
+ const o=l||{modo:'loja',compra:true,sell_pct:0.5,ativa:true,ordem:(LOJAS||[]).reduce((m,x)=>Math.max(m,+x.ordem||0),0)+1,recursos:[]};const cps=caps(o);
  const t=o.tema||{};
  let d=$('slm');if(!d){d=document.createElement('dialog');d.id='slm';document.body.appendChild(d)}
  const ck=(id,lbl,on)=>`<label class="se-ck"><input type="checkbox" id="${id}" ${on?'checked':''}> ${lbl}</label>`;
@@ -938,9 +947,9 @@ function editLoja(slug){
   <label class="se-f">Logo (URL)<input class="in" id="se-logo" value="${esc(o.logo||'')}" placeholder="https://… ou /sprites/…"></label>
   <label class="se-f">Banner (URL)<input class="in" id="se-ban" value="${esc(o.banner||'')}" placeholder="https://… ou /sprites/…"></label>
   <div class="se-f se-w">${ck('se-tema','Usar cores próprias na loja',!!o.tema)}<div class="se-cl ${o.tema?'':'off'}" id="se-cl"><div class="se-cc"><label>Principal <input type="color" id="se-c1" value="${esc(t.brand||'#1a3a5c')}"></label><input type="range" class="se-lz" id="se-l1" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer principal" oninput="seLz(1)"></div><div class="se-cc"><label>Secundária <input type="color" id="se-c2" value="${esc(t.brandMid||'#2563a8')}"></label><input type="range" class="se-lz" id="se-l2" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer secundária" oninput="seLz(2)"></div><div class="se-cc"><label>Destaque <input type="color" id="se-c3" value="${esc(t.accent||'#e8a020')}"></label><input type="range" class="se-lz" id="se-l3" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer destaque" oninput="seLz(3)"></div></div></div>
-  <label class="se-f">Tipo<select class="in" id="se-modo"><option value="loja">Loja (compra e venda)</option><option value="catalogo" ${o.modo==='catalogo'?'selected':''}>Só catálogo (sem carrinho)</option></select></label>
+  <div class="se-f se-w">O que a loja faz<div class="se-ckr">${ck('se-vende','Vende itens aos jogadores',cps.vende)}${ck('se-compra','Compra itens dos jogadores',cps.compra)}${ck('se-online','Negociar pelo site (carrinho)',cps.online)}</div><span class="mu" style="font-weight:600">Sem "Negociar pelo site", a loja só exibe os itens (catálogo) e a compra e venda é presencial.</span></div>
   <label class="se-f">Pagamento na revenda (%)<input class="in" id="se-sell" type="number" min="0" max="100" value="${Math.round((o.sell_pct??0.5)*100)}"></label>
-  <div class="se-f se-w"><div class="se-ckr">${ck('se-compra','A loja compra itens do jogador',o.compra!==false)}${ck('se-vip','Exclusiva VIP',!!o.requisitos?.vip)}${ck('se-ativa','Visível no hub',o.ativa!==false)}</div></div>
+  <div class="se-f se-w"><div class="se-ckr">${ck('se-vip','Exclusiva VIP',!!o.requisitos?.vip)}${ck('se-ativa','Visível no hub',o.ativa!==false)}</div></div>
   <div class="se-f se-w">Abre nas estações (nenhuma marcada = o ano todo)<div class="se-ckr">${EST_OPT.map(([k,n])=>ck('se-e-'+k,n,(o.estacoes||[]).includes(k))).join('')}</div></div>
   <div class="se-f se-w">Recursos especiais<div class="se-ckr">${REC_OPT.map(([k,n])=>ck('se-r-'+k,n,recs(o).includes(k))).join('')}</div></div>
  </div><div class="le2" id="se-err"></div><div class="mb">${l&&l.slug!=='pokemart'?'<button type="button" class="btn s" style="margin-right:auto;color:#c03030" onclick="delLoja()">Excluir</button>':''}<button type="button" class="btn s" onclick="slm.close()">Cancelar</button><button type="button" class="btn p s" id="se-ok" onclick="saveLoja()">Salvar</button></div>`;
@@ -972,10 +981,11 @@ async function saveLoja(){
  const nome=$('se-nome').value.trim(),slug=EDL==='pokemart'?EDL:slugify($('se-slug').value);
  if(!nome)return er('Informe o nome.');
  if(!slug)return er('Informe o slug.');
+ if($('se-online').checked&&!$('se-vende').checked&&!$('se-compra').checked)return er('Para negociar pelo site, marque "Vende" e/ou "Compra".');
  if((LOJAS||[]).some(x=>x.slug!==EDL&&(x.slug===slug||(x.antigos||[]).includes(slug))))return er('Já existe uma loja com esse slug.');
  const sp=parseFloat($('se-sell').value);
  const n={slug,nome,localizacao:$('se-loc').value.trim(),descricao:$('se-desc').value.trim(),logo:$('se-logo').value.trim(),banner:$('se-ban').value.trim(),
-  modo:$('se-modo').value,compra:$('se-compra').checked,sell_pct:Math.min(100,Math.max(0,isNaN(sp)?50:sp))/100,
+  vende:$('se-vende').checked,compra:$('se-compra').checked,online:$('se-online').checked,modo:$('se-online').checked?'loja':'catalogo',sell_pct:Math.min(100,Math.max(0,isNaN(sp)?50:sp))/100,
   estacoes:EST_OPT.map(([k])=>k).filter(k=>$('se-e-'+k).checked),requisitos:$('se-vip').checked?{vip:true}:null,
   recursos:REC_OPT.map(([k])=>k).filter(k=>$('se-r-'+k).checked),ativa:$('se-ativa').checked,ordem:parseInt($('se-ord').value)||99};
  if(!n.estacoes.length)n.estacoes=null;
@@ -1011,13 +1021,13 @@ function render(){
  <div class="pmw">${promoHtml(LJ,'sh-pr sh-pr2')}<div class="card lh"><div class="lhf">${F?(th?`<img src="${esc(th)}" alt="">`:`<div class="ph">${esc((F.nome||'?')[0])}</div>`):`<div class="ph">?</div>`}<div><div class="lhn">${F?esc(F.nome):'Nenhuma ficha escolhida'}</div><div class="mu">${F?esc(F.d.player||''):(CATALOGO?(ses?'Escolha uma ficha para ver o seu saldo':'Entre para ver a sua ficha'):'Escolha uma ficha para comprar e vender')}</div></div></div>
  ${FL.length>1?`<button type="button" class="btn s" onclick="openQm()">${F?'Trocar ficha':'Escolher ficha'}</button>`:(CATALOGO&&!ses?`<button type="button" class="btn s" onclick="lg.showModal()">Entrar</button>`:'')}
  <div class="lhs"><span>Saldo</span><b id="sal">${F?fm(saldo()):'—'}</b></div></div>
- <div class="pmtl"><div class="pmtabs"><button type="button" id="tb-b" onclick="setTab('b')">${CATALOGO?'Catálogo':'Comprar'}</button>${temVender()?`<button type="button" id="tb-s" onclick="setTab('s')">Vender</button>`:''}${temRec()?`<button type="button" id="tb-r" onclick="setTab('r')">Reciclagem</button>`:''}</div>
+ <div class="pmtl"><div class="pmtabs">${tabsLoja().map(t=>`<button type="button" id="tb-${t}" onclick="setTab('${t}')">${{b:'Comprar',s:'Vender',c:'Catálogo',r:'Reciclagem'}[t]}</button>`).join('')}</div>
  <select class="in pms" onchange="SORT=this.value;drawList()"><option value="n"${SORT==='n'?' selected':''}>Nome (A-Z)</option><option value="a"${SORT==='a'?' selected':''}>Menor preço</option><option value="d"${SORT==='d'?' selected':''}>Maior preço</option></select></div>
- <div class="chs" id="chs"></div><div class="pmg" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div><div id="rec" style="display:none;margin-top:14px"></div></div>`;
+ ${notaPres(LJ)?`<div class="mu" style="text-align:center;margin:0 0 12px">${esc(notaPres(LJ))}</div>`:''}<div class="chs" id="chs"></div><div class="pmg" id="lst" onclick="lstEv(event)" onchange="lstEv(event)"></div><div id="rec" style="display:none;margin-top:14px"></div></div>`;
  ensureCart();drawList();drawSum();pmSc()}
 function ensureCart(){if($('pmc'))return;document.body.insertAdjacentHTML('beforeend','<div id="pmo" onclick="toggleCart(false)"></div><aside id="pmc"></aside>');$('pmc').addEventListener('click',cartEv);$('pmc').addEventListener('change',cartEv)}
 function toggleCart(o){$('pmc').classList.toggle('open',o);$('pmo').classList.toggle('open',o)}
-function setTab(t){if(t==='r'&&!temRec()||t==='s'&&!temVender())t='b';TAB=t;CAT='';drawList();drawSum()}
+function setTab(t){TAB=tabOk(t);CAT='';drawList();drawSum()}
 /* aba Reciclagem: a Recycling Machine roda embutida aqui mesmo (markup em REC_HTML, lógica em recInit) */
 const REC_HTML=`<div class="rec-page"><div class="desktop-row">
 <div class="machine-wrap">
@@ -1531,7 +1541,7 @@ function hideRec(){
  const r=$('rec');if(r)r.style.display='none'}
 function setCat(c){CAT=c;drawList()}
 function rowsAtuais(){
- if(TAB!=='s')return[...ITM.values()].filter(CATALOGO?(it=>isNaLoja(it,SL)):isMart).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price||0,mx:MAXQ}));
+ if(TAB!=='s')return[...ITM.values()].filter(TAB==='c'?(it=>isNaLoja(it,SL)):isMart).map(it=>({it,k:nk(it.name),nome:it.name,own:ownQ(nk(it.name)),unit:+it.price||0,mx:MAXQ}));
  return bag().filter(e=>!e.vinculado&&!dcNk(e.nome)&&sellUnit(ITM.get(nk(e.nome)))>0).map(e=>{const k=nk(e.nome),it=ITM.get(k),own=parseInt(e.qtd)||1;return{it,k,nome:e.nome,own,unit:sellUnit(it),mx:own}})}
 
 /* sprites dos TMs (repo, pasta sprites/items/tms) por tipo do golpe em movedex/moves.json */
@@ -1552,13 +1562,13 @@ function drawList(){
  if(CAT&&!cats.includes(CAT))CAT='';
  $('chs').innerHTML=cats.length<2?'':['',...cats].map(c=>`<button type="button" class="ch${c===CAT?' on':''}" onclick="setCat(this.dataset.c)" data-c="${esc(c)}">${c?esc(c):'Todos'}</button>`).join('');
  rows=rows.filter(r=>(CAT?catOf(r)===CAT:!isTM(r.it))&&(!q||nk(r.nome).includes(q)));
- const soTM=CAT==='TMs';$('lst').classList.toggle('tmg',soTM);
+ const soTM=CAT==='TMs';$('lst').classList.toggle('tmg',soTM);$('lst').classList.toggle('cat',TAB==='c');
  rows.sort(SORT==='a'?(a,b)=>a.unit-b.unit:SORT==='d'?(a,b)=>b.unit-a.unit:(a,b)=>soTM?a.nome.localeCompare(b.nome,undefined,{numeric:true}):a.nome.localeCompare(b.nome));
  const C=TAB!=='s'?CB:CS;
  $('lst').innerHTML=(soTM&&TAB!=='s'?tmvBanner():'')+(rows.length?rows.map(r=>{const n=C[r.k]||0;
   if(soTM)return tmCard(r,n,C);
   return`<div class="pc${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="">`:''}</span><h3>${esc(r.nome)}</h3></div><span class="pcc">${esc(catOf(r))}</span><p>${esc(r.it?.item_desc||'')}</p><div class="pcf"><b class="lp">${TAB!=='s'?'':'+'}${pr(r)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}).join('')
-  :`<div class="lt" style="grid-column:1/-1">${TAB==='b'?CATALOGO?'Nenhum item no catálogo.':'Nenhum item à venda.':(!F?'Escolha uma ficha para ver a sua Bag.':Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`)}
+  :`<div class="lt" style="grid-column:1/-1">${TAB==='c'?'Nenhum item no catálogo.':TAB==='b'?'Nenhum item à venda.':(!F?'Escolha uma ficha para ver a sua Bag.':Q||CAT?'Nenhum item vendável combina com a busca.':'Você não tem itens para vender.')}</div>`)}
 function chg(r,C,mxf,e){const k=r.dataset.k;let n=C[k]||0;
  if(e.type==='click'){const a=e.target.closest('button')?.dataset.a;if(!a)return;n+=a==='+'?1:-1}
  else if(e.type==='change'&&e.target.matches('input'))n=parseInt(e.target.value)||0;else return;
@@ -1571,14 +1581,14 @@ function tmDetalhe(it){if(!isTM(it))return null;const mv=MV.get(mvSlug(tmParse(i
  return{cs:mv.contest_style||'',desc:mv.descricao||'',box:`<div class="tmi"><div><small>Tipo</small><b>${esc(tp)}</b></div><div><small>Categoria</small><b>${esc(MVCAT[mv.damage_class]||cap(mv.damage_class))}</b></div><div><small>Poder</small><b>${v(mv.power)}</b></div><div><small>Precisão</small><b>${v(mv.accuracy)}</b></div></div>`}}
 function openItem(k){const it=ITM.get(k);if(!it)return;let d=$('pim');if(!d){d=document.createElement('dialog');d.id='pim';d.style.width='min(440px,94vw)';d.onclick=e=>{if(e.target===d)d.close()};document.body.appendChild(d)}
  const b=TAB!=='s',u=b?+it.price:sellUnit(it),tm=tmDetalhe(it);
- d.innerHTML=`<div class="pct" style="margin-bottom:8px"><span class="pci">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><h3 style="font:800 17px var(--font-body);margin:0">${esc(isTM(it)?tmParse(it.name).move:it.name)}</h3>${tm&&tm.cs?`<span class="pcc" style="align-self:center">${esc(tm.cs)}</span>`:''}</div><span class="pcc">${tm?esc('TM'+tmParse(it.name).num):esc(it.category||'Outros')}</span>${tm?tm.box:''}<p style="font:500 14px/1.5 var(--font-body);white-space:pre-wrap;margin:12px 0">${esc((tm&&tm.desc)||it.item_desc||'Sem descrição.')}</p><b style="font:800 20px var(--font-title)">${u>0?(b?'':'+')+fm(u):'—'}</b><div class="mb"><button type="button" class="btn s" onclick="pim.close()">Fechar</button>${F&&!CATALOGO?`<button type="button" class="btn p s" onclick="pimAdd('${esc(k)}')">${b?'Adicionar':'Vender'}</button>`:''}</div>`;
+ d.innerHTML=`<div class="pct" style="margin-bottom:8px"><span class="pci">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><h3 style="font:800 17px var(--font-body);margin:0">${esc(isTM(it)?tmParse(it.name).move:it.name)}</h3>${tm&&tm.cs?`<span class="pcc" style="align-self:center">${esc(tm.cs)}</span>`:''}</div><span class="pcc">${tm?esc('TM'+tmParse(it.name).num):esc(it.category||'Outros')}</span>${tm?tm.box:''}<p style="font:500 14px/1.5 var(--font-body);white-space:pre-wrap;margin:12px 0">${esc((tm&&tm.desc)||it.item_desc||'Sem descrição.')}</p><b style="font:800 20px var(--font-title)">${u>0?(b?'':'+')+fm(u):'—'}</b><div class="mb"><button type="button" class="btn s" onclick="pim.close()">Fechar</button>${F&&!CATALOGO&&TAB!=='c'?`<button type="button" class="btn p s" onclick="pimAdd('${esc(k)}')">${b?'Adicionar':'Vender'}</button>`:''}</div>`;
  d.showModal()}
 function pimAdd(k){const C=TAB!=='s'?CB:CS,mx=TAB!=='s'?MAXQ:ownQ(k);if((C[k]||0)<mx)C[k]=(C[k]||0)+1;pim.close();drawList();drawSum()}
 function cartEv(e){const r=e.target.closest('.pml');if(r)chg(r,r.dataset.t==='b'?CB:CS,k=>r.dataset.t==='b'?MAXQ:ownQ(k),e)}
 function drawSum(){
  if(!$('pmn'))return;
  const t=totais(),nb=Object.keys(CB).length,ns=Object.keys(CS).length,n=nb+ns,un=Object.values(CB).reduce((a,b)=>a+b,0)+Object.values(CS).reduce((a,b)=>a+b,0);
- ['b','s','r'].forEach(x=>{const e=$('tb-'+x);if(e)e.className=TAB===x?'on':''});
+ ['b','s','c','r'].forEach(x=>{const e=$('tb-'+x);if(e)e.className=TAB===x?'on':''});
  $('pmn').textContent=un>99?'99+':un;$('pmn').style.display=un?'':'none';
  const ln=(k,q,tp)=>{const it=ITM.get(k);if(!it)return'';const u=tp==='b'?+it.price:sellUnit(it);const a=tp==='b'?(VCH[k]||0):0,free=tmvQtd()-vchUsed(),vc=tp==='b'&&isTM(it)&&tmvQtd()>0?(a?`<button type="button" class="vchc on" onclick="vchOff('${esc(k)}')">TM Voucher${a>1?' ×'+a:''} ✕</button>`:'')+(a<q&&free>0?`<button type="button" class="vchc" onclick="vchUse('${esc(k)}')">${a?'+ ':''}Usar TM Voucher (${free})</button>`:''):'';return`<div class="pml" data-t="${tp}" data-k="${esc(k)}"><span class="imi">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><span class="imn">${esc(it.name)}<small>${tp==='b'?'':'+'}${fm(u)} cada</small>${vc}</span><div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" value="${q}"><button type="button" data-a="+">+</button></div><b class="pmt">${a&&a>=q?'Grátis':fm(u*(q-a))}</b></div>`};
  const bl=Object.entries(CB).map(([k,q])=>ln(k,q,'b')).join(''),sl=Object.entries(CS).map(([k,q])=>ln(k,q,'s')).join('');
