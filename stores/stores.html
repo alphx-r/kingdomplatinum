@@ -672,7 +672,7 @@ const nrm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLow
 const jl=u=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);
 const fnum=v=>String(v??'').replace(/\D/g,'').replace(/^0+(?=\d)/,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 const dig=v=>parseInt(String(v??'').replace(/\D/g,''))||0;
-const fm=n=>fnum(Math.abs(n)||0)+'C$';
+const fm=n=>{const v=Math.abs(n)||0;return LJ?.moeda_item?fnum(v)+' '+LJ.moeda_item+(v===1?'':'s'):fnum(v)+'C$'};
 function toast(m){const t=$('tst');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2400)}
 function fim(){$('loading-overlay')?.remove()}
 
@@ -811,7 +811,8 @@ function meusIds(){const ids=[];if(ses?.player_id!=null)ids.push(String(ses.play
 function minhas(l){const me=nrm(ses.nome),ids=meusIds();return l.filter(x=>x&&x.desativada!=='true'&&(x.player_id!=null&&ids.length?ids.includes(String(x.player_id)):nrm(x.player)===me)).sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')))}
 
 /* dados da ficha atual */
-const saldo=()=>dig(F?.d?.dinheiro);
+/* loja com moeda_item (ex.: Mega Shard): o saldo é a quantidade desse item na Bag, não o dinheiro da ficha */
+const saldo=()=>LJ?.moeda_item?ownQ(nk(LJ.moeda_item)):dig(F?.d?.dinheiro);
 const bag=()=>(Array.isArray(F?.d?.inventario)?F.d.inventario:[]).filter(x=>x&&x.nome);
 const ownQ=k=>{const e=bag().find(x=>nk(x.nome)===k);return e?(parseInt(e.qtd)||1):0};
 let CUP=null,SORT='n',VCH={};
@@ -952,6 +953,7 @@ function editLoja(slug){
   <label class="se-f">Banner (URL)<input class="in" id="se-ban" value="${esc(o.banner||'')}" placeholder="https://… ou /sprites/…"></label>
   <div class="se-f se-w">${ck('se-tema','Usar cores próprias na loja',!!o.tema)}<div class="se-cl ${o.tema?'':'off'}" id="se-cl"><div class="se-cc"><label>Principal <input type="color" id="se-c1" value="${esc(t.brand||'#1a3a5c')}"></label><input type="range" class="se-lz" id="se-l1" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer principal" oninput="seLz(1)"></div><div class="se-cc"><label>Secundária <input type="color" id="se-c2" value="${esc(t.brandMid||'#2563a8')}"></label><input type="range" class="se-lz" id="se-l2" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer secundária" oninput="seLz(2)"></div><div class="se-cc"><label>Destaque <input type="color" id="se-c3" value="${esc(t.accent||'#e8a020')}"></label><input type="range" class="se-lz" id="se-l3" min="4" max="96" step="1" title="Clarear / escurecer" aria-label="Clarear ou escurecer destaque" oninput="seLz(3)"></div></div></div>
   <div class="se-f se-w">O que a loja faz<div class="se-ckr">${ck('se-vende','Vende itens aos jogadores',cps.vende)}${ck('se-compra','Compra itens dos jogadores',cps.compra)}${ck('se-online','Negociar pelo site (carrinho)',cps.online)}</div><span class="mu" style="font-weight:600">Sem "Negociar pelo site", a loja só exibe os itens (catálogo) e a compra e venda é presencial.</span></div>
+  <label class="se-f se-w">Moeda da loja (item da Bag; vazio = dinheiro C$)<input class="in" id="se-moeda" maxlength="60" value="${esc(o.moeda_item||'')}" placeholder="ex: Mega Shard" autocomplete="off"></label>
   <label class="se-f">Pagamento na revenda (%)<input class="in" id="se-sell" type="number" min="0" max="100" value="${Math.round((o.sell_pct??0.5)*100)}"></label>
   <div class="se-f se-w"><div class="se-ckr">${ck('se-vip','Exclusiva VIP',!!o.requisitos?.vip)}${ck('se-ativa','Visível no hub',o.ativa!==false)}</div></div>
   <div class="se-f se-w">Abre nas estações (nenhuma marcada = o ano todo)<div class="se-ckr">${EST_OPT.map(([k,n])=>ck('se-e-'+k,n,(o.estacoes||[]).includes(k))).join('')}</div></div>
@@ -993,10 +995,11 @@ async function saveLoja(){
   estacoes:EST_OPT.map(([k])=>k).filter(k=>$('se-e-'+k).checked),requisitos:$('se-vip').checked?{vip:true}:null,
   recursos:REC_OPT.map(([k])=>k).filter(k=>$('se-r-'+k).checked),ativa:$('se-ativa').checked,ordem:parseInt($('se-ord').value)||99};
  if(!n.estacoes.length)n.estacoes=null;
+ {const mo=$('se-moeda').value.trim();if(mo)n.moeda_item=mo}
  {const pr=$('se-promo').value.trim(),pa=$('se-pate').value;if(pr){n.promocao=pr;if(pa)n.promo_ate=pa}}
  if($('se-tema').checked)n.tema={brand:$('se-c1').value,brandMid:$('se-c2').value,accent:$('se-c3').value};
  const base=LOJAS||[];
- const lista=EDL?base.map(x=>{if(x.slug!==EDL)return x;const y={...x,...n};if(slug!==EDL){const a=[...new Set([...(x.antigos||[]),EDL])].filter(v=>v!==slug);y.antigos=a}if(!n.tema)delete y.tema;if(!n.localizacao)delete y.localizacao;if(!n.promocao){delete y.promocao;delete y.promo_ate}else if(!n.promo_ate)delete y.promo_ate;return y}):[...base,n];
+ const lista=EDL?base.map(x=>{if(x.slug!==EDL)return x;const y={...x,...n};if(slug!==EDL){const a=[...new Set([...(x.antigos||[]),EDL])].filter(v=>v!==slug);y.antigos=a}if(!n.tema)delete y.tema;if(!n.moeda_item)delete y.moeda_item;if(!n.localizacao)delete y.localizacao;if(!n.promocao){delete y.promocao;delete y.promo_ate}else if(!n.promo_ate)delete y.promo_ate;return y}):[...base,n];
  const era=EDL,ok=await gravaLojas(lista,EDL?'Loja salva.':'Loja criada.');if(ok&&era&&slug!==era&&SL===era)location.href='/stores/'+encodeURIComponent(slug)}
 async function delLoja(){
  if(!EDL||EDL==='pokemart')return;
@@ -1667,7 +1670,9 @@ async function finaliza(){
   const fr=await lerFicha(F.slug);if(!fr)throw new Error('Ficha não encontrada.');fr.d=fr.d||{};
   if(!isAdm()&&!reqOk(LJ,fr))throw new Error('Esta loja é exclusiva para VIP.');
   const inv=fr.d.inventario=Array.isArray(fr.d.inventario)?fr.d.inventario:[];
-  const sal=dig(fr.d.dinheiro);let ganho=0,gasto=0;
+  const mk=LJ.moeda_item?nk(LJ.moeda_item):'',invQ=k=>{const e=inv.find(x=>x&&nk(x.nome)===k);return e?(parseInt(e.qtd)||1):0};
+  if(mk&&(CB[mk]||CS[mk]))throw new Error(LJ.moeda_item+' é a moeda desta loja e não pode ser negociado nela.');
+  const sal=mk?invQ(mk):dig(fr.d.dinheiro);let ganho=0,gasto=0;
   for(const[k,q]of Object.entries(CS)){const it=ITM.get(k),i=inv.findIndex(x=>x&&nk(x.nome)===k),cur=i<0?0:(parseInt(inv[i].qtd)||1);
    if(i>=0&&inv[i].vinculado)throw new Error((it?.name||k)+' é um item vinculado e não pode ser vendido.');
    if(dcNk(k))throw new Error('O Discount Coupon não pode ser vendido.');
@@ -1679,11 +1684,11 @@ async function finaliza(){
   if(vn>0){let r=vn;for(let i=0;i<inv.length&&r>0;i++){const x=inv[i];if(!x||nk(x.nome)!=='tmvoucher')continue;const q=parseInt(x.qtd)||1,m=Math.min(q,r);r-=m;if(q-m>0)x.qtd=q-m;else{inv.splice(i,1);i--}}if(r>0)throw new Error('O TM Voucher não está mais na Bag.');gasto-=vd}
   const dsc=cupDesc(gasto);gasto-=dsc;
   if(dsc>0&&CUP&&CUP.item){const i=inv.findIndex(x=>x&&dcNk(x.nome)&&dcPct(x)===CUP.valor);if(i<0)throw new Error('O Discount Coupon de '+CUP.valor+'% não está mais na Bag.');const q=parseInt(inv[i].qtd)||1;if(q>1)inv[i].qtd=q-1;else inv.splice(i,1)}
-  if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente (o dinheiro da ficha mudou).');
+  if(sal+ganho-gasto<0)throw new Error('Saldo insuficiente ('+(mk?'a quantidade de '+LJ.moeda_item:'o dinheiro')+' da ficha mudou).');
   {const h=histAll(fr.d),nm=k=>ITM.get(k)?.name||k;
    h.unshift({l:chaveLoja(),t:new Date().toISOString(),b:Object.entries(CB).map(([k,q])=>[nm(k),q,+ITM.get(k)?.price||0]),s:Object.entries(CS).map(([k,q])=>[nm(k),q,ITM.get(k)?sellUnit(ITM.get(k)):0]),vd,vn,cp:dsc,cn:dsc>0&&CUP?CUP.codigo:'',a:sal,d:sal+ganho-gasto});
    const ct={};fr.d.historico_lojas=h.filter(x=>{ct[x.l]=(ct[x.l]||0)+1;return ct[x.l]<=30});delete fr.d.historico_pokemart}
-  fr.d.dinheiro=fnum(sal+ganho-gasto);
+  {const nv=sal+ganho-gasto;if(mk){const i=inv.findIndex(x=>x&&nk(x.nome)===mk),mi=ITM.get(mk);if(nv>0){if(i>=0)inv[i].qtd=nv;else inv.push({nome:mi?.name||LJ.moeda_item,qtd:nv,...(mi?bagOf(mi):{})})}else if(i>=0)inv.splice(i,1)}else fr.d.dinheiro=fnum(nv)}
   const j=await salvarFicha({slug:fr.slug,nome:fr.nome,foto:fr.foto,banner:fr.banner,thumb:fr.thumb,player_id:fr.player_id,d:fr.d});
   if(j){fr.foto=j.foto;fr.banner=j.banner;fr.thumb=j.thumb;fr.atualizado_em=j.atualizado_em}
   if(dsc>0&&CUP&&!CUP.item)try{await irpc('pokemart_cupom_usar',{p_codigo:CUP.codigo,p_loja:chaveLoja()})}catch{}
