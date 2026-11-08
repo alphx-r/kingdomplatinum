@@ -807,6 +807,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
         <button class="btn btn-outline btn-sm" id="it-tm-price-btn" onclick="setAllTmPrices(3000)" title="Muda o preço de todos os TMs para 3000 (mantém as flags PokéMart/Venda como estão)">💿 TMs → 3000</button>
+        <button class="btn btn-outline btn-sm" id="it-mega-btn" onclick="setAllMegaStones(300)" title="Coloca todas as Mega Stones (descrição 'Uma variedade das misteriosas Mega Stones') na loja Mega e muda o preço para 300 (mantém as outras lojas e flags)">💎 Mega Stones → Mega Store</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -2178,6 +2179,40 @@ async function setAllTmPrices(valor) {
   if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   applyItFilter();
   toast(falhas ? `💿 ${ok} TMs atualizados, ${falhas} falharam.` : `💿 ${ok} TMs agora custam ${valor}!`, falhas ? 'err' : 'ok');
+}
+
+// Coloca todas as Mega Stones (descrição "Uma variedade das misteriosas Mega Stones…") na loja Mega
+// (slug/nome com "mega" no stores.json), soma a loja às que o item já tem e muda o preço.
+async function setAllMegaStones(valor) {
+  const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const isMega = it => norm(it.item_desc).includes('uma variedade das misteriosas mega stones');
+  const loja = ADM_LOJAS.find(l => /mega/.test(norm(l.slug))) || ADM_LOJAS.find(l => /mega/.test(norm(l.nome)));
+  if (!loja) { toast('Loja Mega não encontrada no stores.json (nenhum slug/nome com "mega").', 'err'); return; }
+  const todas = S.it.all.filter(it => it && it.name && isMega(it));
+  if (!todas.length) { toast('Nenhuma Mega Stone encontrada.', 'err'); return; }
+  const pend = todas.filter(it => !itemLojas(it).includes(loja.slug) || Number(it.price) !== valor);
+  if (!pend.length) { toast(`As ${todas.length} Mega Stones já estão na loja ${loja.nome} por ${valor}.`, 'ok'); return; }
+  if (!confirm(`Colocar ${pend.length} Mega Stone(s) na loja "${loja.nome}" (${loja.slug}) com preço ${valor}?`)) return;
+  const btn = document.getElementById('it-mega-btn');
+  const orig = btn?.innerHTML;
+  if (btn) btn.disabled = true;
+  let ok = 0, falhas = 0;
+  for (const it of pend) {
+    try {
+      const base = S.it.dbMap[it.name] || it;
+      const lojas = [...new Set([...itemLojas(base), loja.slug])];
+      const row = { ...base, lojas, price: valor, updated_at: new Date().toISOString() };
+      await sbUpsert('items', row);
+      S.it.dbMap[it.name] = row;
+      const idx = S.it.all.findIndex(i => i.name === it.name);
+      if (idx >= 0) S.it.all[idx] = row;
+      ok++;
+    } catch (e) { falhas++; }
+    if (btn) btn.innerHTML = `⏳ ${ok + falhas}/${pend.length}`;
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  applyItFilter();
+  toast(falhas ? `💎 ${ok} Mega Stones atualizadas, ${falhas} falharam.` : `💎 ${ok} Mega Stones na loja ${loja.nome} por ${valor}!`, falhas ? 'err' : 'ok');
 }
 
 async function deleteItem(name) {
