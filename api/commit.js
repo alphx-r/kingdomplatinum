@@ -165,7 +165,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const ESTACOES = ['primavera', 'verao', 'outono', 'inverno'];
 const RECURSOS = ['reciclagem', 'tm_voucher'];
 const HEX = /^#[0-9a-f]{6}$/i;
-const CAMPOS_LOJA = new Set(['slug', 'nome', 'empresa', 'descricao', 'logo', 'banner', 'modo', 'compra', 'sell_pct', 'estacoes', 'requisitos', 'recursos', 'ativa', 'ordem', 'promocao', 'promo_ate', 'tema']);
+const CAMPOS_LOJA = new Set(['slug', 'nome', 'empresa', 'descricao', 'logo', 'banner', 'modo', 'compra', 'sell_pct', 'estacoes', 'requisitos', 'recursos', 'ativa', 'ordem', 'promocao', 'promo_ate', 'tema', 'detalhes']);
 const txt = (v, max) => { const s = typeof v === 'string' ? v.trim() : ''; return s.length > max ? null : s; };
 const urlOk = u => u === '' || ((/^https?:\/\//i.test(u) || /^\/(?!\/)/.test(u)) && !u.includes('..'));
 
@@ -221,6 +221,27 @@ function limpaLoja(x) {
       t[k] = x.tema[k];
     }
     if (Object.keys(t).length) o.tema = t;
+  }
+  // detalhes por item (lojas de catálogo): { [nomeNormalizado]: { qtd: inteiro>=0 | null, obs: texto } }
+  if (x.detalhes != null) {
+    if (typeof x.detalhes !== 'object' || Array.isArray(x.detalhes)) return null;
+    const es = Object.entries(x.detalhes);
+    if (es.length > 500) return null;
+    const d = {};
+    for (const [k, v] of es) {
+      if (!/^[a-z0-9]{1,80}$/.test(k) || !v || typeof v !== 'object' || Array.isArray(v)) return null;
+      let qtd = null;
+      if (v.qtd != null && v.qtd !== '') {
+        const n = Number(v.qtd);
+        if (!Number.isFinite(n) || n < 0 || n > 999999) return null;
+        qtd = Math.floor(n);
+      }
+      const obs = txt(v.obs == null ? '' : v.obs, 300);
+      if (obs == null) return null;
+      if (qtd == null && !obs) continue;
+      d[k] = { qtd, obs };
+    }
+    if (Object.keys(d).length) o.detalhes = d;
   }
   return o;
 }
