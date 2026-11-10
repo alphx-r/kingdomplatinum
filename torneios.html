@@ -141,6 +141,7 @@ dialog h3{font-family:var(--font-title);color:var(--brand);margin-bottom:14px}
 .pmq{flex:1;min-width:180px;border:0;border-radius:22px;padding:11px 18px;background:#fff;color:var(--text);font-size:14px}
 .pmq:focus{outline:2px solid var(--accent)}
 .pmcart{position:relative;border:0;border-radius:22px;min-width:48px;height:42px;padding:0 10px;background:rgba(255,255,255,.18);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation}.pmcart:hover{background:rgba(255,255,255,.3)}
+.pmcart.tx{padding:0 16px;gap:8px;font-size:13px;font-weight:700;white-space:nowrap}.pmcart.on{background:var(--accent);color:var(--brand)}
 .pmcart:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pmh.sm{padding:6px 12px;box-shadow:0 2px 10px rgba(0,0,0,.25)}.pmh.sm .pmb{min-width:0}.pmh.sm .pmb b{font-size:18px}.pmh.sm .pmq{padding:7px 14px}.pmh.sm .pmcart{height:34px;min-width:40px}
 .sh-sub{background:color-mix(in srgb,var(--brand-mid) 20%,transparent)}
@@ -197,7 +198,7 @@ function closeNavDrop(){document.getElementById('nav-drop-menu')?.classList.remo
 const SU='https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const LS='kp_torneios';
-const S={ses:null,list:[],cur:null,chars:[],players:[],online:false,tab:'chave',q:'',hq:'',hf:'t',me:null,fmt:'single',criando:false};
+const S={preview:false,ses:null,list:[],cur:null,chars:[],players:[],online:false,tab:'chave',q:'',hq:'',hf:'t',me:null,fmt:'single',criando:false};
 const slug=s=>String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 function uid(nome,ign){const b=slug(nome)||'torneio';let i=b,n=2;while(S.list.some(t=>t.id===i&&t.id!==ign))i=b+n++;return i}
 const fmtData=d=>d?new Date(d).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'';
@@ -205,15 +206,33 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 /* Edita quem está logado como ADM no site; ?org=1 libera para testes locais */
 const sesF=()=>{try{return JSON.parse(localStorage.getItem('kp_ficha_sessao'))}catch{return null}};
-const canEdit=()=>!!localStorage.getItem('adm_session')||!!sesF()?.admin||/[?&]org=1/.test(location.search);
+const realAdmin=()=>!!localStorage.getItem('adm_session')||!!sesF()?.admin||/[?&]org=1/.test(location.search);
+const canEdit=()=>realAdmin()&&!S.preview;
 const KA='kp_torneio_adm';
 const nP=t=>t.nPart??t.part?.length??0;
 const champNome=t=>t.champNome||(t.part&&P(t,t.champ)?.nome)||'';
 const numPts=v=>{const x=Number(String(v??'').replace(/\./g,'').replace(',','.'));return Number.isFinite(x)?x:0};
 const FMT={single:'Eliminatória simples',rr:'Todos contra todos'};
 
-/* tema sazonal igual ao do site */
-try{const t=JSON.parse(localStorage.getItem('kp_tema'));if(t){const r=document.documentElement.style;[['--brand','brand'],['--brand-mid','brandMid'],['--accent','accent'],['--bg','bg'],['--surface','surface'],['--text','text']].forEach(([v,k])=>t[k]&&r.setProperty(v,t[k]))}}catch{}
+/* tema sazonal: mesma lógica do Fichário (config.estacao_ativa + configuracoes.estilo; sem config usa o mês) */
+const TEMAS_SAZ={
+ primavera:{brand:'#1a4a2a',brandMid:'#2e9e50',accent:'#80d880',bg:'#f0fbf2',surface:'#ffffff',text:'#0a1e0e'},
+ verao:{brand:'#E2582B',brandMid:'#C2410C',accent:'#D9483B',bg:'#fff7f0',surface:'#ffffff',text:'#2b1208'},
+ outono:{brand:'#3a1800',brandMid:'#a05020',accent:'#d08030',bg:'#fff8f0',surface:'#ffffff',text:'#1e0e00'},
+ inverno:{brand:'#0a1e3a',brandMid:'#3a80c8',accent:'#90c8f0',bg:'#f0f6ff',surface:'#ffffff',text:'#0a1428'}
+};
+const EST_MES={1:'primavera',2:'verao',3:'outono',4:'inverno',5:'primavera',6:'verao',7:'outono',8:'inverno',9:'primavera',10:'verao',11:'outono',12:'inverno'};
+function aplicaTema(t){if(!t)return;const r=document.documentElement.style;[['--brand','brand'],['--brand-mid','brandMid'],['--accent','accent'],['--bg','bg'],['--surface','surface'],['--text','text']].forEach(([v,k])=>{if(t[k])r.setProperty(v,t[k])})}
+(async()=>{
+  try{aplicaTema(JSON.parse(localStorage.getItem('kp_tema')))}catch{}
+  const q=p=>fetch(SU+'/rest/v1/'+p,{headers:{apikey:SKEY,Authorization:'Bearer '+SKEY}}).then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const [ea,es]=await Promise.all([q('config?chave=eq.estacao_ativa&select=valor'),q('configuracoes?chave=eq.estilo&select=valor')]);
+  let est=ea?.[0]?.valor;
+  if(!TEMAS_SAZ[est]){const m=parseInt(new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',month:'numeric'}).format(new Date()),10);est=EST_MES[m]}
+  const base=es?.[0]?.valor&&typeof es[0].valor==='object'?es[0].valor:{};
+  const t={...base,...(TEMAS_SAZ[est]||{})};
+  aplicaTema(t);try{localStorage.setItem('kp_tema',JSON.stringify(t))}catch{}
+})();
 
 async function api(p,o={}){const r=await fetch(SU+'/rest/v1/'+p,{...o,headers:{apikey:SKEY,Authorization:'Bearer '+SKEY,'Content-Type':'application/json',...o.headers}});if(!r.ok)throw new Error('HTTP '+r.status);const t=await r.text();return t?JSON.parse(t):[]}
 function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
@@ -266,7 +285,7 @@ async function boot(){
     loadList()
   ]);
   S.players=pl;try{S.me=JSON.parse(localStorage.getItem('player_session'))}catch{}
-  S.ses=sesF();
+  S.ses=sesF();try{S.preview=realAdmin()&&sessionStorage.getItem('kp_preview')==='1'}catch{}
   if(S.me?.nome)document.getElementById('nav-who').textContent=S.me.nome;
   S.chars=(Array.isArray(fi)?fi:[]).filter(e=>e&&e.slug&&e.nome&&e.desativada!=='true').map(e=>{
     const o=S.players.find(p=>String(p.id)===String(e.player_id));
@@ -351,15 +370,16 @@ const stLabel=t=>t.status==='fim'?'Finalizado':t.status==='andamento'?'Em andame
 const ICO=p=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 let hubKey='';
 function hub(){
-  const ed=canEdit(),key=[!!S.cur,ed].join();
+  const ed=canEdit(),adm=realAdmin(),key=[!!S.cur,ed,adm,S.preview].join();
   if(key===hubKey)return;hubKey=key;
   const gear=ICO('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>');
   const plus=ICO('<path d="M12 5v14M5 12h14"/>'),back=ICO('<path d="M19 12H5M12 19l-7-7 7-7"/>');
   $('#hub').innerHTML=`<div class="pmh" id="pmh"><div class="pmw pmht"><div class="pmb" onclick="voltar()"><b>Torneios</b></div>
     ${S.cur?`<span style="flex:1"></span><button type="button" class="pmcart" onclick="voltar()" title="Todos os torneios" aria-label="Todos os torneios">${back}</button>`
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
+    ${adm?`<button type="button" class="pmcart tx ${S.preview?'on':''}" onclick="togPreview()" title="${S.preview?'Voltar ao modo organizador':'Ver como player'}" aria-pressed="${S.preview}">${ICO('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>')}<span>${S.preview?'Sair do modo player':'Ver como player'}</span></button>`:''}
     ${ed?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button><button type="button" class="pmcart" onclick="novo()" title="Novo torneio" aria-label="Novo torneio">${plus}</button>`:''}
-  </div></div><div class="sh-sub"><div>${ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
+  </div></div><div class="sh-sub"><div>${S.preview?'Visualizando como player (nenhuma alteração é feita)':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
 }
 function render(){
   hub();
@@ -415,10 +435,10 @@ function selfCard(t){
   if(t.status!=='inscricao')return'';
   const wrap=h=>`<div class="card" style="margin-top:14px"><h3>Inscrição</h3>${h}</div>`;
   if(!t.aberta)return wrap('<p class="msg" style="margin:0">As inscrições deste torneio estão fechadas.</p>');
-  const me=S.me;
-  if(me&&!S.ses?.token)return wrap('<p class="msg" style="margin:0 0 10px">Sua sessão expirou. Entre no site novamente para se inscrever.</p><a class="btn p" href="/" style="display:inline-block;text-decoration:none">Entrar no site</a>');
+  const me=S.me||(S.preview?{id:'__ex',nome:'Player (exemplo)'}:null);
+  if(me&&!S.preview&&!S.ses?.token)return wrap('<p class="msg" style="margin:0 0 10px">Sua sessão expirou. Entre no site novamente para se inscrever.</p><a class="btn p" href="/" style="display:inline-block;text-decoration:none">Entrar no site</a>');
   if(!me)return wrap('<p class="msg" style="margin:0 0 10px">Entre com sua conta de player para inscrever seus personagens.</p><a class="btn p" href="/" style="display:inline-block;text-decoration:none">Entrar no site</a>');
-  const mine=S.chars.filter(c=>String(c.pid)===String(me.id)),ids=new Set(t.part.map(p=>p.id)),usados=t.part.filter(p=>String(p.pid)===String(me.id)).length,lim=t.porPlayer||1,cheio=t.vagas&&t.part.length>=t.vagas;
+  const mine=S.preview&&!S.me?S.chars.slice(0,2):S.chars.filter(c=>String(c.pid)===String(me.id)),ids=new Set(t.part.map(p=>p.id)),usados=t.part.filter(p=>String(p.pid)===String(me.id)).length,lim=t.porPlayer||1,cheio=t.vagas&&t.part.length>=t.vagas;
   const rows=mine.map(c=>ids.has(c.id)?`<div class="pi">${av(c)}${who(c)}<button class="btn d" onclick="sair('${esc(c.id)}')">Sair</button></div>`:`<div class="pi">${av(c)}${who(c)}<button class="btn p" ${usados>=lim||cheio?'disabled':''} onclick="add('${esc(c.id)}')">Inscrever</button></div>`).join('')||'<p class="msg">Nenhuma ficha encontrada para o seu usuário.</p>';
   return wrap(`<p class="msg" style="margin:0 0 10px">${esc(me.nome)}, você pode inscrever até ${lim} personagem(ns) (${usados}/${lim} usado${usados===1?'':'s'})${cheio?'. Torneio cheio.':'.'}</p><div class="pl">${rows}</div>`);
 }
@@ -482,6 +502,7 @@ async function abrir(id){
   S.cur=t;S.tab='chave';S.q='';location.hash=id;render();scrollTo(0,0);
 }
 function voltar(){S.cur=null;S.criando=false;history.replaceState(null,'',location.pathname+location.search);render();scrollTo(0,0)}
+function togPreview(){S.preview=!S.preview;S.criando=false;try{sessionStorage.setItem('kp_preview',S.preview?'1':'')}catch{}hubKey='';render();toast(S.preview?'Modo player: você vê o que os players veem':'Modo organizador')}
 function novo(){if(!canEdit())return;S.cur=null;history.replaceState(null,'',location.pathname+location.search);S.criando=!S.criando;render();scrollTo(0,0);if(S.criando)$('#nn')?.focus()}
 function gerenciar(){
   const d=$('#dlg');
@@ -516,6 +537,7 @@ async function add(id){
   mut(t=>{if(t.status!=='inscricao'||t.part.some(p=>p.id===id))return false;t.part.push({...c,ranking:rk})});
 }
 async function playerOp(action,slug){
+  if(S.preview)return toast('Modo visualização: nada foi alterado.');
   const ses=sesF();
   if(!S.online)return toast('Servidor indisponível. Tente de novo mais tarde.');
   if(!ses?.token)return toast('Sua sessão expirou. Entre no site novamente.');
