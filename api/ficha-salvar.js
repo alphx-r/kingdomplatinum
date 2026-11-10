@@ -7,12 +7,16 @@ const crypto = require('crypto');
 const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
 const { aplicar } = require('./_itens');
 const { diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
+const T = require('./_torneios');   // torneios (arquivo com "_" não conta como função na Vercel)
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
 //   GET  /api/ficha-salvar?lista=1      -> data/index.json
 //   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
+//   GET  /api/ficha-salvar?torneios=1   -> data/torneios/index.json
+//   GET  /api/ficha-salvar?torneio=id   -> data/torneios/<id>.json
 //   POST /api/ficha-salvar              -> salvar / excluir
 //   POST {action:'consumir',  token, slug, itens:[{nome,qtd}], op}          -> desconta itens do inventário (index: captura)
 //   POST {action:'adicionar', token, slug, itens:[{nome,qtd}], custo?, op}  -> soma itens (e debita `custo` do dinheiro) (loja)
+//   POST {action:'torneio_*', ...}      -> torneios (ver api/_torneios.js)
 
 const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabase.co';
 const SB_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indob21ocHh6a2hzZGhzeGxjY3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzcxMzQsImV4cCI6MjEwNjU1MzEzNH0.bgHV3aR3PMSgN6ZvWtC3HICHZWC_xWLmKpY7sf2UFSQ';
@@ -203,6 +207,8 @@ module.exports = async (req, res) => {
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5');
         return res.status(200).send(t || '[]');
       }
+      if (q.torneios) { res.setHeader('Cache-Control', 'no-store'); return await T.lista(res); }
+      if (q.torneio) { res.setHeader('Cache-Control', 'no-store'); return await T.obter(q.torneio, res); }
       if (q.lista) {
         const t = await readFile('data/index.json');
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
@@ -222,6 +228,7 @@ module.exports = async (req, res) => {
     const b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const { action = 'save', token, slug } = b;
     if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
+    if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
     if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
 
