@@ -379,7 +379,7 @@ function hub(){
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
     ${adm?`<button type="button" class="pmcart tx ${S.preview?'on':''}" onclick="togPreview()" title="${S.preview?'Voltar ao modo organizador':'Ver como player'}" aria-pressed="${S.preview}">${ICO('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>')}<span>${S.preview?'Sair do modo player':'Ver como player'}</span></button>`:''}
     ${ed?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button><button type="button" class="pmcart" onclick="novo()" title="Novo torneio" aria-label="Novo torneio">${plus}</button>`:''}
-  </div></div><div class="sh-sub"><div>${S.preview?'Visualizando como player (nenhuma alteração é feita)':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
+  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
 }
 function render(){
   hub();
@@ -414,7 +414,7 @@ function detail(t){
     ${ed&&t.status==='inscricao'?`<button class="btn" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições dos players</button>`:''}
     ${ed&&t.status!=='inscricao'?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':''}
     ${ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn d" onclick="excluir()">Excluir</button>':''}</div></div>
-    <div class="tabs">${t.status==='inscricao'?'':tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>${champ}${body}`;
+    ${t.status==='inscricao'?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
 }
 function parts(t,ed){
   const open=t.status==='inscricao',ids=new Set(t.part.map(p=>p.id));
@@ -435,10 +435,10 @@ function selfCard(t){
   if(t.status!=='inscricao')return'';
   const wrap=h=>`<div class="card" style="margin-top:14px"><h3>Inscrição</h3>${h}</div>`;
   if(!t.aberta)return wrap('<p class="msg" style="margin:0">As inscrições deste torneio estão fechadas.</p>');
-  const me=S.me||(S.preview?{id:'__ex',nome:'Player (exemplo)'}:null);
-  if(me&&!S.preview&&!S.ses?.token)return wrap('<p class="msg" style="margin:0 0 10px">Sua sessão expirou. Entre no site novamente para se inscrever.</p><a class="btn p" href="/" style="display:inline-block;text-decoration:none">Entrar no site</a>');
+  const me=S.me;
+  if(me&&!S.ses?.token)return wrap('<p class="msg" style="margin:0 0 10px">Sua sessão expirou. Entre no site novamente para se inscrever.</p><a class="btn p" href="/" style="display:inline-block;text-decoration:none">Entrar no site</a>');
   if(!me)return wrap('<p class="msg" style="margin:0 0 10px">Entre com sua conta de player para inscrever seus personagens.</p><a class="btn p" href="/" style="display:inline-block;text-decoration:none">Entrar no site</a>');
-  const mine=S.preview&&!S.me?S.chars.slice(0,2):S.chars.filter(c=>String(c.pid)===String(me.id)),ids=new Set(t.part.map(p=>p.id)),usados=t.part.filter(p=>String(p.pid)===String(me.id)).length,lim=t.porPlayer||1,cheio=t.vagas&&t.part.length>=t.vagas;
+  const mine=S.chars.filter(c=>String(c.pid)===String(me.id)),ids=new Set(t.part.map(p=>p.id)),usados=t.part.filter(p=>String(p.pid)===String(me.id)).length,lim=t.porPlayer||1,cheio=t.vagas&&t.part.length>=t.vagas;
   const rows=mine.map(c=>ids.has(c.id)?`<div class="pi">${av(c)}${who(c)}<button class="btn d" onclick="sair('${esc(c.id)}')">Sair</button></div>`:`<div class="pi">${av(c)}${who(c)}<button class="btn p" ${usados>=lim||cheio?'disabled':''} onclick="add('${esc(c.id)}')">Inscrever</button></div>`).join('')||'<p class="msg">Nenhuma ficha encontrada para o seu usuário.</p>';
   return wrap(`<p class="msg" style="margin:0 0 10px">${esc(me.nome)}, você pode inscrever até ${lim} personagem(ns) (${usados}/${lim} usado${usados===1?'':'s'})${cheio?'. Torneio cheio.':'.'}</p><div class="pl">${rows}</div>`);
 }
@@ -502,7 +502,7 @@ async function abrir(id){
   S.cur=t;S.tab='chave';S.q='';location.hash=id;render();scrollTo(0,0);
 }
 function voltar(){S.cur=null;S.criando=false;history.replaceState(null,'',location.pathname+location.search);render();scrollTo(0,0)}
-function togPreview(){S.preview=!S.preview;S.criando=false;try{sessionStorage.setItem('kp_preview',S.preview?'1':'')}catch{}hubKey='';render();toast(S.preview?'Modo player: você vê o que os players veem':'Modo organizador')}
+function togPreview(){S.preview=!S.preview;S.criando=false;try{sessionStorage.setItem('kp_preview',S.preview?'1':'')}catch{}hubKey='';render();toast(S.preview?'Modo player ativado':'Modo organizador')}
 function novo(){if(!canEdit())return;S.cur=null;history.replaceState(null,'',location.pathname+location.search);S.criando=!S.criando;render();scrollTo(0,0);if(S.criando)$('#nn')?.focus()}
 function gerenciar(){
   const d=$('#dlg');
@@ -537,11 +537,10 @@ async function add(id){
   mut(t=>{if(t.status!=='inscricao'||t.part.some(p=>p.id===id))return false;t.part.push({...c,ranking:rk})});
 }
 async function playerOp(action,slug){
-  if(S.preview)return toast('Modo visualização: nada foi alterado.');
   const ses=sesF();
   if(!S.online)return toast('Servidor indisponível. Tente de novo mais tarde.');
   if(!ses?.token)return toast('Sua sessão expirou. Entre no site novamente.');
-  try{const j=await apiPost({action,token:ses.token,slug,torneio:S.cur.id,por:S.me?.nome});setCur(j.torneio);toList(S.cur)}catch(e){toast(e.message)}
+  try{const j=await apiPost({action,token:ses.token,slug,torneio:S.cur.id,por:S.me?.nome});setCur(j.torneio);toList(S.cur);toast(action==='torneio_inscrever'?'Inscrição realizada!':'Inscrição cancelada.')}catch(e){toast(e.message)}
   render();
 }
 function avulso(){const v=$('#mn').value.trim();if(!v)return;mut(t=>{t.part.push({id:'x'+Date.now().toString(36),nome:v,foto:'',cor:'',ranking:0,player:''})})}
