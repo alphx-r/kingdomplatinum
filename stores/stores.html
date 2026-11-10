@@ -512,6 +512,18 @@ dialog#slm{width:min(640px,95vw);max-height:92vh;overflow:auto;text-align:left}
 .se-cl input[type=color]{width:38px;height:28px;padding:0;border:1px solid #ccc;border-radius:4px;background:none}
 .se-cl.off{opacity:.4;pointer-events:none}
 @media (max-width:560px){.se-g{grid-template-columns:1fr}}
+
+/* aviso ao entrar na loja */
+dialog#avm{width:min(460px,94vw);padding:0;border-radius:16px;overflow:hidden;background:var(--surface);color:var(--text);box-shadow:0 16px 60px rgba(0,0,0,.45);text-align:left}
+dialog#avm::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
+.avh{display:flex;align-items:center;gap:10px;padding:18px 22px 10px;font:700 18px var(--font-title)}
+.avh i{font-style:normal;font-size:20px}
+.avb{padding:0 22px 6px;font:500 14px/1.55 var(--font-body);white-space:pre-wrap;overflow-wrap:anywhere;max-height:58vh;overflow-y:auto}
+.ava{padding:14px 22px 18px}.ava .btn{width:100%;padding:11px 16px;border-radius:8px;font-size:14px}
+.se-av{border:1.5px dashed var(--border2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.se-av.off .se-avc{opacity:.4;pointer-events:none}
+.se-avc{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+@media (max-width:560px){.se-avc{grid-template-columns:1fr}}
 /* loja só-catálogo: sem carrinho, sem comprar/vender */
 body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{display:none!important}
 /* ===== mobile: botões e painéis do adm (hub e lojas) ===== */
@@ -575,6 +587,7 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{d
 <div class="nav-overlay" id="nav-overlay" onclick="closeSidenavMobile()"></div>
 <div id="app"></div><div class="toast" id="tst"></div>
 <dialog id="qm" onclick="if(event.target===this)this.close()"><div class="mtl">Quem está acessando a loja?</div><div class="mu" style="text-align:center;margin:-8px 0 12px">Escolha a ficha que vai comprar e vender.</div><input class="in" id="qq" type="search" autocomplete="off" placeholder="Buscar ficha..." style="display:none" oninput="drawQm()"><div class="qg" id="qg" onclick="qmClick(event)"></div><div class="mb" id="qmb"></div></dialog>
+<dialog id="avm"><div class="avh"><i>📢</i><span id="avt"></span></div><div class="avb" id="avx"></div><div class="ava"><button type="button" class="btn p" onclick="avm.close()">Entendi</button></div></dialog>
 <dialog id="cfm" onclick="if(event.target===this)this.close('no')"><form method="dialog"><div class="cfh"><h3>Confirmar transação</h3><p id="cfp"></p></div><div class="cfb" id="cfl"></div><div class="cft" id="cft"></div><div class="cfa"><button type="submit" class="btn" value="no">Cancelar</button><button type="submit" class="btn p" value="ok" autofocus>Confirmar</button></div></form></dialog>
 <dialog id="lg"><div class="lg-logo"><img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" alt="Kingdom Platinum"></div>
 <div class="lg-title">Kingdom Platinum</div>
@@ -829,7 +842,8 @@ function totais(){vchFix();let c=0,v=0,vd=0;
 
 /* telas */
 const msg=h=>`<div class="wrap"><div class="card lt">${h}</div></div>`;
-async function boot(){
+async function boot(){await bootCore();avisoLoja()}
+async function bootCore(){
  mostrarBadge();
  try{if(!LOJAS)LOJAS=await LJL();EST=await ESTP}catch{LOJAS=LOJAS||[]}
  if(!SL){drawHub();fim();return}
@@ -946,11 +960,47 @@ function editLoja(slug){
   <label class="se-f se-w">Moeda da loja (item da Bag; vazio = dinheiro C$)<input class="in" id="se-moeda" maxlength="60" value="${esc(o.moeda_item||'')}" placeholder="ex: Mega Shard" autocomplete="off"></label>
   <label class="se-f">Pagamento na revenda (%)<input class="in" id="se-sell" type="number" min="0" max="100" value="${Math.round((o.sell_pct??0.5)*100)}"></label>
   <div class="se-f se-w"><div class="se-ckr">${ck('se-vip','Exclusiva VIP',!!o.requisitos?.vip)}${ck('se-ativa','Visível no hub',o.ativa!==false)}</div></div>
+  <div class="se-f se-w">Aviso ao entrar na loja<div class="se-av ${o.aviso&&o.aviso.ativo!==false?'':'off'}" id="se-av">${ck('se-av-on','Mostrar um aviso quando a pessoa entrar',!!o.aviso&&o.aviso.ativo!==false)}<div class="se-avc"><label class="se-f">Título (opcional)<input class="in" id="se-av-ti" maxlength="60" value="${esc(o.aviso?.titulo||'')}" placeholder="ex: Aviso importante"></label><label class="se-f">Frequência<select class="in" id="se-av-f" onchange="avSync()">${AV_FREQ.map(([k,n])=>`<option value="${k}" ${(o.aviso?.freq||'sempre')===k?'selected':''}>${n}</option>`).join('')}</select></label><label class="se-f" style="${o.aviso?.freq==='dias'?'':'display:none'}">A cada quantos dias<input class="in" id="se-av-dias" type="number" min="1" max="365" value="${esc(o.aviso?.dias||3)}"></label><label class="se-f se-w">Texto do aviso<textarea class="in" id="se-av-tx" rows="3" maxlength="600" placeholder="ex: A loja está com estoque reduzido esta semana.">${esc(o.aviso?.texto||'')}</textarea></label><div class="se-w"><button type="button" class="btn s" onclick="avPrev()">Pré-visualizar</button></div></div><span class="mu" style="font-weight:600">Se você editar o título ou o texto, o aviso volta a aparecer para todos, mesmo que a frequência ainda não tenha vencido.</span></div></div>
   <div class="se-f se-w">Abre nas estações (nenhuma marcada = o ano todo)<div class="se-ckr">${EST_OPT.map(([k,n])=>ck('se-e-'+k,n,(o.estacoes||[]).includes(k))).join('')}</div></div>
   <div class="se-f se-w">Recursos especiais<div class="se-ckr">${REC_OPT.map(([k,n])=>ck('se-r-'+k,n,recs(o).includes(k))).join('')}</div></div>
  </div><div class="le2" id="se-err"></div><div class="mb">${l&&l.slug!=='pokemart'?'<button type="button" class="btn s" style="margin-right:auto;color:#c03030" onclick="delLoja()">Excluir</button>':''}<button type="button" class="btn s" onclick="slm.close()">Cancelar</button><button type="button" class="btn p s" id="se-ok" onclick="saveLoja()">Salvar</button></div>`;
- $('se-tema').onchange=seTema;$('se-c1').oninput=()=>{seSync(1);seSug()};$('se-c2').oninput=function(){this.dataset.m=1;seSync(2)};$('se-c3').oninput=()=>seSync(3);[1,2,3].forEach(n=>seSync(n));
+ $('se-av-on').onchange=avSync;avSync();$('se-tema').onchange=seTema;$('se-c1').oninput=()=>{seSync(1);seSug()};$('se-c2').oninput=function(){this.dataset.m=1;seSync(2)};$('se-c3').oninput=()=>seSync(3);[1,2,3].forEach(n=>seSync(n));
  d.showModal()}
+
+/* ===== Aviso ao entrar na loja =====
+   LJ.aviso = {texto, titulo, freq: sempre|dia|semana|quinzena|mes|unica|dias, dias:N (só em "dias")}.
+   O controle de "já mostrei" fica no navegador, por jogador e por loja (localStorage kp_aviso:<jogador>:<slug>).
+   Se o texto/título do aviso mudar, ele volta a aparecer independente da frequência. */
+const AV_FREQ=[['sempre','Toda vez que entrar'],['dia','Uma vez por dia'],['semana','Uma vez por semana (7 dias)'],['quinzena','A cada 15 dias'],['mes','Uma vez por mês (30 dias)'],['dias','Personalizado (a cada N dias)'],['unica','Uma única vez']];
+const AV_DIAS={semana:7,quinzena:15,mes:30};
+const avHash=a=>{let h=0;const t=(a.titulo||'')+'\u0001'+(a.texto||'');for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))|0;return String(h)};
+const avKey=()=>'kp_aviso:'+nrm(ses?.nome||'visitante')+':'+(LJ?.slug||SL);
+const avDia=t=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date(t));
+function avDevido(a){
+ let r=null;try{r=JSON.parse(localStorage.getItem(avKey())||'null')}catch{}
+ if(!r||r.h!==avHash(a))return true;
+ const f=a.freq||'sempre';
+ if(f==='sempre')return true;
+ if(f==='unica')return false;
+ if(f==='dia')return avDia(r.t)!==avDia(Date.now());
+ const n=f==='dias'?Math.max(1,parseInt(a.dias)||1):(AV_DIAS[f]||1);
+ return Date.now()-r.t>=n*864e5}
+function avMostra(a){
+ $('avt').textContent=a.titulo||'Aviso';$('avx').textContent=a.texto||'';
+ if(!avm.open)avm.showModal()}
+let AVOK='';
+function avisoLoja(){
+ const a=LJ?.aviso;
+ if(!SL||!LJ||!a||!a.texto||!String(a.texto).trim()||a.ativo===false)return;
+ if(!lojaAberta(LJ)||AVOK===LJ.slug)return;
+ if(!CATALOGO&&!ses)return; /* loja online pede login antes: o aviso aparece quando entrar */
+ AVOK=LJ.slug;
+ if(!avDevido(a))return;
+ try{localStorage.setItem(avKey(),JSON.stringify({t:Date.now(),h:avHash(a)}))}catch{}
+ avMostra(a)}
+function avPrev(){const a=avLe();if(!a)return $('se-err').textContent='Escreva o texto do aviso para pré-visualizar.';$('se-err').textContent='';avMostra(a)}
+function avSync(){const on=$('se-av-on').checked;$('se-av').classList.toggle('off',!on);$('se-av-dias').parentElement.style.display=$('se-av-f').value==='dias'?'':'none'}
+function avLe(){const tx=$('se-av-tx').value.trim();if(!tx)return null;return{ativo:$('se-av-on').checked,titulo:$('se-av-ti').value.trim(),texto:tx,freq:$('se-av-f').value,dias:Math.max(1,parseInt($('se-av-dias').value)||1)}}
 /* painel do adm: lista de lojas (engrenagem do hub) */
 function openLojasAdm(){
  if(!isAdm())return;
@@ -985,11 +1035,12 @@ async function saveLoja(){
   estacoes:EST_OPT.map(([k])=>k).filter(k=>$('se-e-'+k).checked),requisitos:$('se-vip').checked?{vip:true}:null,
   recursos:REC_OPT.map(([k])=>k).filter(k=>$('se-r-'+k).checked),ativa:$('se-ativa').checked,ordem:parseInt($('se-ord').value)||99};
  if(!n.estacoes.length)n.estacoes=null;
+ {const a=avLe();if(a)n.aviso=a;else if($('se-av-on').checked)return er('Escreva o texto do aviso ou desmarque a opção.')}
  {const mo=$('se-moeda').value.trim();if(mo)n.moeda_item=mo}
  {const pr=$('se-promo').value.trim(),pa=$('se-pate').value;if(pr){n.promocao=pr;if(pa)n.promo_ate=pa}}
  if($('se-tema').checked)n.tema={brand:$('se-c1').value,brandMid:$('se-c2').value,accent:$('se-c3').value};
  const base=LOJAS||[];
- const lista=EDL?base.map(x=>{if(x.slug!==EDL)return x;const y={...x,...n};if(slug!==EDL){const a=[...new Set([...(x.antigos||[]),EDL])].filter(v=>v!==slug);y.antigos=a}if(!n.tema)delete y.tema;if(!n.moeda_item)delete y.moeda_item;if(!n.localizacao)delete y.localizacao;if(!n.promocao){delete y.promocao;delete y.promo_ate}else if(!n.promo_ate)delete y.promo_ate;return y}):[...base,n];
+ const lista=EDL?base.map(x=>{if(x.slug!==EDL)return x;const y={...x,...n};if(slug!==EDL){const a=[...new Set([...(x.antigos||[]),EDL])].filter(v=>v!==slug);y.antigos=a}if(!n.tema)delete y.tema;if(!n.moeda_item)delete y.moeda_item;if(!n.localizacao)delete y.localizacao;if(!n.aviso)delete y.aviso;if(!n.promocao){delete y.promocao;delete y.promo_ate}else if(!n.promo_ate)delete y.promo_ate;return y}):[...base,n];
  const era=EDL,ok=await gravaLojas(lista,EDL?'Loja salva.':'Loja criada.');if(ok&&era&&slug!==era&&SL===era)location.href='/stores/'+encodeURIComponent(slug)}
 async function delLoja(){
  if(!EDL||EDL==='pokemart')return;
@@ -1606,9 +1657,9 @@ function drawSum(){
  const ln=(k,q,tp)=>{const it=ITM.get(k);if(!it)return'';const u=tp==='b'?+it.price:sellUnit(it);const a=tp==='b'?(VCH[k]||0):0,free=tmvQtd()-vchUsed(),vc=tp==='b'&&isTM(it)&&tmvQtd()>0?(a?`<button type="button" class="vchc on" onclick="vchOff('${esc(k)}')">TM Voucher${a>1?' ×'+a:''} ✕</button>`:'')+(a<q&&free>0?`<button type="button" class="vchc" onclick="vchUse('${esc(k)}')">${a?'+ ':''}Usar TM Voucher (${free})</button>`:''):'';return`<div class="pml" data-t="${tp}" data-k="${esc(k)}"><span class="imi">${it.sprite?`<img src="${esc(it.sprite)}" alt="">`:''}</span><span class="imn">${esc(it.name)}<small>${tp==='b'?'':'+'}${fm(u)} cada</small>${vc}</span><div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" value="${q}"><button type="button" data-a="+">+</button></div><b class="pmt">${a&&a>=q?'Grátis':fm(u*(q-a))}</b></div>`};
  const bl=Object.entries(CB).map(([k,q])=>ln(k,q,'b')).join(''),sl=Object.entries(CS).map(([k,q])=>ln(k,q,'s')).join('');
  $('pmc').innerHTML=`<div class="pmch"><span>Carrinho${un?` (${un})`:''}</span><button type="button" onclick="toggleCart(false)" aria-label="Fechar">✕</button></div>
- <div class="pmcb">${n?(bl?'<h4>Compras</h4>'+bl:'')+(sl?'<h4>Vendas</h4>'+sl:''):'<div class="lt">Seu carrinho está vazio.</div>'}</div>
+ <div class="pmcb">${n?(bl?'<h4>Compras</h4>'+bl:'')+(sl&&temVender()?'<h4>Vendas</h4>'+sl:''):'<div class="lt">Seu carrinho está vazio.</div>'}</div>
  <div class="pmcf">${nb?cupBanner()+`<div class="pmcp"><input class="in" id="cpi" placeholder="Cupom de desconto" autocomplete="off" value="${CUP?esc(CUP.codigo):''}"${CUP?' disabled':''} onkeydown="if(event.key==='Enter')aplicaCupom()">${CUP?'<button type="button" class="btn s" onclick="tiraCupom()">Remover</button>':'<button type="button" class="btn s" onclick="aplicaCupom()">Aplicar</button>'}</div><div class="le2" id="cpe"></div>`:''}
- <div class="pmr"><span>Compras</span><b>${fm(t.c)}</b></div>${t.vd?`<div class="pmr"><span>TM Voucher</span><b class="pos">−${fm(t.vd)}</b></div>`:''}${t.d?`<div class="pmr"><span>${esc(cupLbl())}</span><b class="pos">−${fm(t.d)}</b></div>`:''}<div class="pmr"><span>Vendas</span><b class="pos">+${fm(t.v)}</b></div><div class="pmr"><span>Saldo atual</span><b>${F?fm(saldo()):'—'}</b></div>
+ <div class="pmr"><span>Compras</span><b>${fm(t.c)}</b></div>${t.vd?`<div class="pmr"><span>TM Voucher</span><b class="pos">−${fm(t.vd)}</b></div>`:''}${t.d?`<div class="pmr"><span>${esc(cupLbl())}</span><b class="pos">−${fm(t.d)}</b></div>`:''}${temVender()?`<div class="pmr"><span>Vendas</span><b class="pos">+${fm(t.v)}</b></div>`:''}<div class="pmr"><span>Saldo atual</span><b>${F?fm(saldo()):'—'}</b></div>
  <div class="pmr tot"><span>Saldo final</span><b class="${t.fin<0?'neg':''}">${t.fin<0?'−':''}${fm(t.fin)}</b></div>
  <div class="suma"><button type="button" class="btn s" onclick="limpa()"${n?'':' disabled'}>Limpar</button><button type="button" class="btn p" onclick="finaliza()"${!F||!n||t.fin<0||busy?' disabled':''}>Finalizar</button></div></div>`}
 function limpa(){CB={};CS={};CUP=null;VCH={};drawList();drawSum()}
