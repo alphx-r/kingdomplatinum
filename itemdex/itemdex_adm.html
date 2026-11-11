@@ -854,6 +854,8 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
         <button class="btn btn-outline btn-sm" id="it-tm-price-btn" onclick="setAllTmPrices(3000)" title="Muda o preço de todos os TMs para 3000 (mantém as flags PokéMart/Venda como estão)">💿 TMs → 3000</button>
         <button class="btn btn-outline btn-sm" id="it-mega-btn" onclick="setAllMegaStones(300)" title="Coloca todas as Mega Stones (descrição 'Uma variedade das misteriosas Mega Stones') na loja Mega e muda o preço para 300 (mantém as outras lojas e flags)">💎 Mega Stones → Mega Store</button>
+        <button class="btn btn-outline btn-sm" id="it-vip-btn" onclick="setAllVipContest(1000)" title="Coloca todos os itens da categoria Contest cuja descrição tem 'VIP' em 1000 C$ (mantém lojas e flags como estão)">✨ VIP Contest → 1000 C$</button>
+        <button class="btn btn-outline btn-sm" id="it-basicseal-btn" onclick="setAllBasicSeals(500)" title="Coloca todos os Basic Seals (nome começa com 'Basic' e tem 'Seal') em 500 C$ (mantém lojas e flags como estão)">🔖 Basic Seals → 500 C$</button>
         <button class="btn btn-primary btn-sm" onclick="openNewItem()">＋ Novo Item</button>
       </div>
       <div id="it-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando itens…</div></div></div>
@@ -2246,6 +2248,52 @@ async function setAllMegaStones(valor) {
   if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   applyItFilter();
   toast(falhas ? `💎 ${ok} Mega Stones atualizadas, ${falhas} falharam.` : `💎 ${ok} Mega Stones na loja ${loja.nome} por ${valor}!`, falhas ? 'err' : 'ok');
+}
+
+// Muda o preço de um grupo de itens de uma vez (mesmo padrão do botão de TMs: só mexe no preço,
+// lojas e flags ficam como estão). `teste` decide quais itens entram no grupo.
+async function setPriceGroup({ teste, valor, btnId, emoji, rotulo }) {
+  const grupo = S.it.all.filter(it => it && it.name && teste(it));
+  if (!grupo.length) { toast(`Nenhum item encontrado: ${rotulo}.`, 'err'); return; }
+  const pend = grupo.filter(it => Number(it.price) !== valor || it.price == null);
+  if (!pend.length) { toast(`Os ${grupo.length} itens (${rotulo}) já custam ${valor} C$.`, 'ok'); return; }
+  if (!confirm(`Mudar o preço de ${pend.length} item(ns) (${rotulo}) para ${valor} C$?\n\n` + pend.slice(0, 8).map(i => '• ' + i.name).join('\n') + (pend.length > 8 ? `\n… e mais ${pend.length - 8}` : ''))) return;
+  const btn = document.getElementById(btnId);
+  const orig = btn?.innerHTML;
+  if (btn) btn.disabled = true;
+  let ok = 0, falhas = 0;
+  for (const it of pend) {
+    try {
+      const row = { ...(S.it.dbMap[it.name] || it), price: valor, updated_at: new Date().toISOString() };
+      await sbUpsert('items', row);
+      S.it.dbMap[it.name] = row;
+      const idx = S.it.all.findIndex(i => i.name === it.name);
+      if (idx >= 0) S.it.all[idx] = row;
+      ok++;
+    } catch (e) { falhas++; }
+    if (btn) btn.innerHTML = `⏳ ${ok + falhas}/${pend.length}`;
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  applyItFilter();
+  toast(falhas ? `${emoji} ${ok} atualizados, ${falhas} falharam.` : `${emoji} ${ok} item(ns) (${rotulo}) agora custam ${valor} C$!`, falhas ? 'err' : 'ok');
+}
+
+const _normTxt = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+// Itens da categoria Contest cuja descrição tem "VIP" (ex.: os stickers de Ball Capsule).
+function setAllVipContest(valor) {
+  return setPriceGroup({
+    valor, btnId: 'it-vip-btn', emoji: '✨', rotulo: 'Contest com descrição VIP',
+    teste: it => _normTxt(it.category).includes('contest') && /\bvip\b/.test(_normTxt(it.item_desc)),
+  });
+}
+
+// Todos os Basic Seals: nome começa com "Basic" e contém "Seal" (Basic Heart Seal, Basic Ele-Seal…).
+function setAllBasicSeals(valor) {
+  return setPriceGroup({
+    valor, btnId: 'it-basicseal-btn', emoji: '🔖', rotulo: 'Basic Seals',
+    teste: it => /^basic\b.*seal/.test(_normTxt(it.name)),
+  });
 }
 
 async function deleteItem(name) {
