@@ -6,12 +6,16 @@
 //   GET  ?torneios=1                      -> índice
 //   GET  ?torneio=xmascup                 -> torneio completo
 //   POST { action:'torneio_salvar',  adm_nome, adm_senha, torneio, base?, novo?, de? }   (ADM) cria/edita/renomeia
-//   POST { action:'torneio_excluir', adm_nome, adm_senha, id }                           (ADM)
+//   POST { action:'torneio_salvar',  token, slug, torneio, base?, novo?, de?, por }      (MODERADOR liberado pelo ADM)
+//   POST { action:'torneio_excluir', adm_nome, adm_senha, id }                           (só ADM)
 //   POST { action:'torneio_inscrever', token, slug, torneio, por }   (dono da ficha ou ADM)
 //   POST { action:'torneio_sair',      token, slug, torneio, por }   (dono da ficha ou ADM)
 //
 // Permissões:
 //  - ADM: nome + senha conferidos em admin_login (mesmo projeto/variáveis do 'atribuir').
+//  - Moderador: player listado em config.torneio_organizadores (projeto do index, INDEX_SUPA_URL/KEY).
+//    Entra com o token da ficha + o slug de uma ficha DELE; o Supabase confere o token e o dono da ficha
+//    (player_id) é procurado na lista de moderadores. Moderador cria/edita torneios, mas não exclui.
 //  - Player: o token da ficha é conferido pelo Supabase (ficha_salvar), igual ao 'consumir' do ficha-salvar.
 //    Os dados do participante (nome, foto, cor, pontos) vêm SEMPRE da ficha no GitHub, nunca do navegador.
 const { readFile, commit } = require('./_gh');
@@ -85,6 +89,39 @@ async function admOk(b) {
   return adm;
 }
 
+// ---------- Token da ficha (dono da ficha ou ADM) ----------
+async function donoDoToken(b, sbRpc) {
+  const { token, slug } = b;
+  if (!token || typeof token !== 'string') throw err(401, 'Sessão ausente. Entre no site novamente.');
+  if (!SLUG.test(slug || '')) throw err(400, 'Ficha inválida.');
+  const f = parse(await readFile(`data/fichas/${slug}.json`));
+  if (!f) throw err(404, 'Ficha não encontrada.');
+  // o Supabase confere se o token pode mexer nesta ficha (dono ou ADM); regrava os mesmos dados, sem mudar nada
+  await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f.nome, p_foto: f.foto ?? null, p_banner: f.banner ?? null, p_d: f.d || {} });
+  return f;
+}
+async function fichaDoToken(b, sbRpc) {
+  if (!ID.test(String(b.torneio || ''))) throw err(400, 'Torneio inválido.');
+  return donoDoToken(b, sbRpc);
+}
+
+// ---------- ADM (nome+senha) OU moderador liberado em config.torneio_organizadores ----------
+async function orgOk(b, sbRpc) {
+  if (b.adm_nome || b.adm_senha) return admOk(b);
+  const f = await donoDoToken(b, sbRpc);   // o Supabase confere que o token é dono desta ficha
+  const pid = f.player_id;
+  if (pid == null || pid === 'admin') throw err(403, 'Você não tem permissão de organizador.');
+  const IU = process.env.INDEX_SUPA_URL, IK = process.env.INDEX_SUPA_KEY;
+  if (!IU || !IK) throw err(500, 'Servidor sem configuração (INDEX_SUPA_URL ou INDEX_SUPA_KEY).');
+  const r = await fetch(`${IU}/rest/v1/config?chave=eq.torneio_organizadores&select=valor`, {
+    headers: { apikey: IK, Authorization: 'Bearer ' + IK },
+  });
+  const j = r.ok ? await r.json().catch(() => []) : [];
+  const L = Array.isArray(j && j[0] && j[0].valor) ? j[0].valor : [];
+  if (!L.some(o => o && String(o.id) === String(pid))) throw err(403, 'Você não tem permissão de organizador.');
+  return { nome: b.por || (f.d && f.d.player) || '' };
+}
+
 // ---------- leitura ----------
 async function lista(res) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -99,9 +136,9 @@ async function obter(id, res) {
   return res.status(200).send(t);
 }
 
-// ---------- ADM: criar / editar / renomear ----------
-async function salvar(b, res) {
-  await admOk(b);
+// ---------- ADM / moderador: criar / editar / renomear ----------
+async function salvar(b, res, sbRpc) {
+  await orgOk(b, sbRpc);
   const t0 = b.torneio && typeof b.torneio === 'object' ? b.torneio : {};
   const id = String(t0.id || ''), de = b.de ? String(b.de) : null;
   if (!ID.test(id) || (de && !ID.test(de))) throw err(400, 'Id de torneio inválido.');
@@ -125,6 +162,7 @@ async function salvar(b, res) {
   return res.json({ ok: true, id: fin, at: b._saida.at });
 }
 
+// exclusão: só ADM (nome+senha)
 async function excluir(b, res) {
   await admOk(b);
   const id = String(b.id || '');
@@ -137,17 +175,6 @@ async function excluir(b, res) {
 }
 
 // ---------- Player: inscrever / sair ----------
-async function fichaDoToken(b, sbRpc) {
-  const { token, slug } = b;
-  if (!token || typeof token !== 'string') throw err(401, 'Sessão ausente. Entre no site novamente.');
-  if (!SLUG.test(slug || '')) throw err(400, 'Ficha inválida.');
-  if (!ID.test(String(b.torneio || ''))) throw err(400, 'Torneio inválido.');
-  const f = parse(await readFile(`data/fichas/${slug}.json`));
-  if (!f) throw err(404, 'Ficha não encontrada.');
-  // o Supabase confere se o token pode mexer nesta ficha (dono ou ADM); regrava os mesmos dados, sem mudar nada
-  await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f.nome, p_foto: f.foto ?? null, p_banner: f.banner ?? null, p_d: f.d || {} });
-  return f;
-}
 async function inscrever(b, res, sbRpc) {
   const f = await fichaDoToken(b, sbRpc);
   if (f.d && f.d.desativada) throw err(400, 'Esta ficha está desativada.');
@@ -188,7 +215,7 @@ async function sair(b, res, sbRpc) {
 }
 
 async function acao(nome, b, res, sbRpc) {
-  if (nome === 'torneio_salvar') return salvar(b, res);
+  if (nome === 'torneio_salvar') return salvar(b, res, sbRpc);
   if (nome === 'torneio_excluir') return excluir(b, res);
   if (nome === 'torneio_inscrever') return inscrever(b, res, sbRpc);
   if (nome === 'torneio_sair') return sair(b, res, sbRpc);
