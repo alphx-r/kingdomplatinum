@@ -211,7 +211,7 @@ function closeNavDrop(){document.getElementById('nav-drop-menu')?.classList.remo
 const SU='https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const LS='kp_torneios';
-const S={preview:false,ses:null,list:[],cur:null,chars:[],players:[],online:false,tab:'chave',q:'',hq:'',hf:'t',me:null,fmt:'single',criando:false};
+const S={orgs:[],preview:false,ses:null,list:[],cur:null,chars:[],players:[],online:false,tab:'chave',q:'',hq:'',hf:'t',me:null,fmt:'single',criando:false};
 const slug=s=>String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 function uid(nome,ign){const b=slug(nome)||'torneio';let i=b,n=2;while(S.list.some(t=>t.id===i&&t.id!==ign))i=b+n++;return i}
 const fmtData=d=>d?new Date(d).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'';
@@ -220,7 +220,9 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 /* Edita quem está logado como ADM no site; ?org=1 libera para testes locais */
 const sesF=()=>{try{return JSON.parse(localStorage.getItem('kp_ficha_sessao'))}catch{return null}};
 const realAdmin=()=>!!localStorage.getItem('adm_session')||!!sesF()?.admin||/[?&]org=1/.test(location.search);
-const canEdit=()=>realAdmin()&&!S.preview;
+/* moderadores: players liberados pelo ADM (config.torneio_organizadores) criam/editam torneios usando o token da sessão */
+const isMod=()=>{const u=S.me||{};return !!S.ses?.token&&!realAdmin()&&S.orgs.some(o=>String(o.id)===String(u.id)||(o.nome&&o.nome===(u.nome||S.ses?.nome)))};
+const canEdit=()=>(realAdmin()||isMod())&&!S.preview;
 const KA='kp_torneio_adm';
 const nP=t=>t.nPart??t.part?.length??0;
 const champNome=t=>t.champNome||(t.part&&P(t,t.champ)?.nome)||'';
@@ -284,7 +286,36 @@ function pedirAdm(){
     d.addEventListener('close',()=>ok(v),{once:true});d.showModal();
   });
 }
+async function carregaOrgs(){
+  try{const r=await api('config?chave=eq.torneio_organizadores&select=valor');const v=r?.[0]?.valor;S.orgs=Array.isArray(v)?v.filter(o=>o&&(o.id!=null||o.nome)):[]}catch{S.orgs=[]}
+}
+async function salvaOrgs(L){
+  await api('config?on_conflict=chave',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({chave:'torneio_organizadores',valor:L})});
+  S.orgs=L;
+}
+function organizadores(){
+  const d=$('#dlg');
+  const lista=S.orgs.map((o,i)=>`<div class="ds"><span style="flex:1;font-weight:700">${esc(o.nome||o.id)}</span><button class="btn d" onclick="orgDel(${i})">Remover</button></div>`).join('')||'<p class="msg">Nenhum moderador ainda.</p>';
+  const livres=S.players.filter(p=>!S.orgs.some(o=>String(o.id)===String(p.id))).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
+  d.innerHTML=`<h3>Moderadores de torneios</h3><p class="msg" style="margin:0 0 12px">Players abaixo podem criar e editar torneios.</p>${lista}
+  <div class="ds" style="margin-top:12px"><select class="in" id="orgsel" style="flex:1;width:auto"><option value="">Escolher player…</option>${livres.map(p=>`<option value="${esc(String(p.id))}">${esc(p.nome)}</option>`).join('')}</select><button class="btn p" onclick="orgAdd()">Adicionar</button></div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Fechar</button></div>`;
+  d.showModal();
+}
+async function orgAdd(){
+  const id=$('#orgsel').value;if(!id)return;const p=S.players.find(x=>String(x.id)===id);if(!p)return;
+  try{await salvaOrgs([...S.orgs,{id:p.id,nome:p.nome}]);organizadores()}catch(e){toast('Não foi possível salvar ('+e.message+')')}
+}
+async function orgDel(i){
+  try{await salvaOrgs(S.orgs.filter((_,k)=>k!==i));organizadores()}catch(e){toast('Não foi possível salvar ('+e.message+')')}
+}
 async function admPost(body){
+  if(isMod()){
+    if(body.action==='torneio_excluir')throw new Error('Só o ADM pode excluir torneios.');
+    const u=S.me||{},c=S.chars.find(x=>String(x.pid)===String(u.id));   // o servidor confere o token através de uma ficha do próprio moderador
+    if(!c)throw new Error('Para organizar torneios você precisa ter pelo menos uma ficha.');
+    return apiPost({...body,token:S.ses.token,slug:c.id,por:u.nome||S.ses?.nome});
+  }
   for(let k=0;k<2;k++){
     const c=admCred()||await pedirAdm();if(!c)throw new Error('Login cancelado.');
     try{return await apiPost({...body,adm_nome:c.n,adm_senha:c.s})}
@@ -298,7 +329,7 @@ async function boot(){
     loadList()
   ]);
   S.players=pl;try{S.me=JSON.parse(localStorage.getItem('player_session'))}catch{}
-  S.ses=sesF();try{S.preview=realAdmin()&&sessionStorage.getItem('kp_preview')==='1'}catch{}
+  S.ses=sesF();await carregaOrgs();try{S.preview=realAdmin()&&sessionStorage.getItem('kp_preview')==='1'}catch{}
   if(S.me?.nome)document.getElementById('nav-who').textContent=S.me.nome;
   S.chars=(Array.isArray(fi)?fi:[]).filter(e=>e&&e.slug&&e.nome&&e.desativada!=='true').map(e=>{
     const o=S.players.find(p=>String(p.id)===String(e.player_id));
@@ -388,7 +419,7 @@ function finishRR(t){t.status=t.m.every(m=>m.sa!=null)?'fim':'andamento';if(t.st
 
 /* ───── Render ───── */
 const av=p=>`<span class="av" style="${p.cor?'background:'+p.cor:''}">${esc((p.nome||'?')[0].toUpperCase())}${p.foto?`<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.remove()">`:''}</span>`;
-const who=p=>`<span class="nm">${esc(p.nome)}${p.player?`<small>${esc(p.player)}</small>`:''}</span>`;
+const who=(p,sub=true)=>`<span class="nm">${esc(p.nome)}${sub&&p.player?`<small>${esc(p.player)}</small>`:''}</span>`;
 const stLabel=t=>t.status==='fim'?'Finalizado':t.status==='andamento'?'Em andamento':'Inscrições abertas';
 
 const ICO=p=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
@@ -473,13 +504,13 @@ function bracket(t,ed){
 }
 function matchBox(t,m,r,i,ed,last){
   const w=win(m,r),bye=r===0&&(m.a==null)!==(m.b==null),can=ed&&m.a&&m.b;
-  const sl=(id,sc)=>{const p=id&&P(t,id);return p?`<div class="sl ${w&&w===id?'w':w?'l':''}">${av(p)}${who(p)}<b>${sc??''}</b></div>`:`<div class="sl e">${bye?'BYE':'A definir'}</div>`};
+  const sl=(id,sc)=>{const p=id&&P(t,id);return p?`<div class="sl ${w&&w===id?'w':w?'l':''}">${av(p)}${who(p,false)}<b>${sc??''}</b></div>`:`<div class="sl e">${bye?'BYE':'A definir'}</div>`};
   return`<div class="m ${can?'ed':''} ${last?'last':''}" ${can?`tabindex="0" onclick="placar(${r},${i})" onkeydown="if(event.key==='Enter')placar(${r},${i})"`:''}>${sl(m.a,m.sa)}${sl(m.b,m.sb)}</div>`;
 }
 function rrGames(t,ed){
   return`<div class="rrm">${t.m.map((m,i)=>{const A=P(t,m.a),B=P(t,m.b),w=m.sa==null?null:m.sa>m.sb?m.a:m.sa<m.sb?m.b:'';
     return`<div class="m ${ed?'ed':''}" ${ed?`tabindex="0" onclick="placar(0,${i})" onkeydown="if(event.key==='Enter')placar(0,${i})"`:''}>
-    <div class="sl ${w===m.a?'w':''}">${av(A)}${who(A)}<b>${m.sa??''}</b></div><div class="sl ${w===m.b?'w':''}">${av(B)}${who(B)}<b>${m.sb??''}</b></div></div>`}).join('')}</div>`;
+    <div class="sl ${w===m.a?'w':''}">${av(A)}${who(A,false)}<b>${m.sa??''}</b></div><div class="sl ${w===m.b?'w':''}">${av(B)}${who(B,false)}<b>${m.sb??''}</b></div></div>`}).join('')}</div>`;
 }
 function classTable(t){
   return`<table><tr><th>#</th><th>Participante</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th><th>Pts</th></tr>${standings(t).map((s,i)=>`<tr><td>${i+1}</td><td><div class="row" style="flex-wrap:nowrap">${av(s.p)}${who(s.p)}</div></td><td>${s.j}</td><td>${s.v}</td><td>${s.e}</td><td>${s.d}</td><td>${s.sg>0?'+':''}${s.sg}</td><td><b>${s.pts}</b></td></tr>`).join('')}</table>`;
@@ -533,7 +564,7 @@ function gerenciar(){
   d.innerHTML=`<h3>Gerenciar torneios</h3><p class="msg" style="margin:0 0 14px">${S.online?'Torneios salvos no GitHub (data/torneios).':'API indisponível: salvando só neste navegador.'}</p>
   <div class="row" style="flex-direction:column;align-items:stretch"><button class="btn" onclick="exportar()">Exportar backup (JSON)</button>
   <label class="btn" style="text-align:center">Importar backup<input type="file" accept=".json,application/json" hidden onchange="importar(this.files[0])"></label>
-  <button class="btn" onclick="recarregar()">Recarregar do servidor</button><button class="btn" onclick="$('#dlg').close()">Fechar</button></div>`;
+  ${realAdmin()?'<button class="btn" onclick="organizadores()">Moderadores de torneios</button>':''}<button class="btn" onclick="recarregar()">Recarregar do servidor</button><button class="btn" onclick="$('#dlg').close()">Fechar</button></div>`;
   d.showModal();
 }
 async function exportar(){
