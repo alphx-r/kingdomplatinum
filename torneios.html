@@ -221,7 +221,9 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const sesF=()=>{try{return JSON.parse(localStorage.getItem('kp_ficha_sessao'))}catch{return null}};
 const realAdmin=()=>!!localStorage.getItem('adm_session')||!!sesF()?.admin||/[?&]org=1/.test(location.search);
 /* moderadores: players liberados pelo ADM (config.torneio_organizadores) criam/editam torneios usando o token da sessão */
-const isMod=()=>{const u=S.me||{};return !!S.ses?.token&&!realAdmin()&&S.orgs.some(o=>String(o.id)===String(u.id)||(o.nome&&o.nome===(u.nome||S.ses?.nome)))};
+const meuId=()=>S.ses?.player_id??S.me?.id;
+const modListado=()=>{const u=S.me||{},nm=u.nome||S.ses?.nome;return !realAdmin()&&S.orgs.some(o=>String(o.id)===String(meuId())||(o.nome&&o.nome===nm))};
+const isMod=()=>!!S.ses?.token&&modListado();
 const canEdit=()=>(realAdmin()||isMod())&&!S.preview;
 const KA='kp_torneio_adm';
 const nP=t=>t.nPart??t.part?.length??0;
@@ -312,7 +314,7 @@ async function orgDel(i){
 async function admPost(body){
   if(isMod()){
     if(body.action==='torneio_excluir')throw new Error('Só o ADM pode excluir torneios.');
-    const u=S.me||{},c=S.chars.find(x=>String(x.pid)===String(u.id));   // o servidor confere o token através de uma ficha do próprio moderador
+    const u=S.me||{},c=S.chars.find(x=>String(x.pid)===String(meuId()));   // o servidor confere o token através de uma ficha do próprio moderador
     if(!c)throw new Error('Para organizar torneios você precisa ter pelo menos uma ficha.');
     return apiPost({...body,token:S.ses.token,slug:c.id,por:u.nome||S.ses?.nome});
   }
@@ -425,7 +427,7 @@ const stLabel=t=>t.status==='fim'?'Finalizado':t.status==='andamento'?'Em andame
 const ICO=p=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 let hubKey='';
 function hub(){
-  const ed=canEdit(),adm=realAdmin(),key=[!!S.cur,ed,adm,S.preview].join();
+  const ed=canEdit(),adm=realAdmin(),key=[!!S.cur,ed,adm,S.preview,modListado()&&!isMod()].join();
   if(key===hubKey)return;hubKey=key;
   const gear=ICO('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>');
   const plus=ICO('<path d="M12 5v14M5 12h14"/>'),back=ICO('<path d="M19 12H5M12 19l-7-7 7-7"/>');
@@ -434,7 +436,7 @@ function hub(){
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
     ${adm?`<button type="button" class="pmcart tx ${S.preview?'on':''}" onclick="togPreview()" title="${S.preview?'Voltar ao modo organizador':'Ver como player'}" aria-pressed="${S.preview}">${ICO('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>')}<span>${S.preview?'Sair do modo player':'Ver como player'}</span></button>`:''}
     ${ed?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button><button type="button" class="pmcart" onclick="novo()" title="Novo torneio" aria-label="Novo torneio">${plus}</button>`:''}
-  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
+  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
 }
 function render(){
   hub();
