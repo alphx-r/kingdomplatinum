@@ -130,7 +130,9 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 dialog{border:none;border-radius:14px;padding:22px;width:min(380px,92vw);margin:auto;box-shadow:0 10px 40px rgba(0,0,0,.4)}
 dialog::backdrop{background:rgba(10,20,40,.6)}
 dialog h3{font-family:var(--font-title);color:var(--brand);margin-bottom:14px}
-.ds{display:flex;align-items:center;gap:10px;margin-bottom:10px}.ds>span:not(.av){flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis}.ds .av{flex:none;width:36px;height:36px}.ds input{width:70px;text-align:center}
+.ds{display:flex;align-items:center;gap:10px;margin-bottom:10px}.ds>span:not(.av){flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis}.ds .av{flex:none;width:36px;height:36px}.dn{flex:1;min-width:0}.dn>span{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl{display:flex;gap:6px;margin-top:6px}.wl button{padding:4px 10px;border-radius:99px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--muted);font-weight:700;font-size:12px;cursor:pointer}
+.wl button[data-k=v].on{background:var(--green);border-color:var(--green);color:#fff}.wl button[data-k=p].on{background:var(--red);border-color:var(--red);color:#fff}.ds input{width:70px;text-align:center}
 .msg{color:var(--muted);font-size:13px;margin-top:8px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--brand);color:#fff;padding:10px 18px;border-radius:99px;font-weight:600;font-size:13px;z-index:99}
 @media(max-width:600px){main{padding:10px 8px 60px}.hd{padding:14px}.rd{min-width:210px}h1{font-size:21px}}
@@ -567,11 +569,21 @@ async function excluir(){if(!confirm('Excluir este torneio?'))return;try{await r
 function placar(r,i){
   const t=S.cur,m=t.m[r][i],A=P(t,m.a),B=P(t,m.b),d=$('#dlg');
   d.innerHTML=`<h3>Lançar resultado</h3>
-    <div class="ds">${av(A)}<span>${esc(A.nome)}</span><input class="in" id="sa" type="number" min="0" value="${m.sa??''}"></div>
-    <div class="ds">${av(B)}<span>${esc(B.nome)}</span><input class="in" id="sb" type="number" min="0" value="${m.sb??''}"></div>
+    <div class="ds">${av(A)}<div class="dn"><span>${esc(A.nome)}</span><div class="wl"><button type="button" data-s="a" data-k="v" onclick="setW('a')">Venceu</button><button type="button" data-s="a" data-k="p" onclick="setW('b')">Perdeu</button></div></div><input class="in" id="sa" type="number" min="0" value="${m.sa??''}" oninput="markW()"></div>
+    <div class="ds">${av(B)}<div class="dn"><span>${esc(B.nome)}</span><div class="wl"><button type="button" data-s="b" data-k="v" onclick="setW('b')">Venceu</button><button type="button" data-s="b" data-k="p" onclick="setW('a')">Perdeu</button></div></div><input class="in" id="sb" type="number" min="0" value="${m.sb??''}" oninput="markW()"></div>
     <p class="msg" id="em">${t.formato==='single'?'Empates não são permitidos na chave.':''}</p>
     <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn d" onclick="salvarM(${r},${i},true)">Limpar</button><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvarM(${r},${i})">Salvar</button></div>`;
-  d.showModal();
+  d.showModal();markW();
+}
+function setW(w){
+  const A=$('#sa'),B=$('#sb');let a=parseInt(A.value,10),b=parseInt(B.value,10);
+  if(isNaN(a)||isNaN(b)){a=w==='a'?1:0;b=w==='a'?0:1}
+  else if(w==='a'?a<=b:b<=a){[a,b]=[b,a];if(a===b){if(w==='a')a=b+1;else b=a+1}}
+  A.value=a;B.value=b;markW()
+}
+function markW(){
+  const a=parseInt($('#sa').value,10),b=parseInt($('#sb').value,10),ok=!isNaN(a)&&!isNaN(b)&&a!==b,w=ok?(a>b?'a':'b'):'';
+  document.querySelectorAll('#dlg .wl button').forEach(x=>x.classList.toggle('on',ok&&((x.dataset.k==='v')===(x.dataset.s===w))))
 }
 function salvarM(r,i,clear){
   let a,b;
