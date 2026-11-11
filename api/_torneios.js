@@ -117,7 +117,9 @@ async function orgOk(b, sbRpc) {
     headers: { apikey: IK, Authorization: 'Bearer ' + IK },
   });
   const j = r.ok ? await r.json().catch(() => []) : [];
-  const L = Array.isArray(j && j[0] && j[0].valor) ? j[0].valor : [];
+  let v = j && j[0] && j[0].valor;
+  if (typeof v === 'string') v = parse(v);   // a coluna guarda o JSON como texto
+  const L = Array.isArray(v) ? v : [];
   if (!L.some(o => o && String(o.id) === String(pid))) throw err(403, 'Você não tem permissão de organizador.');
   return { nome: b.por || (f.d && f.d.player) || '' };
 }
