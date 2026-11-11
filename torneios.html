@@ -261,6 +261,8 @@ const meuId=()=>S.ses?.player_id??S.me?.id;
 const modListado=()=>{const u=S.me||{},nm=u.nome||S.ses?.nome;return !realAdmin()&&S.orgs.some(o=>String(o.id)===String(meuId())||(o.nome&&o.nome===nm))};
 const isMod=()=>!!S.ses?.token&&modListado();
 const canEdit=()=>(realAdmin()||isMod())&&!S.preview;
+/* moderador só edita torneio que criou ou que o ADM atribuiu a ele */
+const podeEditar=t=>{if(S.preview)return false;if(realAdmin())return true;if(!isMod()||!t)return false;const id=String(meuId());return String(t.criador)===id||(Array.isArray(t.mods)&&t.mods.map(String).includes(id))};
 const KA='kp_torneio_adm';
 const nP=t=>t.nPart??t.part?.length??0;
 const champNome=t=>t.champNome||(t.part&&P(t,t.champ)?.nome)||'';
@@ -332,6 +334,7 @@ async function salvaOrgs(L){
   S.orgs=L;
 }
 function organizadores(){
+  if(!realAdmin())return;
   const d=$('#dlg');
   const lista=S.orgs.map((o,i)=>`<div class="ds"><span style="flex:1;font-weight:700">${esc(o.nome||o.id)}</span><button class="btn d" onclick="orgDel(${i})">Remover</button></div>`).join('')||'<p class="msg">Nenhum moderador ainda.</p>';
   const livres=S.players.filter(p=>!S.orgs.some(o=>String(o.id)===String(p.id))).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
@@ -367,7 +370,7 @@ async function boot(){
     loadList()
   ]);
   S.players=pl;try{S.me=JSON.parse(localStorage.getItem('player_session'))}catch{}
-  S.ses=sesF();await carregaOrgs();try{S.preview=realAdmin()&&sessionStorage.getItem('kp_preview')==='1'}catch{}
+  S.ses=sesF();await carregaOrgs();try{S.preview=(realAdmin()||isMod())&&sessionStorage.getItem('kp_preview')==='1'}catch{}
   if(S.me?.nome)document.getElementById('nav-who').textContent=S.me.nome;
   S.chars=(Array.isArray(fi)?fi:[]).filter(e=>e&&e.slug&&e.nome&&e.desativada!=='true').map(e=>{
     const o=S.players.find(p=>String(p.id)===String(e.player_id));
@@ -379,7 +382,7 @@ async function boot(){
 async function persist(t,o={}){
   if(S.online){
     const r=await admPost({action:'torneio_salvar',torneio:t,base:o.novo?undefined:t.at,novo:!!o.novo,de:o.de});
-    t.id=r.id;t.at=r.at;toList(t);return;
+    t.id=r.id;t.at=r.at;if(r.criador!==undefined)t.criador=r.criador;if(Array.isArray(r.mods))t.mods=r.mods;toList(t);return;
   }
   t.at=Date.now();if(!S.list.includes(t))S.list.push(t);
   try{localStorage.setItem(LS,JSON.stringify(S.list))}catch{}
@@ -387,6 +390,7 @@ async function persist(t,o={}){
 /* atualização otimista: a tela muda na hora e o banco salva em segundo plano (fila em série) */
 let pend=0,fila=Promise.resolve();
 function mut(fn,after){
+  if(!podeEditar(S.cur))return toast('Você não tem permissão para editar este torneio.');
   const snap=JSON.stringify(S.cur);
   let r;
   try{r=fn(S.cur)}catch(e){toast(e.message);return}
@@ -463,15 +467,15 @@ const stLabel=t=>t.status==='fim'?'Finalizado':t.status==='andamento'?'Em andame
 const ICO=p=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 let hubKey='';
 function hub(){
-  const ed=canEdit(),adm=realAdmin(),key=[!!S.cur,ed,adm,S.preview,modListado()&&!isMod()].join();
+  const ed=canEdit(),adm=realAdmin(),key=[!!S.cur,ed,adm,S.preview,isMod(),modListado()&&!isMod()].join();
   if(key===hubKey)return;hubKey=key;
   const gear=ICO('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>');
-  const plus=ICO('<path d="M12 5v14M5 12h14"/>'),back=ICO('<path d="M19 12H5M12 19l-7-7 7-7"/>');
+  const refresh=ICO('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),plus=ICO('<path d="M12 5v14M5 12h14"/>'),back=ICO('<path d="M19 12H5M12 19l-7-7 7-7"/>');
   $('#hub').innerHTML=`<div class="pmh" id="pmh"><div class="pmw pmht"><div class="pmb" onclick="voltar()"><b>Torneios</b></div>
     ${S.cur?`<span style="flex:1"></span><button type="button" class="pmcart" onclick="voltar()" title="Todos os torneios" aria-label="Todos os torneios">${back}</button>`
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
-    ${adm?`<button type="button" class="pmcart tx ${S.preview?'on':''}" onclick="togPreview()" title="${S.preview?'Voltar ao modo organizador':'Ver como player'}" aria-pressed="${S.preview}">${ICO('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>')}<span>${S.preview?'Sair do modo player':'Ver como player'}</span></button>`:''}
-    ${ed?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button><button type="button" class="pmcart" onclick="novo()" title="Novo torneio" aria-label="Novo torneio">${plus}</button>`:''}
+    ${(adm||isMod())?`<button type="button" class="pmcart tx ${S.preview?'on':''}" onclick="togPreview()" title="${S.preview?'Voltar ao modo organizador':'Ver como player'}" aria-pressed="${S.preview}">${ICO('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>')}<span>${S.preview?'Sair do modo player':'Ver como player'}</span></button>`:''}
+    ${ed?`${adm?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button>`:`<button type="button" class="pmcart" onclick="recarregar()" title="Recarregar do servidor" aria-label="Recarregar do servidor">${refresh}</button>`}<button type="button" class="pmcart" onclick="novo()" title="Novo torneio" aria-label="Novo torneio">${plus}</button>`:''}
   </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
 }
 function render(){
@@ -494,7 +498,7 @@ function list(){
   return`${canEdit()&&S.criando?novoForm():''}<div class="pmtabs">${tabs}</div><div class="grid" id="cards">${cardsHtml()}</div>`;
 }
 function detail(t){
-  const ed=canEdit(),tabs=[['chave',t.formato==='rr'?'Jogos':'Chave'],...(t.formato==='rr'&&t.status!=='inscricao'?[['class','Classificação']]:[]),['part','Participantes']];
+  const ed=podeEditar(t),tabs=[['chave',t.formato==='rr'?'Jogos':'Chave'],...(t.formato==='rr'&&t.status!=='inscricao'?[['class','Classificação']]:[]),['part','Participantes']];
   if(t.status==='inscricao'&&S.tab!=='part')S.tab='part';
   const champ=t.champ&&P(t,t.champ)?`<div class="champ">${av(P(t,t.champ))}<div>Campeão: ${esc(P(t,t.champ).nome)}</div></div>`:'';
   let body='';
@@ -506,7 +510,7 @@ function detail(t){
     <button class="btn" onclick="voltar()">← Todos os torneios</button>
     ${ed&&t.status==='inscricao'?`<button class="btn" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições dos players</button>`:''}
     ${ed&&t.status!=='inscricao'?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':''}
-    ${ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn d" onclick="excluir()">Excluir</button>':''}</div></div>
+    ${ed?'<button class="btn" onclick="renomear()">Renomear</button>':''}${ed&&realAdmin()?'<button class="btn" onclick="modsTorneio()">Moderadores</button><button class="btn d" onclick="excluir()">Excluir</button>':''}</div></div>
     ${t.status==='inscricao'?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
 }
 function parts(t,ed){
@@ -583,12 +587,23 @@ async function criar(){
   S.cur=t;S.criando=false;S.tab='part';location.hash=t.id;render();
 }
 async function renomear(){
+  if(!podeEditar(S.cur))return;
   const t=S.cur,n=prompt('Novo nome do torneio:',t.nome);if(!n||!n.trim())return;
   const old=t.id;
   try{if(S.online){const f=await loadFull(old);if(f)setCur(f)}t.nome=n.trim();t.id=uid(t.nome,old);await persist(t,{de:old});S.list=S.list.filter(x=>x.id!==old)}
   catch(e){t.id=old;return toast(e.message)}
   location.hash=t.id;render();
 }
+function modsTorneio(){
+  if(!realAdmin()||!podeEditar(S.cur))return;
+  const t=S.cur,at=new Set((t.mods||[]).map(String));
+  const L=S.orgs.map(o=>`<label class="ds" style="cursor:pointer"><input type="checkbox" value="${esc(String(o.id))}" ${at.has(String(o.id))?'checked':''} style="width:18px;height:18px"><span style="flex:1;font-weight:700">${esc(o.nome||o.id)}</span></label>`).join('')||'<p class="msg">Nenhum moderador cadastrado. Adicione em ⚙ Gerenciar → Moderadores de torneios.</p>';
+  const d=$('#dlg');
+  d.innerHTML=`<h3>Moderadores deste torneio</h3><p class="msg" style="margin:0 0 12px">Quem criou o torneio já pode editar. Marque outros moderadores para dar acesso a este torneio.</p>${L}
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaModsT()">Salvar</button></div>`;
+  d.showModal();
+}
+function salvaModsT(){const ids=[...document.querySelectorAll('#dlg input[type=checkbox]:checked')].map(x=>x.value);$('#dlg').close();mut(t=>{t.mods=ids})}
 function togInsc(){mut(t=>{t.aberta=!t.aberta})}
 async function abrir(id){
   const t=await loadFull(id);if(!t)return toast('Torneio não encontrado.');
@@ -598,6 +613,7 @@ function voltar(){S.cur=null;S.criando=false;history.replaceState(null,'',locati
 function togPreview(){S.preview=!S.preview;S.criando=false;try{sessionStorage.setItem('kp_preview',S.preview?'1':'')}catch{}hubKey='';render();toast(S.preview?'Modo player ativado':'Modo organizador')}
 function novo(){if(!canEdit())return;S.cur=null;history.replaceState(null,'',location.pathname+location.search);S.criando=!S.criando;render();scrollTo(0,0);if(S.criando)$('#nn')?.focus()}
 function gerenciar(){
+  if(!realAdmin()||S.preview)return;
   const d=$('#dlg');
   d.innerHTML=`<h3>Gerenciar torneios</h3><p class="msg" style="margin:0 0 14px">${S.online?'Torneios salvos no GitHub (data/torneios).':'API indisponível: salvando só neste navegador.'}</p>
   <div class="row" style="flex-direction:column;align-items:stretch"><button class="btn" onclick="exportar()">Exportar backup (JSON)</button>
@@ -610,7 +626,7 @@ async function exportar(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(L,null,2)],{type:'application/json'}));a.download='torneios.json';a.click();
 }
 async function importar(file){
-  if(!file)return;
+  if(!file||!realAdmin())return;
   try{const L=JSON.parse(await file.text());if(!Array.isArray(L))throw 0;let n=0;
     for(const t of L){if(!t||!t.id||!Array.isArray(t.part))continue;const ex=S.list.some(x=>x.id===t.id);
       if(S.online)await persist(t,{novo:!ex});else{const i=S.list.findIndex(x=>x.id===t.id);i<0?S.list.push(t):S.list[i]=t;await persist(t)}n++}
@@ -624,7 +640,7 @@ async function recarregar(){
 addEventListener('scroll',()=>{const h=$('#pmh');if(!h)return;if(scrollY>90)h.classList.add('sm');else if(scrollY<15)h.classList.remove('sm')},{passive:true});
 async function add(id){
   const c=S.chars.find(x=>x.id===id);if(!c)return;
-  if(!canEdit())return playerOp('torneio_inscrever',id);
+  if(!podeEditar(S.cur))return playerOp('torneio_inscrever',id);
   let rk=0;
   try{const j=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(id)).then(r=>r.ok?r.json():null);if(j?.d)rk=numPts(j.d.pts_ranking)}catch{}
   mut(t=>{if(t.status!=='inscricao'||t.part.some(p=>p.id===id))return false;t.part.push({...c,ranking:rk})});
@@ -638,15 +654,16 @@ async function playerOp(action,slug){
 }
 function avulso(){const v=$('#mn').value.trim();if(!v)return;mut(t=>{t.part.push({id:'x'+Date.now().toString(36),nome:v,foto:'',cor:'',ranking:0,player:''})})}
 function sair(id){
-  if(!canEdit())return playerOp('torneio_sair',id);
+  if(!podeEditar(S.cur))return playerOp('torneio_sair',id);
   mut(t=>{if(t.status!=='inscricao')return false;t.part=t.part.filter(x=>x.id!==id)});
 }
 function buscar(){const ids=new Set(S.cur.part.map(p=>p.id)),q=S.q.toLowerCase();$('#avl').innerHTML=avList(S.chars.filter(c=>!ids.has(c.id)&&(c.nome+' '+c.player).toLowerCase().includes(q)))}
 function t_seed(v){mut(t=>{t.seed=v})}
 function iniciar(){mut(t=>{if(t.part.length<2){toast('Precisa de pelo menos 2 participantes');return false}start(t)},()=>{S.tab='chave'})}
-function reiniciar(){if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null})},()=>{S.tab='part'})}
-async function excluir(){if(!confirm('Excluir este torneio?'))return;try{await remove(S.cur)}catch(e){return toast(e.message)}voltar()}
+function reiniciar(){if(!podeEditar(S.cur))return;if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null})},()=>{S.tab='part'})}
+async function excluir(){if(!realAdmin()||!podeEditar(S.cur))return;if(!confirm('Excluir este torneio?'))return;try{await remove(S.cur)}catch(e){return toast(e.message)}voltar()}
 function placar(r,i){
+  if(!podeEditar(S.cur))return;
   const t=S.cur,m=t.m[r][i],A=P(t,m.a),B=P(t,m.b),d=$('#dlg');
   d.innerHTML=`<h3>Lançar resultado</h3>
     <div class="ds">${av(A)}<div class="dn"><span>${esc(A.nome)}</span><div class="wl"><button type="button" data-s="a" data-k="v" onclick="setW('a')">Venceu</button><button type="button" data-s="a" data-k="p" onclick="setW('b')">Perdeu</button></div></div><input class="in" id="sa" type="number" min="0" value="${m.sa??''}" oninput="markW()"></div>
