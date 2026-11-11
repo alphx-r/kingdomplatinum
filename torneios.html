@@ -315,19 +315,30 @@ async function persist(t,o={}){
   t.at=Date.now();if(!S.list.includes(t))S.list.push(t);
   try{localStorage.setItem(LS,JSON.stringify(S.list))}catch{}
 }
-async function mut(fn,after){
-  try{
-    if(S.online){const f=await loadFull(S.cur.id);if(!f)throw new Error('Torneio não encontrado.');setCur(f)}
-    const r=fn(S.cur);if(r===false)return;
-    await persist(S.cur);
-  }catch(e){
-    toast(e.message);
-    if(e.code==='conflito'||e.status===404)try{const f=await loadFull(S.cur.id);if(f)setCur(f)}catch{}
-  }
+/* atualização otimista: a tela muda na hora e o banco salva em segundo plano (fila em série) */
+let pend=0,fila=Promise.resolve();
+function mut(fn,after){
+  const snap=JSON.stringify(S.cur);
+  let r;
+  try{r=fn(S.cur)}catch(e){toast(e.message);return}
+  if(r===false)return;
   if(after)after();render();
+  const t=S.cur;pend++;
+  fila=fila.then(async()=>{
+    try{await persist(t)}
+    catch(e){
+      toast(e.message||'Erro ao salvar');
+      try{
+        const f=S.online?await loadFull(t.id):JSON.parse(snap);
+        if(f){if(S.cur===t||(S.cur&&S.cur.id===t.id))setCur(f);else if(S.cur)S.cur=f}
+      }catch{}
+      render();
+    }
+  }).finally(()=>{pend--});
 }
+addEventListener('beforeunload',e=>{if(pend>0){e.preventDefault();e.returnValue=''}});
 setInterval(async()=>{
-  if(!S.online||$('#dlg').open||/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||''))return;
+  if(!S.online||pend>0||$('#dlg').open||/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||''))return;
   try{await loadList();if(S.cur){const t=await loadFull(S.cur.id);if(t&&t.at!==S.cur.at)setCur(t)}render()}catch{}
 },30000);
 async function remove(t){
