@@ -1123,13 +1123,45 @@ function buildItemsPayload() {
     lojas: itemLojas(it),
   }));
 }
+// Antes de commitar, confere o items.json que está AGORA no GitHub. Item que existe lá mas não está na lista desta
+// aba (ex.: criado por outra sessão/aba depois que esta lista foi carregada, ou rascunho antigo no navegador) NÃO é
+// apagado: volta para a lista e entra no commit. Item que você excluiu aqui de propósito continua excluído
+// (ele está no "baseline" desta aba). Sem conseguir ler o GitHub, segue como antes.
+async function protegerItensRemotos(data) {
+  let remote = null;
+  const urls = [
+    [`https://api.github.com/repos/${GH_REPO}/contents/itemdex/items.json?ref=${GH_BRANCH}`, { Accept: 'application/vnd.github.raw+json' }],
+    [`https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}/itemdex/items.json?t=${Date.now()}`, {}],
+  ];
+  for (const [u, headers] of urls) {
+    try { const r = await fetch(u, { headers, cache: 'no-store' }); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) { remote = j; break; } } } catch (e) {}
+  }
+  if (!remote) return data;
+  const have = new Set(data.map(x => x.name));
+  const only = remote.filter(x => x && x.name && !have.has(String(x.name).trim()));
+  if (!only.length) return data;
+  const base = loadItemsBaseline();
+  const baseNames = base ? new Set(base.map(x => x.name)) : null;
+  let keep = baseNames ? only.filter(x => !baseNames.has(String(x.name).trim())) : only;   // no baseline = você excluiu de propósito
+  if (!baseNames && keep.length && !confirm(`O items.json do GitHub tem ${keep.length} item(ns) que não estão na sua lista:\n\n` + keep.slice(0, 15).map(x => '• ' + x.name).join('\n') + (keep.length > 15 ? `\n… e mais ${keep.length - 15}` : '') + `\n\nOK = manter esses itens · Cancelar = apagá-los do GitHub`)) keep = [];
+  if (!keep.length) return data;
+  const rows = keep.map(x => ({
+    name: String(x.name).trim(), category: x.category || null, item_desc: x.item_desc || null, sprite: x.sprite || null,
+    flags: (x.flags && typeof x.flags === 'object') ? x.flags : {}, price: x.price ?? null, lojas: itemLojas(x),
+  }));
+  rows.forEach(r => { S.it.dbMap[r.name] = r; S.it.all.push(r); });
+  S.it.all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  try { applyItFilter(); populateItemCategoryFilter(); } catch (e) {}
+  toast(`↩️ ${rows.length} item(ns) que só estavam no GitHub foram mantidos: ${rows.slice(0, 6).map(r => r.name).join(', ')}${rows.length > 6 ? '…' : ''}`, 'ok');
+  return buildItemsPayload();
+}
 async function pushItemsJson() {
   if (_itemsCommitBusy) { _itemsCommitAgain = true; return; }
   if (!S.it.jsonReady || !S.it.all.length) return;
   _itemsCommitBusy = true; S.it.commitPending = false;
   console.log('[commit-items] iniciando commit automático…');
   try {
-    const data = buildItemsPayload();
+    const data = await protegerItensRemotos(buildItemsPayload());
     let admin = null;
     try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
     // Commita o items.json junto com os ícones que estão na fila (PENDING_IMGS),
@@ -2346,7 +2378,7 @@ async function backupItemsNow() {
   const origLabel = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
   try {
-    const data = buildItemsPayload();
+    const data = await protegerItensRemotos(buildItemsPayload());
     // limite do corpo na Vercel é ~4,5 MB: manda as imagens em lotes de até ~3,5 MB
     const lote = []; let tam = 0;
     for (const [path, d] of PENDING_IMGS) {
