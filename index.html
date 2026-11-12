@@ -14522,7 +14522,7 @@ function imgPillRow(c,items,cx,y,maxW,h,font,gap,draw,al){   // pílulas central
 }
 // H == null → só mede (devolve a altura); H numérico → desenha o card (horizontal: sprite à esquerda, dados à direita, golpes embaixo)
 // Condições (esferas) no formato de dados, para desenhar no canvas da imagem compartilhada
-let IMG_ORBS=new WeakMap(), IMG_ICONS={};
+let IMG_ORBS=new WeakMap(), IMG_ICONS={}, IMG_CAPT=new WeakSet();
 function condOrbsDados(cond,saz){
   const out=[], si=SAZ_ORBS[saz];
   if(cond){
@@ -14581,6 +14581,7 @@ function imgCard(c,pk,x,y,w,spr,H){
   }
   cy+=38;
   const tags=[]; if(pk.isShiny) tags.push({t:'✨ SHINY',bg:'#ffd700',fg:'#7a4a00'}); if(pk.isHoney) tags.push({t:'HONEY',bg:'#fff3d4',fg:'#7a5010',bd:'#d4a017'});
+  if(IMG_CAPT.has(pk)) tags.push({t:'● CAPTURADO',bg:'#e53935',fg:'#ffffff',bd:'#b71c1c'});
   if(tags.length) cy+=imgPillRow(c,tags,x0,cy,rw,26,F,6,D,'l')+8;
   const tr=(pk.tipos||[]).map(t=>{const k=IMG_TIPOS[t]||IMG_TIPOS.normal;return{t:String(t).toUpperCase(),bg:k[0],fg:k[1]};});
   const rr=IMG_RAR[pk.rarity]; if(rr) tr.push({t:(rlbl[pk.rarity]||'').toUpperCase(),bg:rr[0],fg:rr[1]});
@@ -14681,7 +14682,12 @@ async function gerarImagemDeEntrada(e){
   const loadImg=src=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; setTimeout(()=>res(null),8000); });
   let fotoSrc=null; try{ const k=resolveKey(e.personagem); const pc=(personagens||[]).find(x=>normKey(x.nome)===k); fotoSrc=pc&&pc.img; }catch(_){}
   const [imgs,foto]=await Promise.all([ Promise.all(pokes.map(pk=>loadImg(pkFreshSprite(pk.nome,pk.isShiny)||pk.sprite||FALLBACK_SPRITE_DEFAULT))), loadImg(fotoSrc) ]);
-  IMG_ORBS=new WeakMap(); IMG_ICONS={};
+  IMG_ORBS=new WeakMap(); IMG_ICONS={}; IMG_CAPT=new WeakSet();
+  try{   // marca no compartilhar os Pokémon já capturados (precisa da ficha do dono carregada)
+    if(sessaoFichaNova() && !fichasNovas.length){ _fichasNovasTentou=false; await carregarFichasNovas(); }
+    const fc=fichaIntegradaDoPersonagem(e.personagem);
+    if(fc&&fc._origens) pokes.forEach((pk,i)=>{ if(fc._origens.has(pkCaptOrigem(e.id,i))) IMG_CAPT.add(pk); });
+  }catch(_){}
   const _nomes=new Set();
   pokes.forEach(pk=>{ let d=[]; try{ d=condOrbsDados(pk.condicao,pk.saz); }catch(_){} IMG_ORBS.set(pk,d); d.forEach(o=>{ if(o.icon) _nomes.add(o.icon); }); });
   await Promise.all([..._nomes].map(async n=>{ IMG_ICONS[n]=await imgCarregaIcone(n); }));
