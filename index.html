@@ -330,6 +330,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hp-nat{font-size:11px;color:var(--muted);font-style:italic}
 .hp-moves{padding-right:30px;display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 14px;font-size:12px;font-weight:700;color:var(--text)}
 .hp.open .hp-info,.hp.open .hp-l{display:none}
+@keyframes hpFade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.hp.hp-anim .hp-info,.hp.hp-anim .hp-moves,.hp.hp-anim .hp-l,.hp.hp-anim .cond-orbs{animation:hpFade .32s cubic-bezier(.22,.61,.36,1)}
+@media(prefers-reduced-motion:reduce){.hp.hp-anim .hp-info,.hp.hp-anim .hp-moves,.hp.hp-anim .hp-l,.hp.hp-anim .cond-orbs{animation:none}}
 .hp.open .hp-moves{display:grid}
 .hp-sc{position:absolute;bottom:10px;right:12px;width:28px;height:28px;padding:0;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8a6420;background:none;border:0;box-shadow:none}
 .hp-sc svg{width:20px;height:20px}
@@ -13071,6 +13074,7 @@ function pkMovesHtml(pk){
 }
 function hpToggle(btn){
   const c = btn.closest('.hp'); if(!c) return;
+  c.classList.add('hp-anim');
   btn.setAttribute('aria-expanded', c.classList.toggle('open') ? 'true' : 'false');
 }
 // Card horizontal da rolagem: sprite + raridade à esquerda; nome/nível, tipos, habilidade e natureza à direita.
@@ -14460,7 +14464,7 @@ function imgDesenharRolagem(e,pokes,imgs,foto){
   c.restore();
   const tx=ax+AV/2+34, maxW=W-PAD-tx;
   c.textAlign='left'; c.textBaseline='middle'; c.fillStyle=onB;
-  c.globalAlpha=.85; c.font='600 22px Cinzel,serif'; c.fillText('KINGDOM PLATINUM · ENCONTRO',tx,ay-52); c.globalAlpha=1;
+  c.globalAlpha=.85; c.font='600 22px Cinzel,serif'; c.fillText('KINGDOM PLATINUM · ROLAGEM DE ENCONTRO',tx,ay-52); c.globalAlpha=1;
   let fs=54; const nome=e.personagem||''; c.font='700 '+fs+'px Cinzel,serif';
   while(c.measureText(nome).width>maxW&&fs>26){fs--;c.font='700 '+fs+'px Cinzel,serif';}
   c.fillText(nome,tx,ay+2);
@@ -14486,8 +14490,15 @@ function imgAddBotao(section,entry){   // botão "Compartilhar Rolagem" no resul
   b.onclick=()=>gerarImagemDeEntrada(entry);
   section.appendChild(b);
 }
+function imgToast(msg){
+  let t=document.getElementById('img-toast'); if(t) t.remove();
+  t=document.createElement('div'); t.id='img-toast'; t.textContent=msg; t.setAttribute('role','status');
+  t.style.cssText='position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100003;background:rgba(20,20,20,.92);color:#fff;font:700 13px var(--font-body,Nunito,sans-serif);padding:8px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.3);pointer-events:none;max-width:90vw;text-align:center;opacity:0;transition:opacity .2s';
+  document.body.appendChild(t); requestAnimationFrame(()=>{t.style.opacity='1';});
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),250);},1800);
+}
 async function gerarImagemDeEntrada(e){
-  const pokes=Array.isArray(e.pokes)?e.pokes:[]; if(!pokes.length){alert('Esta rolagem não tem Pokémon.');return;}
+  const pokes=Array.isArray(e.pokes)?e.pokes:[]; if(!pokes.length){imgToast('Esta rolagem não tem Pokémon.');return;}
   try{ await Promise.all(['700 26px Cinzel','600 16px Nunito','800 16px Nunito','italic 600 17px Nunito'].map(f=>document.fonts.load(f))); }catch(_){}
   const loadImg=src=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; setTimeout(()=>res(null),8000); });
   let fotoSrc=null; try{ const k=resolveKey(e.personagem); const pc=(personagens||[]).find(x=>normKey(x.nome)===k); fotoSrc=pc&&pc.img; }catch(_){}
@@ -14497,7 +14508,7 @@ async function gerarImagemDeEntrada(e){
   try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs,foto)); }
   catch(_){
     try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs,null)); }                       // foto bloqueada por CORS → sem foto
-    catch(_2){ try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs.map(()=>null),null)); }catch(err){ alert('Não foi possível gerar a imagem.'); return; } }  // sprite bloqueado → sem sprites
+    catch(_2){ try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs.map(()=>null),null)); }catch(err){ imgToast('Não foi possível gerar a imagem.'); return; } }  // sprite bloqueado → sem sprites
   }
   const nome=('rolagem-'+(e.personagem||'')+'-'+(e.data||'')).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()+'.png';
   imgMostrarModal(blob,nome);
@@ -14523,7 +14534,7 @@ function imgMostrarModal(blob,nome){
     if(ev.target===ov||a==='x') return close();
     if(a==='share') navigator.share({files:[file],title:'Rolagem'}).catch(()=>{});
     if(a==='dl'){const l=document.createElement('a');l.href=url;l.download=nome;l.click();}
-    if(a==='copy') navigator.clipboard.write([new ClipboardItem({'image/png':blob})]).then(()=>alert('Imagem copiada!')).catch(()=>alert('Não foi possível copiar.'));
+    if(a==='copy') navigator.clipboard.write([new ClipboardItem({'image/png':blob})]).then(()=>imgToast('Imagem copiada!')).catch(()=>imgToast('Não foi possível copiar.'));
   });
   document.body.appendChild(ov);
 }
