@@ -16,6 +16,7 @@ const T = require('./_torneios');   // torneios (arquivo com "_" não conta como
 //   POST /api/ficha-salvar              -> salvar / excluir
 //   POST {action:'consumir',  token, slug, itens:[{nome,qtd}], op}          -> desconta itens do inventário (index: captura)
 //   POST {action:'adicionar', token, slug, itens:[{nome,qtd}], custo?, op}  -> soma itens (e debita `custo` do dinheiro) (loja)
+//   POST {action:'capturar', token, slug, pokemon:{nome,nivel,gender,nature,habilidade,shiny,moves}, op, por} -> põe o Pokémon capturado no 1º slot vazio do time (ou da box)
 //   POST {action:'torneio_*', ...}      -> torneios (ver api/_torneios.js)
 
 const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabase.co';
@@ -231,6 +232,74 @@ module.exports = async (req, res) => {
     if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
     if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
+
+    if (action === 'capturar') {
+      const p = (b.pokemon && typeof b.pokemon === 'object') ? b.pokemon : {};
+      const nomePk = String(p.nome || '').trim().slice(0, 60);
+      const op = String(b.op || '').slice(0, 80);
+      const bolaNome = String(b.bola || '').trim().slice(0, 60);
+      const bolaVal = bolaNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+      if (!/ball$/.test(bolaVal)) return res.status(400).json({ error: 'Escolha uma Pokébola.' });
+      if (!nomePk || nomePk === '???') return res.status(400).json({ error: 'Pokémon inválido.' });
+      if (!op) return res.status(400).json({ error: 'Operação ausente.' });
+      const caminho = `data/fichas/${slug}.json`;
+      const atual = await readFile(caminho);
+      if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
+      const f0 = JSON.parse(atual);
+      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: f0.d || {} });
+      const g = String(p.gender || '').toLowerCase();
+      const lv = Math.floor(Number(p.nivel));
+      const novo = {
+        nome: nomePk,
+        gender: g === 'male' || g === '♂' ? 'male' : g === 'female' || g === '♀' ? 'female' : g === 'genderless' || g === '⚲' ? 'genderless' : '',
+        ball: bolaVal,
+        level: lv >= 1 && lv <= 100 ? String(lv) : '',
+        nature: String(p.nature || '').trim().slice(0, 20),
+        ability: String(p.habilidade || '').trim().slice(0, 60),
+        feature: p.shiny ? 'Shiny' : 'Normal',
+        moves: (Array.isArray(p.moves) ? p.moves : []).map(m => String(m || '').trim().slice(0, 60)).filter(Boolean).slice(0, 8).map(n => ({ n, o: '' })),
+        stats: {}, ath: {},
+        origem: op,
+      };
+      let saida = null;
+      await commit(async parent => {
+        const t = await readFile(caminho, parent);
+        if (t == null) throw Object.assign(new Error('Ficha não encontrada.'), { status: 404 });
+        const f = JSON.parse(t);
+        if ([...(f.d?.time || []), ...(f.d?.box || [])].some(x => x && x.origem === op)) { saida = { repetida: true, f }; return []; }
+        const r = aplicar(f.d || {}, 'consumir', [{ nome: bolaNome, qtd: 1 }], 0, op + ':bola');   // desconta 1 Pokébola (erra se não tiver)
+        const d = f.d = r.d;
+        const time = d.time = Array.from({ length: 6 }, (_, i) => (Array.isArray(d.time) && d.time[i]) || {});
+        const box = d.box = Array.isArray(d.box) ? d.box : [];
+        if ([...time, ...box].some(x => x && x.origem === op)) { saida = { repetida: true, f }; return []; }
+        const vazio = x => !x || !x.nome;
+        let onde, i = time.findIndex(vazio);
+        if (i >= 0) { time[i] = novo; onde = 'time'; }
+        else {
+          const cap = Math.min(120, 6 + (parseInt(d.box_mini) || 0) * 2 + (parseInt(d.box_up) || 0) * 5);
+          while (box.length < cap) box.push({});
+          i = box.findIndex((x, k) => k < cap && vazio(x));
+          if (i < 0) throw Object.assign(new Error('Time e box estão cheios. Libere um espaço na ficha antes de capturar.'), { status: 409, code: 'cheio' });
+          box[i] = novo; onde = 'box';
+        }
+        f.atualizado_em = new Date().toISOString();
+        saida = { repetida: false, f, onde, slot: i };
+        const ch = [{ path: caminho, content: JSON.stringify(f) }];
+        try {
+          const hist = await mudancaHist(readFile, parent, entradas(f, b.por, [...eventosItens('consumir', [{ nome: bolaNome, qtd: 1 }], 0, op), { cat: 'pokemon', txt: `Capturou ${nomePk}${novo.level ? ' lvl ' + novo.level : ''} com ${bolaNome} (${onde === 'time' ? 'time' : 'box'})` }]));
+          if (hist) ch.push(hist);
+        } catch (e) { console.warn('ficha-salvar: histórico (capturar) falhou:', e.message); }
+        const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
+        idx.push(indexEntry(f));
+        ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
+        return ch;
+      }, `ficha: capturar ${nomePk} (${slug})`);
+      if (!saida.repetida) {
+        try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: saida.f.nome, p_foto: saida.f.foto ?? null, p_banner: saida.f.banner ?? null, p_d: saida.f.d }); }
+        catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }
+      }
+      return res.json({ ok: true, repetida: saida.repetida, onde: saida.onde || null, inventario: saida.f?.d?.inventario || [], slot: saida.slot ?? null, atualizado_em: saida.f.atualizado_em });
+    }
 
     if (action === 'consumir' || action === 'adicionar') {
       const itens = (Array.isArray(b.itens) ? b.itens : [])
