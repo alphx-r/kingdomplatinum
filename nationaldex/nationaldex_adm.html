@@ -6359,14 +6359,16 @@ const PKAPI_VG_GERACAO = {
 };
 const PKAPI_VG_SPINOFF = new Set(['colosseum','xd','lets-go-pikachu-lets-go-eevee','brilliant-diamond-shining-pearl','legends-arceus','legends-za']);
 const PKAPI_VG_ORDEM = Object.keys(PKAPI_VG_GERACAO); // ordem aproximada de lançamento
-function pkapiMovesetUltimaGeracao(d, category) {
+function pkapiMovesetUltimaGeracao(d, category, gerAlvo) {
   const todos = new Set();
   (d.moves || []).forEach(mv => (mv.version_group_details || []).forEach(v => todos.add(v.version_group.name)));
   const gerDe = n => PKAPI_VG_GERACAO[n] ?? 9;                      // jogo novo ainda não listado: assume geração 9
   const ord = n => { const i = PKAPI_VG_ORDEM.indexOf(n); return i < 0 ? 999 : i; };
   const principais = [...todos].filter(n => !PKAPI_VG_SPINOFF.has(n));
   const cand = principais.length ? principais : [...todos];
-  const gens = [...new Set(cand.map(gerDe))].sort((a, b) => b - a);   // da mais nova pra mais antiga
+  let gens = [...new Set(cand.map(gerDe))].sort((a, b) => b - a);   // da mais nova pra mais antiga
+  // Geração-alvo (ex.: 8 = Sword/Shield): se o Pokémon existe nela, ela vai primeiro; senão cai pra mais nova disponível.
+  if (gerAlvo && gens.includes(gerAlvo)) gens = [gerAlvo, ...gens.filter(g => g !== gerAlvo)];
   let res = { moves: [], geracao: 0, grupos: [] };
   // Tenta a geração mais nova; se vier vazia (jogo novo sem golpes na PokéAPI), cai pra anterior.
   for (const geracao of gens) {
@@ -6440,7 +6442,11 @@ async function epkFetchMovesetFromPokeapi(category) {
 async function epkBuscarMovesetsTodos() {
   const alvo = (S.pk.all || []).filter(p => !p._isRpg && /^\d+$/.test(String(p.id)));
   if (!alvo.length) { toast('Nenhum Pokémon oficial carregado.', 'err'); return; }
-  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais, usando só a última geração em que cada um aparece?\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos). Pode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
+  const entrada = prompt('Qual geração usar para os movesets?\n\n8 = Sword/Shield (padrão)\n9 = Scarlet/Violet\n7 = Ultra Sun/Ultra Moon ... etc.\n0 = sempre a última geração de cada Pokémon\n\nSe o Pokémon não existir na geração escolhida, usa a mais recente em que ele aparece.', '8');
+  if (entrada === null) return;
+  const gerAlvo = parseInt(entrada, 10) || 0;
+  if (gerAlvo < 0 || gerAlvo > 9) { toast('Geração inválida (use 0 a 9).', 'err'); return; }
+  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais, usando ${gerAlvo ? 'a Geração ' + gerAlvo + ' (ou a mais recente em que o Pokémon aparece, se ele não existir nela)' : 'só a última geração em que cada um aparece'}?\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos). Pode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
   const btn = document.getElementById('pk-btn-moves-todos');
   if (btn) btn.disabled = true;
   showProgress('Buscando movesets na PokéAPI…');
@@ -6456,9 +6462,9 @@ async function epkBuscarMovesetsTodos() {
         const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(id)}`);
         if (!r.ok) throw new Error(`PokéAPI HTTP ${r.status}`);
         const d = await r.json();
-        const nivel = pkapiMovesetUltimaGeracao(d, 'level').moves;
-        const tm    = pkapiMovesetUltimaGeracao(d, 'tm').moves;
-        const egg   = pkapiMovesetUltimaGeracao(d, 'egg').moves;
+        const nivel = pkapiMovesetUltimaGeracao(d, 'level', gerAlvo).moves;
+        const tm    = pkapiMovesetUltimaGeracao(d, 'tm', gerAlvo).moves;
+        const egg   = pkapiMovesetUltimaGeracao(d, 'egg', gerAlvo).moves;
         if (!nivel.length && !tm.length && !egg.length) { semDados++; semGolpes.push(`${pk.name || id} (#${id})`); }
         else {
           const patch = {
