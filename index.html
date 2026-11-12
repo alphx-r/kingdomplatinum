@@ -319,8 +319,8 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hp{position:relative;display:flex;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;gap:0 16px;padding:14px 16px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
 .hp:hover{border-color:var(--border2);box-shadow:0 4px 16px rgba(20,30,50,.09)}
 .hp-l{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto}
-.hp-sp{width:59px;height:59px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.hp-sp img{width:59px;height:59px;object-fit:contain}
+.hp-sp{width:47px;height:47px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.hp-sp img{width:47px;height:47px;object-fit:contain}
 .hp-r{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;padding-right:0}
 .hp-nm{display:flex;align-items:baseline;flex-wrap:nowrap;gap:6px;padding-right:34px;font-family:var(--font-title);font-size:14px;font-weight:700;color:var(--text);line-height:1.25}
 .hp-nm>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -13162,7 +13162,8 @@ function pkCaptOrigem(eid,idx){ return 'rol:'+eid+':'+idx; }
 function pkCaptBtnHtml(pk,c){
   if(!pk||!pk.nome||pk.nome==='???'||pk.naoCapturavel) return '';
   const ficha = (typeof fichaIntegradaDoPersonagem==='function') ? fichaIntegradaDoPersonagem(c.pers) : null;
-  const ja = !!(ficha && ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
+  if(!ficha) return '';   // só aparece para quem tem a ficha do personagem que rolou
+  const ja = !!(ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
   const tip = ja ? 'Já está na ficha' : 'Capturar: adicionar à ficha';
   return `<button type="button" class="hp-cap${ja?' capt':''}" data-eid="${_rolEsc(String(c.eid))}" data-idx="${c.idx}"${ja?' disabled':''} title="${tip}" aria-label="${tip}" onclick="event.stopPropagation();pkCapturarPedir(this)">${SVG_POKEBOLA_CAPT}</button>`;
 }
@@ -13203,20 +13204,28 @@ async function pkCapturarPedir(btn){
   const bola=await pkCaptModal('Capturar Pokémon?',
     `Adicionar <b>${nm}</b>${lv}${pk.isShiny?' ✨':''} à ficha de <b>${_rolEsc(ficha.nome||e.personagem)}</b>?<br>Escolha a Pokébola: 1 unidade será descontada da Bag. Ele vai para o primeiro slot vazio do time (ou da box, se o time estiver cheio).`,'Capturar',bolas);
   if(!bola) return;
-  btn.classList.add('busy');
+  // Otimista: a pokébola já fica colorida na hora; o servidor grava em segundo plano e, se falhar, volta ao estado anterior.
+  const origem=pkCaptOrigem(eid,idx);
+  const marcar=on=>{
+    document.querySelectorAll('.hp-cap').forEach(b=>{ if(b.dataset.eid===String(eid)&&parseInt(b.dataset.idx,10)===idx){
+      b.classList.toggle('capt',on); b.disabled=on; b.title=on?'Já está na ficha':'Capturar: adicionar à ficha'; b.setAttribute('aria-label',b.title); } });
+  };
+  (ficha._origens=ficha._origens||new Set()).add(origem);
+  marcar(true);
+  imgToast(`${pk.nome} capturado! Salvando na ficha...`);
   try{
     const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      action:'capturar', token:sess.token, slug:ficha.slug, op:pkCaptOrigem(eid,idx), bola:bola, por:sess.nome||undefined,
+      action:'capturar', token:sess.token, slug:ficha.slug, op:origem, bola:bola, por:sess.nome||undefined,
       pokemon:{nome:pk.nome, nivel:(pk.nivel!=null?pk.nivel:null), gender:pk.genderS||'', nature:pk.nature?.en||'', habilidade:fmtHabilidade(pk.habilidade), shiny:!!pk.isShiny, moves:Array.isArray(pk.moves)?pk.moves:[]}
     })});
     const j=await r.json().catch(()=>null);
     if(!r.ok) throw new Error(j?.error||'Não foi possível adicionar à ficha.');
-    (ficha._origens=ficha._origens||new Set()).add(pkCaptOrigem(eid,idx));
     if(Array.isArray(j.inventario)) aplicarInventarioNovo(ficha,j.inventario);
-    btn.classList.add('capt'); btn.disabled=true; btn.title='Já está na ficha'; btn.setAttribute('aria-label','Já está na ficha');
-    imgToast(j.repetida?`${pk.nome} já estava na ficha.`:`${pk.nome} adicionado ${j.onde==='box'?'à box':'ao time'} da ficha!`);
-  }catch(err){ alert(err.message||'Falha ao capturar.'); }
-  finally{ btn.classList.remove('busy'); }
+    imgToast(j.repetida?`${pk.nome} já estava na ficha.`:`${pk.nome} salvo ${j.onde==='box'?'na box':'no time'} da ficha!`);
+  }catch(err){
+    ficha._origens.delete(origem); marcar(false);
+    alert((err.message||'Falha ao capturar.')+'\nO Pokémon não foi adicionado à ficha.');
+  }
 }
 function pkToggleMoves(btn){
   const w = btn.closest('.pk-mv-wrap'); if(!w) return;
