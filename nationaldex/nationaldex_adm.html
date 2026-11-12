@@ -6378,10 +6378,15 @@ const PKAPI_JOGOS_ORDEM = [
   { nome: 'Colosseum',                 grupos: ['colosseum'] }
 ];
 function pkapiMovesetUltimaGeracao(d, category) {
-  const todos = new Set();
-  (d.moves || []).forEach(mv => (mv.version_group_details || []).forEach(v => todos.add(v.version_group.name)));
-  // Primeiro jogo da ordem fixa em que o Pokémon existe.
-  const jogo = PKAPI_JOGOS_ORDEM.find(j => j.grupos.some(g => todos.has(g)));
+  const todos = new Set();      // grupos de jogo com qualquer entrada
+  const comNivel = new Set();   // grupos de jogo com pelo menos 1 golpe por nível
+  (d.moves || []).forEach(mv => (mv.version_group_details || []).forEach(v => {
+    todos.add(v.version_group.name);
+    if (v.move_learn_method.name === 'level-up') comNivel.add(v.version_group.name);
+  }));
+  // Primeiro jogo da ordem fixa em que o Pokémon EXISTE. Todo Pokémon que está num jogo aprende
+  // golpes por nível nele, então exigimos isso — evita ser enganado por um registro solto (só TM, por ex.).
+  const jogo = PKAPI_JOGOS_ORDEM.find(j => j.grupos.some(g => comNivel.has(g)));
   if (!jogo) return { moves: [], jogo: '', grupos: [] };
   const grupos = jogo.grupos.filter(g => todos.has(g));   // ordem = do jogo base pro DLC
   const gs = new Set(grupos);
@@ -6402,6 +6407,26 @@ function pkapiMovesetUltimaGeracao(d, category) {
   });
   if (category === 'level') moves.sort((x, y) => x.level - y.level);
   return { moves, jogo: jogo.nome, grupos };
+}
+
+// fetch com retentativas: 429/5xx/queda de rede esperam e tentam de novo (honra Retry-After). 404 e demais 4xx falham direto.
+async function pkapiFetchJson(url, tentativas = 4) {
+  let ultimo;
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return await r.json();
+      ultimo = new Error(`PokéAPI HTTP ${r.status}`);
+      if (r.status !== 429 && r.status < 500) throw Object.assign(ultimo, { fatal: true });
+      const ra = parseFloat(r.headers?.get?.('Retry-After'));
+      if (i < tentativas - 1) await new Promise(res => setTimeout(res, (ra > 0 ? ra * 1000 : 800 * Math.pow(2, i))));
+    } catch (e) {
+      if (e.fatal) throw e;
+      ultimo = e;
+      if (i < tentativas - 1) await new Promise(res => setTimeout(res, 800 * Math.pow(2, i)));
+    }
+  }
+  throw ultimo || new Error('falha desconhecida ao acessar a PokéAPI');
 }
 
 const EPK_MOVESET_FIELD = { level: 'moves_level', tm: 'moves_tm', egg: 'moves_egg' };
@@ -6446,31 +6471,38 @@ async function epkFetchMovesetFromPokeapi(category) {
 }
 
 // Botão geral (lista de Pokémon): busca Por Nível + TM + Egg de TODOS os Pokémon oficiais
-// (ID numérico) na PokéAPI — Scarlet/Violet → Sword/Shield → Sun/Moon → ... — e salva direto no Supabase.
-// Uma requisição por Pokémon; sobrescreve os três campos apenas quando a PokéAPI trouxe golpes.
+// (ID numérico) na PokéAPI — Scarlet/Violet → Sword/Shield → Sun/Moon → ... — e grava no pokemon.json em memória
+// (depois é preciso clicar em "Commit pokemon.json").
+// Uma requisição por Pokémon (com retentativas); sobrescreve os três campos apenas quando a PokéAPI trouxe golpes.
+let EPK_MOVES_TODOS_RODANDO = false;
 async function epkBuscarMovesetsTodos() {
-  const alvo = (S.pk.all || []).filter(p => !p._isRpg && /^\d+$/.test(String(p.id)));
-  if (!alvo.length) { toast('Nenhum Pokémon oficial carregado.', 'err'); return; }
-  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos). Pode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
+  if (EPK_MOVES_TODOS_RODANDO) { toast('A busca de movesets já está em andamento.', 'err'); return; }
+  if (!PKJ.loaded) { toast('O pokemon.json ainda não carregou — aguarde ou recarregue a aba.', 'err'); return; }
+  const oficiais = (S.pk.all || []).filter(p => !p._isRpg && /^\d+$/.test(String(p.id)));
+  const alvo = oficiais.filter(p => S.pk.dbMap && S.pk.dbMap[String(p.id)]);
+  const foraDoJson = oficiais.length - alvo.length;
+  if (!alvo.length) { toast('Nenhum Pokémon oficial carregado no pokemon.json.', 'err'); return; }
+  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos).${foraDoJson ? `\n${foraDoJson} Pokémon da lista não estão no pokemon.json e serão pulados.` : ''}\nPode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
+
+  EPK_MOVES_TODOS_RODANDO = true;
   const btn = document.getElementById('pk-btn-moves-todos');
   if (btn) btn.disabled = true;
   showProgress('Buscando movesets na PokéAPI…');
-  let feitos = 0, ok = 0, semDados = 0, parar = false;
-  const falhas = [];
-  const semGolpes = [];
+  updateProgress(0, alvo.length);
+  let feitos = 0, ok = 0, parar = false, interrompido = false;
+  const falhas = [], semGolpes = [], porJogo = {};
   const fila = alvo.slice();
   const worker = async () => {
     while (fila.length && !parar) {
       const pk = fila.shift();
       const id = String(pk.id);
       try {
-        const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(id)}`);
-        if (!r.ok) throw new Error(`PokéAPI HTTP ${r.status}`);
-        const d = await r.json();
-        const nivel = pkapiMovesetUltimaGeracao(d, 'level').moves;
+        const d = await pkapiFetchJson(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(id)}`);
+        const rn = pkapiMovesetUltimaGeracao(d, 'level');
+        const nivel = rn.moves;
         const tm    = pkapiMovesetUltimaGeracao(d, 'tm').moves;
         const egg   = pkapiMovesetUltimaGeracao(d, 'egg').moves;
-        if (!nivel.length && !tm.length && !egg.length) { semDados++; semGolpes.push(`${pk.name || id} (#${id})`); }
+        if (!rn.jogo || (!nivel.length && !tm.length && !egg.length)) { semGolpes.push(`${pk.name || id} (#${id})`); }
         else {
           const patch = {
             moves_level: nivel.length ? nivel : null,
@@ -6478,27 +6510,41 @@ async function epkBuscarMovesetsTodos() {
             moves_egg: egg.length ? egg : null,
             updated_at: new Date().toISOString()
           };
-          await sbPatch('pokemons', id, patch);
+          await sbPatch('pokemons', id, patch);       // grava no pokemon.json em memória (dbMap) e marca como "sujo"
           Object.assign(pk, patch);
-          if (S.pk.dbMap && S.pk.dbMap[id]) Object.assign(S.pk.dbMap[id], patch);
           ok++;
+          porJogo[rn.jogo] = (porJogo[rn.jogo] || 0) + 1;
         }
       } catch (e) {
-        falhas.push(`${pk.name || id}: ${e.message}`);
-        if (ok === 0 && falhas.length >= 5) parar = true;   // tudo falhando (cota/rede) → para logo
+        falhas.push(`${pk.name || id} (#${id}): ${e.message}`);
+        if (ok === 0 && falhas.length >= 5) { parar = true; interrompido = true; }   // tudo falhando (rede/PokéAPI fora) → para logo
       }
       feitos++;
       updateProgress(feitos, alvo.length, pk.name || id);
     }
   };
-  await Promise.all(Array.from({ length: 4 }, worker));
-  hideProgress();
-  if (btn) btn.disabled = false;
+  try {
+    await Promise.all(Array.from({ length: 4 }, worker));
+  } finally {
+    hideProgress();
+    if (btn) btn.disabled = false;
+    EPK_MOVES_TODOS_RODANDO = false;
+  }
   if (semGolpes.length) {
-    console.log('Sem golpes na PokéAPI:', semGolpes);
+    console.log('Sem golpes na PokéAPI (mantidos como estavam):', semGolpes);
     try { await navigator.clipboard.writeText(semGolpes.join('\n')); } catch (e) {}
   }
-  alert(`✅ ${ok} Pokémon atualizados.${semDados ? `\n${semDados} sem golpes na PokéAPI (mantidos como estavam).` : ''}${falhas.length ? `\n\n❌ ${falhas.length} falha(s):\n` + falhas.slice(0, 8).join('\n') : ''}\n\nPara refletir no pokemon.json, clique em “Commit pokemon.json”.`);
+  if (falhas.length) console.log('Falhas na busca de movesets:', falhas);
+  const resumoJogos = Object.entries(porJogo).sort((a, b) => b[1] - a[1]).map(([j, n]) => `${j}: ${n}`).join(' · ');
+  alert(
+    (interrompido ? '⚠️ BUSCA INTERROMPIDA: as primeiras tentativas falharam (rede ou PokéAPI fora do ar). Tente de novo mais tarde.\n\n' : '') +
+    `✅ ${ok} de ${alvo.length} Pokémon atualizados.` +
+    (resumoJogos ? `\nJogo usado → ${resumoJogos}` : '') +
+    (semGolpes.length ? `\n${semGolpes.length} sem golpes na PokéAPI (mantidos como estavam; lista copiada p/ a área de transferência).` : '') +
+    (foraDoJson ? `\n${foraDoJson} fora do pokemon.json (pulados).` : '') +
+    (falhas.length ? `\n\n❌ ${falhas.length} falha(s) (lista completa no console):\n` + falhas.slice(0, 8).join('\n') + (falhas.length > 8 ? '\n…' : '') : '') +
+    (ok ? '\n\nPara refletir no site, clique em “Commit pokemon.json”.' : '')
+  );
 }
 
 
