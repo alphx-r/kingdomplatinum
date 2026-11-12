@@ -11750,7 +11750,7 @@ async function _loadItemDex(){
   _itemDexLoadPromise = (async () => {
     let list = [];
     try{
-      const res = await fetch(`${ITEMDEX_SUPA_URL}/rest/v1/items?select=name,sprite,flags`, {
+      const res = await fetch(`${ITEMDEX_SUPA_URL}/rest/v1/items?select=name,sprite,category,flags`, {
         headers: { apikey: ITEMDEX_SUPA_KEY, Authorization: `Bearer ${ITEMDEX_SUPA_KEY}` }
       });
       if(!res.ok) throw new Error('itemdex supabase fetch failed: '+res.status);
@@ -13170,7 +13170,9 @@ function pkCaptBolas(ficha){
   const m=new Map();
   (ficha&&ficha.inventario||[]).forEach(x=>{
     if(!x||!x.nome) return;
-    if(!/ball$/.test(normalizarNome(x.nome).replace(/[^a-z]/g,''))) return;
+    // só itens da categoria PokéBall do ItemDex (não basta ter "ball" no nome)
+    const it=_itemDexByName&&_itemDexByName.get(_itemDexNormalize(x.nome));
+    if(!it||_itemDexNormalize(it.category).replace(/[^a-z]/g,'')!=='pokeball') return;
     const q=(String(x.qtd??'').trim()==='')?1:(parseInt(String(x.qtd).replace(/\D/g,''),10)||0);
     if(q>0) m.set(x.nome,(m.get(x.nome)||0)+q);
   });
@@ -13210,8 +13212,8 @@ function pkCaptModal(titulo, htmlMsg, okTxt, bolas){
     const ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;z-index:100010;background:rgba(10,15,25,.55);display:flex;align-items:center;justify-content:center;padding:16px';
     ov.innerHTML=`<div role="dialog" aria-modal="true" style="background:var(--surface);color:var(--text);border-radius:14px;max-width:360px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.35);font-family:var(--font-body)">
-      <div style="font-family:var(--font-title);font-size:16px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="width:22px;height:22px;display:inline-flex" class="hp-cap capt">${SVG_POKEBOLA_CAPT}</span>${titulo}</div>
-      <div style="font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:${bolas?'10px':'16px'}">${htmlMsg}</div>
+      <div style="font-family:var(--font-title);font-size:16px;font-weight:700;margin-bottom:8px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px"><span style="width:26px;height:26px;display:inline-flex;margin:0" class="hp-cap capt">${SVG_POKEBOLA_CAPT}</span><span>${titulo}</span></div>
+      <div style="font-size:13px;line-height:1.5;text-align:center;color:var(--muted);margin-bottom:${bolas?'10px':'16px'}">${htmlMsg}</div>
       ${bolas?`<div class="cap-bolas" style="display:flex;flex-direction:column;gap:6px;max-height:210px;overflow-y:auto;margin-bottom:16px">${bolas.map((b,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;font-size:13px;font-weight:700"><input type="radio" name="cap-bola" value="${_rolEsc(b.nome)}"${i===0?' checked':''}><span style="flex:1">${_rolEsc(b.nome)}</span><span style="color:var(--muted);font-weight:600">x${b.qtd}</span></label>`).join('')}</div>`:''}
       <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn" data-r="0">Cancelar</button><button type="button" class="btn btn-primary" data-r="1">${okTxt}</button></div></div>`;
     const fim=v=>{ document.removeEventListener('keydown',kd); ov.remove(); resolve(v); };
@@ -13236,6 +13238,7 @@ async function pkCapturarPedir(btn){
     const ov=document.getElementById('player-login-overlay'); if(ov) ov.style.display='flex';
     return;
   }
+  try{ await _loadItemDex(); }catch(_){}
   const bolas=pkCaptBolas(ficha);
   const nm=_rolEsc(pk.nome), lv=(pk.nivel!=null&&niveisAtivo())?` (lvl ${pk.nivel})`:'';
   if(!bolas.length){ imgToast('Você não tem nenhuma Pokébola na Bag desta ficha.'); return; }
