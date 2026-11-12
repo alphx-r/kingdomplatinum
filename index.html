@@ -13162,8 +13162,7 @@ function pkCaptOrigem(eid,idx){ return 'rol:'+eid+':'+idx; }
 function pkCaptBtnHtml(pk,c){
   if(!pk||!pk.nome||pk.nome==='???'||pk.naoCapturavel) return '';
   const ficha = (typeof fichaIntegradaDoPersonagem==='function') ? fichaIntegradaDoPersonagem(c.pers) : null;
-  if(!ficha) return '';
-  const ja = !!(ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
+  const ja = !!(ficha && ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
   const tip = ja ? 'Já está na ficha' : 'Capturar: adicionar à ficha';
   return `<button type="button" class="hp-cap${ja?' capt':''}" data-eid="${_rolEsc(String(c.eid))}" data-idx="${c.idx}"${ja?' disabled':''} title="${tip}" aria-label="${tip}" onclick="event.stopPropagation();pkCapturarPedir(this)">${SVG_POKEBOLA_CAPT}</button>`;
 }
@@ -13190,8 +13189,9 @@ async function pkCapturarPedir(btn){
   const e=historico.find(h=>String(h.id)===String(eid));
   const pk=e&&Array.isArray(e.pokes)?e.pokes[idx]:null;
   if(!pk||!pk.nome||pk.nome==='???'){ imgToast('Pokémon inválido.'); return; }
-  const ficha=fichaIntegradaDoPersonagem(e.personagem);
   const sess=sessaoFichaNova();
+  let ficha=fichaIntegradaDoPersonagem(e.personagem);
+  if(sess && !ficha){ _fichasNovasTentou=false; try{ await carregarFichasNovas(); }catch(_){} ficha=fichaIntegradaDoPersonagem(e.personagem); if(!ficha){ imgToast('Este personagem não está vinculado a uma ficha da sua conta.'); return; } }
   if(!ficha||!sess){
     alert('Sua sessão das fichas expirou. Entre novamente para capturar.');
     const ov=document.getElementById('player-login-overlay'); if(ov) ov.style.display='flex';
