@@ -316,7 +316,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hp-body{padding:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:12px}
 @media(max-width:1100px){.hp-body{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .hp[onclick]{cursor:pointer}
-.hp{min-height:128px;position:relative;display:flex;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;gap:0 16px;padding:14px 16px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
+.hp{position:relative;display:flex;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;gap:0 16px;padding:14px 16px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
 .hp:hover{border-color:var(--border2);box-shadow:0 4px 16px rgba(20,30,50,.09)}
 .hp-l{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto}
 .hp-sp{width:59px;height:59px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden}
@@ -332,6 +332,22 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hp-row{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:4px 3px}
 .hp-hab{font-size:12px;color:var(--muted)}
 .hp-nat{font-size:11px;color:var(--muted);font-style:normal}
+.hp-cap{margin-left:auto;flex:0 0 auto;width:26px;height:26px;padding:0;border:0;background:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;transition:transform .15s}
+.hp-cap:hover:not(:disabled){transform:scale(1.15) rotate(-12deg)}
+.hp-cap:disabled{cursor:default}
+.hp-cap svg{width:22px;height:22px;display:block;overflow:visible}
+.hp-cap svg *{transition:fill .35s,stroke .35s}
+.hp-cap .pb-o{fill:none;stroke:#1f1f1f;stroke-width:1.5}
+.hp-cap .pb-t,.hp-cap .pb-b{fill:#1f1f1f}
+.hp-cap .pb-band{fill:var(--surface)}
+.hp-cap .pb-c{fill:#1f1f1f;stroke:var(--surface);stroke-width:1.6}
+.hp-cap .pb-i{fill:var(--surface)}
+.hp-cap.capt .pb-t{fill:#e53935}
+.hp-cap.capt .pb-b{fill:#fff}
+.hp-cap.capt .pb-band{fill:#1f1f1f}
+.hp-cap.capt .pb-c{fill:#fff;stroke:#1f1f1f}
+.hp-cap.capt .pb-i{fill:#fff;stroke:#1f1f1f;stroke-width:.6}
+.hp-cap.busy{opacity:.5;pointer-events:none}
 .hp-moves{flex:0 0 100%;display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 14px;margin-top:10px;padding-top:10px;border-top:2px dashed var(--border);font-size:12px;font-weight:700;color:var(--text)}
 .hp-egg{color:#b8860b}
 .hp-lv{font-size:11px;font-weight:800;color:var(--brand-mid);white-space:nowrap}
@@ -7240,9 +7256,11 @@ async function carregarFichasNovas(){
       const x = {id:e.slug, slug:e.slug, nome:f.nome||e.nome, _novo:true};
       registrarRankingFichas([{nome:x.nome, ranking:f.d && f.d.ranking}]);
       aplicarInventarioNovo(x, f.d?.inventario);
+      x._origens = new Set([...(f.d?.time||[]),...(f.d?.box||[])].map(t=>t&&t.origem).filter(Boolean));
       novas.push(x);
     }
     fichasNovas = novas;
+    try{ if(novas.length){ if(typeof renderHistorico==='function') renderHistorico(); if(typeof renderRolagens==='function') renderRolagens(); } }catch(_){}
   }catch(e){ console.warn('[fichas novas]', e); }
   finally{ _fichasNovasCarregando = false; if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); if(typeof renderPersonagensDatalist==='function') renderPersonagensDatalist(); }
 }
@@ -13114,12 +13132,91 @@ function pkHistCardHtml(pk, o){
       ${tags?`<div class="hp-tags">${tags}</div>`:''}
       <div class="hp-info">
         <div class="hp-row"><span>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</span>${rlbl[pk.rarity]?`<span class="type-pill hp-rar poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]}</span>`:''}</div>
-        <div class="hp-row hp-hn"><span class="hp-hab">${fmtHabilidade(pk.habilidade)}</span>${pk.nature?.en?`<span class="hp-sep">|</span><span class="hp-nat">${pk.nature.en}</span>`:''}</div>
+        <div class="hp-row hp-hn"><span class="hp-hab">${fmtHabilidade(pk.habilidade)}</span>${pk.nature?.en?`<span class="hp-sep">|</span><span class="hp-nat">${pk.nature.en}</span>`:''}${o.capt?pkCaptBtnHtml(pk,o.capt):''}</div>
       </div>
       ${o.extra||''}
     </div>
     ${moves.length?`<div class="hp-moves">${mv}</div>`:''}
     ${pkBloqTag(pk)}</div>`;
+}
+
+/* ══════════════════════════════════════════
+   ██ CAPTURA → FICHA
+   Botão (pokébola) ao lado da habilidade/nature em cada Pokémon da rolagem.
+   Confirma dentro do site e manda POST /api/ficha-salvar {action:'capturar'}:
+   o servidor põe o Pokémon no 1º slot vazio do time (ou da box, se o time estiver cheio).
+   O `op` (rol:<id da rolagem>:<posição>) impede capturar o mesmo Pokémon duas vezes.
+══════════════════════════════════════════ */
+const SVG_POKEBOLA_CAPT='<svg viewBox="0 0 24 24" aria-hidden="true"><path class="pb-t" d="M1.5 12a10.5 10.5 0 0 1 21 0z"/><path class="pb-b" d="M1.5 12a10.5 10.5 0 0 0 21 0z"/><rect class="pb-band" x="1.5" y="10.9" width="21" height="2.2"/><circle class="pb-c" cx="12" cy="12" r="3.7"/><circle class="pb-i" cx="12" cy="12" r="1.7"/><circle class="pb-o" cx="12" cy="12" r="10.5"/></svg>';
+function pkCaptBolas(ficha){
+  const m=new Map();
+  (ficha&&ficha.inventario||[]).forEach(x=>{
+    if(!x||!x.nome) return;
+    if(!/ball$/.test(normalizarNome(x.nome).replace(/[^a-z]/g,''))) return;
+    const q=(String(x.qtd??'').trim()==='')?1:(parseInt(String(x.qtd).replace(/\D/g,''),10)||0);
+    if(q>0) m.set(x.nome,(m.get(x.nome)||0)+q);
+  });
+  return [...m].map(([nome,qtd])=>({nome,qtd}));
+}
+function pkCaptOrigem(eid,idx){ return 'rol:'+eid+':'+idx; }
+function pkCaptBtnHtml(pk,c){
+  if(!pk||!pk.nome||pk.nome==='???'||pk.naoCapturavel) return '';
+  const ficha = (typeof fichaIntegradaDoPersonagem==='function') ? fichaIntegradaDoPersonagem(c.pers) : null;
+  if(!ficha) return '';
+  const ja = !!(ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
+  const tip = ja ? 'Já está na ficha' : 'Capturar: adicionar à ficha';
+  return `<button type="button" class="hp-cap${ja?' capt':''}" data-eid="${_rolEsc(String(c.eid))}" data-idx="${c.idx}"${ja?' disabled':''} title="${tip}" aria-label="${tip}" onclick="event.stopPropagation();pkCapturarPedir(this)">${SVG_POKEBOLA_CAPT}</button>`;
+}
+function pkCaptModal(titulo, htmlMsg, okTxt, bolas){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;z-index:100010;background:rgba(10,15,25,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML=`<div role="dialog" aria-modal="true" style="background:var(--surface);color:var(--text);border-radius:14px;max-width:360px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.35);font-family:var(--font-body)">
+      <div style="font-family:var(--font-title);font-size:16px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="width:22px;height:22px;display:inline-flex" class="hp-cap capt">${SVG_POKEBOLA_CAPT}</span>${titulo}</div>
+      <div style="font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:${bolas?'10px':'16px'}">${htmlMsg}</div>
+      ${bolas?`<div class="cap-bolas" style="display:flex;flex-direction:column;gap:6px;max-height:210px;overflow-y:auto;margin-bottom:16px">${bolas.map((b,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;font-size:13px;font-weight:700"><input type="radio" name="cap-bola" value="${_rolEsc(b.nome)}"${i===0?' checked':''}><span style="flex:1">${_rolEsc(b.nome)}</span><span style="color:var(--muted);font-weight:600">x${b.qtd}</span></label>`).join('')}</div>`:''}
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn" data-r="0">Cancelar</button><button type="button" class="btn btn-primary" data-r="1">${okTxt}</button></div></div>`;
+    const fim=v=>{ document.removeEventListener('keydown',kd); ov.remove(); resolve(v); };
+    const kd=e=>{ if(e.key==='Escape') fim(false); };
+    document.addEventListener('keydown',kd);
+    ov.addEventListener('click',e=>{ if(e.target===ov) fim(false); const b=e.target.closest('button[data-r]'); if(b){ if(b.dataset.r!=='1') return fim(false); if(bolas){ const r=ov.querySelector('input[name="cap-bola"]:checked'); return fim(r?r.value:false); } fim(true); } });
+    document.body.appendChild(ov);
+    const ok=ov.querySelector('[data-r="1"]'); if(ok) ok.focus();
+  });
+}
+async function pkCapturarPedir(btn){
+  if(!btn||btn.disabled||btn.classList.contains('busy')) return;
+  const eid=btn.dataset.eid, idx=parseInt(btn.dataset.idx,10);
+  const e=historico.find(h=>String(h.id)===String(eid));
+  const pk=e&&Array.isArray(e.pokes)?e.pokes[idx]:null;
+  if(!pk||!pk.nome||pk.nome==='???'){ imgToast('Pokémon inválido.'); return; }
+  const ficha=fichaIntegradaDoPersonagem(e.personagem);
+  const sess=sessaoFichaNova();
+  if(!ficha||!sess){
+    alert('Sua sessão das fichas expirou. Entre novamente para capturar.');
+    const ov=document.getElementById('player-login-overlay'); if(ov) ov.style.display='flex';
+    return;
+  }
+  const bolas=pkCaptBolas(ficha);
+  const nm=_rolEsc(pk.nome), lv=(pk.nivel!=null&&niveisAtivo())?` (lvl ${pk.nivel})`:'';
+  if(!bolas.length){ imgToast('Você não tem nenhuma Pokébola na Bag desta ficha.'); return; }
+  const bola=await pkCaptModal('Capturar Pokémon?',
+    `Adicionar <b>${nm}</b>${lv}${pk.isShiny?' ✨':''} à ficha de <b>${_rolEsc(ficha.nome||e.personagem)}</b>?<br>Escolha a Pokébola: 1 unidade será descontada da Bag. Ele vai para o primeiro slot vazio do time (ou da box, se o time estiver cheio).`,'Capturar',bolas);
+  if(!bola) return;
+  btn.classList.add('busy');
+  try{
+    const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      action:'capturar', token:sess.token, slug:ficha.slug, op:pkCaptOrigem(eid,idx), bola:bola, por:sess.nome||undefined,
+      pokemon:{nome:pk.nome, nivel:(pk.nivel!=null?pk.nivel:null), gender:pk.genderS||'', nature:pk.nature?.en||'', habilidade:fmtHabilidade(pk.habilidade), shiny:!!pk.isShiny, moves:Array.isArray(pk.moves)?pk.moves:[]}
+    })});
+    const j=await r.json().catch(()=>null);
+    if(!r.ok) throw new Error(j?.error||'Não foi possível adicionar à ficha.');
+    (ficha._origens=ficha._origens||new Set()).add(pkCaptOrigem(eid,idx));
+    if(Array.isArray(j.inventario)) aplicarInventarioNovo(ficha,j.inventario);
+    btn.classList.add('capt'); btn.disabled=true; btn.title='Já está na ficha'; btn.setAttribute('aria-label','Já está na ficha');
+    imgToast(j.repetida?`${pk.nome} já estava na ficha.`:`${pk.nome} adicionado ${j.onde==='box'?'à box':'ao time'} da ficha!`);
+  }catch(err){ alert(err.message||'Falha ao capturar.'); }
+  finally{ btn.classList.remove('busy'); }
 }
 function pkToggleMoves(btn){
   const w = btn.closest('.pk-mv-wrap'); if(!w) return;
@@ -13984,7 +14081,7 @@ function _rolDetailHtml(mapa,key){
         const rClicavel=!rFalhou;
         const rClickAttr=rClicavel?` onclick="abrirNationaldex('${rNomeEsc}')" title="Ver no National Dex"`:'';
         const rerollBtn=rFalhou?`<button class="reroll-falha-btn" onclick="event.stopPropagation();rerollarPokeFalho('${e.id}',${pkIdx},this)" style="margin-top:2px;font-size:9px;font-weight:700;padding:3px 8px;border-radius:8px;border:1.5px solid var(--red);background:#fdeaea;color:var(--red);cursor:pointer;white-space:nowrap">🔄 Re-rolar</button>`:'';
-        return pkHistCardHtml(pk,{src:rShinySrc,glow:rGlow,nomeEsc:rNomeEsc,onload:rOnloadAttr,click:rClickAttr,style:`${rClicavel?'cursor:pointer;':''}${rShiny}`,extra:rerollBtn});}).join('');
+        return pkHistCardHtml(pk,{capt:{eid:e.id,idx:pkIdx,pers:e.personagem},src:rShinySrc,glow:rGlow,nomeEsc:rNomeEsc,onload:rOnloadAttr,click:rClickAttr,style:`${rClicavel?'cursor:pointer;':''}${rShiny}`,extra:rerollBtn});}).join('');
       return`<div class="rol-entry">
         <div class="rol-entry-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -14308,7 +14405,7 @@ function renderHistorico(){
   const ehAdm=podeExcluirRolagemEncontro||(typeof isAdminConectado==='function'&&isAdminConectado());
   lista.innerHTML=pagina.map(e=>{
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
-    const ph=pokes.map(pk=>{
+    const ph=pokes.map((pk,pkIdx)=>{
       const hShiny=pk.isShiny?'background:linear-gradient(135deg,#fffde7,#ffeaa0);border-color:#f0c040':'';
       const hHoney=(pk.isHoney&&!pk.isShiny)?'border:2px solid #d4a017':'';
       // Histórico sempre prioriza o sprite ATUAL do cadastro (pkFreshSprite),
@@ -14334,7 +14431,7 @@ function renderHistorico(){
       // de renderizar, então o handler de erro nunca precisa repetir esse
       // passo — sempre pula direto pra tentativa na PokeAPI.
       const onloadAttr=needsApiLookup?`onload="if(!this.dataset.apiTried){this.dataset.apiTried='1';pkResolvePokeApiSprite(this,'${nomeEsc}',${pk.isShiny?'true':'false'});}" `:'';
-      return pkHistCardHtml(pk,{src:shinySprSrc,glow:hGlow,nomeEsc:nomeEsc,onload:onloadAttr,sprClick:hClickAttr,style:`${hShiny};${hHoney}`});}).join('');
+      return pkHistCardHtml(pk,{capt:{eid:e.id,idx:pkIdx,pers:e.personagem},src:shinySprSrc,glow:hGlow,nomeEsc:nomeEsc,onload:onloadAttr,sprClick:hClickAttr,style:`${hShiny};${hHoney}`});}).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
