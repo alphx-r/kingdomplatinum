@@ -301,8 +301,17 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hist-body{padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .hist-poke{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:16px 10px 14px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
 .hist-lvl{position:absolute;top:8px;right:8px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;background:color-mix(in srgb,var(--brand-mid) 14%,#fff);color:var(--brand);border:1px solid color-mix(in srgb,var(--brand-mid) 38%,#fff);letter-spacing:.3px;line-height:1.3}
-.pk-moves{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:3px;max-width:100%}
+.pk-mv-wrap{width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;margin-top:4px}
+.pk-scroll-btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-body);font-size:11px;font-weight:800;padding:5px 12px;border-radius:999px;cursor:pointer;color:#6b4a14;background:linear-gradient(180deg,#fbf0d2,#f1dfae);border:1.5px solid #cfae62;box-shadow:0 1px 0 #fff8 inset,0 1px 3px rgba(90,60,10,.18);transition:all .15s}
+.pk-scroll-btn:hover{filter:brightness(1.04)}
+.pk-scroll-btn .pk-scroll-seta{font-size:9px;transition:transform .2s}
+.pk-mv-wrap.open .pk-scroll-seta{transform:rotate(180deg)}
+.pk-moves{display:none;flex-wrap:wrap;justify-content:center;gap:3px;max-width:100%;width:100%;padding:8px 6px;border-radius:8px;background:#fbf4e0;border:1px dashed #cfae62}
+.pk-mv-wrap.open .pk-moves{display:flex}
+.hist-img-btn{display:inline-flex;align-items:center;gap:6px;background:var(--brand-light);color:var(--brand-mid);border:1px solid var(--border2);border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap}
+.hist-img-btn:hover{background:#d6e4f8}
 .pk-mv{font-size:9.5px;font-weight:700;line-height:1.3;padding:1px 6px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);white-space:nowrap}
+.pk-egg-pill{margin-left:4px;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:0 5px;border-radius:6px;background:#d4a017;color:#fff;vertical-align:1px}
 .pk-mv.egg{background:#fff3d4;border-color:#d4a017;color:#7a5010}
 .hist-poke:hover{border-color:var(--border2);box-shadow:0 4px 16px rgba(20,30,50,.09)}
 /* Penalidade de rolagem: Pokémon não capturável fica opaco; só a etiqueta continua nítida */
@@ -12950,16 +12959,16 @@ function pkAplicarEvolucaoPorNivel(pk){
    Cada Pokémon sorteado com nível já vem com os golpes prontos, escolhidos ao acaso entre os que ele
    aprende POR NÍVEL até o nível sorteado (moves_level do pokemon.json):
      Lv 1 ............. 3 golpes por nível + 1 Egg Move (moves_egg)  [exceção]
-     Lv 2 a 25 ........ 4 golpes
-     Lv 26 a 74 ....... 6 golpes   (até o Lv 50 → 6; de 51 a 74 a regra não foi definida: mantém 6)
-     Lv 75 em diante .. 8 golpes
+     Lv 2 a 30 ........ 4 golpes
+     Lv 31 a 60 ....... 6 golpes
+     Lv 61 em diante .. 8 golpes
    Se o Pokémon aprende menos golpes que o pedido, vêm todos os que ele aprende. Se não tem Egg Move no Lv 1,
    a vaga é preenchida com mais um golpe por nível. Guardado em pk.moves (nomes) e pk.movesEgg (os que são Egg Move).
 ══════════════════════════════════════════ */
 function pkRegraMoves(nivel){
   if(nivel <= 1)  return {nivel: 3, egg: 1};
-  if(nivel <= 25) return {nivel: 4, egg: 0};
-  if(nivel <= 74) return {nivel: 6, egg: 0};
+  if(nivel <= 30) return {nivel: 4, egg: 0};
+  if(nivel <= 60) return {nivel: 6, egg: 0};
   return {nivel: 8, egg: 0};
 }
 function pkNomeMove(m){   // "quick-attack" → "Quick Attack"
@@ -13019,9 +13028,13 @@ function pkMovesHtml(pk){
   if(!pk || !Array.isArray(pk.moves) || !pk.moves.length) return '';
   const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const egg = new Set(pk.movesEgg || []);
-  return `<div class="pk-moves">${pk.moves.map(m => egg.has(m)
-    ? `<span class="pk-mv egg" title="Egg Move">🥚 ${esc(m)}</span>`
-    : `<span class="pk-mv">${esc(m)}</span>`).join('')}</div>`;
+  return `<div class="pk-mv-wrap"><button type="button" class="pk-scroll-btn" aria-expanded="false" onclick="event.stopPropagation();pkToggleMoves(this)">${SVG_PERGAMINHO} Golpes (${pk.moves.length}) <span class="pk-scroll-seta">▼</span></button><div class="pk-moves" onclick="event.stopPropagation()">${pk.moves.map(m => egg.has(m)
+    ? `<span class="pk-mv egg" title="Egg Move">${esc(m)}<span class="pk-egg-pill">Egg Move</span></span>`
+    : `<span class="pk-mv">${esc(m)}</span>`).join('')}</div></div>`;
+}
+function pkToggleMoves(btn){
+  const w = btn.closest('.pk-mv-wrap'); if(!w) return;
+  btn.setAttribute('aria-expanded', w.classList.toggle('open') ? 'true' : 'false');
 }
 
 // Sorteia o nível de cada Pokémon entre 1 e o máximo do personagem e, se o nível
@@ -13326,6 +13339,7 @@ async function locEncRolar() {
   pokes.forEach((pk, i) => { grid.innerHTML += buildCardHtml(pk, i * 0.08); });
   section.appendChild(grid);
   addBanner('font-size:11px;color:var(--muted);margin-top:12px;font-family:var(--font-body)', 'Rolagem de teste — não foi salva no histórico.');
+  { const _ag=new Date(); imgAddBotao(section,{personagem,bioma:local,pokes,hora:_ag.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),data:_ag.toLocaleDateString('pt-BR')}); }
   verificarEDispararShiny(pokes);
   // (propositalmente NÃO chama salvarNoHistorico)
 }
@@ -13742,6 +13756,8 @@ async function rolarEncontro(){
   // Os cartões não aparecem mais aqui: o resultado é mostrado só no Histórico de Rolagens.
   verificarEDispararShiny(pokes);
   await salvarNoHistorico(bioma,personagem,pokes,motivoExtras,nEncontrar,honeyBonusAplicavel);
+  const _novoHist=historico[0];
+  if(_novoHist&&_novoHist.personagem===personagem&&_novoHist.bioma===bioma) imgAddBotao(section,_novoHist);
 }
 
 // ══════════════════════════════════════
@@ -14272,12 +14288,158 @@ function renderHistorico(){
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
           <span style="font-size:11px;color:var(--muted);white-space:nowrap">${e.hora} · ${e.data}</span>
+          <button class="hist-img-btn" onclick="gerarImagemRolagem('${e.id}')" title="Gerar imagem para postar no grupo">${SVG_COMPARTILHAR} Compartilhar Rolagem</button>
           ${podeExcluirRolagemEncontro?`<button class="hist-del-btn" onclick="excluirRolagemEncontro('${e.id}')">Excluir</button>`:''}
         </div>
       </div>
       <div class="hist-body">${ph}</div>
     </div>`;
   }).join('');
+}
+
+/* ══════════════════════════════════════════
+   ██ IMAGEM DA ROLAGEM (para postar no grupo)
+   Desenha a rolagem do histórico num canvas (todos os Pokémon, com golpes já abertos) e abre
+   um modal com Compartilhar / Baixar / Copiar.
+══════════════════════════════════════════ */
+const SVG_COMPARTILHAR='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.83 3.98"/></svg>';
+const SVG_PERGAMINHO='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M8 21h10a3 3 0 0 0 3-3v-1H10v1a2 2 0 0 1-2 2z"/><path d="M8 21a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M15 8h-5M15 12h-5"/></svg>';
+const IMG_TIPOS={fire:['#ff9b4a','#7a2a00'],water:['#6ab8ff','#003a6a'],grass:['#78d878','#1a5a1a'],normal:['#c8c8a0','#4a4a2a'],electric:['#ffe030','#5a4a00'],psychic:['#ff8fb0','#6a0030'],steel:['#aababb','#2a3a3a'],fairy:['#ffaad8','#6a0050'],ghost:['#9090c0','#1a1a4a'],dragon:['#7060f0','#fff'],ice:['#96d8d8','#1a4a4a'],fighting:['#c03030','#fff'],rock:['#b8a050','#3a2a00'],ground:['#e0c060','#3a2a00'],poison:['#a060c0','#fff'],bug:['#a0c020','#2a3a00'],dark:['#705040','#fff'],flying:['#88aaee','#1a1a5a'],light:['#e8c832','#5a3d00'],scent:['#3cb87a','#fff']};
+const IMG_RAR={comum:['#e0f0e0','#1a6a1a'],incomum:['#dde8f8','#1a4a8a'],raro:['#f0e8ff','#5a1a9a'],rarissimo:['#fff0d8','#8a4a00']};
+function imgRR(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+const IMG_TAGF='800 12px Nunito,sans-serif';
+function imgPillW(c,txt,h,font,tag){
+  c.font=font; let w=Math.ceil(c.measureText(txt).width)+h*0.9;
+  if(tag){ c.font=IMG_TAGF; w+=Math.ceil(c.measureText(tag).width)+14+6; c.font=font; }
+  return w;
+}
+function imgPill(c,txt,x,y,h,font,bg,fg,bd,tag){
+  const w=imgPillW(c,txt,h,font,tag);
+  imgRR(c,x,y,w,h,h/2); c.fillStyle=bg; c.fill();
+  if(bd){c.strokeStyle=bd;c.lineWidth=1.5;c.stroke();}
+  c.font=font; c.fillStyle=fg; c.textBaseline='middle';
+  if(!tag){ c.textAlign='center'; c.fillText(txt,x+w/2,y+h/2+1); return; }
+  c.textAlign='left'; const tx=x+h*0.45; c.fillText(txt,tx,y+h/2+1);
+  c.font=IMG_TAGF; const tw=Math.ceil(c.measureText(tag).width)+14, tx2=tx+Math.ceil((c.font=font,c.measureText(txt).width))+6;
+  imgRR(c,tx2,y+(h-20)/2,tw,20,10); c.fillStyle='#d4a017'; c.fill();
+  c.font=IMG_TAGF; c.fillStyle='#fff'; c.textAlign='center'; c.fillText(tag,tx2+tw/2,y+h/2+1);
+}
+function imgPillRow(c,items,cx,y,maxW,h,font,gap,draw){   // pílulas centralizadas com quebra de linha; devolve a altura
+  c.font=font;
+  const ws=items.map(i=>imgPillW(c,i.t,h,font,i.tag));
+  const lines=[]; let cur=[],cw=0;
+  items.forEach((it,i)=>{ if(cur.length&&cw+gap+ws[i]>maxW){lines.push({ix:cur,w:cw});cur=[];cw=0;} cw+=(cur.length?gap:0)+ws[i]; cur.push(i); });
+  if(cur.length) lines.push({ix:cur,w:cw});
+  if(draw) lines.forEach((ln,li)=>{ let x=cx-ln.w/2; ln.ix.forEach(i=>{ imgPill(c,items[i].t,x,y+li*(h+gap),h,font,items[i].bg,items[i].fg,items[i].bd,items[i].tag); x+=ws[i]+gap; }); });
+  return lines.length*h+Math.max(0,lines.length-1)*gap;
+}
+// H == null → só mede (devolve a altura); H numérico → desenha o card com essa altura
+function imgCard(c,pk,x,y,w,spr,H){
+  const D=H!=null, cx=x+w/2, S=150, F='800 16px Nunito,sans-serif'; let cy=y+22;
+  if(D){
+    imgRR(c,x,y,w,H,18); c.fillStyle=pk.isShiny?'#fffbe0':'#fff'; c.fill();
+    c.lineWidth=3; c.strokeStyle=pk.isShiny?'#f0c040':(pk.isHoney?'#d4a017':'#dde3ee'); c.stroke();
+    c.save(); c.beginPath(); c.arc(cx,cy+S/2,S/2,0,Math.PI*2); c.fillStyle='#f0f3f8'; c.fill(); c.clip();
+    if(spr) c.drawImage(spr,cx-S/2,cy,S,S);
+    c.restore();
+    if(pk.nivel!=null&&niveisAtivo()){
+      const lt='lvl '+pk.nivel; c.font=F; const lw=Math.ceil(c.measureText(lt).width)+26;
+      imgPill(c,lt,x+w-lw-14,y+14,28,F,'#dfe9f7','#1a3a5c','#a8c0e0');
+    }
+  }
+  cy+=S+14;
+  const nome=pk.nome||'???', gs=pk.genderS||''; let fs=27; c.font='700 '+fs+'px Cinzel,serif';
+  while(c.measureText(nome+' '+gs).width>w-40&&fs>15){fs--;c.font='700 '+fs+'px Cinzel,serif';}
+  if(D){
+    const wn=c.measureText(nome+' ').width, wg=c.measureText(gs).width, x0=cx-(wn+wg)/2;
+    c.textAlign='left'; c.textBaseline='middle';
+    c.fillStyle='#1a1f2e'; c.fillText(nome+' ',x0,cy+17);
+    c.fillStyle=pk.genderC||'#888'; c.fillText(gs,x0+wn,cy+17);
+  }
+  cy+=40;
+  const tags=[]; if(pk.isShiny) tags.push({t:'✨ SHINY',bg:'#ffd700',fg:'#7a4a00'}); if(pk.isHoney) tags.push({t:'HONEY',bg:'#fff3d4',fg:'#7a5010',bd:'#d4a017'});
+  if(tags.length) cy+=imgPillRow(c,tags,cx,cy,w-30,28,F,8,D)+10;
+  const tipos=(pk.tipos||[]).map(t=>{const k=IMG_TIPOS[t]||IMG_TIPOS.normal;return{t:String(t).toUpperCase(),bg:k[0],fg:k[1]};});
+  if(tipos.length) cy+=imgPillRow(c,tipos,cx,cy,w-30,30,F,8,D)+10;
+  const rr=IMG_RAR[pk.rarity];
+  if(rr) cy+=imgPillRow(c,[{t:(rlbl[pk.rarity]||'').toUpperCase(),bg:rr[0],fg:rr[1]}],cx,cy,w-30,30,F,8,D)+12;
+  const hab=String(fmtHabilidade(pk.habilidade)||'').replace(/<[^>]*>/g,'');
+  if(D){c.textAlign='center';c.textBaseline='middle';c.fillStyle='#6b7a99';c.font='600 19px Nunito,sans-serif';c.fillText('Hab: '+hab,cx,cy+12);}
+  cy+=30;
+  if(pk.nature&&pk.nature.en){ if(D){c.textAlign='center';c.textBaseline='middle';c.fillStyle='#6b7a99';c.font='italic 600 17px Nunito,sans-serif';c.fillText(pk.nature.en,cx,cy+10);} cy+=28; }
+  if(Array.isArray(pk.moves)&&pk.moves.length){
+    cy+=8;
+    if(D){c.strokeStyle='#dde3ee';c.lineWidth=2;c.setLineDash([6,5]);c.beginPath();c.moveTo(x+24,cy);c.lineTo(x+w-24,cy);c.stroke();c.setLineDash([]);}
+    cy+=14;
+    const egg=new Set(pk.movesEgg||[]);
+    const mv=pk.moves.map(m=>egg.has(m)?{t:m,tag:'EGG MOVE',bg:'#fff3d4',fg:'#7a5010',bd:'#d4a017'}:{t:m,bg:'#f0f3f8',fg:'#1a1f2e',bd:'#dde3ee'});
+    cy+=imgPillRow(c,mv,cx,cy,w-28,30,'700 16px Nunito,sans-serif',7,D)+4;
+  }
+  return cy-y+22;
+}
+function imgDesenharRolagem(e,pokes,imgs){
+  const W=1080,PAD=40,GAP=22,COLS=Math.min(3,Math.max(1,pokes.length)),CW=Math.floor((W-PAD*2-GAP*(COLS-1))/COLS);
+  const cv=document.createElement('canvas'), c=cv.getContext('2d'); cv.width=W; cv.height=10;
+  const hs=pokes.map((pk,i)=>imgCard(c,pk,0,0,CW,imgs[i],null));
+  const rows=[]; for(let i=0;i<pokes.length;i+=COLS) rows.push(Math.max(...hs.slice(i,i+COLS)));
+  const HEAD=170, H=HEAD+rows.reduce((a,b)=>a+b+GAP,0)+50;
+  cv.width=W; cv.height=H;
+  c.fillStyle='#f4f6fa'; c.fillRect(0,0,W,H);
+  const g=c.createLinearGradient(0,0,W,HEAD); g.addColorStop(0,'#1a3a5c'); g.addColorStop(1,'#0f2238');
+  c.fillStyle=g; c.fillRect(0,0,W,HEAD-20);
+  c.textAlign='center'; c.textBaseline='middle';
+  c.fillStyle='rgba(255,255,255,.85)'; c.font='600 22px Cinzel,serif'; c.fillText('KINGDOM PLATINUM · ENCONTRO',W/2,38);
+  c.fillStyle='#fff'; c.font='700 46px Cinzel,serif'; c.fillText(e.personagem||'',W/2,86);
+  c.fillStyle='rgba(255,255,255,.88)'; c.font='600 24px Nunito,sans-serif'; c.fillText([e.bioma,e.hora&&e.data?e.hora+' · '+e.data:''].filter(Boolean).join('  •  '),W/2,128);
+  let y=HEAD, k=0;
+  rows.forEach((rh,ri)=>{
+    const n=Math.min(COLS,pokes.length-ri*COLS), x0=PAD+(W-PAD*2-(n*CW+(n-1)*GAP))/2;
+    for(let j=0;j<n;j++,k++) imgCard(c,pokes[k],x0+j*(CW+GAP),y,CW,imgs[k],rh);
+    y+=rh+GAP;
+  });
+  c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#8a96b0'; c.font='600 18px Nunito,sans-serif'; c.fillText('PKMN Kingdom Platinum · Região Nendo',W/2,H-24);
+  return cv;
+}
+function gerarImagemRolagem(id){
+  const e=historico.find(x=>String(x.id)===String(id)); if(e) return gerarImagemDeEntrada(e);
+}
+function imgAddBotao(section,entry){   // botão "Compartilhar Rolagem" no resultado logo após rolar
+  if(!section||!entry) return;
+  const b=document.createElement('button'); b.type='button'; b.className='btn btn-primary';
+  b.style.cssText='display:inline-flex;align-items:center;gap:8px;margin:4px 0 12px';
+  b.innerHTML=SVG_COMPARTILHAR+' Compartilhar Rolagem';
+  b.onclick=()=>gerarImagemDeEntrada(entry);
+  section.appendChild(b);
+}
+async function gerarImagemDeEntrada(e){
+  const pokes=Array.isArray(e.pokes)?e.pokes:[]; if(!pokes.length){alert('Esta rolagem não tem Pokémon.');return;}
+  try{ await Promise.all(['700 26px Cinzel','600 16px Nunito','800 16px Nunito','italic 600 17px Nunito'].map(f=>document.fonts.load(f))); }catch(_){}
+  const imgs=await Promise.all(pokes.map(pk=>new Promise(res=>{
+    const src=pkFreshSprite(pk.nome,pk.isShiny)||pk.sprite||FALLBACK_SPRITE_DEFAULT;
+    const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; setTimeout(()=>res(null),8000);
+  })));
+  const toBlob=cv=>new Promise((ok,no)=>{try{cv.toBlob(b=>b?ok(b):no(new Error('vazio')),'image/png');}catch(err){no(err);}});
+  let blob;
+  try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs)); }
+  catch(_){ try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs.map(()=>null))); }catch(err){ alert('Não foi possível gerar a imagem.'); return; } }  // sprite bloqueado por CORS → gera sem sprites
+  const nome=('rolagem-'+(e.personagem||'')+'-'+(e.data||'')).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()+'.png';
+  imgMostrarModal(blob,nome);
+}
+function imgMostrarModal(blob,nome){
+  const url=URL.createObjectURL(blob), file=new File([blob],nome,{type:'image/png'});
+  const canShare=!!(navigator.canShare&&navigator.canShare({files:[file]}));
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100001;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;max-height:92vh;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px"><img src="${url}" style="width:100%;border-radius:10px;border:1px solid #dde3ee"/><div style="display:flex;gap:8px;flex-wrap:wrap">${canShare?'<button class="btn btn-primary" data-a="share">Compartilhar</button>':''}<button class="btn btn-primary" data-a="dl">Baixar</button>${(navigator.clipboard&&window.ClipboardItem)?'<button class="btn" data-a="copy">Copiar</button>':''}<button class="btn" data-a="x" style="margin-left:auto">Fechar</button></div></div>`;
+  const close=()=>{URL.revokeObjectURL(url);ov.remove();};
+  ov.addEventListener('click',ev=>{
+    const a=ev.target.dataset&&ev.target.dataset.a;
+    if(ev.target===ov||a==='x') return close();
+    if(a==='share') navigator.share({files:[file],title:'Rolagem'}).catch(()=>{});
+    if(a==='dl'){const l=document.createElement('a');l.href=url;l.download=nome;l.click();}
+    if(a==='copy') navigator.clipboard.write([new ClipboardItem({'image/png':blob})]).then(()=>alert('Imagem copiada!')).catch(()=>alert('Não foi possível copiar.'));
+  });
+  document.body.appendChild(ov);
 }
 
 async function excluirRolagemEncontro(id){
