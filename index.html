@@ -301,6 +301,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hist-body{padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .hist-poke{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:16px 10px 14px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
 .hist-lvl{position:absolute;top:8px;right:8px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;background:color-mix(in srgb,var(--brand-mid) 14%,#fff);color:var(--brand);border:1px solid color-mix(in srgb,var(--brand-mid) 38%,#fff);letter-spacing:.3px;line-height:1.3}
+.pk-moves{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:3px;max-width:100%}
+.pk-mv{font-size:9.5px;font-weight:700;line-height:1.3;padding:1px 6px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);white-space:nowrap}
+.pk-mv.egg{background:#fff3d4;border-color:#d4a017;color:#7a5010}
 .hist-poke:hover{border-color:var(--border2);box-shadow:0 4px 16px rgba(20,30,50,.09)}
 /* Penalidade de rolagem: Pokémon não capturável fica opaco; só a etiqueta continua nítida */
 .pk-bloq>*:not(.pk-bloq-tag){opacity:.35;filter:grayscale(.85)}
@@ -3464,14 +3467,22 @@ window.calcSituSoma = function(){
     'Solar Beam','Solar Blade','Razor Wind','Sky Attack','Skull Bash','Freeze Shock','Ice Burn'].map(chaveGolpe));
   const ehCharge = (nome, desc) => CHARGE_LISTA.has(chaveGolpe(nome)) || CHARGE_RE.test(String(desc || ''));
   const catDoGolpe = dc => dc === 'special' ? 'esp' : dc === 'status' ? 'sta' : 'fis';
-  let _movesIdx = null, _movesProm = null;
-  function carregarMoves(){
-    if(_movesIdx) return Promise.resolve(_movesIdx);
+  let _movesIdx = null, _movesProm = null, _movesQuando = 0;
+  const MOVES_VELHO_MS = 5 * 60 * 1000;   // passou disso, a lista de golpes é recarregada ao focar um campo de golpe
+  function carregarMoves(forcar){
+    if(!forcar){ if(_movesIdx) return Promise.resolve(_movesIdx); }
     if(_movesProm) return _movesProm;
-    _movesProm = fetch(MOVES_JSON_URL).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(arr => { const idx = {}; (Array.isArray(arr) ? arr : []).forEach(m => { if(m && m.name) idx[chaveGolpe(m.name)] = m; }); return _movesIdx = idx; })
-      .catch(e => { console.warn('[calc] moves.json indisponível, usando PokeAPI', e); _movesProm = null; return null; });
-    return _movesProm;
+    // ?v=… + no-store: o raw.githubusercontent guarda cada URL em cache ~5 min; URL nova = arquivo atual.
+    const p = fetch(MOVES_JSON_URL + '?v=' + Date.now(), {cache: 'no-store'}).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(arr => {
+        const idx = {}; (Array.isArray(arr) ? arr : []).forEach(m => { if(m && m.name) idx[chaveGolpe(m.name)] = m; });
+        Object.keys(_mcache).forEach(k => delete _mcache[k]);   // tipo/poder/categoria podem ter mudado
+        _movesQuando = Date.now();
+        return _movesIdx = idx;
+      })
+      .catch(e => { console.warn('[calc] moves.json indisponível, usando PokeAPI', e); return _movesIdx || null; })   // recarga que falha mantém a lista antiga
+      .then(r => { _movesProm = null; return r; });
+    return _movesProm = p;
   }
   const _mcache = {};
   // Alguns apelidos comuns que a tolerância a erro de digitação não resolve sozinha
@@ -3723,7 +3734,7 @@ window.calcSituSoma = function(){
     const mv = i => `
       <div class="cpk-mv${i===SLOT_BOLA?' bola':''}" id="${id('row'+i)}"${i>GOLPES_INICIAIS?' style="display:none"':''}>
         <input type="radio" name="cpk-${s}-ativo" value="${i}" ${i===1?'checked':''} title="Golpe ativo (alimenta a calculadora quando este lado ataca)"/>
-        <input id="${id('m'+i+'-nome')}" type="text" list="cpk-golpes" autocomplete="off" placeholder="${i===SLOT_BOLA?'Golpe da Pokébola':'Golpe '+i}" autocomplete="off"/>
+        <input id="${id('m'+i+'-nome')}" type="text" data-ac-golpe="1" autocomplete="off" spellcheck="false" placeholder="${i===SLOT_BOLA?'Golpe da Pokébola':'Golpe '+i}" autocomplete="off"/>
         <select id="${id('m'+i+'-tipo')}">${optTipos('Tipo')}</select>
         <select id="${id('m'+i+'-cat')}"><option value="fis">Fís.</option><option value="esp">Esp.</option><option value="sta">Status</option></select>
         <input id="${id('m'+i+'-poder')}" type="number" min="0" max="300" placeholder="Poder"/>
@@ -3828,6 +3839,102 @@ window.calcSituSoma = function(){
   }
 
   let _painelAberto = true;
+
+  // ── Lista de golpes própria (substitui o <datalist> nativo, que não filtrava/atualizava direito) ──
+  // Filtra a cada tecla (sem acento/espaço/hífen: "quick atta" acha "Quick Attack"), começa-com primeiro,
+  // teclado (↑ ↓ Enter Esc) e clique; relê o moves.json se estiver velho.
+  let _golpesNomes = null, _golpesNomesDe = null;
+  function nomesDeGolpes(){
+    if(!_movesIdx) return [];
+    if(_golpesNomesDe !== _movesIdx){
+      _golpesNomesDe = _movesIdx;
+      const vistos = new Set();
+      _golpesNomes = Object.values(_movesIdx).filter(m => m && m.name && m.approved !== false)
+        .map(m => String(m.name).split('-').filter(Boolean).map(cap).join(' '))
+        .filter(n => !vistos.has(n) && vistos.add(n))
+        .sort((a, b) => a.localeCompare(b)).map(n => ({n, k: chaveGolpe(n)}));
+    }
+    return _golpesNomes;
+  }
+  function filtrarGolpes(texto){
+    const q = chaveGolpe(texto), todos = nomesDeGolpes();
+    if(!q) return todos.slice(0, 60).map(x => x.n);
+    const ini = [], meio = [];
+    for(const x of todos){ const i = x.k.indexOf(q); if(i === 0) ini.push(x.n); else if(i > 0) meio.push(x.n); }
+    return ini.concat(meio).slice(0, 60);
+  }
+  function autocompleteGolpes(panel){
+    if(!document.getElementById('cpk-ac-css')){
+      const st = document.createElement('style'); st.id = 'cpk-ac-css';
+      st.textContent = '#cpk-ac{position:fixed;z-index:2147483000;display:none;max-height:240px;overflow-y:auto;background:var(--surface,#fff);color:var(--text,#1a1f2e);border:1.5px solid var(--border,#ccd);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);font:600 13px/1.3 inherit;padding:3px}'
+        + '#cpk-ac div{padding:7px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+        + '#cpk-ac div.on,#cpk-ac div:hover{background:rgba(37,99,168,.16)}'
+        + '#cpk-ac .vazio{cursor:default;opacity:.65;font-weight:500}';
+      document.head.appendChild(st);
+    }
+    let box = document.getElementById('cpk-ac');
+    if(!box){ box = document.createElement('div'); box.id = 'cpk-ac'; box.setAttribute('role', 'listbox'); document.body.appendChild(box); }
+    let alvo = null, ativo = -1, itens = [], selecionando = false;
+    const ehCampo = el => !!(el && el.matches && el.matches('input[data-ac-golpe]'));
+    const fechar = () => { box.style.display = 'none'; ativo = -1; alvo = null; };
+    const posicionar = () => {
+      if(!alvo) return;
+      const r = alvo.getBoundingClientRect(), vh = window.innerHeight;
+      box.style.minWidth = Math.max(r.width, 200) + 'px';
+      box.style.left = Math.max(4, Math.min(r.left, window.innerWidth - box.offsetWidth - 4)) + 'px';
+      const abaixo = vh - r.bottom, h = Math.min(240, box.scrollHeight + 8);
+      if(abaixo < h + 8 && r.top > abaixo){ box.style.top = Math.max(4, r.top - h - 4) + 'px'; }
+      else { box.style.top = (r.bottom + 4) + 'px'; }
+    };
+    const marcar = i => {
+      [...box.children].forEach((c, k) => c.classList.toggle('on', k === i));
+      ativo = i; const c = box.children[i]; if(c && c.scrollIntoView) c.scrollIntoView({block: 'nearest'});
+    };
+    const desenhar = () => {
+      if(!alvo) return;
+      itens = filtrarGolpes(alvo.value);
+      box.innerHTML = '';
+      if(!itens.length){
+        const v = document.createElement('div'); v.className = 'vazio';
+        v.textContent = _movesIdx ? 'Nenhum golpe encontrado (pode digitar livre)' : 'Carregando golpes…';
+        box.appendChild(v);
+      } else itens.forEach((n, i) => { const d = document.createElement('div'); d.textContent = n; d.dataset.i = i; d.setAttribute('role', 'option'); box.appendChild(d); });
+      ativo = -1; box.style.display = 'block'; box.scrollTop = 0; posicionar();
+    };
+    const abrir = el => {
+      alvo = el; desenhar();
+      if(!_movesIdx || Date.now() - _movesQuando > MOVES_VELHO_MS){   // primeira carga ou lista velha: (re)carrega e redesenha
+        carregarMoves(!!_movesIdx).then(() => { if(alvo === el && document.activeElement === el) desenhar(); });
+      }
+    };
+    const escolher = i => {
+      const el = alvo, nome = itens[i]; if(!el || nome == null) return;
+      selecionando = true;
+      el.value = nome;
+      el.dispatchEvent(new Event('input', {bubbles: true}));
+      el.dispatchEvent(new Event('change', {bubbles: true}));
+      selecionando = false;
+      fechar();
+    };
+    panel.addEventListener('focusin', e => { if(ehCampo(e.target)) abrir(e.target); });
+    panel.addEventListener('click', e => { if(ehCampo(e.target) && alvo !== e.target) abrir(e.target); });
+    panel.addEventListener('input', e => { if(!selecionando && ehCampo(e.target)){ if(alvo !== e.target) alvo = e.target; desenhar(); } });
+    panel.addEventListener('focusout', e => { if(ehCampo(e.target)) setTimeout(() => { if(!ehCampo(document.activeElement)) fechar(); }, 0); });
+    panel.addEventListener('keydown', e => {
+      if(!ehCampo(e.target)) return;
+      const aberto = box.style.display === 'block' && itens.length;
+      if(e.key === 'ArrowDown'){ e.preventDefault(); if(box.style.display !== 'block') abrir(e.target); else if(itens.length) marcar(Math.min(itens.length - 1, ativo + 1)); }
+      else if(e.key === 'ArrowUp'){ if(aberto){ e.preventDefault(); marcar(Math.max(0, ativo - 1)); } }
+      else if(e.key === 'Enter'){ if(aberto && ativo >= 0){ e.preventDefault(); escolher(ativo); } else fechar(); }
+      else if(e.key === 'Escape'){ if(box.style.display === 'block'){ e.preventDefault(); fechar(); } }
+      else if(e.key === 'Tab'){ fechar(); }
+    });
+    // mousedown (e não click) + preventDefault: o campo não perde o foco antes da escolha
+    box.addEventListener('mousedown', e => { e.preventDefault(); const d = e.target.closest && e.target.closest('[data-i]'); if(d && alvo) escolher(parseInt(d.dataset.i)); });
+    window.addEventListener('resize', posicionar);
+    window.addEventListener('scroll', posicionar, true);
+  }
+
   function montarPainel(box){
     css();
     const panel = document.createElement('details');
@@ -3861,6 +3968,7 @@ window.calcSituSoma = function(){
     const ref = box.children[1];
     if(ref) ref.insertAdjacentElement('afterend', panel); else box.appendChild(panel);
     listaFichas().catch(()=>{});   // painel já está na página: garante o datalist das fichas
+    autocompleteGolpes(panel);
     panel.addEventListener('focusin', e => { if(/^cpk-p[12]-ficha$/.test(e.target.id || '')) listaFichas().catch(()=>{}); });
     if(!$('calc-pk-resumo')){
       const resumo = document.createElement('div'); resumo.id = 'calc-pk-resumo';
@@ -12669,6 +12777,7 @@ function buildCardHtml(pk,delay){
       <div><span class="poke-rarity ${rcls[pk.rarity]}">${rlbl[pk.rarity]}</span></div>
       <div class="poke-hab">Hab: ${fmtHabilidade(pk.habilidade)}</div>
       ${natureHtml}
+      ${pkMovesHtml(pk)}
     </div>
   </div>`;
 }
@@ -12836,6 +12945,85 @@ function pkAplicarEvolucaoPorNivel(pk){
   }catch(e){ console.warn('[evolucao-por-nivel]', e); return false; }
 }
 
+/* ══════════════════════════════════════════
+   ██ MOVES JÁ SORTEADOS NA ROLAGEM
+   Cada Pokémon sorteado com nível já vem com os golpes prontos, escolhidos ao acaso entre os que ele
+   aprende POR NÍVEL até o nível sorteado (moves_level do pokemon.json):
+     Lv 1 ............. 3 golpes por nível + 1 Egg Move (moves_egg)  [exceção]
+     Lv 2 a 25 ........ 4 golpes
+     Lv 26 a 74 ....... 6 golpes   (até o Lv 50 → 6; de 51 a 74 a regra não foi definida: mantém 6)
+     Lv 75 em diante .. 8 golpes
+   Se o Pokémon aprende menos golpes que o pedido, vêm todos os que ele aprende. Se não tem Egg Move no Lv 1,
+   a vaga é preenchida com mais um golpe por nível. Guardado em pk.moves (nomes) e pk.movesEgg (os que são Egg Move).
+══════════════════════════════════════════ */
+function pkRegraMoves(nivel){
+  if(nivel <= 1)  return {nivel: 3, egg: 1};
+  if(nivel <= 25) return {nivel: 4, egg: 0};
+  if(nivel <= 74) return {nivel: 6, egg: 0};
+  return {nivel: 8, egg: 0};
+}
+function pkNomeMove(m){   // "quick-attack" → "Quick Attack"
+  return String(m||'').split('-').filter(Boolean).map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+}
+function pkListaMoves(arr){   // aceita {move,level} / {name} / string; descarta lixo
+  return (Array.isArray(arr) ? arr : []).map(it => {
+    if(it == null) return null;
+    if(typeof it === 'string') return {move: it, level: 0};
+    const move = it.move || it.name || it.nome || it.n;
+    if(!move) return null;
+    const level = parseInt(it.level ?? it.nivel ?? 0); return {move: String(move), level: Number.isFinite(level) ? level : 0};
+  }).filter(Boolean);
+}
+function pkDadosMoveset(nome){
+  if(!nome || !Array.isArray(pokemonDB)) return null;
+  const norm = typeof normalizarNome === 'function' ? normalizarNome : x => String(x||'').trim().toLowerCase();
+  const alvo = norm(nome);
+  const base = pokemonDB.find(p => norm(p.name || p.nome) === alvo);
+  if(base) return base;
+  for(const p of pokemonDB){                          // forma alternativa (ex.: Oricorio Baila Style)
+    const f = (p.formas_alt || []).find(f => norm(f.nome) === alvo);
+    if(f) return (f.same_moveset || !pkListaMoves(f.moves_level).length) ? {moves_level: p.moves_level, moves_egg: p.moves_egg} : f;
+  }
+  return null;
+}
+function pkSortearAmostra(arr, n){   // n itens distintos ao acaso (Fisher-Yates parcial)
+  const a = arr.slice(); const out = [];
+  for(let i = 0; i < n && a.length; i++){ const j = Math.floor(Math.random()*a.length); out.push(a.splice(j,1)[0]); }
+  return out;
+}
+function pkSortearMoves(pk){
+  try{
+    if(!pk || pk.nome === '???' || pk.nivel == null) return false;
+    const d = pkDadosMoveset(pk.nome);
+    if(!d) return false;
+    const vistos = new Set();
+    const porNivel = pkListaMoves(d.moves_level).filter(m => m.level <= pk.nivel && !vistos.has(m.move) && vistos.add(m.move)).map(m => m.move);
+    const regra = pkRegraMoves(pk.nivel);
+    let escolhidos = pkSortearAmostra(porNivel, regra.nivel);
+    let egg = [];
+    if(regra.egg){
+      const ovos = [...new Set(pkListaMoves(d.moves_egg).map(m => m.move))].filter(m => !escolhidos.includes(m));
+      egg = pkSortearAmostra(ovos, regra.egg);
+      if(!egg.length){   // sem Egg Move cadastrado: completa a vaga com mais um golpe por nível, se houver
+        escolhidos = escolhidos.concat(pkSortearAmostra(porNivel.filter(m => !escolhidos.includes(m)), regra.egg));
+      }
+    }
+    const todos = escolhidos.concat(egg);
+    if(!todos.length) return false;   // sem dados de moveset para este Pokémon: segue sem golpes
+    pk.moves = todos.map(pkNomeMove);
+    pk.movesEgg = egg.map(pkNomeMove);
+    return true;
+  }catch(e){ console.warn('[moves-rolagem]', e); return false; }
+}
+function pkMovesHtml(pk){
+  if(!pk || !Array.isArray(pk.moves) || !pk.moves.length) return '';
+  const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const egg = new Set(pk.movesEgg || []);
+  return `<div class="pk-moves">${pk.moves.map(m => egg.has(m)
+    ? `<span class="pk-mv egg" title="Egg Move">🥚 ${esc(m)}</span>`
+    : `<span class="pk-mv">${esc(m)}</span>`).join('')}</div>`;
+}
+
 // Sorteia o nível de cada Pokémon entre 1 e o máximo do personagem e, se o nível
 // já alcança a evolução por nível da espécie, devolve o Pokémon já evoluído.
 // Nunca lança erro.
@@ -12845,9 +13033,10 @@ async function aplicarNiveisAosPokes(pokes, personagem){
     const max = v ? v.nivelMax : NIVEL_BASE_MAX;
     (pokes||[]).forEach(pk=>{
       if(pk && pk.nome!=='???'){
-        if(pk.saz==='reproducao'){ pk.nivel = 1 + Math.floor(Math.random()*5); return; } // filhote: Lv. 1–5
+        if(pk.saz==='reproducao'){ pk.nivel = 1 + Math.floor(Math.random()*5); pkSortearMoves(pk); return; } // filhote: Lv. 1–5
         pk.nivel = NIVEL_MIN + Math.floor(Math.random()*(max-NIVEL_MIN+1));
         pkAplicarEvolucaoPorNivel(pk);
+        pkSortearMoves(pk);   // golpes já sorteados conforme o nível (depois da evolução, para vir da espécie certa)
       }
     });
     return v;
@@ -13703,6 +13892,7 @@ function _rolDetailHtml(mapa,key){
           <div><span class="poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]||''}</span></div>
           <div style="font-size:11px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
           ${pk.nature?.en?`<div style="font-size:10px;color:var(--muted);font-style:italic">${pk.nature.en}</div>`:''}
+          ${pkMovesHtml(pk)}
           ${rerollBtn}
         ${pkBloqTag(pk)}</div>`;}).join('');
       return`<div class="rol-entry">
@@ -14067,6 +14257,7 @@ function renderHistorico(){
         <div><span class="poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]||''}</span></div>
         <div style="font-size:11px;color:var(--muted)">Hab: ${fmtHabilidade(pk.habilidade)}</div>
         ${pk.nature?.en?`<div style="font-size:10px;color:var(--muted);font-style:italic">${pk.nature.en}</div>`:''}
+      ${pkMovesHtml(pk)}
       ${pkBloqTag(pk)}</div>`;}).join('');
     return`<div class="hist-entry">
       <div class="hist-header">
