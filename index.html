@@ -793,6 +793,9 @@ body.edit-mode [data-editing="1"] :is(.ed-inserted-col,.ed-inserted-split-box)::
   .hist-poke{padding:12px 8px}
   .rol-pokes-wrap{gap:8px;grid-template-columns:1fr}
   .hist-header{flex-direction:column;align-items:flex-start;gap:4px}
+  /* Mobile: o cabeçalho (nome do player) fica travado sob o menu enquanto as rolagens do card estão na tela */
+  .hist-entry{overflow:clip}   /* clip (e não hidden) para o sticky funcionar; mantém o canto arredondado */
+  .hist-header{position:sticky;top:52px;z-index:5;box-shadow:0 2px 8px rgba(20,30,50,.10)}
   .search-bar{width:100%}
   .adm-login-wrap{margin:20px auto;padding:0 4px}
   .adm-layout{grid-template-columns:1fr;gap:12px}
@@ -7026,9 +7029,11 @@ function getPersonagemRanking(nome){
   const p = personagens.find(pp=>pp.nome===nome);
   return p ? (p.ranking||0) : 0;
 }
-// Só exibe no index Pokémon com o mínimo cadastrado: foto, habilidade e gênero.
+// Só exibe no index Pokémon com o mínimo cadastrado: foto (própria), habilidade e gênero.
 function pkCompletoParaExibir(p){
   const tem = v => v!=null && String(v).trim()!=='';
+  // Forma regional/alternativa sem foto própria não aparece (não vale a foto herdada da forma base)
+  if(p._isAltForm && p._semSpriteProprio) return false;
   return tem(p.sprite) && (tem(p.habilidade1)||tem(p.habilidade2)||tem(p.habilidade_oculta)) && tem(p.genero);
 }
 const BIOMA_TIPO_COR={fire:'#ff9b4a',water:'#6ab8ff',grass:'#78d878',normal:'#c8c8a0',electric:'#ffe030',psychic:'#ff8fb0',steel:'#aababb',fairy:'#ffaad8',ghost:'#9090c0',dragon:'#7060f0',ice:'#96d8d8',fighting:'#c03030',rock:'#b8a050',ground:'#e0c060',poison:'#a060c0',bug:'#a0c020',dark:'#705040',flying:'#88aaee',light:'#e8c832',scent:'#3cb87a'};
@@ -12558,7 +12563,8 @@ function pkAltFormUnits(p){
       estacao:p.estacao||null, estacao_boost:p.estacao_boost||null,
       biomas:f.biomas||[],
       _rankingNecessario:pkRankingNecessario(p),
-      _isAltForm:true, _baseId:p.id, _altIndex:i
+      _isAltForm:true, _baseId:p.id, _altIndex:i,
+      _semSpriteProprio:!(f.sprite && String(f.sprite).trim())   // herda o sprite da base só p/ uso interno (admin); não vale como foto própria
     };
   }).filter(Boolean);
 }
