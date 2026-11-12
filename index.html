@@ -325,16 +325,18 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hp-nm>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hp-lvl{flex-shrink:0;white-space:nowrap;font-family:var(--font-body);font-size:11px;font-weight:800;color:var(--brand-mid)}
 .hp-tags{display:flex;gap:4px;flex-wrap:wrap}
-.hp-info{padding-right:30px;display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.hp-info{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
 .hp-hab{font-size:12px;color:var(--muted)}
 .hp-nat{font-size:11px;color:var(--muted);font-style:italic}
-.hp-moves{padding-right:30px;display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 14px;font-size:12px;font-weight:700;color:var(--text)}
+.hp-moves{flex:0 0 100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 14px;margin-top:10px;padding-top:10px;border-top:2px dashed var(--border);font-size:12px;font-weight:700;color:var(--text)}
+.hp-lv{font-size:11px;font-weight:800;color:var(--brand-mid);white-space:nowrap}
+.hp-rar{margin-left:2px}
 .hp.open .hp-info,.hp.open .hp-l{display:none}
 @keyframes hpFade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .hp.hp-anim .hp-info,.hp.hp-anim .hp-moves,.hp.hp-anim .hp-l,.hp.hp-anim .cond-orbs{animation:hpFade .32s cubic-bezier(.22,.61,.36,1)}
 @media(prefers-reduced-motion:reduce){.hp.hp-anim .hp-info,.hp.hp-anim .hp-moves,.hp.hp-anim .hp-l,.hp.hp-anim .cond-orbs{animation:none}}
 .hp.open .hp-moves{display:grid}
-.hp-sc{position:absolute;bottom:10px;right:12px;width:28px;height:28px;padding:0;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8a6420;background:none;border:0;box-shadow:none}
+.hp-sc{display:none}
 .hp-sc svg{width:20px;height:20px}
 .hp-sc:hover{filter:brightness(1.05)}
 .hp .cond-orbs{left:auto;right:12px;top:12px}
@@ -1041,7 +1043,7 @@ body.edit-mode [data-editing="1"] :is(.ed-inserted-col,.ed-inserted-split-box)::
 .hist-img-btn .lbl-s{display:none}
 .hist-img-btn svg{width:14px;height:14px}
 @media(max-width:700px){
-  .hist-acts{align-self:stretch;width:100%;justify-content:flex-end;flex-wrap:nowrap}
+  .hist-acts{align-self:stretch;width:100%;justify-content:flex-end;flex-wrap:wrap}
   .hist-acts>span:first-child{margin-right:auto}
   .hist-img-btn{padding:7px 12px;font-size:12px}
   .hist-img-btn .lbl-l{display:none}
@@ -13083,27 +13085,26 @@ function pkHistCardHtml(pk, o){
   const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const moves = Array.isArray(pk.moves) ? pk.moves : [], egg = new Set(pk.movesEgg || []);
   const mv = moves.map(m => `<span>${esc(m)}${egg.has(m) ? '<span class="pk-egg-pill">Egg Move</span>' : ''}</span>`).join('');
-  const lvl = (pk.nivel != null && niveisAtivo()) ? `<span class="hp-lvl">• lvl ${pk.nivel}</span>` : '';
+  const lvl = (pk.nivel != null && niveisAtivo()) ? `<span class="hp-lv">lvl ${pk.nivel}</span>` : '';
   const tags = (pk.isShiny ? `<span style="font-size:9px;font-weight:800;color:#7a4a00;background:linear-gradient(135deg,#ffd700,#ffb300);border:1px solid #e8a800;border-radius:8px;padding:1px 6px">✨ SHINY${pk.bonusShiny&&pk.bonusShiny.length?` (${pk.bonusShiny.join(' + ')})`:''}</span>` : '')
              + (pk.isHoney ? `<span style="font-size:9px;font-weight:800;color:#7a5010;background:#fff3d4;border:1px solid #d4a017;border-radius:8px;padding:1px 6px">HONEY</span>` : '');
-  const btn = moves.length ? `<button type="button" class="hp-sc" aria-expanded="false" aria-label="Golpes" onclick="event.stopPropagation();hpToggle(this)">${SVG_PERGAMINHO}</button>` : '';
   return `<div class="hp${pk.naoCapturavel?' pk-bloq':''}"${o.click||''} style="${o.style||''}">
-    ${condOrbsHtml(pk.condicao,0,pk.saz)}${btn}
+    ${condOrbsHtml(pk.condicao,0,pk.saz)}
     <div class="hp-l">
       <div class="hp-sp"><img src="${o.src}" data-sprite-stage="1" style="filter:${o.glow}" ${o.onload||''}onerror="handleHistSpriteError(this,'${o.nomeEsc}',${pk.isShiny?'true':'false'});this.style.filter='${o.glow}'"/></div>
-      <span class="poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]||''}</span>
+      ${lvl}
     </div>
     <div class="hp-r">
-      <div class="hp-nm"><span>${pk.nome} <span class="gender-icon" style="color:${pk.genderC||'#888'}">${pk.genderS||''}</span></span>${lvl}</div>
+      <div class="hp-nm"><span>${pk.nome} <span class="gender-icon" style="color:${pk.genderC||'#888'}">${pk.genderS||''}</span></span></div>
       ${tags?`<div class="hp-tags">${tags}</div>`:''}
       <div class="hp-info">
-        <div>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}</div>
+        <div>${(pk.tipos||[]).map(t=>`<span class="type-pill ${tcls[t]||'t-normal'}">${t}</span>`).join('')}${rlbl[pk.rarity]?`<span class="type-pill hp-rar poke-rarity ${rcls[pk.rarity]||'rc'}">${rlbl[pk.rarity]}</span>`:''}</div>
         <div class="hp-hab">Hab: ${fmtHabilidade(pk.habilidade)}</div>
         ${pk.nature?.en?`<div class="hp-nat">${pk.nature.en}</div>`:''}
       </div>
-      ${moves.length?`<div class="hp-moves" onclick="event.stopPropagation()">${mv}</div>`:''}
       ${o.extra||''}
     </div>
+    ${moves.length?`<div class="hp-moves" onclick="event.stopPropagation()">${mv}</div>`:''}
     ${pkBloqTag(pk)}</div>`;
 }
 function pkToggleMoves(btn){
@@ -14290,6 +14291,7 @@ function renderHistorico(){
   document.getElementById('hist-next').style.display=histPagina<totalPags-1?'':'none';
   document.getElementById('hist-paginacao').style.display=totalPags>1?'flex':'none';
   const podeExcluirRolagemEncontro=(playerLogado?.nome||'').trim().toLowerCase()==='ricky';
+  const ehAdm=podeExcluirRolagemEncontro||(typeof isAdminConectado==='function'&&isAdminConectado());
   lista.innerHTML=pagina.map(e=>{
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
     const ph=pokes.map(pk=>{
@@ -14333,6 +14335,7 @@ function renderHistorico(){
         <div class="hist-acts">
           <span style="font-size:11px;color:var(--muted);white-space:nowrap">${e.hora} · ${e.data}</span>
           <button type="button" class="hist-img-btn" onclick="gerarImagemRolagem('${e.id}')" aria-label="Compartilhar rolagem">${SVG_COMPARTILHAR}<span class="lbl-l">Compartilhar Rolagem</span><span class="lbl-s">Compartilhar</span></button>
+          ${(ehAdm&&pokes.some(pk=>pk&&pk.nome!=='???'&&pk.nivel!=null&&!(Array.isArray(pk.moves)&&pk.moves.length)))?`<button type="button" class="hist-img-btn" onclick="rolarGolpesEntrada('${e.id}')">🎲 Rolar golpes</button>`:''}
           ${podeExcluirRolagemEncontro?`<button class="hist-del-btn" onclick="excluirRolagemEncontro('${e.id}')">Excluir</button>`:''}
         </div>
       </div>
@@ -14378,8 +14381,36 @@ function imgPillRow(c,items,cx,y,maxW,h,font,gap,draw,al){   // pílulas central
   return lines.length*h+Math.max(0,lines.length-1)*gap;
 }
 // H == null → só mede (devolve a altura); H numérico → desenha o card (horizontal: sprite à esquerda, dados à direita, golpes embaixo)
+// Condições (esferas) no formato de dados, para desenhar no canvas da imagem compartilhada
+let IMG_ORBS=new WeakMap(), IMG_ICONS={};
+function condOrbsDados(cond,saz){
+  const out=[], si=SAZ_ORBS[saz];
+  if(cond){
+    const _limpa=t=>t.replace(/\b[a-z]+(?:_[a-z]+)+\b/g,m=>PK_COND_LBL[m]||m.replace(/_/g,' ').replace(/\b\w/g,x=>x.toUpperCase()));
+    const txt=pkCondLegadoLabel(_limpa(String(cond))), itens=[];
+    String(txt||'').split(/\s*[;·]\s*/).filter(Boolean).forEach(g=>{
+      const m=/^([^:]{2,20}):\s*(.+)$/.exec(g);
+      (m?m[2]:g).split(/\s*,\s*/).filter(Boolean).forEach(i=>itens.push(i));
+    });
+    itens.forEach(val=>{
+      const k=val.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+      const r=COND_ORB_REGRAS.find(x=>x[0].test(k));
+      out.push({icon:r?r[1]:null,color:r?r[2]:'#d4a017',letter:val.trim().charAt(0).toUpperCase()});
+    });
+  }
+  if(si) out.push({icon:si[0],color:si[1]});
+  return out;
+}
+function imgCarregaIcone(nome){
+  return new Promise(res=>{
+    const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+(COND_ORB_ICONS[nome]||'')+'</svg>';
+    const im=new Image(); im.onload=()=>res(im); im.onerror=()=>res(null);
+    im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); setTimeout(()=>res(null),4000);
+  });
+}
 function imgCard(c,pk,x,y,w,spr,H){
   const D=H!=null, S=90, P=20, F='800 16px Nunito,sans-serif', x0=x+P+S+18, rw=x+w-P-x0;
+  const orbs=IMG_ORBS.get(pk)||[], OD=26, OG=5, OPER=3, orbH=orbs.length?(10+Math.ceil(orbs.length/OPER)*(OD+OG)-OG):0;
   let cy=y+P;
   if(D){
     imgRR(c,x,y,w,H,18); c.fillStyle=pk.isShiny?'#fffbe0':IMG_T.surface; c.fill();
@@ -14387,6 +14418,14 @@ function imgCard(c,pk,x,y,w,spr,H){
     c.save(); c.beginPath(); c.arc(x+P+S/2,y+P+S/2,S/2,0,Math.PI*2); c.fillStyle=IMG_T.surface2; c.fill(); c.clip();
     if(spr) c.drawImage(spr,x+P,y+P,S,S);
     c.restore();
+    orbs.forEach((o,i)=>{
+      const r=Math.floor(i/OPER), ci=i%OPER, n=Math.min(OPER,orbs.length-r*OPER), rowW=n*OD+(n-1)*OG;
+      const ox=x+P+S/2-rowW/2+ci*(OD+OG)+OD/2, oy=y+P+S+10+r*(OD+OG)+OD/2;
+      c.beginPath(); c.arc(ox,oy,OD/2,0,Math.PI*2); c.fillStyle=o.color; c.fill();
+      const ic=o.icon&&IMG_ICONS[o.icon];
+      if(ic){ c.drawImage(ic,ox-8,oy-8,16,16); }
+      else { c.font='800 14px Nunito,sans-serif'; c.fillStyle='#fff'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(o.letter||'?',ox,oy+1); }
+    });
     if(pk.nivel!=null&&niveisAtivo()){
       const lt='lvl '+pk.nivel; c.font=F; const lw=Math.ceil(c.measureText(lt).width)+26;
       imgPill(c,lt,x+w-lw-14,y+14,28,F,IMG_T.lvBg,IMG_T.lvFg,IMG_T.lvBd);
@@ -14412,7 +14451,7 @@ function imgCard(c,pk,x,y,w,spr,H){
   if(D){c.textAlign='left';c.textBaseline='middle';c.fillStyle=IMG_T.muted;c.fillText('Hab: '+hab,x0,cy+11);}
   cy+=26;
   if(pk.nature&&pk.nature.en){ if(D){c.textAlign='left';c.textBaseline='middle';c.fillStyle=IMG_T.muted;c.font='italic 600 17px Nunito,sans-serif';c.fillText(pk.nature.en,x0,cy+10);} cy+=26; }
-  let ty=Math.max(cy,y+P+S)+4;
+  let ty=Math.max(cy,y+P+S+orbH)+4;
   if(Array.isArray(pk.moves)&&pk.moves.length){
     if(D){c.strokeStyle=IMG_T.border;c.lineWidth=2;c.setLineDash([6,5]);c.beginPath();c.moveTo(x+P,ty);c.lineTo(x+w-P,ty);c.stroke();c.setLineDash([]);}
     ty+=12;
@@ -14503,6 +14542,10 @@ async function gerarImagemDeEntrada(e){
   const loadImg=src=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; setTimeout(()=>res(null),8000); });
   let fotoSrc=null; try{ const k=resolveKey(e.personagem); const pc=(personagens||[]).find(x=>normKey(x.nome)===k); fotoSrc=pc&&pc.img; }catch(_){}
   const [imgs,foto]=await Promise.all([ Promise.all(pokes.map(pk=>loadImg(pkFreshSprite(pk.nome,pk.isShiny)||pk.sprite||FALLBACK_SPRITE_DEFAULT))), loadImg(fotoSrc) ]);
+  IMG_ORBS=new WeakMap(); IMG_ICONS={};
+  const _nomes=new Set();
+  pokes.forEach(pk=>{ let d=[]; try{ d=condOrbsDados(pk.condicao,pk.saz); }catch(_){} IMG_ORBS.set(pk,d); d.forEach(o=>{ if(o.icon) _nomes.add(o.icon); }); });
+  await Promise.all([..._nomes].map(async n=>{ IMG_ICONS[n]=await imgCarregaIcone(n); }));
   const toBlob=cv=>new Promise((ok,no)=>{try{cv.toBlob(b=>b?ok(b):no(new Error('vazio')),'image/png');}catch(err){no(err);}});
   let blob;
   try{ blob=await toBlob(imgDesenharRolagem(e,pokes,imgs,foto)); }
@@ -14539,6 +14582,20 @@ function imgMostrarModal(blob,nome){
   document.body.appendChild(ov);
 }
 
+// ADM: sorteia os golpes dos Pokémon já existentes de uma rolagem (que têm nível mas ainda não têm golpes) e salva no histórico.
+async function rolarGolpesEntrada(id){
+  const e=historico.find(x=>String(x.id)===String(id)); if(!e) return;
+  const pokes=Array.isArray(e.pokes)?e.pokes:[], feitos=[];
+  pokes.forEach(pk=>{
+    if(!pk||pk.nome==='???'||pk.nivel==null||(Array.isArray(pk.moves)&&pk.moves.length)) return;
+    if(pkSortearMoves(pk)) feitos.push(pk);
+  });
+  if(!feitos.length){ imgToast('Nenhum Pokémon com golpes para rolar'); return; }
+  try{ await dbPatch('historico',`id=eq.${e.id}`,{pokes}); }
+  catch(err){ feitos.forEach(pk=>{ delete pk.moves; delete pk.movesEgg; }); imgToast('Erro ao salvar os golpes'); return; }
+  renderHistorico(); if(loaded.rolagens) renderRolagens();
+  imgToast('Golpes rolados em '+feitos.length+' Pokémon');
+}
 async function excluirRolagemEncontro(id){
   if((playerLogado?.nome||'').trim().toLowerCase()!=='ricky'){alert('Você não tem permissão para excluir esta rolagem.');return;}
   if(!confirm('Excluir esta rolagem do histórico?'))return;
