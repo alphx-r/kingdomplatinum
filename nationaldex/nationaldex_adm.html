@@ -1069,7 +1069,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn on" id="pk-f-all" onclick="setPkFilter('all')">Todos</button>
       <button class="fbtn" id="pk-f-pend" onclick="setPkFilter('pend')">Pendentes</button>
       <button class="fbtn" id="pk-f-appr" onclick="setPkFilter('appr')">Revisados</button>
-      <button class="fbtn" id="pk-btn-moves-todos" onclick="epkBuscarMovesetsTodos()" style="margin-left:auto" title="Busca na PokéAPI o moveset (Por Nível, TM e Egg) de TODOS os Pokémon oficiais, só da última geração em que cada um aparece">🔄 Buscar movesets (todos)</button>
+      <button class="fbtn" id="pk-btn-moves-todos" onclick="epkBuscarMovesetsTodos()" style="margin-left:auto" title="Busca na PokéAPI o moveset (Por Nível, TM e Egg) de TODOS os Pokémon oficiais, usando Scarlet/Violet → Sword/Shield → Sun/Moon → ... (o primeiro jogo em que cada um existe)">🔄 Buscar movesets (todos)</button>
     </div>
     <div id="pk-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando Pokémon…</div></div></div>
     </div>
@@ -6341,58 +6341,67 @@ function movesetResetAll(prefix) {
 // resultado na hora. Pra ids não-numéricos (formas regionais/fakemon), tenta
 // pelo url_slug ou nome — a PokéAPI aceita nome-slug (ex: "raichu-alola") no
 // lugar do número.
-/* ── Moveset da PokéAPI: SÓ a última geração em que o Pokémon aparece (sem misturar gerações) ──
-   A PokéAPI devolve os golpes de todos os jogos juntos (version_group_details). Aqui descobrimos a
-   geração mais recente em que este Pokémon existe e usamos só os jogos principais dela.
-   Spin-offs/remakes de moveset diferente (Colosseum, XD, Let's Go, Brilliant Diamond/Shining Pearl,
-   Legends Arceus/Z-A) só são usados se o Pokémon não aparecer em nenhum jogo principal. */
-const PKAPI_VG_GERACAO = {
-  'red-blue':1,'yellow':1,
-  'gold-silver':2,'crystal':2,
-  'ruby-sapphire':3,'emerald':3,'firered-leafgreen':3,'colosseum':3,'xd':3,
-  'diamond-pearl':4,'platinum':4,'heartgold-soulsilver':4,
-  'black-white':5,'black-2-white-2':5,
-  'x-y':6,'omega-ruby-alpha-sapphire':6,
-  'sun-moon':7,'ultra-sun-ultra-moon':7,'lets-go-pikachu-lets-go-eevee':7,
-  'sword-shield':8,'the-isle-of-armor':8,'the-crown-tundra':8,'brilliant-diamond-shining-pearl':8,'legends-arceus':8,
-  'scarlet-violet':9,'the-teal-mask':9,'the-indigo-disk':9,'legends-za':9
-};
-const PKAPI_VG_SPINOFF = new Set(['colosseum','xd','lets-go-pikachu-lets-go-eevee','brilliant-diamond-shining-pearl','legends-arceus','legends-za']);
-const PKAPI_VG_ORDEM = Object.keys(PKAPI_VG_GERACAO); // ordem aproximada de lançamento
-function pkapiMovesetUltimaGeracao(d, category, gerAlvo) {
+/* ── Moveset da PokéAPI: ordem FIXA de jogos (vale para TODOS os botões "🔄 Buscar") ──
+   Regra: busca o Pokémon em Scarlet/Violet; se ele não existir lá, tenta Sword/Shield; se não existir,
+   Sun/Moon; e assim por diante (jogos mais novos → mais antigos). Usa só o primeiro jogo da lista em que
+   o Pokémon existe — nunca mistura jogos. "Existir" = ter qualquer golpe registrado naquele jogo na PokéAPI;
+   se existir mas não tiver golpes de uma categoria (ex.: sem Egg Moves), a categoria fica vazia
+   em vez de puxar de um jogo mais antigo.
+   Os DLCs entram junto do jogo base (ex.: Teal Mask/Indigo Disk com Scarlet/Violet).
+   Spin-offs/remakes (Legends Z-A, Legends Arceus, Let's Go, BDSP, XD, Colosseum) só entram como último
+   recurso, para Pokémon que não existem em nenhum jogo principal (ex.: Meltan, Wyrdeer). */
+const PKAPI_JOGOS_ORDEM = [
+  { nome: 'Scarlet/Violet',            grupos: ['scarlet-violet','the-teal-mask','the-indigo-disk'] },
+  { nome: 'Sword/Shield',              grupos: ['sword-shield','the-isle-of-armor','the-crown-tundra'] },
+  { nome: 'Sun/Moon',                  grupos: ['sun-moon'] },
+  { nome: 'Ultra Sun/Ultra Moon',      grupos: ['ultra-sun-ultra-moon'] },
+  { nome: 'X/Y',                       grupos: ['x-y'] },
+  { nome: 'Omega Ruby/Alpha Sapphire', grupos: ['omega-ruby-alpha-sapphire'] },
+  { nome: 'Black 2/White 2',           grupos: ['black-2-white-2'] },
+  { nome: 'Black/White',               grupos: ['black-white'] },
+  { nome: 'Platinum',                  grupos: ['platinum'] },
+  { nome: 'HeartGold/SoulSilver',      grupos: ['heartgold-soulsilver'] },
+  { nome: 'Diamond/Pearl',             grupos: ['diamond-pearl'] },
+  { nome: 'Emerald',                   grupos: ['emerald'] },
+  { nome: 'FireRed/LeafGreen',         grupos: ['firered-leafgreen'] },
+  { nome: 'Ruby/Sapphire',             grupos: ['ruby-sapphire'] },
+  { nome: 'Crystal',                   grupos: ['crystal'] },
+  { nome: 'Gold/Silver',               grupos: ['gold-silver'] },
+  { nome: 'Yellow',                    grupos: ['yellow'] },
+  { nome: 'Red/Blue',                  grupos: ['red-blue','red-green-japan','blue-japan'] },
+  // Último recurso (spin-offs/remakes)
+  { nome: 'Legends: Z-A',              grupos: ['legends-za','mega-dimension'] },
+  { nome: 'Legends: Arceus',           grupos: ['legends-arceus'] },
+  { nome: "Let's Go Pikachu/Eevee",    grupos: ['lets-go-pikachu-lets-go-eevee'] },
+  { nome: 'Brilliant Diamond/Shining Pearl', grupos: ['brilliant-diamond-shining-pearl','brilliant-diamond-and-shining-pearl'] },
+  { nome: 'XD',                        grupos: ['xd'] },
+  { nome: 'Colosseum',                 grupos: ['colosseum'] }
+];
+function pkapiMovesetUltimaGeracao(d, category) {
   const todos = new Set();
   (d.moves || []).forEach(mv => (mv.version_group_details || []).forEach(v => todos.add(v.version_group.name)));
-  const gerDe = n => PKAPI_VG_GERACAO[n] ?? 9;                      // jogo novo ainda não listado: assume geração 9
-  const ord = n => { const i = PKAPI_VG_ORDEM.indexOf(n); return i < 0 ? 999 : i; };
-  const principais = [...todos].filter(n => !PKAPI_VG_SPINOFF.has(n));
-  const cand = principais.length ? principais : [...todos];
-  let gens = [...new Set(cand.map(gerDe))].sort((a, b) => b - a);   // da mais nova pra mais antiga
-  // Geração-alvo (ex.: 8 = Sword/Shield): se o Pokémon existe nela, ela vai primeiro; senão cai pra mais nova disponível.
-  if (gerAlvo && gens.includes(gerAlvo)) gens = [gerAlvo, ...gens.filter(g => g !== gerAlvo)];
-  let res = { moves: [], geracao: 0, grupos: [] };
-  // Tenta a geração mais nova; se vier vazia (jogo novo sem golpes na PokéAPI), cai pra anterior.
-  for (const geracao of gens) {
-    const grupos = cand.filter(n => gerDe(n) === geracao).sort((a, b) => ord(a) - ord(b));
-    const gs = new Set(grupos);
-    const moves = [];
-    (d.moves || []).forEach(mv => {
-      const vgd = (mv.version_group_details || []).filter(v => gs.has(v.version_group.name));
-      if (!vgd.length) return;
-      if (category === 'level') {
-        const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
-        if (!lvlUp.length) return;
-        lvlUp.sort((a, b) => ord(a.version_group.name) - ord(b.version_group.name));
-        moves.push({ move: mv.move.name, level: lvlUp[lvlUp.length - 1].level_learned_at }); // nível do jogo mais recente
-      } else {
-        const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
-        if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
-      }
-    });
-    if (category === 'level') moves.sort((a, b) => a.level - b.level);
-    res = { moves, geracao, grupos };
-    if (moves.length) break;
-  }
-  return res;
+  // Primeiro jogo da ordem fixa em que o Pokémon existe.
+  const jogo = PKAPI_JOGOS_ORDEM.find(j => j.grupos.some(g => todos.has(g)));
+  if (!jogo) return { moves: [], jogo: '', grupos: [] };
+  const grupos = jogo.grupos.filter(g => todos.has(g));   // ordem = do jogo base pro DLC
+  const gs = new Set(grupos);
+  const ord = n => jogo.grupos.indexOf(n);
+  const moves = [];
+  (d.moves || []).forEach(mv => {
+    const vgd = (mv.version_group_details || []).filter(v => gs.has(v.version_group.name));
+    if (!vgd.length) return;
+    if (category === 'level') {
+      const lvlUp = vgd.filter(v => v.move_learn_method.name === 'level-up');
+      if (!lvlUp.length) return;
+      lvlUp.sort((x, y) => ord(x.version_group.name) - ord(y.version_group.name));
+      moves.push({ move: mv.move.name, level: lvlUp[lvlUp.length - 1].level_learned_at });
+    } else {
+      const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
+      if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
+    }
+  });
+  if (category === 'level') moves.sort((x, y) => x.level - y.level);
+  return { moves, jogo: jogo.nome, grupos };
 }
 
 const EPK_MOVESET_FIELD = { level: 'moves_level', tm: 'moves_tm', egg: 'moves_egg' };
@@ -6417,7 +6426,7 @@ async function epkFetchMovesetFromPokeapi(category) {
     if (!r.ok) throw new Error(`PokeAPI HTTP ${r.status} — não achou "${query}"`);
     const d = await r.json();
 
-    const { moves, geracao, grupos } = pkapiMovesetUltimaGeracao(d, category);
+    const { moves, jogo, grupos } = pkapiMovesetUltimaGeracao(d, category);
 
     const patch = { [field]: moves.length ? moves : null, updated_at: new Date().toISOString() };
     await sbPatch('pokemons', id, patch);
@@ -6428,7 +6437,7 @@ async function epkFetchMovesetFromPokeapi(category) {
     if (pk) Object.assign(pk, patch);
     if (S.pk.dbMap && S.pk.dbMap[id]) Object.assign(S.pk.dbMap[id], patch);
 
-    toast(`✓ Moveset "${label}" de "${query}" atualizado (Geração ${geracao}: ${grupos.join(", ")}) — falta o Commit pokemon.json!`, 'ok');
+    toast(`✓ Moveset "${label}" de "${query}" atualizado (${jogo || "sem jogo"}: ${grupos.join(", ")}) — falta o Commit pokemon.json!`, 'ok');
   } catch (e) {
     toast('Erro ao buscar moveset: ' + e.message, 'err');
   } finally {
@@ -6437,16 +6446,12 @@ async function epkFetchMovesetFromPokeapi(category) {
 }
 
 // Botão geral (lista de Pokémon): busca Por Nível + TM + Egg de TODOS os Pokémon oficiais
-// (ID numérico) na PokéAPI — só a última geração de cada um — e salva direto no Supabase.
+// (ID numérico) na PokéAPI — Scarlet/Violet → Sword/Shield → Sun/Moon → ... — e salva direto no Supabase.
 // Uma requisição por Pokémon; sobrescreve os três campos apenas quando a PokéAPI trouxe golpes.
 async function epkBuscarMovesetsTodos() {
   const alvo = (S.pk.all || []).filter(p => !p._isRpg && /^\d+$/.test(String(p.id)));
   if (!alvo.length) { toast('Nenhum Pokémon oficial carregado.', 'err'); return; }
-  const entrada = prompt('Qual geração usar para os movesets?\n\n8 = Sword/Shield (padrão)\n9 = Scarlet/Violet\n7 = Ultra Sun/Ultra Moon ... etc.\n0 = sempre a última geração de cada Pokémon\n\nSe o Pokémon não existir na geração escolhida, usa a mais recente em que ele aparece.', '8');
-  if (entrada === null) return;
-  const gerAlvo = parseInt(entrada, 10) || 0;
-  if (gerAlvo < 0 || gerAlvo > 9) { toast('Geração inválida (use 0 a 9).', 'err'); return; }
-  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais, usando ${gerAlvo ? 'a Geração ' + gerAlvo + ' (ou a mais recente em que o Pokémon aparece, se ele não existir nela)' : 'só a última geração em que cada um aparece'}?\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos). Pode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
+  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos). Pode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
   const btn = document.getElementById('pk-btn-moves-todos');
   if (btn) btn.disabled = true;
   showProgress('Buscando movesets na PokéAPI…');
@@ -6462,9 +6467,9 @@ async function epkBuscarMovesetsTodos() {
         const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(id)}`);
         if (!r.ok) throw new Error(`PokéAPI HTTP ${r.status}`);
         const d = await r.json();
-        const nivel = pkapiMovesetUltimaGeracao(d, 'level', gerAlvo).moves;
-        const tm    = pkapiMovesetUltimaGeracao(d, 'tm', gerAlvo).moves;
-        const egg   = pkapiMovesetUltimaGeracao(d, 'egg', gerAlvo).moves;
+        const nivel = pkapiMovesetUltimaGeracao(d, 'level').moves;
+        const tm    = pkapiMovesetUltimaGeracao(d, 'tm').moves;
+        const egg   = pkapiMovesetUltimaGeracao(d, 'egg').moves;
         if (!nivel.length && !tm.length && !egg.length) { semDados++; semGolpes.push(`${pk.name || id} (#${id})`); }
         else {
           const patch = {
@@ -6520,10 +6525,10 @@ async function faltFetchMovesetFromPokeapi(btn, category) {
     if (!r.ok) throw new Error(`PokeAPI HTTP ${r.status} — não achou "${slug}"`);
     const d = await r.json();
 
-    const { moves, geracao, grupos } = pkapiMovesetUltimaGeracao(d, category);
+    const { moves, jogo, grupos } = pkapiMovesetUltimaGeracao(d, category);
 
     movesetPopulateList(`falt-mv-${category}-${uid}`, category, moves);
-    toast(`✓ Moveset "${label}" de "${nome}" preenchido a partir de "${slug}" (Geração ${geracao}: ${grupos.join(", ")}) — salve o Pokémon pra gravar.`, 'ok');
+    toast(`✓ Moveset "${label}" de "${nome}" preenchido a partir de "${slug}" (${jogo || "sem jogo"}: ${grupos.join(", ")}) — salve o Pokémon pra gravar.`, 'ok');
   } catch (e) {
     toast('Erro ao buscar moveset: ' + e.message, 'err');
   } finally {
