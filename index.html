@@ -335,6 +335,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hp-cap{margin-left:auto;flex:0 0 auto;width:26px;height:26px;padding:0;border:0;background:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;transition:transform .15s}
 .hp-cap:hover:not(:disabled){transform:scale(1.15) rotate(-12deg)}
 .hp-cap:disabled{cursor:default}
+.hp-cap[hidden]{display:none!important}
 .hp-cap svg{width:22px;height:22px;display:block;overflow:visible}
 .hp-cap svg *{transition:fill .35s,stroke .35s}
 .hp-cap .pb-o{fill:none;stroke:#1f1f1f;stroke-width:1.5}
@@ -7260,7 +7261,7 @@ async function carregarFichasNovas(){
       novas.push(x);
     }
     fichasNovas = novas;
-    try{ if(novas.length){ if(typeof renderHistorico==='function') renderHistorico(); if(typeof renderRolagens==='function') renderRolagens(); } }catch(_){}
+    try{ pkCaptSync(); }catch(_){}
   }catch(e){ console.warn('[fichas novas]', e); }
   finally{ _fichasNovasCarregando = false; if(typeof atualizarHoneyStatus==='function') atualizarHoneyStatus(); if(typeof renderPersonagensDatalist==='function') renderPersonagensDatalist(); }
 }
@@ -13158,14 +13159,27 @@ function pkCaptBolas(ficha){
   });
   return [...m].map(([nome,qtd])=>({nome,qtd}));
 }
+// Mostra/esconde e colore os botões conforme as fichas carregadas (independe da ordem em que lista e fichas chegam)
+function pkCaptSync(){
+  document.querySelectorAll('.hp-cap[data-pers]').forEach(b=>{
+    const f=(typeof fichaIntegradaDoPersonagem==='function')?fichaIntegradaDoPersonagem(b.dataset.pers):null;
+    b.hidden=!f;
+    if(!f) return;
+    const ja=!!(f._origens&&f._origens.has(pkCaptOrigem(b.dataset.eid,parseInt(b.dataset.idx,10))));
+    b.classList.toggle('capt',ja); b.disabled=ja;
+    b.title=ja?'Já está na ficha':'Capturar: adicionar à ficha'; b.setAttribute('aria-label',b.title);
+  });
+}
+(function(){ let t=0; const q=()=>{ if(t) return; t=requestAnimationFrame(()=>{ t=0; try{ pkCaptSync(); }catch(_){} }); };
+  const ini=()=>{ new MutationObserver(q).observe(document.body,{childList:true,subtree:true}); q(); };
+  if(document.body) ini(); else document.addEventListener('DOMContentLoaded',ini); })();
 function pkCaptOrigem(eid,idx){ return 'rol:'+eid+':'+idx; }
 function pkCaptBtnHtml(pk,c){
   if(!pk||!pk.nome||pk.nome==='???'||pk.naoCapturavel) return '';
   const ficha = (typeof fichaIntegradaDoPersonagem==='function') ? fichaIntegradaDoPersonagem(c.pers) : null;
-  if(!ficha) return '';   // só aparece para quem tem a ficha do personagem que rolou
-  const ja = !!(ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
+  const ja = !!(ficha && ficha._origens && ficha._origens.has(pkCaptOrigem(c.eid,c.idx)));
   const tip = ja ? 'Já está na ficha' : 'Capturar: adicionar à ficha';
-  return `<button type="button" class="hp-cap${ja?' capt':''}" data-eid="${_rolEsc(String(c.eid))}" data-idx="${c.idx}"${ja?' disabled':''} title="${tip}" aria-label="${tip}" onclick="event.stopPropagation();pkCapturarPedir(this)">${SVG_POKEBOLA_CAPT}</button>`;
+  return `<button type="button" class="hp-cap${ja?' capt':''}"${ficha?'':' hidden'} data-pers="${_rolEsc(String(c.pers||''))}" data-eid="${_rolEsc(String(c.eid))}" data-idx="${c.idx}"${ja?' disabled':''} title="${tip}" aria-label="${tip}" onclick="event.stopPropagation();pkCapturarPedir(this)">${SVG_POKEBOLA_CAPT}</button>`;
 }
 function pkCaptModal(titulo, htmlMsg, okTxt, bolas){
   return new Promise(resolve=>{
@@ -13201,8 +13215,7 @@ async function pkCapturarPedir(btn){
   const bolas=pkCaptBolas(ficha);
   const nm=_rolEsc(pk.nome), lv=(pk.nivel!=null&&niveisAtivo())?` (lvl ${pk.nivel})`:'';
   if(!bolas.length){ imgToast('Você não tem nenhuma Pokébola na Bag desta ficha.'); return; }
-  const bola=await pkCaptModal('Capturar Pokémon?',
-    `Adicionar <b>${nm}</b>${lv}${pk.isShiny?' ✨':''} à ficha de <b>${_rolEsc(ficha.nome||e.personagem)}</b>?<br>Escolha a Pokébola: 1 unidade será descontada da Bag. Ele vai para o primeiro slot vazio do time (ou da box, se o time estiver cheio).`,'Capturar',bolas);
+  const bola=await pkCaptModal('Você capturou esse Pokémon?',`<b>${nm}</b>${lv}${pk.isShiny?' ✨':''} — escolha a Pokébola usada:`,'Capturar',bolas);
   if(!bola) return;
   // Otimista: a pokébola já fica colorida na hora; o servidor grava em segundo plano e, se falhar, volta ao estado anterior.
   const origem=pkCaptOrigem(eid,idx);
