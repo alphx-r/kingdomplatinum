@@ -869,6 +869,48 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .pend-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface2)}
 .pend-note{font-size:11px;color:var(--muted)}
 
+/* ═══ Eventos: barra lateral (localidades por Pokémon + boost diário por tipo) ═══ */
+.evt-side{width:min(480px,100vw)}
+.evt-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface2)}
+.evt-tab{flex:1;padding:10px 8px;background:none;border:none;border-bottom:3px solid transparent;font-family:var(--font-title);font-size:11px;font-weight:800;letter-spacing:.3px;color:var(--muted);cursor:pointer}
+.evt-tab:hover{color:var(--brand)}
+.evt-tab.active{color:var(--brand);border-bottom-color:var(--accent);background:var(--surface)}
+.evt-pane{display:none;flex:1;min-height:0;flex-direction:column;overflow-y:auto}
+.evt-pane.on{display:flex}
+#evt-pane-loc{overflow:hidden}
+.evt-top{padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2);display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.evt-in{width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font-body);font-size:12.5px;background:var(--surface);color:var(--text);outline:none}
+.evt-in:focus{border-color:var(--brand-mid)}
+.evt-pk{display:flex;align-items:center;gap:10px}
+.evt-pk .chg-thumb{width:40px;height:40px}
+.evt-pk-n{font-size:14px;font-weight:800;color:var(--text);line-height:1.2}
+.evt-pk-s{font-size:11px;color:var(--muted)}
+.evt-bulk{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--surface);border:1.5px dashed var(--accent);border-radius:9px}
+.evt-bulk.show{display:flex}
+.evt-all{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:var(--text);cursor:pointer;white-space:nowrap}
+.evt-bulk select{flex:1;min-width:110px}
+.evt-sel{padding:5px 8px;border:1.5px solid var(--border);border-radius:7px;font-family:var(--font-body);font-size:12px;background:var(--surface);color:var(--text)}
+.evt-sel:disabled{opacity:.45}
+.evt-list{flex:1;min-height:0;overflow-y:auto}
+.evt-loc{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--surface2)}
+.evt-loc.on{background:var(--brand-light)}
+.evt-loc-l{flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--text)}
+.evt-loc-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.evt-tag{flex-shrink:0;font-size:9px;font-weight:800;padding:1px 6px;border-radius:5px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.evt-apply{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 14px;border-top:1px solid var(--border);background:var(--surface)}
+.evt-sum{font-size:11.5px;color:var(--muted);flex:1}
+.evt-box{margin:12px 14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);display:flex;flex-direction:column;gap:8px}
+.evt-lbl{font-family:var(--font-title);font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.evt-types,.evt-days{display:flex;flex-wrap:wrap;gap:5px}
+.evt-types .tipo-tag{opacity:.55;color:var(--tctext,#000)}
+.evt-types .tipo-tag.sel{opacity:1;outline:2px solid var(--brand);outline-offset:2px}
+.evt-day{padding:4px 9px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-size:11px;font-weight:800;cursor:pointer;font-family:var(--font-body)}
+.evt-day.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.evt-pct{display:flex;align-items:center;gap:8px}
+.evt-pct input{width:90px}
+.evt-act{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--surface2)}
+.evt-act-main{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:var(--text)}
+.evt-act-main small{display:block;font-size:11px;font-weight:600;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -879,6 +921,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <a class="nav-link" href="/abilitydex_adm">Abilities</a>
     <a class="nav-link" href="/movedex_adm">Moves</a>
     <a class="nav-link" href="/nationaldex">← Pokédex</a>
+    <button type="button" class="nav-chg-btn" onclick="evtToggle()" title="Distribuir um Pokémon pelas localidades e configurar o boost diário por tipo">Eventos <span class="nav-chg-n zero" id="evt-nav-n">0</span></button>
     <button type="button" class="nav-chg-btn" onclick="chgToggle()" title="Ver tudo o que foi editado e ainda não foi commitado">Edições <span class="nav-chg-n zero" id="chg-nav-n">0</span></button>
   </div>
 </nav>
@@ -9108,6 +9151,333 @@ async function kpMigrarLinksSprites() {
   const f = window.loadPokemon; if (typeof f !== 'function') return;
   window.loadPokemon = async function () { const r = await f.apply(this, arguments); kpRepararRepoSprites(); return r; };
 })();
+</script>
+<script>
+/* ═══ Eventos: barra lateral ═══
+   1) Localidades: escolhe um Pokémon (ou forma), marca as localidades onde ele aparece e a raridade em cada uma.
+      Grava em `encontros_local` do próprio Pokémon (mesmo formato da aba "Encontros por Local").
+   2) Boost diário: escolhe um tipo + bônus (%) + dias da semana e grava `boost_diario` em todo Pokémon/forma desse tipo:
+        boost_diario: [{ tipo:'fire', mult:1.5, dias:[1,3] }]   // dias = 0 (dom) … 6 (sáb); sem `dias` = todos os dias
+   Tudo só altera o pokemon.json em memória (entra em Edições); quem grava no GitHub é o "Commit pokemon.json". */
+const EVT = { tab: 'loc', pid: null, names: [], base: [], sel: {}, q: '', tipo: null, dias: new Set([0, 1, 2, 3, 4, 5, 6]) };
+const EVT_DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const evtRarLabel = v => ((RARIDADE_OPTS.find(o => o[0] === v) || [v, v])[1]).split(' (')[0];
+const evtClone = v => JSON.parse(JSON.stringify(v));
+const evtIsOpen = () => { const s = document.getElementById('evt-side'); return !!(s && s.classList.contains('open')); };
+
+function evtEnsureDom() {
+  if (document.getElementById('evt-side')) return;
+  const ov = document.createElement('div'); ov.className = 'chg-ov'; ov.id = 'evt-ov'; ov.onclick = () => evtToggle(false);
+  const sd = document.createElement('aside'); sd.className = 'chg-side evt-side'; sd.id = 'evt-side'; sd.setAttribute('aria-hidden', 'true');
+  const rarOpts = '<option value="">Raridade…</option>' + RARIDADE_OPTS.map(([v]) => `<option value="${v}">${evtRarLabel(v)}</option>`).join('');
+  sd.innerHTML =
+    '<div class="chg-head"><div class="chg-head-title">Eventos<small>Localidades por Pokémon e boost diário por tipo</small></div><button type="button" class="chg-x" onclick="evtToggle(false)" title="Fechar (Esc)">✕</button></div>'
+    + '<div class="evt-tabs"><button type="button" class="evt-tab active" data-tab="loc" onclick="evtSetTab(\'loc\')">📍 Localidades</button><button type="button" class="evt-tab" data-tab="boost" onclick="evtSetTab(\'boost\')">⚡ Boost diário</button></div>'
+    // ── aba Localidades
+    + '<div class="evt-pane on" id="evt-pane-loc">'
+    +   '<div class="evt-top">'
+    +     '<input type="search" class="evt-in" id="evt-pk-in" list="evt-dl" placeholder="Buscar Pokémon (ou forma) pelo nome…" autocomplete="off" oninput="evtPkInput(this.value)"><datalist id="evt-dl"></datalist>'
+    +     '<div id="evt-pk-head"></div>'
+    +     '<div class="evt-bulk" id="evt-bulk">'
+    +       '<label class="evt-all" title="Marca/desmarca todas as localidades visíveis"><input type="checkbox" id="evt-all" onchange="evtAll(this.checked)"> Selecionar todas</label>'
+    +       `<select class="evt-sel" id="evt-bulk-rar" title="Uma única raridade para todas as localidades marcadas">${rarOpts}</select>`
+    +       '<button type="button" class="btn btn-outline btn-xs" onclick="evtBulkRar()">Aplicar às marcadas</button>'
+    +     '</div>'
+    +     '<input type="search" class="evt-in" id="evt-q" placeholder="Filtrar localidades…" oninput="EVT.q=this.value;evtRenderList()">'
+    +   '</div>'
+    +   '<div class="evt-list" id="evt-list"></div>'
+    +   '<div class="evt-apply"><span class="evt-sum" id="evt-sum"></span><button type="button" class="btn btn-primary btn-sm" id="evt-apply" onclick="evtAplicarLoc()">Aplicar ao Pokémon</button></div>'
+    + '</div>'
+    // ── aba Boost diário
+    + '<div class="evt-pane" id="evt-pane-boost">'
+    +   '<div class="evt-box">'
+    +     '<div class="evt-lbl">Tipo</div><div class="evt-types" id="evt-types"></div>'
+    +     '<div class="evt-lbl">Bônus de aparição</div>'
+    +     '<div class="evt-pct"><input type="number" class="evt-in" id="evt-pct" value="50" min="1" max="500" step="5" oninput="evtMultTxt()"><span>%</span><small class="pend-note" id="evt-mult"></small></div>'
+    +     '<div class="evt-lbl">Dias da semana</div><div class="evt-days" id="evt-days"></div>'
+    +     '<div class="pend-note" id="evt-match"></div>'
+    +     '<button type="button" class="btn btn-primary btn-sm" onclick="evtBoostAplicar()">⚡ Aplicar boost</button>'
+    +   '</div>'
+    +   '<div class="chg-sec">Boosts ativos</div><div id="evt-active"></div>'
+    + '</div>'
+    + '<div class="chg-foot"><span class="pend-note">Só no navegador até commitar o pokemon.json.</span><button type="button" class="btn btn-success btn-sm" onclick="togglePendPanel(false);runManualBackup()">Commitar agora</button></div>';
+  document.body.appendChild(ov); document.body.appendChild(sd);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && evtIsOpen()) evtToggle(false); });
+  const list = document.getElementById('evt-list');
+  list.addEventListener('change', e => {
+    const row = e.target.closest('.evt-loc'); if (!row) return;
+    const n = EVT.names[+row.dataset.i], s = EVT.sel[n]; if (!s) return;
+    if (e.target.classList.contains('evt-ck')) {
+      s.on = e.target.checked;
+      if (s.on && !s.orig && !s.rar) s.rar = 'comum';
+      row.classList.toggle('on', s.on); row.querySelector('.evt-rar').disabled = !s.on;
+    } else if (e.target.classList.contains('evt-rar')) { s.rar = e.target.value; }
+    evtSyncAll(); evtSum();
+  });
+  const days = document.getElementById('evt-days');
+  days.innerHTML = EVT_DIAS.map((d, i) => `<button type="button" class="evt-day on" data-d="${i}">${d}</button>`).join('');
+  days.addEventListener('click', e => {
+    const b = e.target.closest('.evt-day'); if (!b) return;
+    const d = +b.dataset.d; if (EVT.dias.has(d)) EVT.dias.delete(d); else EVT.dias.add(d);
+    b.classList.toggle('on', EVT.dias.has(d));
+  });
+  const types = document.getElementById('evt-types');
+  types.innerHTML = TIPO_LIST.map(([t, tc, tx]) => `<span class="tipo-tag" data-tipo="${t}" style="--tc:${tc};--tctext:${tx}">${t.charAt(0).toUpperCase() + t.slice(1)}</span>`).join('');
+  types.addEventListener('click', e => {
+    const el = e.target.closest('.tipo-tag'); if (!el) return;
+    EVT.tipo = EVT.tipo === el.dataset.tipo ? null : el.dataset.tipo;
+    types.querySelectorAll('.tipo-tag').forEach(x => x.classList.toggle('sel', x.dataset.tipo === EVT.tipo));
+    evtMatchTxt();
+  });
+  evtMultTxt();
+}
+
+async function evtToggle(force) {
+  evtEnsureDom();
+  const sd = document.getElementById('evt-side'), ov = document.getElementById('evt-ov');
+  const open = typeof force === 'boolean' ? force : !sd.classList.contains('open');
+  if (open) chgToggle(false);   // só uma barra lateral por vez
+  sd.classList.toggle('open', open); ov.classList.toggle('open', open); sd.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (!open) return;
+  try { if (!PKJ.loaded && typeof pkjLoad === 'function') await pkjLoad(); } catch (e) { /* tratado abaixo */ }
+  if (!PKJ.loaded) { document.getElementById('evt-list').innerHTML = '<div class="chg-empty">A lista de Pokémon ainda não carregou. Feche e abra de novo em instantes.</div>'; return; }
+  enclMontarIndicePk();
+  const dl = document.getElementById('evt-dl');
+  dl.innerHTML = Object.values(ENCL.pk).map(x => `<option value="${enclEsc(x.nome)}"></option>`).join('');
+  try { await ensureLocaisLoaded(); } catch (e) { /* segue com o que houver */ }
+  if (EVT.pid && !enclAlvo(EVT.pid)) { EVT.pid = null; }
+  if (EVT.pid) evtLoadPk(EVT.pid); else { evtRenderHead(); evtRenderList(); }
+  evtRenderBoost();
+}
+function evtSetTab(t) {
+  EVT.tab = t;
+  document.querySelectorAll('#evt-side .evt-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.getElementById('evt-pane-loc').classList.toggle('on', t === 'loc');
+  document.getElementById('evt-pane-boost').classList.toggle('on', t === 'boost');
+  if (t === 'boost') evtRenderBoost();
+}
+
+/* ── Localidades ── */
+function evtRarOf(regras) {
+  const set = new Set((regras || []).map(r => (r && r.raridade) || 'comum'));
+  return set.size === 1 ? [...set][0] : '';   // '' = raridades diferentes entre as condições do local
+}
+function evtPkInput(v) {
+  const pid = ENCL.nomes[String(v || '').trim().toLowerCase()];
+  if (pid && pid !== EVT.pid) evtLoadPk(pid);
+}
+function evtLoadPk(pid) {
+  const t = enclAlvo(pid); if (!t) return;
+  EVT.pid = pid; EVT.q = ''; const q = document.getElementById('evt-q'); if (q) q.value = '';
+  EVT.base = locaisDoRegistro(t.obj);
+  const names = (S.locais.all || []).map(l => l.nome).filter(Boolean);
+  EVT.base.forEach(b => { if (!names.includes(b.nome)) names.push(b.nome); });   // local que o Pokémon já tem mas não está na lista geral
+  EVT.names = names; EVT.sel = {};
+  names.forEach(n => {
+    const b = EVT.base.find(x => x.nome === n);
+    const r = b ? evtRarOf(b.regras) : 'comum';
+    EVT.sel[n] = { on: !!b, orig: !!b, rar: r, origRar: r };
+  });
+  evtRenderHead(); evtRenderList();
+}
+function evtRenderHead() {
+  const h = document.getElementById('evt-pk-head'), bulk = document.getElementById('evt-bulk'); if (!h) return;
+  if (!EVT.pid || !ENCL.pk[EVT.pid]) { h.innerHTML = ''; bulk.classList.remove('show'); return; }
+  const x = ENCL.pk[EVT.pid];
+  const sub = (/^\d+$/.test(EVT.pid) ? '#' + EVT.pid.padStart(3, '0') + ' · ' : '') + (x.t || []).map(cap).join(' / ');
+  h.innerHTML = `<div class="evt-pk">${chgThumb(x.sprite)}<div><div class="evt-pk-n">${chgEsc(x.nome)}</div><div class="evt-pk-s">${chgEsc(sub)}</div></div></div>`;
+  bulk.classList.add('show');
+}
+function evtRarOpts(s) {
+  const padrao = RARIDADE_OPTS.map(o => o[0]);
+  let h = '';
+  if (s.rar === '') h += '<option value="" selected>Mista (manter)</option>';
+  else if (!padrao.includes(s.rar)) h += `<option value="${chgEsc(s.rar)}" selected>${chgEsc(s.rar)}</option>`;
+  return h + padrao.map(v => `<option value="${v}"${v === s.rar ? ' selected' : ''}>${evtRarLabel(v)}</option>`).join('');
+}
+function evtVisiveis() {
+  const q = (EVT.q || '').trim().toLowerCase();
+  return EVT.names.map((n, i) => [n, i]).filter(([n]) => !q || n.toLowerCase().includes(q));
+}
+function evtRenderList() {
+  const el = document.getElementById('evt-list'); if (!el) return;
+  if (!EVT.pid) { el.innerHTML = '<div class="chg-empty">Escolha um Pokémon acima para ver e distribuir as localidades dele.</div>'; evtSum(); return; }
+  const vis = evtVisiveis();
+  el.innerHTML = vis.length ? vis.map(([n, i]) => {
+    const s = EVT.sel[n];
+    return `<div class="evt-loc${s.on ? ' on' : ''}" data-i="${i}"><label class="evt-loc-l"><input type="checkbox" class="evt-ck"${s.on ? ' checked' : ''}><span class="evt-loc-n" title="${chgEsc(n)}">${chgEsc(n)}</span>${s.orig ? '<span class="evt-tag">atual</span>' : ''}</label><select class="evt-sel evt-rar"${s.on ? '' : ' disabled'}>${evtRarOpts(s)}</select></div>`;
+  }).join('') : '<div class="chg-empty">Nenhuma localidade encontrada.</div>';
+  evtSyncAll(); evtSum();
+}
+function evtSyncAll() {
+  const cb = document.getElementById('evt-all'); if (!cb) return;
+  const vis = evtVisiveis(), on = vis.filter(([n]) => EVT.sel[n].on).length;
+  cb.checked = vis.length > 0 && on === vis.length; cb.indeterminate = on > 0 && on < vis.length;
+}
+function evtAll(checked) {
+  evtVisiveis().forEach(([n]) => { const s = EVT.sel[n]; s.on = checked; if (checked && !s.orig && !s.rar) s.rar = 'comum'; });
+  evtRenderList();
+}
+function evtBulkRar() {
+  const v = document.getElementById('evt-bulk-rar').value;
+  if (!EVT.pid) { toast('Escolha um Pokémon primeiro.', 'err'); return; }
+  if (!v) { toast('Escolha a raridade que será aplicada às marcadas.', 'err'); return; }
+  const marcadas = evtVisiveis().filter(([n]) => EVT.sel[n].on);
+  if (!marcadas.length) { toast('Marque ao menos uma localidade (ou use “Selecionar todas”).', 'err'); return; }
+  marcadas.forEach(([n]) => { EVT.sel[n].rar = v; });
+  evtRenderList();
+  toast(`Raridade ${evtRarLabel(v)} definida em ${marcadas.length} localidade(s) — falta “Aplicar ao Pokémon”.`, 'ok');
+}
+function evtDiff() {
+  let add = 0, rem = 0, chg = 0, on = 0;
+  EVT.names.forEach(n => {
+    const s = EVT.sel[n]; if (s.on) on++;
+    if (s.on && !s.orig) add++; else if (!s.on && s.orig) rem++;
+    else if (s.on && s.orig && s.rar !== '' && s.rar !== s.origRar) chg++;
+  });
+  return { add, rem, chg, on };
+}
+function evtSum() {
+  const el = document.getElementById('evt-sum'), btn = document.getElementById('evt-apply'); if (!el) return;
+  if (!EVT.pid) { el.textContent = ''; btn.disabled = true; return; }
+  const d = evtDiff(), partes = [];
+  if (d.add) partes.push(`+${d.add} nova(s)`); if (d.rem) partes.push(`−${d.rem} removida(s)`); if (d.chg) partes.push(`${d.chg} com raridade alterada`);
+  el.textContent = `${d.on} marcada(s)` + (partes.length ? ' · ' + partes.join(' · ') : ' · sem alterações');
+  btn.disabled = !partes.length;
+}
+function evtAplicarLoc() {
+  try {
+    pkjCheck();
+    const t = enclAlvo(EVT.pid); if (!t) throw new Error('Pokémon não encontrado no pokemon.json');
+    const d = evtDiff(); if (!d.add && !d.rem && !d.chg) return;
+    const nome = (ENCL.pk[EVT.pid] || {}).nome || EVT.pid;
+    if (d.rem && !confirm(`Remover ${nome} de ${d.rem} localidade(s)?\n\nAs condições e raridades que ele tinha nelas serão apagadas (até você descartar sem commitar).`)) return;
+    const antes = pkjStable(t.obj.encontros_local || null);
+    const novos = [];
+    // mantém a ordem atual e a lista completa de condições; só troca a raridade quando ela foi alterada
+    EVT.base.forEach(b => {
+      const s = EVT.sel[b.nome]; if (!s || !s.on) return;
+      let regras = evtClone(b.regras || []);
+      if (s.rar !== '' && s.rar !== s.origRar) regras = regras.map(r => ({ ...r, raridade: s.rar }));
+      novos.push({ local: b.nome, regras: regrasLimpas(regras) });
+    });
+    EVT.names.forEach(n => {
+      const s = EVT.sel[n]; if (!s.on || s.orig) return;
+      novos.push({ local: n, regras: regrasLimpas([{ ...regraPadrao(), raridade: s.rar || 'comum' }]) });
+    });
+    if (novos.length) t.obj.encontros_local = novos; else delete t.obj.encontros_local;
+    if (Array.isArray(t.obj.biomas) && t.obj.biomas.length) t.obj.biomas = null;   // campo antigo: tudo vive em `encontros_local`
+    if (pkjStable(t.obj.encontros_local || null) !== antes) { t.row.updated_at = new Date().toISOString(); pkjSujo(); }
+    evtLoadPk(EVT.pid);
+    toast(`✓ ${nome}: localidades atualizadas — falta o Commit pokemon.json.`, 'ok');
+  } catch (e) { toast('Erro ao aplicar: ' + e.message, 'err'); }
+}
+
+/* ── Boost diário por tipo ── */
+function evtTiposDe(pid) { const x = ENCL.pk[pid]; return ((x && x.t) || []).map(v => String(v).toLowerCase()); }
+function evtBoostAlvos(tipo) {
+  const out = [];
+  enclTodos((pid, obj, row) => { if (evtTiposDe(pid).includes(tipo)) out.push({ pid, obj, row }); });
+  return out;
+}
+function evtBoostsAtivos() {
+  const m = {};
+  enclTodos((pid, obj) => {
+    (Array.isArray(obj.boost_diario) ? obj.boost_diario : []).forEach(b => {
+      if (!b || !b.tipo) return;
+      const e = m[b.tipo] || (m[b.tipo] = { tipo: b.tipo, mult: b.mult, dias: b.dias, n: 0 });
+      e.n++;
+    });
+  });
+  return Object.values(m).sort((a, b) => a.tipo.localeCompare(b.tipo));
+}
+function evtDiasTxt(dias) { return (Array.isArray(dias) && dias.length && dias.length < 7) ? dias.map(d => EVT_DIAS[d]).filter(Boolean).join(', ') : 'todos os dias'; }
+function evtMultTxt() {
+  const el = document.getElementById('evt-mult'), v = parseFloat(String(document.getElementById('evt-pct').value).replace(',', '.'));
+  if (el) el.textContent = isFinite(v) && v > 0 ? `= multiplicador ×${(Math.round((1 + v / 100) * 100) / 100).toString().replace('.', ',')}` : '';
+}
+function evtMatchTxt() {
+  const el = document.getElementById('evt-match'); if (!el) return;
+  if (!EVT.tipo) { el.textContent = 'Escolha um tipo para ver quantos Pokémon/formas serão afetados.'; return; }
+  if (!PKJ.loaded) { el.textContent = ''; return; }
+  enclMontarIndicePk();
+  el.textContent = `Afeta ${evtBoostAlvos(EVT.tipo).length} Pokémon/formas com o tipo ${cap(EVT.tipo)} (principal ou secundário).`;
+}
+function evtTipoTag(t) {
+  const x = TIPO_LIST.find(a => a[0] === t) || [t, '#ccc', '#000'];
+  return `<span class="tipo-tag" style="--tc:${x[1]};--tctext:${x[2]};color:${x[2]};cursor:default">${chgEsc(cap(t))}</span>`;
+}
+function evtRenderBoost() {
+  evtMatchTxt();
+  const el = document.getElementById('evt-active'); if (!el) return;
+  if (!PKJ.loaded) { el.innerHTML = ''; return; }
+  const l = evtBoostsAtivos();
+  el.innerHTML = l.length ? l.map(b => `<div class="evt-act">${evtTipoTag(b.tipo)}<div class="evt-act-main">+${Math.round(((+b.mult || 1) - 1) * 100)}% · ${chgEsc(evtDiasTxt(b.dias))}<small>${b.n} Pokémon/forma(s)</small></div><button type="button" class="btn btn-danger btn-xs" onclick="evtBoostRemover('${b.tipo}')">Remover</button></div>`).join('')
+    : '<div class="chg-empty">Nenhum boost diário ativo.</div>';
+  evtBadge();
+}
+function evtBoostAplicar() {
+  try {
+    pkjCheck();
+    if (!EVT.tipo) { toast('Escolha o tipo que receberá o boost.', 'err'); return; }
+    const pct = parseFloat(String(document.getElementById('evt-pct').value).replace(',', '.'));
+    if (!isFinite(pct) || pct <= 0 || pct > 500) { toast('Informe um bônus entre 1% e 500%.', 'err'); return; }
+    const dias = [...EVT.dias].sort((a, b) => a - b);
+    if (!dias.length) { toast('Marque ao menos um dia da semana.', 'err'); return; }
+    enclMontarIndicePk();
+    const alvos = evtBoostAlvos(EVT.tipo);
+    if (!alvos.length) { toast(`Nenhum Pokémon do tipo ${cap(EVT.tipo)} encontrado.`, 'err'); return; }
+    const entry = { tipo: EVT.tipo, mult: Math.round((1 + pct / 100) * 100) / 100 };
+    if (dias.length < 7) entry.dias = dias;
+    if (!confirm(`Aplicar +${pct}% (${evtDiasTxt(entry.dias)}) em ${alvos.length} Pokémon/forma(s) do tipo ${cap(EVT.tipo)}?\n\nSe eles já tiverem boost desse tipo, ele é substituído.`)) return;
+    const agora = new Date().toISOString();
+    alvos.forEach(a => {
+      a.obj.boost_diario = (Array.isArray(a.obj.boost_diario) ? a.obj.boost_diario : []).filter(b => b && b.tipo !== EVT.tipo).concat([{ ...entry }]);
+      a.row.updated_at = agora;
+    });
+    pkjSujo(); evtRenderBoost();
+    toast(`⚡ Boost aplicado em ${alvos.length} Pokémon/forma(s) — falta o Commit pokemon.json.`, 'ok');
+  } catch (e) { toast('Erro ao aplicar boost: ' + e.message, 'err'); }
+}
+function evtBoostRemover(tipo) {
+  try {
+    pkjCheck();
+    let n = 0; const agora = new Date().toISOString();
+    if (!confirm(`Remover o boost do tipo ${cap(tipo)} de todos os Pokémon?`)) return;
+    enclTodos((pid, obj, row) => {
+      if (!Array.isArray(obj.boost_diario)) return;
+      const nova = obj.boost_diario.filter(b => b && b.tipo !== tipo);
+      if (nova.length === obj.boost_diario.length) return;
+      if (nova.length) obj.boost_diario = nova; else delete obj.boost_diario;
+      row.updated_at = agora; n++;
+    });
+    if (n) pkjSujo();
+    evtRenderBoost();
+    toast(`Boost de ${cap(tipo)} removido de ${n} Pokémon/forma(s) — falta o Commit pokemon.json.`, 'ok');
+  } catch (e) { toast('Erro ao remover: ' + e.message, 'err'); }
+}
+
+/* ── Contador no botão da barra superior (nº de tipos com boost ativo) ── */
+function evtBadge() {
+  const el = document.getElementById('evt-nav-n'); if (!el) return;
+  let n = 0; try { if (typeof PKJ !== 'undefined' && PKJ.loaded && S.pk && S.pk.dbMap) n = evtBoostsAtivos().length; } catch (e) { /* ignora */ }
+  el.textContent = n; el.classList.toggle('zero', !n);
+}
+let _evtT = null; function evtBadgeSoon() { clearTimeout(_evtT); _evtT = setTimeout(() => { evtBadge(); if (evtIsOpen() && EVT.tab === 'boost') evtRenderBoost(); }, 600); }
+['pkjLoad', 'pkjGravar', 'pkjSincronizarClick', 'pkjAplicarNaMemoria'].forEach(n => {
+  const f = window[n]; if (typeof f !== 'function') return;
+  window[n] = function () { const r = f.apply(this, arguments); if (r && typeof r.then === 'function') r.then(evtBadgeSoon, evtBadgeSoon); else evtBadgeSoon(); return r; };
+});
+/* abrir Edições fecha Eventos (uma barra lateral por vez) */
+(function () {
+  const f = window.chgToggle; if (typeof f !== 'function') return;
+  window.chgToggle = function (force) {
+    const r = f.apply(this, arguments);
+    if (force !== false && evtIsOpen()) evtToggle(false);
+    return r;
+  };
+})();
+evtEnsureDom(); evtBadgeSoon();
 </script>
 </body>
 </html>
