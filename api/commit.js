@@ -28,6 +28,23 @@ const ghHeaders = token => ({
   'User-Agent': 'kingdomplatinum-commit',
 });
 
+// Chave de transição: true = ainda aceita o modo antigo (só o nome/email do admin, SEM senha).
+// Esse modo é a falha de segurança: desligue (false) assim que todas as páginas ADM enviarem admin_nome/admin_senha.
+const ACEITAR_EMAIL_LEGADO = true;
+
+// Modo novo: nome+senha do PLAYER, conferidos no servidor, e papel lido de config.kp_staff.
+// chefe/admin editam tudo; MOD só edita o tipo do seu site (mods[tipo]). Retorna null se o corpo não usa o modo novo.
+async function adminOkPlayer(body, tipo) {
+  if (!body.admin_nome || !body.admin_senha) return null;
+  try {
+    const m = await import('./_staff.js'); const ST = m.default || m;
+    const eu = await ST.verificarPlayer(body.admin_nome, body.admin_senha);
+    if (!eu) return false;
+    const p = ST.papel(await ST.lerStaff(), eu.nome, tipo);
+    return p === 'chefe' || p === 'admin' || p === 'mod';
+  } catch (e) { return false; }
+}
+
 async function adminOk(email) {
   if (!email || typeof email !== 'string') return false;
   try {
@@ -292,9 +309,12 @@ export default async function handler(req, res) {
   if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Corpo da requisição inválido.' });
 
   try {
-    const exige = EXIGIR_ADMIN_EM_TODOS || !SEM_ADMIN_LEGADO.has(tipo) || body.admin != null;
-    if (exige && !(await adminOk(body.admin)))
-      return res.status(401).json({ error: 'Sessão de administrador inválida. Faça login de novo no painel.' });
+    const exige = EXIGIR_ADMIN_EM_TODOS || !SEM_ADMIN_LEGADO.has(tipo) || body.admin != null || body.admin_nome != null;
+    if (exige) {
+      const viaPlayer = await adminOkPlayer(body, tipo);
+      const ok = viaPlayer !== null ? viaPlayer : (ACEITAR_EMAIL_LEGADO && await adminOk(body.admin));
+      if (!ok) return res.status(401).json({ error: 'Sem permissão. Entre com seu player (nome e senha) e ative o modo ADM.' });
+    }
     return res.status(200).json(await fn(token, body));
   } catch (e) {
     return res.status(e instanceof HttpErr ? e.status : 500).json({ error: e.message || 'Erro inesperado' });
