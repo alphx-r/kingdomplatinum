@@ -7,7 +7,12 @@
 (function () {
   if (window.KPAdm) return;
   var SU = 'https://ucbkodkjlbatttiuqjtv.supabase.co', SKEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
-  var KS = 'kp_ficha_sessao', KP = 'kp_preview', KC = 'kp_staff_cache';
+  var KS = 'kp_ficha_sessao', KP = 'kp_preview', KC = 'kp_staff_cache', KT = 'kp_staff_ts', KJ = 'player_session', TTL = 600000;
+  /* lê/grava nos DOIS storages: sessionStorage (esta aba) e localStorage (vale para as outras abas e visitas).
+     rd(k, true) = a aba tem prioridade; rd(k) = o localStorage tem prioridade. A senha (kp_adm_cred) fica só na aba, de propósito. */
+  function rd(k, sf) { var f = [function () { return sessionStorage.getItem(k); }, function () { return localStorage.getItem(k); }]; if (!sf) f.reverse(); for (var i = 0; i < f.length; i++) { try { var v = f[i](); if (v != null) return v; } catch (e) {} } return null; }
+  function wr(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} try { localStorage.setItem(k, v); } catch (e) {} }
+  function js(k, sf) { try { return JSON.parse(rd(k, sf)); } catch (e) { return null; } }
   var PADRAO = { chefe: 'ricky', admins: ['jef', 'lucas'], mods: {} };
   var nrm = function (s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase(); };
 
@@ -23,12 +28,11 @@
     var mods = {}; Object.keys(v.mods || {}).forEach(function (k) { mods[String(k).toLowerCase()] = lista(v.mods[k]); });
     return { chefe: nrm(v.chefe) || PADRAO.chefe, admins: lista(v.admins), mods: mods };
   }
-  var staff = null;
-  try { staff = norm(JSON.parse(sessionStorage.getItem(KC))); } catch (e) {}
-  if (!staff) staff = PADRAO;
+  var staff = norm(js(KC)) || PADRAO;
 
-  function ses() { try { var s = JSON.parse(localStorage.getItem(KS)); return s && s.token ? s : null; } catch (e) { return null; } }
-  function nome() { var s = ses(); return s ? s.nome || '' : ''; }
+  function ses() { var s = js(KS); return s && s.token ? s : null; }
+  /* o nome vem do Fichário (kp_ficha_sessao) ou, na falta dele, do login do index (player_session) */
+  function nome() { var s = js(KS); if (s && s.nome) return s.nome; var j = js(KJ); return j && j.nome ? j.nome : ''; }
   function papel() {
     var n = nrm(nome()); if (!n) return null;
     if (n === staff.chefe) return 'chefe';
@@ -36,7 +40,7 @@
     var m = staff.mods[SITE]; if (m && m.indexOf(n) >= 0) return 'mod';
     return null;
   }
-  function modoOn() { try { return sessionStorage.getItem(KP) !== '1'; } catch (e) { return true; } }
+  function modoOn() { return rd(KP, true) !== '1'; }
 
   var ouvintes = [];
   function emit() { ouvintes.forEach(function (f) { try { f(); } catch (e) {} }); }
@@ -50,7 +54,7 @@
     Array.prototype.forEach.call(document.querySelectorAll(SEL), function (el) {
       var raw = el.textContent, txt = raw.replace(/^(ADM|MOD)\s+/, '').trim();
       /* páginas sem código próprio para o nome (npcdex...): preenche com o player logado */
-      if ((!txt || txt === '—') && ses() && nome() && el.hasAttribute('data-kp-fill')) txt = nome();
+      if ((!txt || txt === '—') && nome() && el.hasAttribute('data-kp-fill')) txt = nome();
       if (txt && raw !== txt) { busy = true; el.textContent = txt; busy = false; }
       var nx = el.nextElementSibling, sw = nx && nx.classList && nx.classList.contains('kp-sw') ? nx : null;
       var pv = el.previousElementSibling, rl = pv && pv.classList && pv.classList.contains('kp-role') ? pv : null;
@@ -73,8 +77,8 @@
   function toggle() {
     if (!papel()) return;
     /* torneios/stores já têm togPreview(): ela grava kp_preview e repinta a página */
-    if (typeof window.togPreview === 'function') { window.togPreview(); setTimeout(function () { pintar(); emit(); }, 260); return; }
-    try { sessionStorage.setItem(KP, modoOn() ? '1' : ''); } catch (e) {}
+    if (typeof window.togPreview === 'function') { window.togPreview(); setTimeout(function () { try { var sv = sessionStorage.getItem(KP); if (sv != null) localStorage.setItem(KP, sv); } catch (e) {} pintar(); emit(); }, 260); return; }
+    wr(KP, modoOn() ? '1' : '');
     pintar(); emit();
   }
 
@@ -144,7 +148,7 @@
           var r = await fetch('/api/ficha-salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'staff_salvar', nome: c.n, senha: c.s, staff: nv }) });
           var j = await r.json().catch(function () { return {}; });
           if (!r.ok) { if (r.status === 401 || r.status === 403) credLimpar(); throw new Error(j.error || 'Erro ' + r.status); }
-          staff = norm(j.staff) || staff; try { sessionStorage.setItem(KC, JSON.stringify(staff)); } catch (e) {}
+          staff = norm(j.staff) || staff; wr(KC, JSON.stringify(staff)); wr(KT, String(Date.now()));
           pintar(); emit();
           if (inl) { err.style.color = '#2e8b3a'; err.textContent = 'Equipe salva ✓'; } else d.close();
         } catch (e) { err.textContent = e.message; }
@@ -166,17 +170,22 @@
     pintar();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
-  window.addEventListener('storage', function (e) { if (e.key === KS) { pintar(); emit(); } });
+  window.addEventListener('storage', function (e) { if (e.key === KS || e.key === KJ) carregar(false); else if (e.key === KP) { pintar(); emit(); } });
 
-  /* ── carrega a lista de acesso ── */
-  var ready = fetch(SU + '/rest/v1/config?chave=eq.kp_staff&select=valor', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } })
-    .then(function (r) { return r.ok ? r.json() : []; })
-    .then(function (rows) {
-      var v = rows && rows[0] && rows[0].valor; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
-      var n = norm(v); if (n) { staff = n; try { sessionStorage.setItem(KC, JSON.stringify(v)); } catch (e) {} }
-    })
-    .catch(function () {})
-    .then(function () { pintar(); emit(); });
+  /* ── carrega a lista de acesso: só vai ao servidor se há player identificado e o cache (local+aba) passou de 10 min ── */
+  function carregar(forcar) {
+    var fresco = !!js(KC) && Date.now() - (+rd(KT) || 0) < TTL;
+    if (!forcar && (!nome() || fresco)) return Promise.resolve().then(function () { pintar(); emit(); });
+    return fetch(SU + '/rest/v1/config?chave=eq.kp_staff&select=valor', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) {
+        var v = rows && rows[0] && rows[0].valor; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+        var n = norm(v); if (n) { staff = n; wr(KC, JSON.stringify(v)); wr(KT, String(Date.now())); }
+      })
+      .catch(function () {})
+      .then(function () { pintar(); emit(); });
+  }
+  var ready = carregar(false);
 
   window.KPAdm = {
     site: SITE, ready: ready,
