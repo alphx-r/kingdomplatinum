@@ -4592,7 +4592,7 @@ window.calcSituSoma = function(){
           <label>Motivo</label>
           <input type="text" id="evento-dice-motivo" placeholder="Ex: Ataque, Fuga..."/>
         </div>
-        <div class="ctrl-group" id="evento-qtd-roll-wrap" style="display:none;max-width:130px">
+        <div class="ctrl-group" id="evento-qtd-roll-wrap" style="display:none;min-width:150px;max-width:170px">
           <label>Qtd. de rolagens</label>
           <input type="number" id="evento-qtd-roll" placeholder="1" min="1" max="50"/>
         </div>
@@ -18045,10 +18045,21 @@ async function iniciarPaginaEvento(slug){
         qtdIn.max = _qcfg.max;
         qtdIn.value = _qcfg.valor;
         qtdIn.readOnly = _qcfg.travado;
-        qtdWrap.style.opacity = _qcfg.travado ? '.6' : '';
-        qtdWrap.style.pointerEvents = _qcfg.travado ? 'none' : '';
+        // travado: mantém o rótulo em uma linha só e mostra o valor como "pílula" fixa (sem esmaecer tudo)
+        qtdWrap.style.opacity = '';
+        qtdWrap.style.pointerEvents = '';
+        qtdIn.tabIndex = _qcfg.travado ? -1 : 0;
+        qtdIn.style.pointerEvents = _qcfg.travado ? 'none' : '';
+        qtdIn.style.background = _qcfg.travado ? 'var(--surface2)' : '';
+        qtdIn.style.fontWeight = _qcfg.travado ? '700' : '';
+        qtdIn.style.textAlign = _qcfg.travado ? 'center' : '';
+        qtdIn.style.cursor = _qcfg.travado ? 'not-allowed' : '';
+        qtdIn.title = _qcfg.travado ? 'Valor fixo definido pelo evento' : '';
         const lbl = qtdWrap.querySelector('label');
-        if(lbl) lbl.innerHTML = 'Qtd. de rolagens' + (_qcfg.travado ? ' <span style="font-size:10px;color:var(--muted)">🔒 travado</span>' : '');
+        if(lbl){
+          lbl.style.whiteSpace = 'nowrap';
+          lbl.innerHTML = 'Qtd. de rolagens' + (_qcfg.travado ? ' <span title="Valor fixo definido pelo evento" style="font-size:11px">🔒</span>' : '');
+        }
       }
       if(rollBtn){
         const _titAtivas = _eventoPoolsAtivas(ev).map(function(p){ return (p.titulo||'').trim(); }).filter(Boolean).join(' + ');
@@ -18495,36 +18506,10 @@ async function rolarDadoEvento(){
   const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
   const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
 
-  // Exibe resultado na área de resultados — sempre no mesmo formato
-  // (grade de resultados), seja 1 rolagem ou várias, com ou sem pool.
+  // O resultado NÃO é mais desenhado aqui: o histórico logo abaixo já mostra esta
+  // rolagem no topo (mesmo card), então exibir os dois duplicava o resultado.
   const section = document.getElementById('evento-results');
-  if(section){
-    const rotulo = '🎲';
-    const _unico = qtd === 1
-      ? '<div style="margin:0 -14px">' + _dadoCardBodyHtml({personagem, lados, motivo, resultado: rolagens[0].resultado, item: rolagens[0].item, subDe: rolagens[0].subDe, temPool: !!poolAtiva}) + '</div>'
-      : '';
-    const resumo = qtd === 1
-      ? `${personagem} rolou <strong>1d${lados}</strong> para <strong>${motivo}</strong> e obteve: <strong style="color:var(--brand-mid)">${soma}</strong>`
-      : `${personagem} rolou <strong>${qtd}d${lados}</strong> para <strong>${motivo}</strong>: [${rolagens.map(r=>r.resultado).join(', ')}] = <strong style="color:var(--brand-mid)">${soma}</strong>`;
-    section.innerHTML = `<div class="rol-entry" style="animation:fadeUp .35s both">
-      <div class="rol-entry-header">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="rol-entry-bioma" style="background:${poolAtiva?'#e6f4e6':'#f0e8ff'};color:${poolAtiva?'#1a7a1a':'#5a1a9a'}">${rotulo} ${qtd}d${lados}</span>
-          <span class="rol-entry-bioma">${ev.slug}</span>
-        </div>
-        <span class="rol-entry-hora">${hora} · ${data}</span>
-      </div>
-      ${qtd === 1 ? _unico : (poolAtiva ? '' : `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>`)}
-      ${qtd === 1 ? '' : `      <div class="loot-items-grid">
-        ${rolagens.map(function(r){
-          if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
-          if(poolAtiva) return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
-          return '<div class="loot-item-card"><span class="loot-dice-badge">'+r.resultado+'</span></div>';
-        }).join('')}
-      </div>`}
-    </div>`;
-    if(itensGanhos.length) _lootFetchSprites(itensGanhos);
-  }
+  if(section) section.innerHTML = '';
 
   // Salva UMA entrada coletiva no histórico (não uma linha por dado) —
   // guarda o array de rolagens/itens em `lote` pra renderHistoricoEvento
@@ -18538,6 +18523,7 @@ async function rolarDadoEvento(){
   eventoHistorico.unshift(savedRow ? {...savedRow, tipo:'dado'} : {...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
   eventoHistPagina = 0;
   renderHistoricoEvento();
+  if(itensGanhos.length) _lootFetchSprites(itensGanhos);
   if(loaded.rolagens) renderRolagens();
 }
 
