@@ -4205,7 +4205,13 @@ window.calcSituSoma = function(){
       .cpk-efetivo{font-size:10px}
     }
     .cpk-hints{font-size:11px;color:var(--muted);line-height:1.6;margin-top:4px}
-    .cpk-time{border-bottom:1.5px dashed var(--border);margin-bottom:10px;padding-bottom:10px}
+    .cpk-salvos-btn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;letter-spacing:.4px}
+    .cpk-salvos-btn .cpk-salvos-n{font-weight:800;color:var(--brand)}
+    .cpk-salvos-btn .cpk-salvos-seta{display:inline-block;transition:transform .15s}
+    .cpk-salvos-btn[aria-expanded=true] .cpk-salvos-seta{transform:rotate(180deg)}
+    .cpk-salvos[hidden]{display:none}
+    .cpk-salvos{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:12px;margin-bottom:12px}
+    .cpk-time{min-width:0;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);padding:10px}
     .cpk-time-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
     .cpk-time-t{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-right:auto}
     .cpk-time-t b{color:var(--brand);font-weight:800}
@@ -4255,7 +4261,6 @@ window.calcSituSoma = function(){
             <div class="cpk-f"><label class="l" for="${id('fpk')}">Pokémon da ficha</label><select id="${id('fpk')}"><option value="">—</option></select></div>
           </div>
         </div>
-        <div class="cpk-time" id="${id('time')}"></div>
         <div class="cpk-row n">
           <div class="cpk-f"><label class="l" for="${id('nome')}">Pokémon</label><input id="${id('nome')}" type="text" list="cpk-nomes" autocomplete="off" placeholder="Buscar…"/></div>
           <div class="cpk-f"><label class="l" for="${id('nivel')}">Nível</label><input id="${id('nivel')}" type="number" min="1" max="100" placeholder="Lv"/></div>
@@ -4450,6 +4455,11 @@ window.calcSituSoma = function(){
         <input type="checkbox" id="cpk-auto" checked hidden/>
         <button type="button" class="cpk-btn" id="cpk-swap" title="Troca todos os dados entre Pokémon 1 e 2">⇄ Trocar</button>
         <button type="button" class="cpk-btn mut" id="cpk-clear">Limpar</button>
+        <button type="button" class="cpk-btn cpk-salvos-btn" id="cpk-salvos-btn" aria-expanded="false" aria-controls="cpk-salvos" title="Mostrar/ocultar seus Pokémon salvos">PKMN SALVOS <span class="cpk-salvos-n" id="cpk-salvos-n"></span><span class="cpk-salvos-seta">▾</span></button>
+      </div>
+      <div class="cpk-salvos" id="cpk-salvos" hidden>
+        <div class="cpk-time" id="cpk-p1-time"></div>
+        <div class="cpk-time" id="cpk-p2-time"></div>
       </div>
       <div class="cpk-grid">${cardHtml('p1', ICO_ATK+' Atacante · Pokémon 1')}${cardHtml('p2', ICO_DEF+' Defensor · Pokémon 2')}</div>
       <label class="cpk-disp-bar" for="cpk-disputa-on">
@@ -4722,7 +4732,7 @@ window.calcSituSoma = function(){
     const nomeCard = normNome($('cpk-'+s+'-nome')?.value || '');
     const cheios = logado ? _time.slots.filter(Boolean).length : 0;
     const noSlot = logado && _slotDe[s] >= 0 && _time.slots[_slotDe[s]] && normNome(_time.slots[_slotDe[s]].nome) === nomeCard;
-    let h = '<div class="cpk-time-h"><span class="cpk-time-t">Meus Pokémon <b>' + cheios + '/' + TIME_MAX + '</b></span>' +
+    let h = '<div class="cpk-time-h"><span class="cpk-time-t">PKMN SALVOS · ' + (s === 'p1' ? 'Atacante' : 'Defensor') + ' <b>' + cheios + '/' + TIME_MAX + '</b></span>' +
       '<button type="button" class="cpk-btn" data-act="salvar" data-s="'+s+'"' + (logado && !_time.carregando ? '' : ' disabled') +
       ' title="Guarda o Pokémon deste card no seu time (nome, nível, tipos, stats e golpes)">' + (noSlot ? 'Atualizar' : 'Salvar') + '</button></div>';
     h += '<div class="cpk-time-chips">';
@@ -4740,8 +4750,15 @@ window.calcSituSoma = function(){
     const msg = !logado ? 'Entre com seu player para guardar até ' + TIME_MAX + ' Pokémon.' : (_time.carregando ? 'Carregando seu time…' : _timeMsg[s]);
     h += '<div class="cpk-time-msg">' + _esc(msg || '') + '</div>';
     if(box._h !== h){ box._h = h; box.innerHTML = h; }
+    const nBadge = $('cpk-salvos-n'); if(nBadge) nBadge.textContent = logado ? cheios + '/' + TIME_MAX : '';
   }
   function ligarTime(panel){
+    const btnSalvos = $('cpk-salvos-btn'), gaveta = $('cpk-salvos');
+    if(btnSalvos && gaveta) btnSalvos.addEventListener('click', () => {
+      const abrir = gaveta.hidden; gaveta.hidden = !abrir;
+      btnSalvos.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+      if(abrir){ renderTime('p1'); renderTime('p2'); }
+    });
     panel.addEventListener('click', e => {
       const b = e.target.closest?.('[data-act]'); if(!b || !panel.contains(b) || b.disabled) return;
       const s = b.dataset.s, i = parseInt(b.dataset.i);
