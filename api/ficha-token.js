@@ -2,11 +2,12 @@
 // Variáveis de ambiente (Vercel > Settings > Environment Variables, marcadas para Production):
 //   INDEX_SUPA_URL, INDEX_SUPA_KEY            -> projeto do index (URL e chave anon)
 //   FICHAS_SUPA_URL, FICHAS_SUPA_SERVICE_KEY  -> projeto das fichas (URL e chave service_role, NUNCA no front)
-const H = k => ({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' });
-// Players com poder de admin (mesma lista do fichas.html): entram com a senha de player, mas o token sai como 'admin',
-// que é o que o ficha_salvar do Supabase aceita para editar ficha de outro player.
-const ADM_PLAYERS = ['ricky', 'jef', 'lucas'];
-const nrm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase();
+const H = k => String(k).startsWith('sb_')
+  ? { apikey: k, 'Content-Type': 'application/json' }   // chaves novas (sb_publishable_/sb_secret_) só vão no header apikey
+  : { apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' };   // chaves antigas (JWT)
+// Players com poder de admin (chefe + ADMs de config.kp_staff): entram com a senha de player, mas o token sai como 'admin',
+// que é o que o ficha_salvar do Supabase aceita para editar ficha de outro player. MOD não vira admin aqui.
+const S = require('./_staff');
 const ENV = ['INDEX_SUPA_URL', 'INDEX_SUPA_KEY', 'FICHAS_SUPA_URL', 'FICHAS_SUPA_SERVICE_KEY'];
 
 module.exports = async (req, res) => {
@@ -52,7 +53,11 @@ module.exports = async (req, res) => {
         if (Array.isArray(rows) && rows[0] && rows[0].ativo === false) return res.status(403).json({ error: 'Este player está desativado. Fale com a administração.' });
       }
     }
-    if (id != null && id !== 'admin' && (ADM_PLAYERS.includes(nrm(nomeFinal)) || ADM_PLAYERS.includes(nrm(nome)))) id = 'admin';
+    if (id != null && id !== 'admin') {
+      const staff = await S.lerStaff();
+      const adm = n => ['chefe', 'admin'].includes(S.papel(staff, n));
+      if (adm(nomeFinal) || adm(nome)) id = 'admin';
+    }
     if (id == null) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
     // p_admin: grava player_tokens.admin = true; é essa coluna que o ficha_salvar/ficha_excluir conferem para liberar edição de ficha alheia.
