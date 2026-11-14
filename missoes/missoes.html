@@ -1218,8 +1218,11 @@ $('mq-del').onclick=()=>{
 };
 /* Publicar: tenta sozinho (token da sessão e/ou senha lembrada nesta aba). Só abre o pedido de senha se o servidor recusar. */
 const KPC='kp_pub_cred';
-const lerCred=()=>{try{return JSON.parse(sessionStorage.getItem(KPC))||null}catch{return null}};
-const limpaCred=()=>{try{sessionStorage.removeItem(KPC)}catch{}};
+/* a senha fica só na aba (sessionStorage) e é a MESMA do admin-player.js (kp_adm_cred): confirmou em qualquer página do site, não pede de novo */
+const KPC2='kp_adm_cred';
+const lerCred=()=>{for(const k of [KPC,KPC2]){try{const c=JSON.parse(sessionStorage.getItem(k));if(c&&c.n&&c.s)return c}catch{}}return null};
+const limpaCred=()=>{for(const k of [KPC,KPC2]){try{sessionStorage.removeItem(k)}catch{}}};
+const guardaCred=(n,s)=>{const v=JSON.stringify({n,s});for(const k of [KPC,KPC2]){try{sessionStorage.setItem(k,v)}catch{}}};
 async function enviarPublicar(nome,senha){
  const body={admin_nome:nome,missoes:lerLocais().map(limpa),apagar:lerApagar()},headers={'Content-Type':'application/json'};
  if(senha)body.admin_senha=senha;
@@ -1237,7 +1240,8 @@ async function abrirPublicar(){
  let msg='';
  try{await enviarPublicar(c?c.n:nome,c?c.s:'');okPublicado();atualizaBtns();return}
  catch(e){
-  if(![400,401,403].includes(e.status)){toast('Erro ao publicar: '+e.message);atualizaBtns();return}
+  /* 400 = a senha/sessão passou, mas o servidor recusou o CONTEÚDO (ex.: id/título): pedir senha de novo não resolve */
+  if(![401,403].includes(e.status)){console.warn('[publicar]',e.status,e.message,{missoes:lerLocais().map(limpa),apagar:lerApagar()});toast('Erro ao publicar: '+e.message);atualizaBtns();return}
   limpaCred();msg='Não consegui publicar automaticamente. Confirme sua senha (só esta vez nesta aba).';
  }
  atualizaBtns();
@@ -1249,9 +1253,12 @@ $('pb-go').onclick=async()=>{
  $('pb-go').disabled=true;err.textContent='';
  try{
   await enviarPublicar(nome,senha);
-  try{sessionStorage.setItem(KPC,JSON.stringify({n:nome,s:senha}))}catch{}
-  $('pb-senha').value='';pbm.close();okPublicado();
- }catch(e){err.textContent=e.message}finally{$('pb-go').disabled=false}
+  guardaCred(nome,senha);
+  $('pb-senha').value='';pbm.close();okPublicado();atualizaBtns();
+ }catch(e){
+  if(![401,403].includes(e.status)){guardaCred(nome,senha);console.warn('[publicar]',e.status,e.message,{missoes:lerLocais().map(limpa),apagar:lerApagar()})}  /* senha aceita; o problema é o conteúdo */
+  err.textContent=e.message;
+ }finally{$('pb-go').disabled=false}
 };
 /* ── Importar missões: colar texto bruto → o site identifica os campos ── */
 const nz=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[*_`#?]/g,'').replace(/\s+/g,' ').trim();
