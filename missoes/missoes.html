@@ -94,6 +94,7 @@ a.nav-login{margin:0 6px 0 0}
 .nav-bottom{min-width:0}
 #nav-player-badge .kp-sw,.nav.expanded #nav-player-badge .kp-sw{display:block!important;margin-left:0!important}
 #nav-player-badge .kp-role,.nav.expanded #nav-player-badge .kp-role{display:block!important}
+#nav-player-badge #nav-player-name,.nav #nav-player-badge #nav-player-name,.nav.expanded #nav-player-badge #nav-player-name,.nav #nav-player-badge .kp-role,.nav.expanded #nav-player-badge .kp-role,.nav #nav-player-badge .player-logout-btn,.nav.expanded #nav-player-badge .player-logout-btn{display:none!important}
 }
 
 a.nav-login,a.nav-drop-item{text-decoration:none}
@@ -521,7 +522,7 @@ dialog#mym::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
 .chip{background:var(--surface2);border:1px solid var(--bd);border-radius:14px;padding:3px 10px;font:700 11px var(--font-body);color:var(--text);display:inline-flex;gap:5px;align-items:center}
 .chip.me{border-color:var(--accent);background:var(--accent-light)}
 .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}.chip.done .dot{background:var(--green)}
-.chip button{border:0;background:none;cursor:pointer;font-size:12px;padding:0 0 0 2px;color:var(--green);font-weight:800}.chip button.x{color:var(--red)}
+.chip button{border:0;background:none;cursor:pointer;font-size:15px;padding:0 3px;color:var(--green);font-weight:800}.chip button.x{color:var(--red)}
 .foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:auto}
 .foot .btn{padding:9px 16px;border-radius:8px}.foot .hint{font:600 12px var(--font-body);color:var(--muted);flex:1;min-width:120px}
 /* botão redondo do card (aceitar / entrar / foto de quem aceitou) */
@@ -725,7 +726,8 @@ dialog#imp{width:min(680px,94vw)}
     <div class="mq2"><div><label>Local</label><input id="mq-local"/></div><div><label>Mapa</label><input id="mq-mapa"/></div></div>
     <label>Pokémon capturável</label><input id="mq-capturavel"/>
     <div class="mq2"><div><label>Repetível (texto exibido)</label><input id="mq-repetivel" placeholder="Ex: Semanal"/></div>
-    <div><label>Regra de repetição</label><select id="mq-repeticao"><option value="semanal">1x por semana</option><option value="nao">Não repetível</option></select></div></div>
+    <div><label>Regra de repetição</label><select id="mq-repeticao" onchange="togDias()"><option value="sem_limite">Sem espera (repete ao concluir)</option><option value="diaria">1x por dia</option><option value="3dias">A cada 3 dias</option><option value="semanal">1x por semana</option><option value="quinzenal">A cada 15 dias</option><option value="mensal">1x por mês (30 dias)</option><option value="bimestral">A cada 60 dias</option><option value="dias">Personalizado (a cada X dias)</option><option value="nao">Não repetível (apenas 1 vez)</option></select></div></div>
+    <div id="mq-dias-wrap" style="display:none"><label>Repetir a cada quantos dias?</label><input id="mq-dias" type="number" min="1" step="1" placeholder="Ex: 20"/></div>
     <label>Descrição</label><textarea id="mq-descricao"></textarea>
     <label>Recompensas</label><textarea id="mq-recompensas"></textarea>
     <div class="mq2"><div><label>Ordem (menor aparece primeiro)</label><input id="mq-ordem" type="number"/></div><div><label>Vagas (pessoas ao mesmo tempo)</label><input id="mq-vagas" type="number" min="1" step="1" placeholder="1"/></div></div>
@@ -930,17 +932,21 @@ async function carregarDados(){
 }
 
 /* ── Regras de repetição ── */
-const DIAS={semanal:7,diaria:1};
-const REPLBL={livre:'1x por semana',diaria:'1x por semana',semanal:'1x por semana',nao:'Apenas 1 vez'};
-const regra=m=>m.repeticao==='nao'?'nao':'semanal';
+/* [dias de espera, rótulo]. 'livre'/vazio (missões antigas) = semanal. 'dias' = personalizado (m.repeticao_dias) */
+const REP={sem_limite:[0,'Sem espera (repete ao concluir)'],diaria:[1,'1x por dia'],'3dias':[3,'A cada 3 dias'],semanal:[7,'1x por semana'],quinzenal:[15,'A cada 15 dias'],mensal:[30,'1x por mês (30 dias)'],bimestral:[60,'A cada 60 dias'],nao:[null,'Apenas 1 vez']};
+const regra=m=>{const r=m.repeticao;return(r==='nao'||r==='dias'||REP[r])?r:'semanal'};
+const diasDe=m=>{const r=regra(m);if(r==='nao')return null;if(r==='dias'){const n=parseInt(m.repeticao_dias,10);return n>0?n:7}return REP[r][0]};
+const repLbl=m=>{const r=regra(m);if(r==='dias'){const n=diasDe(m);return n===1?'1x por dia':'A cada '+n+' dias'}return REP[r][1]};
+const fmtDH=d=>d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 function bloqueio(m,personagem){
  const pers=personagem||'',minhas=aceitas.filter(a=>a.missao_id===m.id&&souEu(a)&&(a.personagem||'')===pers);
  if(minhas.some(a=>a.status==='aceita'))return 'Já está em andamento';
  if(regra(m)==='nao'&&minhas.some(a=>a.status==='concluida'))return 'Missão não repetível — já concluída';
- const dias=DIAS[regra(m)];
+ const dias=diasDe(m);
  if(dias){
-  const lim=Date.now()-dias*86400000,rec=minhas.filter(a=>new Date(a.aceita_em).getTime()>=lim).sort((x,y)=>new Date(y.aceita_em)-new Date(x.aceita_em))[0];
-  if(rec){const lib=new Date(new Date(rec.aceita_em).getTime()+dias*86400000);return 'Disponível de novo em '+lib.toLocaleDateString('pt-BR')+' '+lib.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
+  /* o prazo conta a partir de quando foi marcada como concluída (sem a data, usa a de aceite) */
+  const base=a=>new Date(a.concluida_em||a.aceita_em).getTime(),rec=minhas.filter(a=>a.status==='concluida').sort((x,y)=>base(y)-base(x))[0];
+  if(rec){const lib=new Date(base(rec)+dias*86400000);if(lib.getTime()>Date.now())return 'Disponível de novo em '+fmtDH(lib)}
  }
  return null;
 }
@@ -1001,13 +1007,14 @@ const info=(k,v,w,c)=>v?`<div class="pi${w?' w':''}${c?' '+c:''}"><span class="p
 const linha=(k,v)=>v?`<dt>${k}:</dt><dd>${esc(v)}</dd>`:'';
 function card(m){
  const adm=isAdm(),aqui=aceitas.filter(a=>a.missao_id===m.id);
- const chips=aqui.filter(a=>adm||a.status==='concluida').map(a=>{
-  const eu=souEu(a),feito=a.status==='concluida',nome=esc(a.personagem||a.player_nome);
+ const chips=aqui.filter(a=>adm||a.status==='concluida'||souEu(a)).map(a=>{
+  const eu=souEu(a),feito=a.status==='concluida',pode=adm||eu,nome=esc(a.personagem||a.player_nome);
+  const dt=feito&&(a.concluida_em||a.aceita_em)?' em '+new Date(a.concluida_em||a.aceita_em).toLocaleDateString('pt-BR'):'';
   let ac='';
-  if(adm&&!feito)ac+=`<button title="Marcar como concluída" data-act="concluir" data-id="${a.id}">✔</button>`;
-  if(adm&&feito)ac+=`<button class="x" title="Marcar como não concluída" data-act="reabrir" data-id="${a.id}">↩</button>`;
-  if((eu||adm)&&!feito)ac+=`<button class="x" title="Cancelar" data-act="cancelar" data-id="${a.id}">✕</button>`;
-  return `<span class="chip ${eu?'me':''} ${feito?'done':''}" title="${feito?'Concluída':'Em andamento'}"><span class="dot"></span>${nome}${ac}</span>`;
+  if(pode&&!feito)ac+=`<button title="Marcar como realizada" data-act="concluir" data-id="${a.id}">✔</button>`;
+  if(pode&&feito)ac+=`<button class="x" title="Marcar como NÃO realizada" data-act="reabrir" data-id="${a.id}">↩</button>`;
+  if(pode&&!feito)ac+=`<button class="x" title="Cancelar" data-act="cancelar" data-id="${a.id}">✕</button>`;
+  return `<span class="chip ${eu?'me':''} ${feito?'done':''}" title="${feito?'Concluída'+dt:'Em andamento'}"><span class="dot"></span>${nome}${feito&&dt?`<small style="opacity:.65;font-weight:600">${dt.replace(' em ','')}</small>`:''}${ac}</span>`;
  }).join('');
  const SV=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
  const IC={ok:SV('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),user:SV('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.4 7-5.4s6.2 1.8 7 5.4"/>'),lock:SV('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>')};
@@ -1028,6 +1035,7 @@ function card(m){
  }
  if(btn&&vg>1)btn=`<div class="pc-actw">${btn}<span class="pc-cnt" title="Vagas ocupadas">${tomadas.length}/${vg}</span></div>`;
  const mine=aqui.some(a=>souEu(a)&&a.status==='aceita');
+ const ult=aqui.filter(a=>souEu(a)&&a.status==='concluida').sort((x,y)=>new Date(y.concluida_em||y.aceita_em)-new Date(x.concluida_em||x.aceita_em))[0];
  const ativa=m.ativa!==false,rk=rkN(m.ranking)||'—';
  return `<article class="pc ${mine?'on':''} ${abertas.has(m.id)?'open':''}" data-id="${esc(m.id)}" style="--rc:${rkCor(m.ranking)}">
   <div class="pc-top">
@@ -1037,11 +1045,11 @@ function card(m){
    </div>
    ${btn}
   </div>
-  <div class="pc-info">${info('Local',m.local)}${info('Mapa',m.mapa)}${info('Pokémon Capturável',m.capturavel,0,'cap')}${(r=>r?`<div class="pi-row">${r}</div>`:'')(info('Repetível',m.repetivel)+info('Quantas vezes',REPLBL[m.repeticao||'livre']))}${info('Pré-requisitos',m.pre_requisitos,1)}</div>
+  <div class="pc-info">${info('Local',m.local)}${info('Mapa',m.mapa)}${info('Pokémon Capturável',m.capturavel,0,'cap')}${(r=>r?`<div class="pi-row">${r}</div>`:'')(info('Repetível',m.repetivel)+info('Quantas vezes',repLbl(m)))}${info('Pré-requisitos',m.pre_requisitos,1)}</div>
   <div class="dtg"></div>
   <div class="more">${m.descricao?`<p class="desc">${esc(m.descricao)}</p>`:''}<div class="pc-rew"><span class="rk">Recompensas</span>${m.recompensas?esc(m.recompensas):'<span class="none">a definir</span>'}</div></div>
   <div class="takers">${chips?`<div class="chips">${chips}</div>`:''}</div>
-  <div class="foot">${acao}${adm?`<button class="btn" data-act="editar" data-id="${m.id}">Editar</button><button class="btn d" data-act="apagar" data-id="${m.id}" title="Apagar missão">Apagar</button>`:''}</div>
+  <div class="foot">${acao}${minha?`<button class="btn ok" data-act="concluir" data-id="${minha.id}">✔ Marcar como realizada</button>`:(ult?`<button class="btn" data-act="reabrir" data-id="${ult.id}">↩ Marcar como não realizada</button>`:'')}${adm?`<button class="btn" data-act="editar" data-id="${m.id}">Editar</button><button class="btn d" data-act="apagar" data-id="${m.id}" title="Apagar missão">Apagar</button>`:''}</div>
  </article>`;
 }
 
@@ -1064,21 +1072,28 @@ async function onBoardClick(e){
  if(act==='apagar')return apagarMissao(id);
  if(act==='aceitar')return abrirAceitar(missoes.find(m=>m.id===id));
  if(act==='reabrir'){
-  const a=aceitas.find(x=>x.id===id);if(!a||!isAdm())return;
-  if(!confirm('Marcar como NÃO concluída (volta para em andamento): '+(a.personagem||a.player_nome)+'?'))return;
+  const a=aceitas.find(x=>x.id===id);if(!a||!(isAdm()||souEu(a)))return;
+  const mr=missoes.find(x=>x.id===a.missao_id);
+  if(mr&&(emAndamento(mr).length>=nVagas(mr)||aceitas.some(x=>x.id!==a.id&&x.missao_id===a.missao_id&&x.status==='aceita'&&String(x.player_id)===String(a.player_id)&&(x.personagem||'')===(a.personagem||'')))){toast('Não dá para reabrir: a missão já está em andamento (vagas ocupadas).');return}
+  if(!confirm('Marcar como NÃO realizada (volta para em andamento): '+(a.personagem||a.player_nome)+'?'))return;
   try{
    await api('missoes_aceitas?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({status:'aceita',concluida_em:null})});
-   await carregarDados();render();toast('Missão marcada como não concluída.');
+   await carregarDados();render();toast('Missão marcada como não realizada.');
   }catch(err){toast('Erro: '+err.message)}
   return;
  }
  if(act==='concluir'||act==='cancelar'){
   const a=aceitas.find(x=>x.id===id);if(!a)return;
+  if(act==='concluir'&&!(isAdm()||souEu(a)))return;
+  if(act==='cancelar'&&!(isAdm()||souEu(a)))return;
   if(act==='cancelar'&&!confirm('Cancelar esta participação'+(souEu(a)?'?':' de '+(a.personagem||a.player_nome)+'?')))return;
-  if(act==='concluir'&&!confirm('Marcar como concluída: '+(a.personagem||a.player_nome)+'?'))return;
+  if(act==='concluir'&&!confirm('Marcar como realizada: '+(a.personagem||a.player_nome)+'?'))return;
   try{
    await api('missoes_aceitas?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(act==='concluir'?{status:'concluida',concluida_em:new Date().toISOString()}:{status:'cancelada'})});
-   await carregarDados();render();toast(act==='concluir'?'Missão concluída!':'Participação cancelada.');
+   await carregarDados();render();
+   let msg=act==='concluir'?'Missão concluída!':'Participação cancelada.';
+   if(act==='concluir'){const mc=missoes.find(x=>x.id===a.missao_id),b=mc?bloqueio(mc,a.personagem||''):null;if(b&&/^Dispon/.test(b))msg+=' '+b+'.';else if(mc&&!b)msg+=' Já está disponível para repetir.'}
+   toast(msg);
   }catch(err){toast('Erro: '+err.message)}
  }
 }
@@ -1117,14 +1132,15 @@ function abrirMissao(id){
  if(!isAdm())return;const m=id?missoes.find(x=>x.id===id):null;editId=m?m.id:null;
  $('mq-h').textContent=m?'Editar missão':'Nova missão';
  MQ.forEach(k=>$('mq-'+k).value=m?.[k]??'');$('mq-ranking').value=m?rkN(m.ranking):'1';$('mq-ordem').value=m?.ordem!=null?m.ordem:'';$('mq-vagas').value=m&&nVagas(m)>1?nVagas(m):'';
- $('mq-repeticao').value=m?regra(m):'semanal';$('mq-ativa').checked=m?m.ativa!==false:true;
+ $('mq-repeticao').value=m?regra(m):'semanal';$('mq-dias').value=m&&regra(m)==='dias'?(parseInt(m.repeticao_dias,10)||''):'';togDias();$('mq-ativa').checked=m?m.ativa!==false:true;
  $('mq-del').style.display=m&&m._local?'':'none';$('mq-err').textContent='';mqm.showModal();
 }
+function togDias(){$('mq-dias-wrap').style.display=$('mq-repeticao').value==='dias'?'':'none'}
 const LK='kp_missoes_locais';
 const lerLocais=()=>{try{const a=JSON.parse(localStorage.getItem(LK));return Array.isArray(a)?a:[]}catch{return[]}};
 const salvarLocais=a=>{try{localStorage.setItem(LK,JSON.stringify(a))}catch{}};
-const CAMPOS=[...MQ,'ordem','repeticao','ativa','vagas'];
-function limpa(m){const o={id:String(m.id)};CAMPOS.forEach(k=>{const v=m[k];if(v==null||v==='')return;if(k==='ativa'&&v!==false)return;if(k==='repeticao'&&v==='livre')return;if(k==='vagas'&&!(parseInt(v)>1))return;o[k]=v});return o}
+const CAMPOS=[...MQ,'ordem','repeticao','repeticao_dias','ativa','vagas'];
+function limpa(m){const o={id:String(m.id)};CAMPOS.forEach(k=>{const v=m[k];if(v==null||v==='')return;if(k==='ativa'&&v!==false)return;if(k==='repeticao'&&v==='livre')return;if(k==='repeticao_dias'&&m.repeticao!=='dias')return;if(k==='vagas'&&!(parseInt(v)>1))return;o[k]=v});return o}
 /* rascunhos/alterações locais (só admin): somem sozinhos quando o missoes.json publicado já tem o mesmo conteúdo */
 function aplicarLocais(){
  atualizaBtns();if(!isAdm())return;
@@ -1155,7 +1171,7 @@ function desfazerApagar(){salvarApagar([]);cfg.close();render0();toast('Exclusõ
 const AK='kp_missoes_apagar';
 const lerApagar=()=>{try{const a=JSON.parse(localStorage.getItem(AK));return Array.isArray(a)?a.map(String):[]}catch{return[]}};
 const salvarApagar=a=>{try{localStorage.setItem(AK,JSON.stringify(a))}catch{}};
-const CAMPO_NOME={vagas:'Vagas',titulo:'Título',ranking:'Rank',estilo:'Estilo',pre_requisitos:'Pré-requisitos',local:'Local',mapa:'Mapa',capturavel:'Pokémon Capturável',repetivel:'Repetível',descricao:'Descrição',recompensas:'Recompensas',ordem:'Ordem',repeticao:'Repetição',ativa:'Ativa'};
+const CAMPO_NOME={vagas:'Vagas',titulo:'Título',ranking:'Rank',estilo:'Estilo',pre_requisitos:'Pré-requisitos',local:'Local',mapa:'Mapa',capturavel:'Pokémon Capturável',repetivel:'Repetível',descricao:'Descrição',recompensas:'Recompensas',ordem:'Ordem',repeticao:'Repetição',repeticao_dias:'Dias de repetição',ativa:'Ativa'};
 function pendencias(){
  const raw=new Map(RAW.rl.map(r=>[String(r.id),r])),out={novas:[],editadas:[],apagar:[]};
  lerLocais().forEach(l=>{
@@ -1191,7 +1207,7 @@ $('mq-save').onclick=()=>{
  if(!isAdm())return;const err=$('mq-err'),g=k=>$('mq-'+k).value.trim();
  if(!g('titulo')){err.textContent='Informe o título.';return}
  const row={id:editId||'q'+Date.now().toString(36)};MQ.forEach(k=>row[k]=g(k));if(!/^[1-5]$/.test(row.ranking))row.ranking='1';
- const o=parseInt(g('ordem'));row.ordem=Number.isNaN(o)?null:o;row.repeticao=$('mq-repeticao').value;row.ativa=$('mq-ativa').checked;{const v=parseInt($('mq-vagas').value);row.vagas=v>1?v:null}
+ const o=parseInt(g('ordem'));row.ordem=Number.isNaN(o)?null:o;row.repeticao=$('mq-repeticao').value;if(row.repeticao==='dias'){const d=parseInt($('mq-dias').value,10);if(!(d>0)){err.textContent='Informe a cada quantos dias a missão pode repetir.';return}row.repeticao_dias=d}else row.repeticao_dias=null;row.ativa=$('mq-ativa').checked;{const v=parseInt($('mq-vagas').value);row.vagas=v>1?v:null}
  const loc=lerLocais().filter(x=>String(x.id)!==row.id);loc.push(limpa(row));salvarLocais(loc);
  const novo=!editId;mqm.close();render0();toast(novo?'Missão criada. Clique em Publicar para ir ao ar.':'Alteração salva. Clique em Publicar para ir ao ar.');
 };
@@ -1200,20 +1216,41 @@ $('mq-del').onclick=()=>{
  if(!isAdm()||!editId||!confirm('Descartar esta missão/alteração local? (O que já está no missoes.json publicado não é afetado.)'))return;
  salvarLocais(lerLocais().filter(x=>String(x.id)!==editId));mqm.close();render0();toast('Descartado.');
 };
-function abrirPublicar(){
+/* Publicar: tenta sozinho (token da sessão e/ou senha lembrada nesta aba). Só abre o pedido de senha se o servidor recusar. */
+const KPC='kp_pub_cred';
+const lerCred=()=>{try{return JSON.parse(sessionStorage.getItem(KPC))||null}catch{return null}};
+const limpaCred=()=>{try{sessionStorage.removeItem(KPC)}catch{}};
+async function enviarPublicar(nome,senha){
+ const body={admin_nome:nome,missoes:lerLocais().map(limpa),apagar:lerApagar()},headers={'Content-Type':'application/json'};
+ if(senha)body.admin_senha=senha;
+ if(ses&&ses.token){body.token=ses.token;headers.Authorization='Bearer '+ses.token}
+ const r=await fetch('/api/missoes_publicar',{method:'POST',headers,body:JSON.stringify(body)});
+ const j=await r.json().catch(()=>null);
+ if(!r.ok){const e=new Error(j?.error||'HTTP '+r.status);e.status=r.status;throw e}
+}
+const okPublicado=()=>toast('Publicado! O site atualiza em instantes, quando o deploy da Vercel terminar.');
+async function abrirPublicar(){
  if(!isAdm()||(!lerLocais().length&&!lerApagar().length))return;
  let em='';try{em=(window.KPAdm&&KPAdm.nome())||''}catch{}
- $('pb-list').innerHTML=listaPend();$('pb-nome').value=em;$('pb-senha').value='';$('pb-err').textContent='';pbm.showModal();(em?$('pb-senha'):$('pb-nome')).focus();
+ const nome=(ses&&ses.nome)||em,c=lerCred(),btn=$('btn-pub');
+ if(btn)btn.disabled=true;toast('Publicando…');
+ let msg='';
+ try{await enviarPublicar(c?c.n:nome,c?c.s:'');okPublicado();atualizaBtns();return}
+ catch(e){
+  if(![400,401,403].includes(e.status)){toast('Erro ao publicar: '+e.message);atualizaBtns();return}
+  limpaCred();msg='Não consegui publicar automaticamente. Confirme sua senha (só esta vez nesta aba).';
+ }
+ atualizaBtns();
+ $('pb-list').innerHTML=listaPend();$('pb-nome').value=nome;$('pb-senha').value='';$('pb-err').textContent=msg;pbm.showModal();($('pb-nome').value?$('pb-senha'):$('pb-nome')).focus();
 }
 $('pb-go').onclick=async()=>{
- const nome=$('pb-nome').value.trim(),senha=$('pb-senha').value,err=$('pb-err'),lote=lerLocais().map(limpa),apagar=lerApagar();
+ const nome=$('pb-nome').value.trim(),senha=$('pb-senha').value,err=$('pb-err');
  if(!nome||!senha){err.textContent='Informe o nome e a senha do seu player.';return}
  $('pb-go').disabled=true;err.textContent='';
  try{
-  const r=await fetch('/api/missoes_publicar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({admin_nome:nome,admin_senha:senha,missoes:lote,apagar})});
-  const j=await r.json().catch(()=>null);
-  if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);
-  $('pb-senha').value='';pbm.close();toast('Publicado! O site atualiza em instantes, quando o deploy da Vercel terminar.');
+  await enviarPublicar(nome,senha);
+  try{sessionStorage.setItem(KPC,JSON.stringify({n:nome,s:senha}))}catch{}
+  $('pb-senha').value='';pbm.close();okPublicado();
  }catch(e){err.textContent=e.message}finally{$('pb-go').disabled=false}
 };
 /* ── Importar missões: colar texto bruto → o site identifica os campos ── */
@@ -1224,7 +1261,18 @@ const SINGLE=new Set(['titulo','ranking','estilo','local','mapa','capturavel','r
 const rxLab=/^[\s>*_\-•·▪◆✦\u2600-\u27BF\uFE0F\u{1F300}-\u{1FAFF}]*([^:：\n]{2,40}?)\s*[:：]\s*(.*)$/u;
 const rxSep=/^\s*(?:[-=*_~]{3,}|miss[aã]o\s*#?\s*\d+\s*[:.\-]?)\s*$/i,rxHead=/^\s*#{1,3}\s+(.+?)\s*$/;
 function labelDe(l){const m=rxLab.exec(l);if(!m)return null;const k=LABIDX[nz(m[1])];return k?{k,v:m[2].replace(/^[*_`\s]+/,'').replace(/[*_`\s]+$/,'')}:null}
-function infereRep(t){const n=nz(t);if(!n)return'livre';if(/^(nao|nunca)\b/.test(n)||/uma unica vez|apenas uma vez|somente uma vez/.test(n))return'nao';if(/\bdia\b|diari/.test(n))return'diaria';if(/seman/.test(n))return'semanal';return'livre'}
+function infereRep(t){const n=nz(t),R=(r,d)=>d?{repeticao:'dias',repeticao_dias:d}:{repeticao:r};
+ if(!n)return R('livre');
+ if(/^(nao|nunca)\b/.test(n)||/uma unica vez|apenas uma vez|somente uma vez/.test(n))return R('nao');
+ if(/sem limite|sem espera|ilimitad/.test(n))return R('sem_limite');
+ const m=n.match(/(\d+)\s*(dia|seman|mes)/);
+ if(m){const d=(+m[1])*({dia:1,seman:7,mes:30}[m[2]]),P={1:'diaria',3:'3dias',7:'semanal',15:'quinzenal',30:'mensal',60:'bimestral'};if(d>0)return P[d]?R(P[d]):R('dias',d)}
+ if(/quinzen/.test(n))return R('quinzenal');
+ if(/bimestr/.test(n))return R('bimestral');
+ if(/mensal|\bmes\b/.test(n))return R('mensal');
+ if(/seman/.test(n))return R('semanal');
+ if(/\bdia\b|diari/.test(n))return R('diaria');
+ return R('livre')}
 function parseBloco(ls){
  const o={},solto=[];let atual=null,pend=false,titulo='';
  const add=(k,v)=>{o[k]=o[k]?o[k]+(pend?'\n\n':'\n')+v:v;pend=false};
@@ -1295,7 +1343,7 @@ $('imp-add').onclick=()=>{
  let ord=Math.max(0,...missoes.map(m=>Number(m.ordem)||0));
  its.forEach(it=>{
   let id=slugM(g(it,'titulo')),base=id,n=2;while(usados.has(id))id=(base.slice(0,56)+'-'+n++);usados.add(id);
-  const row={id,ordem:++ord,repeticao:infereRep(g(it,'repetivel')),ativa:true};MQ.forEach(k=>row[k]=g(it,k));
+  const row={id,ordem:++ord,...infereRep(g(it,'repetivel')),ativa:true};MQ.forEach(k=>row[k]=g(it,k));
   loc.push(limpa(row));
  });
  salvarLocais(loc);imp.close();$('imp-txt').value='';render0();
@@ -1331,10 +1379,15 @@ async function carregarPersonagens(){
 }
 let booted=false;
 async function boot(){
- mostrarBadge();me=meAtual();meusPers=[];$('btn-cfg').style.display=isAdm()?'flex':'none';
- if(me)meusPers=await carregarPersonagens();
- if(await carregarDados())render();
- booted=true;fim();
+ /* a tela de carregamento sempre sai, mesmo se algo falhar (rede lenta no celular, dado inesperado) */
+ const seg=setTimeout(fim,8000);
+ try{
+  mostrarBadge();me=meAtual();meusPers=[];$('btn-cfg').style.display=isAdm()?'flex':'none';
+  if(me){try{meusPers=await carregarPersonagens()}catch(e){console.warn('personagens:',e.message)}}
+  if(await carregarDados())render();
+ }catch(e){
+  console.error(e);$('board').innerHTML='<div class="empty">Não foi possível exibir as missões.<br><small>'+esc(e.message||String(e))+'</small></div>';
+ }finally{clearTimeout(seg);booted=true;fim()}
 }
 renderHamburgerIcon();
 /* lista de acesso carregada / switch ADM-MOD mudou: atualiza badge, botões de admin e a lista */
