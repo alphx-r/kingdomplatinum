@@ -1227,9 +1227,12 @@ async function enviarPublicar(nome,senha){
  const body={admin_nome:nome,missoes:lerLocais().map(limpa),apagar:lerApagar()},headers={'Content-Type':'application/json'};
  if(senha)body.admin_senha=senha;
  if(ses&&ses.token){body.token=ses.token;headers.Authorization='Bearer '+ses.token}
+ if(ses&&ses.ct)body.ct=ses.ct;   /* crachá de equipe: o servidor reconhece ADM/MOD pela sessão, sem senha */
  const r=await fetch('/api/missoes_publicar',{method:'POST',headers,body:JSON.stringify(body)});
  const j=await r.json().catch(()=>null);
  if(!r.ok){const e=new Error(j?.error||'HTTP '+r.status);e.status=r.status;throw e}
+ /* senha confirmada: o servidor devolve um crachá novo; guarda na sessão para não pedir senha de novo */
+ if(j&&j.ct){ses={...(ses||{}),ct:j.ct};try{localStorage.setItem(SK,JSON.stringify(ses))}catch{}}
 }
 const okPublicado=()=>toast('Publicado! O site atualiza em instantes, quando o deploy da Vercel terminar.');
 async function abrirPublicar(){
