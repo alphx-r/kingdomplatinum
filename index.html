@@ -839,7 +839,7 @@ body.edit-mode [data-editing="1"] :is(.ed-inserted-col,.ed-inserted-split-box)::
   .ganhos-grid-3>div{width:100% !important;flex:none !important;min-width:0 !important}
   /* Batalhas mobile */
   #page-batalhas [style*="grid-template-columns:1fr 1fr"]{display:flex !important;flex-direction:column !important}
-  #page-batalhas table{font-size:11px !important}
+  #page-batalhas table{font-size:12px !important}
   /* Tiers: todas as tabelas com a mesma coluna de valores (alinhadas entre si) */
   #page-batalhas .bat-tiers table{table-layout:fixed !important;width:100% !important}
   #page-batalhas .bat-tiers table th:last-child,
@@ -1335,10 +1335,14 @@ body.edit-mode .ganhos-example-header{cursor:text}
     fetch(SU + '/rest/v1/players?select=nome&order=nome.asc', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } }).then(function (r) { return r.ok ? r.json() : []; })
       .then(function (L) { dl.innerHTML = (L || []).map(function (x) { return '<option value="' + esc(x.nome) + '">'; }).join(''); }).catch(function () {});
     var corpo = el('div'); d.appendChild(corpo);
+    var cInpS = cInp.replace('padding:10px 12px', 'padding:7px 10px').replace('margin:6px 0', 'margin:0');
+    var cBtnS = cBtn.replace('padding:9px 16px', 'padding:7px 14px');
+    var selSite = 'index';
+    function chip(txt, attrs) { return '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;font-size:13px;' + cChip + '">' + esc(txt) + ' <a href="#" ' + attrs + ' style="color:inherit;text-decoration:none;opacity:.7">✕</a></span>'; }
     function sec(titulo, arr) {
-      var h = '<div style="margin:12px 0 4px;font-weight:800">' + esc(titulo) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px">' +
-        (arr.map(function (n, i) { return '<span style="padding:4px 10px;border-radius:99px;' + cChip + '">' + esc(n) + ' <a href="#" data-del="' + i + '" style="color:inherit;text-decoration:none;opacity:.7">✕</a></span>'; }).join('') || '<span style="opacity:.6">ninguém</span>') + '</div>' +
-        '<div style="display:flex;gap:6px"><input list="kpe-pl" placeholder="Adicionar player…" style="' + cInp + '"><button data-add style="' + cBtn + ';margin:6px 0">+</button></div>';
+      var h = '<div style="margin:14px 0 6px;font-weight:800">' + esc(titulo) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">' +
+        (arr.map(function (n, i) { return chip(n, 'data-del="' + i + '"'); }).join('') || '<span style="opacity:.6">ninguém</span>') + '</div>' +
+        '<div style="display:flex;gap:6px"><input list="kpe-pl" placeholder="Adicionar player…" style="' + cInpS + '"><button data-add style="' + cBtnS + '">+</button></div>';
       var box = el('div', '', h);
       box.addEventListener('click', function (e) {
         var a = e.target.closest('[data-del]'), b = e.target.closest('[data-add]');
@@ -1347,10 +1351,29 @@ body.edit-mode .ganhos-example-header{cursor:text}
       });
       return box;
     }
+    /* MODs: uma lista só (site · nome) + escolher o site e adicionar — em vez de um bloco por site */
+    function modsBox() {
+      var sites = Object.keys(nv.mods).sort(), any = false;
+      if (sites.indexOf(selSite) < 0) selSite = sites[0];
+      var h = '<div style="margin:18px 0 6px;font-weight:800">MODs (por site)</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+      sites.forEach(function (k) { nv.mods[k].forEach(function (n, i) { any = true; h += chip(k + ' · ' + n, 'data-ms="' + k + '" data-mi="' + i + '"'); }); });
+      if (!any) h += '<span style="opacity:.6">ninguém</span>';
+      h += '</div><div style="display:flex;gap:6px"><select data-site style="' + cInpS + ';width:auto;flex:none">' +
+        sites.map(function (k) { return '<option value="' + k + '"' + (k === selSite ? ' selected' : '') + '>' + esc(k) + '</option>'; }).join('') +
+        '</select><input list="kpe-pl" placeholder="Adicionar MOD…" style="' + cInpS + '"><button data-add style="' + cBtnS + '">+</button></div>';
+      var box = el('div', '', h);
+      box.addEventListener('change', function (e) { if (e.target.matches('[data-site]')) selSite = e.target.value; });
+      box.addEventListener('click', function (e) {
+        var a = e.target.closest('[data-ms]'), b = e.target.closest('[data-add]');
+        if (a) { e.preventDefault(); nv.mods[a.getAttribute('data-ms')].splice(+a.getAttribute('data-mi'), 1); desenha(); }
+        if (b) { var n = nrm(box.querySelector('input').value), arr = nv.mods[selSite]; if (n && arr.indexOf(n) < 0 && n !== nv.chefe) { arr.push(n); desenha(); } }
+      });
+      return box;
+    }
     function desenha() {
       corpo.innerHTML = (inl ? '' : '<h3 style="margin:0 0 4px">Equipe de acesso</h3>') + '<p style="margin:0;opacity:.75">Chefe: <b>' + esc(nv.chefe) + '</b>. O chefe só é trocado direto no banco.</p>';
       corpo.appendChild(sec('ADMs (todos os sites)', nv.admins));
-      Object.keys(nv.mods).sort().forEach(function (k) { corpo.appendChild(sec('MODs · ' + k, nv.mods[k])); });
+      corpo.appendChild(modsBox());
       var rod = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px', '<span id="kpe-err" style="flex:1;color:' + (inl ? 'var(--red,#c0392b)' : '#ff8a8a') + ';align-self:center"></span><button id="kpe-x" style="' + cBtn + '">' + (inl ? 'Desfazer' : 'Fechar') + '</button><button id="kpe-s" style="' + cBtn + ';background:#3bb54a;border-color:#3bb54a;color:#fff">Salvar</button>');
       corpo.appendChild(rod);
       rod.querySelector('#kpe-x').onclick = function () { if (inl) editor(host); else d.close(); };
@@ -1419,6 +1442,37 @@ body.edit-mode .ganhos-example-header{cursor:text}
 
 </script><!-- KP-ADMIN:END -->
 <!-- KP-NAV-CSS2:BEGIN (gerado por build_nav.py — não edite à mão) --><style id="kp-nav-css">a.nav-drop-item,a.nav-drop-item:hover{text-decoration:none}</style><!-- KP-NAV-CSS2:END -->
+<style id="kp-tabelas-mobile">
+/* Tabelas no celular: texto maior, células mais compactas, linhas zebradas e rolagem lateral nas tabelas largas (4+ colunas).
+   Vale para as páginas de conteúdo (Sistemas, Subsistemas, Ganhos, Batalhas, Tramas…); tabelas do /adm e do Ganhos já têm o próprio estilo. */
+@media(max-width:768px){
+  :is(.page-info-editable,#page-batalhas,.trama-corpo) table:not(.adm-table):not([class*="ganhos-"]){
+    font-size:12.5px!important;line-height:1.4;max-width:100%;
+  }
+  :is(.page-info-editable,#page-batalhas,.trama-corpo) table:not(.adm-table):not([class*="ganhos-"]) :is(th,td){
+    padding:7px 8px!important;vertical-align:top;overflow-wrap:break-word;
+  }
+  :is(.page-info-editable,#page-batalhas,.trama-corpo) table:not(.adm-table):not([class*="ganhos-"]) th{
+    font-size:11px!important;letter-spacing:.3px;font-weight:800;
+  }
+  /* zebra sem sobrescrever as cores que já vêm na linha/célula */
+  :is(.page-info-editable,#page-batalhas,.trama-corpo) table:not(.adm-table):not([class*="ganhos-"]) tbody tr:nth-child(even) :is(td,th){
+    background-image:linear-gradient(rgba(127,127,127,.09),rgba(127,127,127,.09));
+  }
+  /* tabela larga: rola de lado, com sombra nas bordas indicando que há mais conteúdo */
+  :is(.page-info-editable,#page-batalhas,.trama-corpo) table:not(.adm-table):not([class*="ganhos-"]):has(tr>:nth-child(4)){
+    display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+    background:
+      linear-gradient(to right,var(--surface,#fff) 30%,rgba(255,255,255,0)) 0 0/36px 100% no-repeat local,
+      linear-gradient(to left,var(--surface,#fff) 30%,rgba(255,255,255,0)) 100% 0/36px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%,rgba(0,0,0,.25),rgba(0,0,0,0)) 0 0/12px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%,rgba(0,0,0,.25),rgba(0,0,0,0)) 100% 0/12px 100% no-repeat scroll;
+  }
+  :is(.page-info-editable,#page-batalhas,.trama-corpo) table:not(.adm-table):not([class*="ganhos-"]):has(tr>:nth-child(4)) :is(th,td){
+    min-width:76px;
+  }
+}
+</style>
 </head>
 <body>
 
@@ -4227,13 +4281,15 @@ window.calcSituSoma = function(){
     .cpk-chip-x:hover{background:rgba(211,47,47,.12);color:#d32f2f}
     .cpk-time-msg{font-size:10px;color:var(--muted);font-style:italic;min-height:13px;margin-top:5px}
     #calc-pk-resumo{display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1.5px solid var(--border);font-size:13px;color:var(--text);line-height:1.6}
-    /* ── Cabeçalho fixo (título + barra) ao rolar a página ── */
-    .cpk-panel{--cpk-top:0px;--cpk-sumh:44px}
-    @media(max-width:768px){.cpk-panel{--cpk-top:52px}} /* abaixo da barra de navegação do celular */
-    .cpk-sum{position:sticky;top:var(--cpk-top);z-index:30;background:var(--surface2);border-radius:10px 10px 0 0}
-    .cpk-panel:not([open]) .cpk-sum{border-radius:10px}
-    .cpk-bar{position:sticky;top:calc(var(--cpk-top) + var(--cpk-sumh));z-index:29;background:var(--surface2);margin:0 -16px 12px;padding:6px 16px 8px;border-bottom:1px solid var(--border);box-shadow:0 4px 8px -6px rgba(0,0,0,.25)}
-    @media(max-width:520px){.cpk-bar{margin:0 -10px 12px;padding:6px 10px 8px}}
+    /* ── Cabeçalho fixo SÓ NO CELULAR: barra "dock" que acompanha a rolagem pela calculadora ── */
+    #cpk-dock{display:none;position:fixed;top:52px;z-index:800;box-sizing:border-box;background:var(--surface2);border:1.5px solid var(--border);border-top:0;border-radius:0 0 12px 12px;padding:6px 10px 8px;box-shadow:0 8px 14px -8px rgba(0,0,0,.4)}
+    #cpk-dock.on{display:block}
+    #cpk-dock .d-t{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+    #cpk-dock .d-r{display:flex;align-items:center;gap:6px}
+    #cpk-dock .d-l{display:none;gap:6px;margin-top:6px}
+    #cpk-dock.solo .d-l{display:flex}
+    #cpk-dock .cpk-btn{padding:5px 8px;white-space:nowrap}
+    @media(min-width:769px){#cpk-dock{display:none!important}}
     /* ── Botões Atacante / Defensor (só quando os cards ficam empilhados) ── */
     .cpk-lados{display:none;flex:1 0 100%;gap:6px}
     .cpk-solo .cpk-lados{display:flex}
@@ -4242,7 +4298,22 @@ window.calcSituSoma = function(){
     .cpk-lado.on{background:var(--brand);border-color:var(--brand);color:#fff}
     .cpk-lado.on .ic{color:#fff!important}
     .cpk-solo[data-lado="p1"] .cpk-card[data-s="p2"],.cpk-solo[data-lado="p1"] #cpk-p2-time,
-    .cpk-solo[data-lado="p2"] .cpk-card[data-s="p1"],.cpk-solo[data-lado="p2"] #cpk-p1-time{display:none}`;
+    .cpk-solo[data-lado="p2"] .cpk-card[data-s="p1"],.cpk-solo[data-lado="p2"] #cpk-p1-time{display:none}
+    /* celular: Trocar · Limpar · PKMN SALVOS na mesma linha */
+    @media(max-width:520px){
+      .cpk-bar{column-gap:6px}
+      .cpk-bar .cpk-btn{padding:5px 8px;white-space:nowrap}
+      .cpk-salvos-btn{letter-spacing:0;gap:4px}
+    }
+    /* Clima do campo: 2 colunas no celular, sem texto cortado */
+    @media(max-width:640px){
+      #calc-clima-btns{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important}
+      .calc-clima-btn{padding:7px 8px!important;gap:7px!important;min-width:0;overflow:hidden}
+      .calc-clima-btn .calc-clima-chip{width:24px!important;height:24px!important}
+      .calc-clima-btn .calc-clima-ico{width:15px!important;height:15px!important}
+      .calc-clima-btn > span:last-child{min-width:0;overflow-wrap:anywhere;font-size:12px}
+      .calc-clima-btn > span:last-child > span:last-child{font-size:9.5px!important;line-height:1.25}
+    }`;
     document.head.appendChild(st);
   }
   const optTipos = ph => '<option value="">'+ph+'</option>' + TIPOS.map(t => '<option value="'+t+'">'+cap(t)+'</option>').join('');
@@ -4576,6 +4647,47 @@ window.calcSituSoma = function(){
     };
     if(window.ResizeObserver) new ResizeObserver(medir).observe(panel);
     window.addEventListener('resize', medir); medir();
+    // Dock fixo (só celular): quando a barra original sai da tela, uma cópia compacta fica presa abaixo do menu
+    document.getElementById('cpk-dock')?.remove();
+    const dock = document.createElement('div'); dock.id = 'cpk-dock';
+    dock.innerHTML = '<div class="d-t">Pokémon em batalha</div>' +
+      '<div class="d-r"><button type="button" class="cpk-btn" data-d="swap">⇄ Trocar</button><button type="button" class="cpk-btn mut" data-d="clear">Limpar</button>' +
+      '<button type="button" class="cpk-btn cpk-salvos-btn" data-d="salvos" aria-expanded="false">PKMN SALVOS <span class="cpk-salvos-n"></span><span class="cpk-salvos-seta">▾</span></button></div>' +
+      '<div class="d-l"><button type="button" class="cpk-lado" data-d="p1">'+ICO_ATK+'Atacante</button><button type="button" class="cpk-lado" data-d="p2">'+ICO_DEF+'Defensor</button></div>';
+    document.body.appendChild(dock);
+    const sincDock = () => {
+      const n = $('cpk-salvos-n'), sb = $('cpk-salvos-btn');
+      dock.querySelector('.cpk-salvos-n').textContent = n ? n.textContent : '';
+      dock.querySelector('[data-d="salvos"]').setAttribute('aria-expanded', sb && sb.getAttribute('aria-expanded') === 'true' ? 'true' : 'false');
+      dock.querySelectorAll('.cpk-lado').forEach(x => x.classList.toggle('on', x.dataset.d === panel.dataset.lado));
+      dock.classList.toggle('solo', panel.classList.contains('cpk-solo'));
+    };
+    dock.addEventListener('click', e => {
+      const b = e.target.closest('button[data-d]'); if(!b) return;
+      const k = b.dataset.d;
+      if(k === 'swap') $('cpk-swap')?.click();
+      else if(k === 'clear') $('cpk-clear')?.click();
+      else if(k === 'salvos') $('cpk-salvos-btn')?.click();
+      else if(k === 'p1' || k === 'p2') setLado(k);
+      sincDock();
+    });
+    let _raf = 0;
+    const posDock = () => {
+      if(!panel.isConnected){ dock.remove(); window.removeEventListener('scroll', agendar); window.removeEventListener('resize', agendar); clearInterval(_iv); return; }
+      const bar = panel.querySelector('.cpk-bar');
+      const celular = window.matchMedia('(max-width:768px)').matches;
+      if(!celular || !panel.open || !bar || !panel.offsetParent){ dock.classList.remove('on'); return; }
+      const navH = (document.querySelector('.nav')?.getBoundingClientRect().bottom) || 52;
+      dock.style.top = Math.max(0, navH) + 'px';
+      const rb = bar.getBoundingClientRect(), rc = ($('calc-dano-box') || panel).getBoundingClientRect(), rp = panel.getBoundingClientRect();
+      const mostrar = rb.bottom < navH && rc.bottom > navH + (dock.offsetHeight || 90) + 24;
+      dock.classList.toggle('on', mostrar);
+      if(mostrar){ dock.style.left = rp.left + 'px'; dock.style.width = rp.width + 'px'; sincDock(); }
+    };
+    const agendar = () => { if(_raf) return; _raf = requestAnimationFrame(() => { _raf = 0; posDock(); }); };
+    window.addEventListener('scroll', agendar, {passive:true}); window.addEventListener('resize', agendar);
+    const _iv = setInterval(posDock, 1000);
+    posDock();
     $('cpk-clear').addEventListener('click', () => {
       panel.querySelectorAll('input[type=text],input[type=number]').forEach(el => { el.value = ''; });
       panel.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
