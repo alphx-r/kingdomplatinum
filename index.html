@@ -11144,7 +11144,7 @@ const _poolItens = { 'ev': [], 'edit-ev': [] };
 
 // _pools[prefix] = [{titulo, obs, itens:[], ativa:bool}]
 // A partir de agora, cada item de uma pool é um objeto:
-//   { nome, sabor: 'apimentado'|'seco'|'doce'|'amargo'|'azedo', raridade: 'basica'|'intermedia'|'rara'|'bonus', numeros:[62,92,...] }
+//   { nome, sabor: 'apimentado'|'seco'|'doce'|'amargo'|'azedo' (vazio só em bônus), raridade: 'basica'|'intermedia'|'rara'|'bonus', numeros:[62,92,...] }
 // (formato legado — string pura — ainda é lido/rolado por índice, mas não é mais criado por aqui)
 const _pools = { 'ev': [], 'edit-ev': [] };
 let _poolAba = { 'ev': 0, 'edit-ev': 0 };
@@ -11246,6 +11246,7 @@ function _poolHtml(prefix){
         <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Sabor</label>
         <select id="${prefix}-item-sabor-${abaIdx}" style="width:100%;padding:6px 4px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px">
           ${SABORES.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}
+          <option value="">Sem sabor (só Bônus)</option>
         </select>
       </div>
       <div>
@@ -11260,7 +11261,23 @@ function _poolHtml(prefix){
         <input type="text" id="${prefix}-item-numeros-${abaIdx}" placeholder="Ex: 62,92" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px"/>
       </div>
       <button class="btn btn-sm btn-primary" onclick="_poolAdicionarItens('${prefix}',${abaIdx})">+ Adicionar</button>
-    </div>`}`;
+    </div>
+    <details style="margin-top:8px;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text)">📥 Importar lista de berries de uma vez</summary>
+      <div style="margin-top:8px">
+        <div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:6px">
+          Cole uma berry por linha, no formato <b>Nome | Sabor | Raridade | Números</b>.<br/>
+          Ex.: <code>Cheri Berry | Apimentado | Básica | 62, 92</code><br/>
+          Também vale agrupar por títulos: uma linha só com o sabor (ex.: <code>Apimentado</code>) ou a raridade (ex.: <code>Básica</code>) vale para as linhas seguintes, e cada berry fica como <code>Cheri Berry: 62, 92</code>.
+        </div>
+        <textarea id="${prefix}-import-txt-${abaIdx}" rows="8" placeholder="Cheri Berry | Apimentado | Básica | 62, 92&#10;Figy Berry | Apimentado | Básica | 97, 66" style="width:100%;padding:6px 8px;border-radius:6px;border:1.5px solid var(--border);font-family:monospace;font-size:12px;resize:vertical"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-primary" onclick="_poolImportarBerries('${prefix}',${abaIdx})">Importar</button>
+          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="${prefix}-import-sub-${abaIdx}" style="cursor:pointer"/> Substituir itens atuais</label>
+          <span id="${prefix}-import-msg-${abaIdx}" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+      </div>
+    </details>`}`;
 
   _renderPoolItensInline(prefix, abaIdx);
 }
@@ -11311,6 +11328,7 @@ function _renderPoolItensInline(prefix, idx){
       const raridadeAtual = _raridadeNorm(item.raridade) || 'basica';
       const nums = (item.numeros||[]).join(', ') || '—';
       const saborSelect = `<select onchange="_poolItemSetCampo('${prefix}',${idx},${i},'sabor',this.value)" style="font-size:11px;font-weight:700;border:1px solid var(--border);border-radius:5px;padding:2px 4px;background:#fff;flex-shrink:0">
+          ${item.sabor ? '' : '<option value="" selected>Sem sabor</option>'}
           ${SABORES.map(so=>`<option value="${so.id}"${so.id===item.sabor?' selected':''}>${so.label}</option>`).join('')}
         </select>`;
       const raridadeSelect = `<select onchange="_poolItemSetCampo('${prefix}',${idx},${i},'raridade',this.value)" style="font-size:10px;border:1px solid var(--border);border-radius:5px;padding:2px 4px;background:#fff;flex-shrink:0">
@@ -11478,10 +11496,11 @@ function _poolAdicionarItens(prefix, idx){
   const numeros = (inpNumeros?.value||'').split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
   if(!nome || !numeros.length){ alert('Preencha o nome e ao menos um número (separados por vírgula).'); return; }
   if(!_pools[prefix][idx].itens) _pools[prefix][idx].itens = [];
+  if(!selSabor?.value && selRaridade?.value !== 'bonus'){ alert('Só itens Bônus podem ficar sem sabor.'); return; }
   _pools[prefix][idx].tipo = 'berries';
   _pools[prefix][idx].itens.push({
     nome,
-    sabor: selSabor?.value || 'apimentado',
+    sabor: selSabor ? selSabor.value : 'apimentado',
     raridade: selRaridade?.value || 'basica',
     numeros
   });
@@ -11510,6 +11529,74 @@ function _poolColarLista(prefix, idx, txt){
   _renderPoolItensInline(prefix, idx);
   const inp = document.getElementById(`${prefix}-item-nome-${idx}`);
   if(inp){ inp.value=''; inp.placeholder = linhas.length+' itens adicionados'; }
+}
+// Importa várias berries de uma vez (pool do tipo "berries").
+// Linha completa:  Nome | Sabor | Raridade | 62, 92   (separadores: | ; ou tab)
+// Ou agrupado:     título de sabor/raridade sozinho na linha + "Nome: 62, 92" nas seguintes.
+function _poolSemAcento(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }
+function _poolParseBerries(txt){
+  const saborPorChave = {};
+  SABORES.forEach(function(s){ saborPorChave[_poolSemAcento(s.id)] = s.id; saborPorChave[_poolSemAcento(s.label)] = s.id; });
+  const raridadeDe = function(t){ return _raridadeNorm(_poolSemAcento(t)) || _raridadeNorm(t); };
+  let saborCtx = null, raridadeCtx = null;
+  const itens = [], erros = [];
+  String(txt).split(/\r?\n/).forEach(function(bruta, n){
+    let l = bruta.replace(/[*_`#>]/g,'').replace(/^\s*(?:[-•▪◦·]+)\s*/,'').trim();
+    if(!l) return;
+    // linha de título: só sabor e/ou raridade, sem números
+    if(!/\d/.test(l)){
+      const partes = l.split(/[|;\t,\/-]+/).map(function(x){ return x.trim(); }).filter(Boolean);
+      const sb = partes.map(function(x){ return saborPorChave[_poolSemAcento(x)]; }).find(Boolean);
+      const ra = partes.map(raridadeDe).find(Boolean);
+      if(sb || ra){ if(sb) saborCtx = sb; else if(ra === 'bonus') saborCtx = null; if(ra) raridadeCtx = ra; return; }
+    }
+    let nome, sabor = saborCtx, raridade = raridadeCtx, nums;
+    const _pareceBonus = function(){ return raridade === 'bonus'; };
+    if(/[|;\t]/.test(l)){
+      const campos = l.split(/\s*[|;\t]\s*/).map(function(x){ return x.trim(); });
+      nome = campos.shift();
+      const numCampos = [];
+      campos.forEach(function(c){
+        const sb = saborPorChave[_poolSemAcento(c)], ra = raridadeDe(c);
+        if(sb) sabor = sb; else if(ra) raridade = ra; else if(/\d/.test(c)) numCampos.push(c);
+      });
+      nums = numCampos.join(',');
+    } else {
+      const m = l.match(/^(.*?)\s*[:=]\s*([\d\s,.()\/e]+)$/i) || l.match(/^(.*?[A-Za-zÀ-ú])\s+([\d][\d\s,.()\/]*)$/);
+      if(!m){ erros.push('Linha '+(n+1)+': "'+bruta.trim()+'"'); return; }
+      nome = m[1].trim(); nums = m[2];
+    }
+    const numeros = String(nums||'').split(/[^\d]+/).filter(Boolean).map(function(x){ return parseInt(x,10); });
+    if(raridade === 'bonus' && !sabor) sabor = ''; // bônus pode ficar sem sabor
+    if(!nome || (!sabor && !_pareceBonus()) || !raridade || !numeros.length){
+      erros.push('Linha '+(n+1)+': faltou '+(!nome?'nome':(!sabor && !_pareceBonus())?'sabor':!raridade?'raridade':'número')+' — "'+bruta.trim()+'"');
+      return;
+    }
+    itens.push({ nome, sabor, raridade, numeros });
+  });
+  return { itens, erros };
+}
+function _poolImportarBerries(prefix, idx){
+  const p = _pools[prefix][idx]; if(!p) return;
+  const ta  = document.getElementById(`${prefix}-import-txt-${idx}`);
+  const msg = document.getElementById(`${prefix}-import-msg-${idx}`);
+  const sub = document.getElementById(`${prefix}-import-sub-${idx}`);
+  const r = _poolParseBerries(ta ? ta.value : '');
+  if(r.erros.length){
+    if(msg){ msg.style.color = 'var(--red)'; msg.textContent = 'Nada foi importado. '+r.erros.slice(0,3).join(' · ')+(r.erros.length>3?' (+'+(r.erros.length-3)+')':''); }
+    return;
+  }
+  if(!r.itens.length){ if(msg){ msg.style.color='var(--red)'; msg.textContent='Cole ao menos uma berry.'; } return; }
+  if(sub && sub.checked){
+    if(!confirm('Substituir os '+(p.itens||[]).length+' itens atuais por '+r.itens.length+' berries importadas?')) return;
+    p.itens = []; p.limites = {};
+  }
+  if(!p.itens) p.itens = [];
+  p.tipo = 'berries';
+  r.itens.forEach(function(it){ p.itens.push(it); });
+  _renderPoolItensInline(prefix, idx);
+  if(ta) ta.value = '';
+  if(msg){ msg.style.color = 'var(--muted)'; msg.textContent = '✔ '+r.itens.length+' berries importadas.'; }
 }
 function _poolNomeDoItem(prefix, idx, i){
   const it = (_pools[prefix][idx].itens||[])[i];
