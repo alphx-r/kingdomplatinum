@@ -519,7 +519,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .moveset-row .mv-lvl{width:70px;text-align:center}
 .moveset-row .mv-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1;border-radius:4px;transition:color .15s;flex-shrink:0}
 .moveset-row .mv-del:hover{color:var(--red)}
-/* Handle de arrastar pra reordenar moves dentro da lista (nível/TM/ovo/tutor) */
+/* Handle de arrastar pra reordenar moves dentro da lista (nível/TM/ovo) */
 .moveset-row .mv-drag-handle{flex-shrink:0;cursor:grab;color:var(--muted);font-size:14px;line-height:1;padding:2px 3px;border-radius:4px;user-select:none;touch-action:none;transition:color .15s,background .15s}
 .moveset-row .mv-drag-handle:hover{color:var(--brand-mid);background:var(--brand-light)}
 .moveset-row.dragging{opacity:.4;cursor:grabbing}
@@ -559,6 +559,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .cb-arrow{display:none}
 /* moveset combobox inline */
 .moveset-row .cb-wrap{min-width:0;flex:1}
+.moveset-row select.mv-tm-select{width:100%;cursor:pointer}
 .moveset-row .cb-input{font-size:12px;padding:4px 7px;-webkit-appearance:none;appearance:none}
 
 /* ── Formas Alfa (Mega/Gigantamax/Tera etc — múltiplas formas completas) ── */
@@ -6108,7 +6109,7 @@ function movesetBuildSelect(value = '') {
 }
 
 // Adiciona uma linha de move na lista indicada (combobox input+datalist)
-// type: 'level' | 'egg' | 'tutor'
+// type: 'level' | 'tm' | 'egg'
 // data: { move, level } (opcional, para popular na edição)
 // Normaliza um item de moveset vindo de QUALQUER fonte pro formato único
 // {move, level} usado por este editor. Aceita:
@@ -6140,6 +6141,31 @@ function movesetNormalizeItem(data) {
   return null;
 }
 
+// ── Lista de TMs (Scarlet/Violet, TM001–TM229) usada no select do moveset TM.
+// value = slug do move (formato salvo em moves_tm), label = "001 - Nome".
+const TM_LIST = 'Take Down,Charm,Fake Tears,Agility,Mud-Slap,Scary Face,Protect,Fire Fang,Thunder Fang,Ice Fang,Water Pulse,Low Kick,Acid Spray,Acrobatics,Struggle Bug,Psybeam,Confuse Ray,Thief,Disarming Voice,Trailblaze,Pounce,Chilling Water,Charge Beam,Fire Spin,Facade,Poison Tail,Aerial Ace,Bulldoze,Hex,Snarl,Metal Claw,Swift,Magical Leaf,Icy Wind,Mud Shot,Rock Tomb,Draining Kiss,Flame Charge,Low Sweep,Air Cutter,Stored Power,Night Shade,Fling,Dragon Tail,Venoshock,Avalanche,Endure,Volt Switch,Sunny Day,Rain Dance,Sandstorm,Snowscape,Smart Strike,Psyshock,Dig,Bullet Seed,False Swipe,Brick Break,Zen Headbutt,U-Turn,Shadow Claw,Foul Play,Psychic Fangs,Bulk Up,Air Slash,Body Slam,Fire Punch,Thunder Punch,Ice Punch,Sleep Talk,Seed Bomb,Electro Ball,Drain Punch,Reflect,Light Screen,Rock Blast,Waterfall,Dragon Claw,Dazzling Gleam,Metronome,Grass Knot,Thunder Wave,Poison Jab,Stomping Tantrum,Rest,Rock Slide,Taunt,Swords Dance,Body Press,Spikes,Toxic Spikes,Imprison,Flash Cannon,Dark Pulse,Leech Life,Eerie Impulse,Fly,Skill Swap,Iron Head,Dragon Dance,Power Gem,Gunk Shot,Substitute,Iron Defense,X-Scissor,Drill Run,Will-O-Wisp,Crunch,Trick,Liquidation,Giga Drain,Aura Sphere,Tailwind,Shadow Ball,Dragon Pulse,Stealth Rock,Hyper Voice,Heat Wave,Energy Ball,Psychic,Heavy Slam,Encore,Surf,Ice Spinner,Flamethrower,Thunderbolt,Play Rough,Amnesia,Calm Mind,Helping Hand,Pollen Puff,Baton Pass,Earth Power,Reversal,Ice Beam,Electric Terrain,Grassy Terrain,Psychic Terrain,Misty Terrain,Nasty Plot,Fire Blast,Hydro Pump,Blizzard,Fire Pledge,Water Pledge,Grass Pledge,Wild Charge,Sludge Bomb,Earthquake,Stone Edge,Phantom Force,Giga Impact,Blast Burn,Hydro Cannon,Frenzy Plant,Outrage,Overheat,Focus Blast,Leaf Storm,Hurricane,Trick Room,Bug Buzz,Hyper Beam,Brave Bird,Flare Blitz,Thunder,Close Combat,Solar Beam,Draco Meteor,Steel Beam,Tera Blast,Roar,Charge,Haze,Toxic,Sand Tomb,Spite,Gravity,Smack Down,Gyro Ball,Knock Off,Bug Bite,Super Fang,Vacuum Wave,Lunge,High Horsepower,Icicle Spear,Scald,Heat Crash,Solar Blade,Uproar,Focus Punch,Weather Ball,Grassy Glide,Burning Jealousy,Flip Turn,Dual Wingbeat,Poltergeist,Lash Out,Scale Shot,Misty Explosion,Pain Split,Psych Up,Double-Edge,Endeavor,Petal Blizzard,Temper Flare,Whirlpool,Muddy Water,Supercell Slam,Electroweb,Triple Axel,Coaching,Sludge Wave,Scorching Sands,Feather Dance,Future Sight,Expanding Force,Skitter Smack,Meteor Beam,Throat Chop,Breaking Swipe,Metal Sound,Curse,Hard Press,Dragon Cheer,Alluring Voice,Psychic Noise,Upper Hand'.split(',');
+const TM_OPTIONS = TM_LIST.map((n, i) => ({
+  num: String(i + 1).padStart(3, '0'),
+  name: n,
+  slug: n.toLowerCase().replace(/\s+/g, '-')
+}));
+function tmNormKey(v) { return String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function tmFindOption(v) {
+  const k = tmNormKey(v);
+  return k ? TM_OPTIONS.find(o => tmNormKey(o.slug) === k) : null;
+}
+function tmSelectHtml(rawVal) {
+  const found = tmFindOption(rawVal);
+  const cur = found ? found.slug : '';
+  let opts = '<option value="">— TM —</option>';
+  if (rawVal && !found) {
+    const disp = rawVal.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+    opts += `<option value="${rawVal}" data-name="${disp}" selected>${disp} (fora da lista)</option>`;
+  }
+  opts += TM_OPTIONS.map(o => `<option value="${o.slug}" data-name="${o.name}"${o.slug === cur ? ' selected' : ''}>${o.num} - ${o.name}</option>`).join('');
+  return `<div class="cb-wrap mv-name"><select class="cb-input mv-name-input mv-tm-select">${opts}</select><span class="cb-arrow">▾</span></div>`;
+}
+
 function movesetAddRow(listId, type, data = {}) {
   const list = document.getElementById(listId);
   if (!list) return;
@@ -6162,7 +6188,7 @@ function movesetAddRow(listId, type, data = {}) {
   const rawVal = data.move || '';
   const dispVal = rawVal ? rawVal.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
   const dragHandle = `<span class="mv-drag-handle" title="Arrastar para reordenar">⠿</span>`;
-  const comboHtml = `<div class="cb-wrap mv-name"><input class="cb-input mv-name-input" list="dl-move" autocomplete="off" placeholder="— Move —" value="${dispVal}" data-raw="${rawVal}"><span class="cb-arrow">▾</span></div>`;
+  const comboHtml = type === 'tm' ? tmSelectHtml(rawVal) : `<div class="cb-wrap mv-name"><input class="cb-input mv-name-input" list="dl-move" autocomplete="off" placeholder="— Move —" value="${dispVal}" data-raw="${rawVal}"><span class="cb-arrow">▾</span></div>`;
   const levelHtml = type === 'level'
     ? `<input type="number" class="mv-lvl" min="0" max="100" placeholder="Nv" title="Nível" value="${data.level ?? ''}">`
     : '';
@@ -6288,7 +6314,7 @@ function movesetPopulateList(listId, type, items = []) {
 }
 
 
-// Mostra/esconde a grade de moveset por categoria (nível/TM/ovo/tutor) de
+// Mostra/esconde a grade de moveset por categoria (nível/TM/ovo) de
 // uma forma alternativa quando "Mesmo moveset da forma principal" é
 // marcado/desmarcado — só o estado do checkbox é lido no save (faltReadList),
 // os campos ficam só ocultos (não perdem valor se desmarcar de novo).
@@ -6305,7 +6331,8 @@ async function movesetCopyList(listId, btnEl) {
   const list = document.getElementById(listId);
   if (!list) return;
   const nomes = [...list.querySelectorAll('.moveset-row')].map(row => {
-    const nome = row.querySelector('.mv-name-input')?.value.trim();
+    const ni = row.querySelector('.mv-name-input');
+    const nome = ni?.tagName === 'SELECT' ? (ni.selectedOptions[0]?.dataset.name || '') : ni?.value.trim();
     if (!nome) return '';
     const lv = row.querySelector('.mv-lvl');
     return lv ? `${nome} ${parseInt(lv.value) || 0}` : nome;   // Por Nível: "Gust 1"
@@ -6360,6 +6387,7 @@ function movesetImportBulk(listId, type, bulkId) {
       const m = line.match(/^(\d+)\s*[-–:,]?\s*(.+)$/) || line.match(/^(.+?)\s*[-–:,]?\s*(\d+)$/);
       if (m) { if (/^\d+$/.test(m[1])) { level = parseInt(m[1]); line = m[2].trim(); } else { line = m[1].trim(); level = parseInt(m[2]); } }
     }
+    if (type === 'tm') line = line.replace(/^(?:TM\s*)?\d{1,3}\s*[-–:.]\s*/i, '');
     // Aceita nome display ("Flamethrower") ou slug ("flamethrower", "fire-blast")
     const slug = moveToSlug(line) || line.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     movesetAddRow(listId, type, { move: slug, level });
@@ -6444,7 +6472,7 @@ function pkapiMovesetUltimaGeracao(d, category) {
       lvlUp.sort((x, y) => ord(x.version_group.name) - ord(y.version_group.name));
       moves.push({ move: mv.move.name, level: lvlUp[lvlUp.length - 1].level_learned_at });
     } else {
-      const methodName = category === 'tm' ? 'machine' : category; // 'egg' e 'tutor' batem direto
+      const methodName = category === 'tm' ? 'machine' : category; // 'egg' bate direto
       if (vgd.some(v => v.move_learn_method.name === methodName)) moves.push({ move: mv.move.name });
     }
   });
@@ -6525,7 +6553,7 @@ async function epkBuscarMovesetsTodos() {
   const alvo = oficiais.filter(p => S.pk.dbMap && S.pk.dbMap[String(p.id)]);
   const foraDoJson = oficiais.length - alvo.length;
   if (!alvo.length) { toast('Nenhum Pokémon oficial carregado no pokemon.json.', 'err'); return; }
-  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos (os Tutor Moves não são mexidos).${foraDoJson ? `\n${foraDoJson} Pokémon da lista não estão no pokemon.json e serão pulados.` : ''}\nPode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
+  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos.${foraDoJson ? `\n${foraDoJson} Pokémon da lista não estão no pokemon.json e serão pulados.` : ''}\nPode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
 
   EPK_MOVES_TODOS_RODANDO = true;
   const btn = document.getElementById('pk-btn-moves-todos');
@@ -8796,7 +8824,7 @@ function ccRenderTextos() {
       const condSel = sg ? condicaoOptsHtml(sg.categoria, sg.condicao) : '<option value="">— condição —</option>';
       return `<div class="cc-tx-part">${ps.length > 1 ? `<span class="cc-tx-plbl">${enclEsc(p)}</span>` : ''}
         <select class="mv-meta-input" id="cc-tx-cat-${i}-${j}" onchange="ccTxCat(${i},${j},this.value)">${catSel}</select>
-        <select class="mv-meta-input" id="cc-tx-cond-${i}-${j}">${condSel}</select></div>`;
+        <select class="mv-meta-input" id="cc-tx-cond-${i}-${j}">${condSel}</select><span class="cb-arrow">▾</span></div>`;
     }).join('');
     return `<div class="cc-tx">
       <div class="cc-tx-txt">${enclEsc(t.txt || '(vazio)')} <small>× ${t.n}</small>${ps.length > 1 ? `<br><small>= ${ps.length} condições separadas</small>` : ''}</div>
@@ -9305,7 +9333,7 @@ function evtRenderList() {
   const vis = evtVisiveis();
   el.innerHTML = vis.length ? vis.map(([n, i]) => {
     const s = EVT.sel[n];
-    return `<div class="evt-loc${s.on ? ' on' : ''}" data-i="${i}"><label class="evt-loc-l"><input type="checkbox" class="evt-ck"${s.on ? ' checked' : ''}><span class="evt-loc-n" title="${chgEsc(n)}">${chgEsc(n)}</span>${s.orig ? '<span class="evt-tag">atual</span>' : ''}</label><select class="evt-sel evt-rar"${s.on ? '' : ' disabled'}>${evtRarOpts(s)}</select></div>`;
+    return `<div class="evt-loc${s.on ? ' on' : ''}" data-i="${i}"><label class="evt-loc-l"><input type="checkbox" class="evt-ck"${s.on ? ' checked' : ''}><span class="evt-loc-n" title="${chgEsc(n)}">${chgEsc(n)}</span>${s.orig ? '<span class="evt-tag">atual</span>' : ''}</label><select class="evt-sel evt-rar"${s.on ? '' : ' disabled'}>${evtRarOpts(s)}</select><span class="cb-arrow">▾</span></div>`;
   }).join('') : '<div class="chg-empty">Nenhuma localidade encontrada.</div>';
   evtSyncAll(); evtSum();
 }
