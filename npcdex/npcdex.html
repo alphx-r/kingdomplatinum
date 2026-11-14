@@ -128,7 +128,24 @@ html{
 .modal-btn.ghost{background:transparent;border:1.5px solid var(--line);color:var(--ink-dim)}
 .modal-btn.primary{background:var(--cyan);color:#03121c}
 .modal-err{color:var(--magenta);font-size:11px;margin-top:8px;text-align:center;display:none}
+
+/* ══════════════ MODO ADM (mesmo documento; aparece só com o botão ADM ligado no nome do player) ══════════════ */
+.sel-input{background:var(--panel2);border:1.5px solid var(--line);border-radius:10px;padding:11px 14px;font-family:var(--font-body);font-size:13px;color:#fff;outline:none}
+.sel-input:focus{border-color:var(--cyan)}
+#adm-extra{display:none;gap:10px;flex-wrap:wrap;align-items:center}
+body.modo-adm #adm-extra{display:flex}
+.stat-pill{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);padding:0 6px}
+.npc-main{flex:1;width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;color:inherit;text-decoration:none}
+.npc-adm{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:4px;position:relative;z-index:2}
+.adm-btn{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:6px 10px;border-radius:8px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;text-decoration:none;white-space:nowrap;transition:all .2s}
+.adm-btn:hover{border-color:var(--cyan-dim)}
+.adm-btn.danger{background:rgba(255,107,91,.08);border-color:rgba(255,107,91,.35);color:#ff6b5b}
+body.modo-adm .npc-card.inativo{opacity:.6}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1.5px solid var(--cyan-dim);color:#fff;padding:10px 20px;border-radius:30px;font-size:12px;font-family:var(--font-mono);z-index:10000;display:none;box-shadow:0 10px 30px rgba(0,0,0,.4)}
 </style>
+<style>.nav-player-pill{margin-left:auto;margin-right:12px;padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.25);color:#fff;font:700 12px/1 var(--font-mono,monospace);white-space:nowrap}.nav-player-pill:empty{display:none}
+</style>
+<script src="/admin-player.js" data-site="npcdex"></script>
 </head>
 <body>
 
@@ -141,6 +158,7 @@ html{
     <a class="nav-link" href="/datadex/abilitydex">AbilityDex</a>
     <a class="nav-link" href="/datadex/itemdex">ItemDex</a>
   </div>
+  <span id="nav-player-name" class="nav-player-pill" data-kp-fill></span>
   <button class="nav-hamburger" id="nav-hamburger" onclick="toggleMobileMenu()" aria-label="Menu">
     <span></span><span></span><span></span>
   </button>
@@ -163,6 +181,15 @@ html{
 <div class="toolbar">
   <div class="search-row">
     <input class="search-input" id="busca" placeholder="Buscar NPC pelo nome..." oninput="renderCards()">
+    <div id="adm-extra">
+      <select class="sel-input" id="filtro-status" onchange="renderCards()">
+        <option value="">Ativos e inativos</option>
+        <option value="ativo">Só ativos</option>
+        <option value="inativo">Só inativos</option>
+      </select>
+      <button class="btn-admin on" onclick="abrirModalNovo()">+ Novo NPC</button>
+      <div class="stat-pill" id="stat-pill"></div>
+    </div>
   </div>
   <div class="cat-tabs" id="cat-tabs"></div>
 </div>
@@ -171,27 +198,74 @@ html{
   <div class="empty-state">Carregando NPCs...</div>
 </div>
 
+<!-- MODAL: novo NPC (só no modo ADM) -->
+<div class="modal-overlay" id="modal-novo" onclick="if(event.target===this)fecharModalNovo()">
+  <div class="modal-box">
+    <div class="modal-title">Novo NPC</div>
+    <div class="modal-field"><label>Nome</label><input id="novo-nome" placeholder="Ex: Ariel Costa" oninput="sugerirSlug()"></div>
+    <div class="modal-field"><label>Slug (URL)</label><input id="novo-slug" placeholder="ex: ariel-costa"></div>
+    <div class="modal-field"><label>Categoria</label>
+      <select id="novo-categoria">
+        <option value="gymleader">GYM Leader</option>
+        <option value="elitefour">Elite Four</option>
+        <option value="liga">Campeão / Liga</option>
+        <option value="househost">House Host</option>
+        <option value="stationchief">Station Chief</option>
+        <option value="vilao">Vilão</option>
+        <option value="aliado">Aliado</option>
+        <option value="comum" selected>NPC Comum</option>
+      </select>
+    </div>
+    <div class="modal-err" id="novo-err"></div>
+    <div class="modal-btns">
+      <button class="modal-btn ghost" onclick="fecharModalNovo()">Cancelar</button>
+      <button class="modal-btn primary" id="novo-confirmar" onclick="criarNpc()">Criar</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
 <script>
 const SUPA_URL='https://fatdzivyqipmcbzaiftc.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
 
+/* Modo ADM: mesmo documento. Aparece para ADM/chefe (ou MOD do npcdex) com o botão ADM ligado no nome do player (admin-player.js). */
+const modoAdm=()=>!!window.KPAdm&&KPAdm.pode();
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 async function api(path,opts={}){
   const isGet=!opts.method||opts.method==='GET';
-  const res=await fetch(`${SUPA_URL}/rest/v1/${path}`,{
-    headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...(isGet?{'Range':'0-9999'}:{}),...opts.headers},
-    ...opts
-  });
-  if(res.status===204||opts.method==='DELETE')return[];
-  const t=await res.text();
-  try{return JSON.parse(t);}catch{return[];}
+  let res;
+  try{
+    res=await fetch(`${SUPA_URL}/rest/v1/${path}`,{
+      headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...(isGet?{'Range':'0-9999'}:{}),...opts.headers},
+      ...opts
+    });
+  }catch(e){throw new Error('Falha de rede/conexão com o Supabase: '+e.message);}
+  if(opts.method==='DELETE'){
+    if(!res.ok){
+      let p=null;try{p=JSON.parse(await res.text());}catch{}
+      throw new Error((p&&(p.message||p.error||p.hint))||`HTTP ${res.status} — verifique as permissões (RLS) de DELETE na tabela.`);
+    }
+    return[];
+  }
+  if(res.status===204)return[];
+  const t=await res.text();let p;try{p=JSON.parse(t);}catch{p=null;}
+  if(!res.ok)throw new Error((p&&(p.message||p.error||p.hint))||`HTTP ${res.status}`);
+  return p??[];
 }
 const apiGet=(p,q='')=>api(`${p}?${q}`);
+const apiPost=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b)});
+const apiPatch=(p,q,b)=>api(`${p}?${q}`,{method:'PATCH',body:JSON.stringify(b)});
+const apiDel=(p,q)=>api(`${p}?${q}`,{method:'DELETE',headers:{'Prefer':'return=minimal'}});
 
 const CATEGORIAS=[
   {val:'',label:'Todos',icon:'📋'},
   {val:'gymleader',label:'Líderes de Ginásio',icon:'🥋'},
   {val:'elitefour',label:'Elite Four',icon:'👑'},
   {val:'liga',label:'Liga',icon:'🏆'},
+  {val:'househost',label:'House Hosts',icon:'🏠'},
+  {val:'stationchief',label:'Station Chiefs',icon:'🚉'},
   {val:'vilao',label:'Vilões',icon:'💀'},
   {val:'aliado',label:'Aliados',icon:'🤝'},
   {val:'comum',label:'NPCs Comuns',icon:'👤'},
@@ -201,6 +275,8 @@ const CAT_COLOR={
   gymleader:{bg:'rgba(63,232,255,.1)',fg:'var(--cyan)',bd:'var(--cyan-dim)'},
   elitefour:{bg:'rgba(255,63,160,.1)',fg:'var(--magenta)',bd:'var(--magenta-dim)'},
   liga:{bg:'rgba(232,160,32,.12)',fg:'var(--accent)',bd:'rgba(232,160,32,.35)'},
+  househost:{bg:'rgba(200,140,60,.14)',fg:'#e0a868',bd:'rgba(200,140,60,.4)'},
+  stationchief:{bg:'rgba(90,150,220,.14)',fg:'#7ab0ee',bd:'rgba(90,150,220,.4)'},
   vilao:{bg:'rgba(192,57,43,.14)',fg:'#ff6b5b',bd:'rgba(192,57,43,.4)'},
   aliado:{bg:'rgba(42,122,42,.14)',fg:'#5fd45f',bd:'rgba(42,122,42,.4)'},
   comum:{bg:'rgba(123,147,173,.1)',fg:'var(--ink-dim)',bd:'rgba(123,147,173,.3)'},
@@ -208,6 +284,12 @@ const CAT_COLOR={
 
 let todosNpcs=[], categoriaAtiva='';
 
+let _toastT=null;
+function toast(msg,cor='var(--cyan)'){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.style.borderColor=cor;el.style.display='block';
+  clearTimeout(_toastT);_toastT=setTimeout(()=>el.style.display='none',2200);
+}
 
 function renderTabs(){
   document.getElementById('cat-tabs').innerHTML=CATEGORIAS.map(c=>
@@ -217,42 +299,117 @@ function renderTabs(){
 function setCategoria(v){categoriaAtiva=v;renderTabs();renderCards();}
 
 function renderCards(){
+  const adm=modoAdm();
   const q=(document.getElementById('busca').value||'').toLowerCase().trim();
-  let lista=todosNpcs.filter(n=>n.ativo!==false);
-  if(categoriaAtiva) lista=lista.filter(n=>(n.categoria||'comum')===categoriaAtiva);
-  if(q) lista=lista.filter(n=>(n.nome||'').toLowerCase().includes(q)||(n.cargo||'').toLowerCase().includes(q));
-  const wrap=document.getElementById('cards-wrap');
-  if(!lista.length){
-    wrap.innerHTML=`<div class="empty-state">Nenhum NPC encontrado.</div>`;
-    return;
+  let lista=adm?todosNpcs.slice():todosNpcs.filter(n=>n.ativo!==false);
+  if(adm){
+    const st=document.getElementById('filtro-status').value;
+    if(st==='ativo')lista=lista.filter(n=>n.ativo!==false);
+    if(st==='inativo')lista=lista.filter(n=>n.ativo===false);
   }
+  if(categoriaAtiva)lista=lista.filter(n=>(n.categoria||'comum')===categoriaAtiva);
+  if(q)lista=lista.filter(n=>(n.nome||'').toLowerCase().includes(q)||(n.cargo||'').toLowerCase().includes(q)||(adm&&(n.slug||'').toLowerCase().includes(q)));
+  if(adm)document.getElementById('stat-pill').textContent=`${lista.length} de ${todosNpcs.length} NPC(s)`;
+  const wrap=document.getElementById('cards-wrap');
+  if(!lista.length){wrap.innerHTML=`<div class="empty-state">Nenhum NPC encontrado.</div>`;return;}
   wrap.innerHTML=lista.map((n,i)=>{
     const cat=CAT_INFO[n.categoria]||CAT_INFO.comum;
     const col=CAT_COLOR[n.categoria]||CAT_COLOR.comum;
     const inativo=n.ativo===false;
-    return`<a class="npc-card${inativo?' inativo':''}" href="/npcdex/${encodeURIComponent(n.slug)}" style="animation-delay:${Math.min(i*0.03,.4)}s">
-      <div class="npc-photo-ring">
-        ${n.foto?`<img class="npc-photo" src="${n.foto}" onerror="this.style.display='none'">`:`<div class="npc-photo-placeholder">${cat.icon}</div>`}
-      </div>
-      <div class="npc-name">${n.nome}</div>
-      <div class="npc-cargo">${n.cargo||''}</div>
-      <div class="npc-badge" style="background:${col.bg};color:${col.fg};border:1px solid ${col.bd}">${cat.icon} ${cat.label}${inativo?' · inativo':''}</div>
-    </a>`;
+    const href=`/npcdex/${encodeURIComponent(n.slug)}`;
+    const id=esc(String(n.id));
+    return`<div class="npc-card${inativo?' inativo':''}" style="animation-delay:${Math.min(i*0.03,.4)}s">
+      <a class="npc-main" href="${href}">
+        <div class="npc-photo-ring">
+          ${n.foto?`<img class="npc-photo" src="${esc(n.foto)}" onerror="this.style.display='none'">`:`<div class="npc-photo-placeholder">${cat.icon}</div>`}
+        </div>
+        <div class="npc-name">${esc(n.nome)}</div>
+        <div class="npc-cargo">${esc(n.cargo||'')}</div>
+        <div class="npc-badge" style="background:${col.bg};color:${col.fg};border:1px solid ${col.bd}">${cat.icon} ${cat.label}${inativo?' · inativo':''}</div>
+      </a>
+      ${adm?`<div class="npc-adm">
+        <a class="adm-btn" href="${href}">✏️ Editar</a>
+        <button class="adm-btn" onclick="toggleAtivo('${id}',${inativo})">${inativo?'Ativar':'Desativar'}</button>
+        <button class="adm-btn danger" onclick="excluirNpc('${id}')">🗑️</button>
+      </div>`:''}
+    </div>`;
   }).join('');
 }
 
 async function carregarNpcs(){
-  try{
-    todosNpcs=await apiGet('npcs','order=ordem.asc,nome.asc')||[];
-  }catch(e){
-    console.error('Erro ao carregar NPCs:',e);
-    todosNpcs=[];
-  }
+  try{todosNpcs=await apiGet('npcs','order=ordem.asc,nome.asc')||[];}
+  catch(e){console.error('Erro ao carregar NPCs:',e);todosNpcs=[];}
   renderTabs();
   renderCards();
 }
 
+// ── Ações de ADM ──
+async function toggleAtivo(id,tornarAtivo){
+  if(!modoAdm())return;
+  try{
+    await apiPatch('npcs',`id=eq.${id}`,{ativo:tornarAtivo});
+    const n=todosNpcs.find(x=>String(x.id)===String(id));if(n)n.ativo=tornarAtivo;
+    renderCards();toast(tornarAtivo?'NPC ativado':'NPC desativado');
+  }catch(e){toast('Erro: '+e.message,'var(--magenta)');}
+}
+async function excluirNpc(id){
+  if(!modoAdm())return;
+  const n=todosNpcs.find(x=>String(x.id)===String(id));
+  if(!confirm(`Tem certeza que quer excluir "${n?n.nome:'este NPC'}"? Essa ação não pode ser desfeita.`))return;
+  try{
+    await apiDel('npcs',`id=eq.${id}`);
+    todosNpcs=todosNpcs.filter(x=>String(x.id)!==String(id));
+    renderCards();toast('NPC excluído');
+  }catch(e){toast('Erro ao excluir: '+e.message,'var(--magenta)');}
+}
+
+// ── Novo NPC ──
+function slugify(s){
+  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+}
+function sugerirSlug(){
+  const el=document.getElementById('novo-slug');
+  if(!el.dataset.touched)el.value=slugify(document.getElementById('novo-nome').value);
+}
+function abrirModalNovo(){
+  if(!modoAdm())return;
+  document.getElementById('novo-nome').value='';
+  const sl=document.getElementById('novo-slug');sl.value='';sl.dataset.touched='';
+  document.getElementById('novo-categoria').value='comum';
+  document.getElementById('novo-err').style.display='none';
+  document.getElementById('modal-novo').classList.add('open');
+  setTimeout(()=>document.getElementById('novo-nome').focus(),50);
+}
+function fecharModalNovo(){document.getElementById('modal-novo').classList.remove('open');}
+document.getElementById('novo-slug').addEventListener('input',function(){
+  this.dataset.touched='1';
+  this.value=this.value.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-');
+});
+async function criarNpc(){
+  if(!modoAdm())return;
+  const nome=document.getElementById('novo-nome').value.trim();
+  const slug=slugify(document.getElementById('novo-slug').value.trim());
+  const categoria=document.getElementById('novo-categoria').value;
+  const err=document.getElementById('novo-err'),btn=document.getElementById('novo-confirmar');
+  err.style.display='none';
+  if(!nome||!slug){err.textContent='Preencha nome e slug.';err.style.display='block';return;}
+  if(todosNpcs.some(n=>n.slug===slug)){err.textContent='Já existe um NPC com esse slug.';err.style.display='block';return;}
+  btn.disabled=true;btn.textContent='Criando...';
+  try{
+    const res=await apiPost('npcs',{nome,slug,categoria,time:[{},{},{},{},{},{}],relacionamentos:[],rel_total:6,ativo:true});
+    if(res&&res[0]){location.href=`/npcdex/${encodeURIComponent(slug)}`;}
+    else{err.textContent='Criação não retornou dados. Verifica a tabela npcs no Supabase.';err.style.display='block';btn.disabled=false;btn.textContent='Criar';}
+  }catch(e){err.textContent='Erro: '+e.message;err.style.display='block';btn.disabled=false;btn.textContent='Criar';}
+}
+
+// ── Modo ADM liga/desliga (botão no nome do player) ──
+function aplicaModo(){
+  document.body.classList.toggle('modo-adm',modoAdm());
+  if(!modoAdm())fecharModalNovo();
+  renderCards();
+}
 carregarNpcs();
+if(window.KPAdm){KPAdm.ready.then(aplicaModo);KPAdm.onChange(aplicaModo);}
 </script>
 <script>
 // ── Menu mobile (hamburger) ──
