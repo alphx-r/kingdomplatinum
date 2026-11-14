@@ -1,4 +1,4 @@
-/* admin-player.js — acesso por PLAYER (Chefe / ADM / MOD por site) + botão no nome do player.
+/* admin-player.js — acesso por PLAYER (Chefe / ADM / MOD por site) + switch ao lado do nome do player.
    Uso (em TODO html, no <head>):  <script src="/admin-player.js"></script>
    Opcional: data-site="torneios" para forçar o nome do site (senão sai do caminho da URL).
    A lista vem de config.kp_staff (projeto do index):
@@ -41,22 +41,28 @@
   var ouvintes = [];
   function emit() { ouvintes.forEach(function (f) { try { f(); } catch (e) {} }); }
 
-  /* ── botão no nome do player ── */
+  /* ── switch ao lado do nome do player (liga/desliga o modo ADM/MOD); o clique no nome continua com a página ── */
   var busy = false;
   var SEL = '#nav-player-name,#nav-who';
   function pintar() {
     if (busy) return;
-    var p = papel(), on = modoOn(), btnEq = document.getElementById('btn-equipe');
-    if (btnEq) btnEq.style.display = (p === 'chefe' || p === 'admin') ? '' : 'none';
+    var p = papel(), on = modoOn();
     Array.prototype.forEach.call(document.querySelectorAll(SEL), function (el) {
-      var txt = el.textContent.replace(/^(ADM|MOD)\s+/, '').trim();
+      var raw = el.textContent, txt = raw.replace(/^(ADM|MOD)\s+/, '').trim();
       /* páginas sem código próprio para o nome (npcdex...): preenche com o player logado */
       if ((!txt || txt === '—') && ses() && nome() && el.hasAttribute('data-kp-fill')) txt = nome();
-      if (!p || !txt || txt === '—' || txt === 'Entrar') { el.classList.remove('kp-adm-tog', 'kp-off'); if (txt && el.textContent !== txt) { busy = true; el.textContent = txt; busy = false; } return; }
-      var label = (on ? (p === 'mod' ? 'MOD ' : 'ADM ') : '') + txt;
-      if (el.textContent !== label) { busy = true; el.textContent = label; busy = false; }
-      el.classList.add('kp-adm-tog'); el.classList.toggle('kp-off', !on);
-      el.title = on ? 'Modo ' + (p === 'mod' ? 'MOD' : 'ADM') + ' ativo. Toque para ver como player' : 'Modo player. Toque para voltar ao ' + (p === 'mod' ? 'MOD' : 'ADM');
+      if (txt && raw !== txt) { busy = true; el.textContent = txt; busy = false; }
+      var nx = el.nextElementSibling, sw = nx && nx.classList && nx.classList.contains('kp-sw') ? nx : null;
+      if (!p || !txt || txt === '—' || txt === 'Entrar') { if (sw) sw.remove(); return; }
+      if (!sw) {
+        sw = document.createElement('button'); sw.type = 'button'; sw.className = 'kp-sw';
+        sw.setAttribute('role', 'switch'); sw.innerHTML = '<i></i>';
+        sw.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggle(); });
+        el.parentNode.insertBefore(sw, el.nextSibling);
+      }
+      var tipo = p === 'mod' ? 'MOD' : 'ADM';
+      sw.classList.toggle('on', on); sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      sw.setAttribute('aria-label', 'Modo ' + tipo); sw.title = on ? 'Modo ' + tipo + ' ligado. Toque para ver como player' : 'Modo player. Toque para voltar ao ' + tipo;
     });
   }
   function toggle() {
@@ -66,10 +72,6 @@
     try { sessionStorage.setItem(KP, modoOn() ? '1' : ''); } catch (e) {}
     pintar(); emit();
   }
-  document.addEventListener('click', function (e) {
-    var t = e.target && e.target.closest && e.target.closest(SEL);
-    if (t && papel()) { e.preventDefault(); e.stopImmediatePropagation(); toggle(); }
-  }, true);
 
 
   /* ── senha do player (para ações que gravam no servidor); fica só nesta aba ── */
@@ -96,20 +98,25 @@
     });
   }
 
-  /* ── editor da lista de acesso (Chefe e ADMs) ── */
+  /* ── editor da lista de acesso (Chefe e ADMs) — com host (elemento) desenha dentro da página; sem host abre um diálogo ── */
   var SITES = ['torneios', 'stores', 'mapa', 'npcdex', 'fichas', 'missoes', 'weathercast', 'datadex'];
-  function editor() {
+  var INP_I = 'width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;margin:6px 0';
+  var BTN_I = 'padding:9px 16px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;font-weight:700;cursor:pointer';
+  function editor(host) {
     var p = papel(); if (p !== 'chefe' && p !== 'admin') return;
+    var inl = !!(host && host.nodeType === 1);
+    var cInp = inl ? INP_I : INP, cBtn = inl ? BTN_I : BTN;
+    var cChip = inl ? 'background:var(--surface2,#eef1f7);border:1px solid var(--border,#dde3ee)' : 'background:rgba(255,255,255,.1)';
     var nv = JSON.parse(JSON.stringify(staff)); nv.mods = nv.mods || {};
     SITES.forEach(function (k) { if (!nv.mods[k]) nv.mods[k] = []; });
-    var d = el('dialog', DLG + ';max-height:88vh;overflow:auto'), dl = el('datalist'); dl.id = 'kpe-pl'; d.appendChild(dl);
+    var d = inl ? el('div') : el('dialog', DLG + ';max-height:88vh;overflow:auto'), dl = el('datalist'); dl.id = 'kpe-pl'; d.appendChild(dl);
     fetch(SU + '/rest/v1/players?select=nome&order=nome.asc', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } }).then(function (r) { return r.ok ? r.json() : []; })
       .then(function (L) { dl.innerHTML = (L || []).map(function (x) { return '<option value="' + esc(x.nome) + '">'; }).join(''); }).catch(function () {});
     var corpo = el('div'); d.appendChild(corpo);
     function sec(titulo, arr) {
       var h = '<div style="margin:12px 0 4px;font-weight:800">' + esc(titulo) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px">' +
-        (arr.map(function (n, i) { return '<span style="padding:4px 10px;border-radius:99px;background:rgba(255,255,255,.1)">' + esc(n) + ' <a href="#" data-del="' + i + '" style="color:inherit;text-decoration:none;opacity:.7">✕</a></span>'; }).join('') || '<span style="opacity:.6">ninguém</span>') + '</div>' +
-        '<div style="display:flex;gap:6px"><input list="kpe-pl" placeholder="Adicionar player…" style="' + INP + '"><button data-add style="' + BTN + ';margin:6px 0">+</button></div>';
+        (arr.map(function (n, i) { return '<span style="padding:4px 10px;border-radius:99px;' + cChip + '">' + esc(n) + ' <a href="#" data-del="' + i + '" style="color:inherit;text-decoration:none;opacity:.7">✕</a></span>'; }).join('') || '<span style="opacity:.6">ninguém</span>') + '</div>' +
+        '<div style="display:flex;gap:6px"><input list="kpe-pl" placeholder="Adicionar player…" style="' + cInp + '"><button data-add style="' + cBtn + ';margin:6px 0">+</button></div>';
       var box = el('div', '', h);
       box.addEventListener('click', function (e) {
         var a = e.target.closest('[data-del]'), b = e.target.closest('[data-add]');
@@ -119,12 +126,12 @@
       return box;
     }
     function desenha() {
-      corpo.innerHTML = '<h3 style="margin:0 0 4px">Equipe de acesso</h3><p style="margin:0;opacity:.75">Chefe: <b>' + esc(nv.chefe) + '</b>. O chefe só é trocado direto no banco.</p>';
+      corpo.innerHTML = (inl ? '' : '<h3 style="margin:0 0 4px">Equipe de acesso</h3>') + '<p style="margin:0;opacity:.75">Chefe: <b>' + esc(nv.chefe) + '</b>. O chefe só é trocado direto no banco.</p>';
       corpo.appendChild(sec('ADMs (todos os sites)', nv.admins));
       Object.keys(nv.mods).sort().forEach(function (k) { corpo.appendChild(sec('MODs · ' + k, nv.mods[k])); });
-      var rod = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px', '<span id="kpe-err" style="flex:1;color:#ff8a8a;align-self:center"></span><button id="kpe-x" style="' + BTN + '">Fechar</button><button id="kpe-s" style="' + BTN + ';background:#3bb54a;border-color:#3bb54a">Salvar</button>');
+      var rod = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px', '<span id="kpe-err" style="flex:1;color:' + (inl ? 'var(--red,#c0392b)' : '#ff8a8a') + ';align-self:center"></span><button id="kpe-x" style="' + cBtn + '">' + (inl ? 'Desfazer' : 'Fechar') + '</button><button id="kpe-s" style="' + cBtn + ';background:#3bb54a;border-color:#3bb54a;color:#fff">Salvar</button>');
       corpo.appendChild(rod);
-      rod.querySelector('#kpe-x').onclick = function () { d.close(); };
+      rod.querySelector('#kpe-x').onclick = function () { if (inl) editor(host); else d.close(); };
       rod.querySelector('#kpe-s').onclick = async function () {
         var err = rod.querySelector('#kpe-err'); err.textContent = '';
         var c = await cred('Confirme a senha do seu player para salvar a equipe.'); if (!c) return;
@@ -133,15 +140,18 @@
           var j = await r.json().catch(function () { return {}; });
           if (!r.ok) { if (r.status === 401 || r.status === 403) credLimpar(); throw new Error(j.error || 'Erro ' + r.status); }
           staff = norm(j.staff) || staff; try { sessionStorage.setItem(KC, JSON.stringify(staff)); } catch (e) {}
-          pintar(); emit(); d.close();
+          pintar(); emit();
+          if (inl) { err.style.color = '#2e8b3a'; err.textContent = 'Equipe salva ✓'; } else d.close();
         } catch (e) { err.textContent = e.message; }
       };
     }
-    desenha(); document.body.appendChild(d); d.addEventListener('close', function () { d.remove(); }, { once: true }); d.showModal();
+    desenha();
+    if (inl) { host.innerHTML = ''; host.appendChild(d); return; }
+    document.body.appendChild(d); d.addEventListener('close', function () { d.remove(); }, { once: true }); d.showModal();
   }
 
   var st = document.createElement('style');
-  st.textContent = '#nav-player-name.kp-adm-tog{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}#nav-player-name.kp-adm-tog.kp-off{opacity:.8}';
+  st.textContent = '.kp-sw{box-sizing:border-box;flex:none;position:relative;width:30px;height:17px;padding:0;margin:0 0 0 6px;border-radius:99px;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);cursor:pointer;transition:background .18s,border-color .18s;-webkit-tap-highlight-color:transparent}.kp-sw i{position:absolute;top:1.5px;left:1.5px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .18s}.kp-sw.on{background:#3bb54a;border-color:#3bb54a}.kp-sw.on i{transform:translateX(13px)}';
   document.head.appendChild(st);
 
   function iniciar() {
@@ -175,6 +185,6 @@
     nome: nome, staff: function () { return staff; },
     toggle: toggle, onChange: function (f) { ouvintes.push(f); },
     cred: cred, credLimpar: credLimpar,                             // {n,s} da senha do player (cache só na aba); mande como admin_nome/admin_senha
-    editor: editor                                                  // abre o editor da equipe (Chefe/ADM)
+    editor: editor                                                  // editor(host): desenha a equipe dentro de 'host'; sem host abre um diálogo (Chefe/ADM)
   };
 })();
