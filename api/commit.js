@@ -1,5 +1,5 @@
 // /api/commit — função única que substitui commit-abilities, commit-moves, commit-rewards,
-// commit-items, commit-image, commit-stores e a rota missoes_publicar (a Vercel Hobby aceita no máximo 12 funções).
+// commit-items, commit-image, commit-stores e missoes_publicar (a Vercel Hobby aceita no máximo 12 funções).
 // O tipo vem do rewrite do vercel.json (/api/commit-stores -> /api/commit?tipo=stores),
 // então as páginas continuam chamando os mesmos endereços de antes.
 // O GITHUB_TOKEN fica só na Vercel (env var); o navegador nunca vê o token.
@@ -280,8 +280,78 @@ async function hStores(token, body) {
   return r.unchanged ? { ok: true, unchanged: true, lojas } : { ok: true, sha: r.sha, lojas };
 }
 
+/* ───────────── missões (missoes/missoes.json — Quests Guild) ─────────────
+   Recebe { missoes: [...novas/editadas], apagar: [ids] } (o mesmo lote que o missoes.html guarda como rascunho),
+   aplica sobre o missoes.json publicado e faz UM commit. Aceita array puro ou { missoes: [...] } e mantém o formato.
+   Campos fora de CAMPOS_MISSAO que já existam na missão publicada são preservados. */
+const CAMPOS_MISSAO = ['titulo', 'ranking', 'estilo', 'pre_requisitos', 'local', 'mapa', 'capturavel', 'repetivel', 'descricao', 'recompensas', 'ordem', 'repeticao', 'ativa', 'vagas'];
+const REPETICOES = new Set(['livre', 'diaria', 'semanal', 'nao']);
+function limpaMissao(m) {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+  const id = m.id == null ? '' : String(m.id).trim();
+  if (!id || id.length > 80) return null;
+  const o = { id };
+  for (const k of CAMPOS_MISSAO) {
+    const v = m[k];
+    if (v == null || v === '') continue;
+    if (typeof v === 'string') { if (v.length > 5000) return null; o[k] = v; }
+    else if (typeof v === 'number') { if (!Number.isFinite(v)) return null; o[k] = v; }
+    else if (typeof v === 'boolean') o[k] = v;
+    else return null;
+  }
+  if (typeof o.titulo !== 'string' || !o.titulo.trim()) return null;
+  if (o.repeticao != null && !REPETICOES.has(o.repeticao)) return null;
+  return o;
+}
+async function lerArquivo(token, path) {
+  const url = `${API}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(BRANCH)}`;
+  const r = await fetch(url, { headers: ghHeaders(token) });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new HttpErr(502, `GitHub respondeu HTTP ${r.status} ao ler ${path}`);
+  const j = await r.json();
+  return Buffer.from(j.content || '', 'base64').toString('utf8');
+}
+async function hMissoes(token, body) {
+  const { missoes = [], apagar = [] } = body;
+  if (!Array.isArray(missoes) || !Array.isArray(apagar) || missoes.length > 500 || apagar.length > 500)
+    throw new HttpErr(400, 'Payload inválido: esperado { missoes: [...], apagar: [...] }.');
+  const lote = missoes.map(limpaMissao);
+  if (lote.some(x => !x)) throw new HttpErr(400, 'Missão inválida (confira id e título).');
+  const ids = apagar.map(String);
+  if (!lote.length && !ids.length) throw new HttpErr(400, 'Nada para publicar.');
+
+  const FILE = 'missoes/missoes.json';
+  const texto = await lerArquivo(token, FILE);
+  let raiz = [];
+  if (texto != null) { try { raiz = JSON.parse(texto); } catch (e) { throw new HttpErr(502, 'missoes.json atual não é um JSON válido.'); } }
+  const ehArray = Array.isArray(raiz);
+  let lista = ehArray ? raiz : (raiz && Array.isArray(raiz.missoes) ? raiz.missoes : null);
+  if (!lista) throw new HttpErr(502, 'Formato inesperado no missoes.json atual.');
+  lista = lista.slice();
+
+  let novas = 0, editadas = 0, apagadas = 0;
+  for (const m of lote) {
+    const i = lista.findIndex(x => x && String(x.id) === m.id);
+    if (i >= 0) {
+      const extras = {};
+      for (const [k, v] of Object.entries(lista[i])) if (k !== 'id' && !CAMPOS_MISSAO.includes(k)) extras[k] = v;
+      lista[i] = { id: m.id, ...extras, ...m }; editadas++;
+    } else { lista.push(m); novas++; }
+  }
+  if (ids.length) {
+    const antes = lista.length;
+    lista = lista.filter(x => !(x && ids.includes(String(x.id))));
+    apagadas = antes - lista.length;
+  }
+  const saida = ehArray ? lista : { ...raiz, missoes: lista };
+  const r = await putArquivo(token, FILE, { texto: JSON.stringify(saida, null, 2) + '\n' },
+    `Quests Guild: +${novas} nova(s), ~${editadas} editada(s), -${apagadas} apagada(s) (missoes.html)`, { pularSeIgual: true });
+  return r.unchanged ? { ok: true, unchanged: true, novas, editadas, apagadas }
+                     : { ok: true, novas, editadas, apagadas, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
+}
+
 /* ───────────── roteamento ───────────── */
-const TIPOS = { abilities: hAbilities, moves: hMoves, rewards: hRewards, items: hItems, image: hImage, stores: hStores };
+const TIPOS = { abilities: hAbilities, moves: hMoves, rewards: hRewards, items: hItems, image: hImage, stores: hStores, missoes: hMissoes };
 
 function tipoDe(req) {
   const q = req.query && req.query.tipo;
@@ -292,12 +362,6 @@ function tipoDe(req) {
 
 export default async function handler(req, res) {
   const tipo = tipoDe(req);
-  // Quests Guild: /api/missoes_publicar é reescrito pelo vercel.json para cá. O helper
-  // _missoes_publicar.js (mesmo que o fichario.js usava) cuida do próprio método, auth e resposta.
-  if (tipo === 'missoes') {
-    const { default: publicarMissoes } = await import('./_missoes_publicar.js');
-    return publicarMissoes(req, res);
-  }
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Método não permitido.' }); }
   const fn = TIPOS[tipo];
   if (!fn) return res.status(400).json({ error: 'Tipo de commit desconhecido: ' + (tipo || '(vazio)') });
