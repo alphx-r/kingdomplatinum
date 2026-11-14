@@ -206,6 +206,7 @@ a.nav-login{margin:0 6px 0 0}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+<script src="/admin-player.js" data-site="torneios"></script>
 </head>
 <body>
 <nav class="nav" id="main-nav">
@@ -265,10 +266,10 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 /* Edita quem está logado como ADM no site; ?org=1 libera para testes locais */
 const sesF=()=>{try{return JSON.parse(localStorage.getItem('kp_ficha_sessao'))}catch{return null}};
-const realAdmin=()=>!!localStorage.getItem('adm_session')||!!sesF()?.admin||/[?&]org=1/.test(location.search);
+const realAdmin=()=>/[?&]org=1/.test(location.search)||(!!window.KPAdm&&['chefe','admin'].includes(KPAdm.papel()));   /* chefe/ADM = players da lista config.kp_staff (admin-player.js) */
 /* moderadores: players liberados pelo ADM (config.torneio_organizadores) criam/editam torneios usando o token da sessão */
 const meuId=()=>S.ses?.player_id??S.me?.id;
-const modListado=()=>{const u=S.me||{},nm=u.nome||S.ses?.nome;return !realAdmin()&&S.orgs.some(o=>String(o.id)===String(meuId())||(o.nome&&o.nome===nm))};
+const modListado=()=>!realAdmin()&&!!window.KPAdm&&KPAdm.papel()==='mod';   /* MOD deste site = kp_staff.mods.torneios */
 const isMod=()=>!!S.ses?.token&&modListado();
 const canEdit=()=>(realAdmin()||isMod())&&!S.preview;
 /* moderador só edita torneio que criou ou que o ADM atribuiu a ele */
@@ -326,7 +327,7 @@ const admCred=()=>{try{return JSON.parse(sessionStorage.getItem(KA))}catch{retur
 function pedirAdm(){
   return new Promise(ok=>{
     const d=$('#dlg');
-    d.innerHTML=`<h3>Entrar como organizador</h3><p class="msg" style="margin:0 0 12px">Confirme seu login de ADM para salvar alterações no torneio.</p>
+    d.innerHTML=`<h3>Entrar como organizador</h3><p class="msg" style="margin:0 0 12px">Confirme o login do seu player (ADM) para salvar alterações no torneio.</p>
     <div class="ds"><input class="in" id="an" placeholder="Nome" value="${esc(sesF()?.nome||'')}" style="width:100%;text-align:left"></div>
     <div class="ds"><input class="in" id="as" type="password" placeholder="Senha" style="width:100%;text-align:left" onkeydown="if(event.key==='Enter')$('#ab').click()"></div>
     <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" id="ac">Cancelar</button><button class="btn p" id="ab">Entrar</button></div>`;
@@ -336,12 +337,29 @@ function pedirAdm(){
     d.addEventListener('close',()=>ok(v),{once:true});d.showModal();
   });
 }
+const kpNrm=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
 async function carregaOrgs(){
-  try{const r=await api('config?chave=eq.torneio_organizadores&select=valor');let v=r?.[0]?.valor;if(typeof v==='string')try{v=JSON.parse(v)}catch{v=[]}S.orgs=Array.isArray(v)?v.filter(o=>o&&(o.id!=null||o.nome)):[]}catch{S.orgs=[]}
+  /* moderadores = kp_staff.mods.torneios (nomes); o id vem da lista de players, para atribuir torneios a eles */
+  try{await KPAdm.ready}catch{}
+  const nomes=(window.KPAdm&&KPAdm.staff().mods.torneios)||[];
+  S.orgs=nomes.map(n=>{const p=S.players.find(x=>kpNrm(x.nome)===n);return p?{id:p.id,nome:p.nome}:{nome:n}});
 }
+/* pede o nome+senha do PLAYER (não é o login de ADM por email), conferidos no servidor */
 async function salvaOrgs(L){
-  await api('config?on_conflict=chave',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({chave:'torneio_organizadores',valor:L})});
-  S.orgs=L;
+  const staff=JSON.parse(JSON.stringify(KPAdm.staff()));staff.mods=staff.mods||{};staff.mods.torneios=L.map(o=>kpNrm(o.nome)).filter(Boolean);
+  for(let k=0;k<2;k++){
+    const c=await KPAdm.cred('Confirme a senha do seu player para salvar os moderadores.');if(!c)throw new Error('Cancelado.');
+    const r=await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'staff_salvar',nome:c.n,senha:c.s,staff})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){
+      try{sessionStorage.removeItem('kp_staff_cache')}catch{}
+      /* transição: o servidor de torneios (_torneios.js) ainda lê config.torneio_organizadores; mantém igual até ele ser atualizado */
+      try{await api('config?on_conflict=chave',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({chave:'torneio_organizadores',valor:L})})}catch{}
+      S.orgs=L;return;
+    }
+    if(r.status===401||r.status===403){KPAdm.credLimpar();if(k)throw new Error(j.error||'Sem permissão');toast(j.error||'Senha incorreta')}
+    else throw new Error(j.error||'Erro '+r.status);
+  }
 }
 function organizadores(){
   if(!realAdmin())return;
@@ -374,6 +392,7 @@ async function admPost(body){
   }
 }
 async function boot(){
+  try{await KPAdm.ready}catch{}
   const [pl,fi]=await Promise.all([
     api('players?select=id,nome').catch(()=>[]),
     fetch('/api/ficha-salvar?lista=1',{cache:'no-store'}).then(r=>r.ok?r.json():[]).catch(()=>[]),
@@ -484,7 +503,7 @@ function hub(){
   $('#hub').innerHTML=`<div class="pmh" id="pmh"><div class="pmw pmht"><div class="pmb" onclick="voltar()"><b>Torneios</b></div>
     ${S.cur?`<span style="flex:1"></span><button type="button" class="pmcart" onclick="voltar()" title="Todos os torneios" aria-label="Todos os torneios">${back}</button>`
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
-    ${(adm||isMod())?`<button type="button" id="modsw" class="modsw ${S.preview?'off':''}" role="switch" aria-checked="${!S.preview}" onclick="togPreview()" title="${S.preview?'Modo player ativo. Clique para voltar ao modo MOD':'Modo MOD ativo. Clique para ver como player'}" aria-label="Alternar entre modo MOD e modo player"><span class="sw-t sw-mod">MOD</span><span class="sw-t sw-ply">Player</span><span class="sw-k"></span></button>`:''}
+    
     ${ed?`${adm?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button>`:`<button type="button" class="pmcart" onclick="recarregar()" title="Recarregar do servidor" aria-label="Recarregar do servidor">${refresh}</button>`}<button type="button" class="pmcart" onclick="novo()" title="Novo torneio" aria-label="Novo torneio">${plus}</button>`:''}
   </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
 }
