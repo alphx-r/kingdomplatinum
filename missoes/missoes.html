@@ -489,7 +489,7 @@ dialog#mym::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
 .mymc{flex:1;overflow-y:auto;grid-template-columns:minmax(0,1fr)!important;padding:14px;margin:0!important}
 .mymc h4{font:800 10px var(--font-body);text-transform:uppercase;letter-spacing:.6px;color:var(--muted,#666);margin:4px 2px 0}
 @media(max-width:700px){.pmtabs button{padding:9px 4px;font-size:12px}.pmtl{flex-direction:column;align-items:stretch}.pmtl .pmtabs{flex:none}.pmtl .pms{width:100%}}
-.pmg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;align-items:start}
+.pmg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;align-items:stretch}
 .pc{--rc:#8d6e63;position:relative;background:var(--surface);border-radius:16px;padding:0 0 18px;display:flex;flex-direction:column;gap:0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.12);border:2px solid transparent;transition:transform .15s,box-shadow .15s}
 .pc::before{content:"";height:6px;background:linear-gradient(90deg,var(--rc),color-mix(in srgb,var(--rc) 55%,#fff))}
 .pc:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.18)}.pc.on{border-color:var(--rc)}
@@ -509,7 +509,7 @@ dialog#mym::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
 .pc-rew{margin-top:12px;border-radius:12px;padding:10px 12px;background:var(--accent-light);border:1px dashed var(--accent);font:700 13px/1.4 var(--font-body);white-space:pre-line}
 .pc-rew .rk{display:block;font:800 10px var(--font-body);text-transform:uppercase;letter-spacing:.6px;color:#a86a00;margin-bottom:3px}.pc-rew .none{color:var(--muted);font-style:italic;font-weight:500}
 .pc .dtg{margin-top:12px}.pc .desc{margin:8px 16px 0;padding:10px 12px;border-left:3px solid var(--rc);background:var(--surface2);border-radius:0 10px 10px 0}
-.pc .takers{margin-top:12px}.pc .foot{margin-top:14px;margin-bottom:0;padding-top:12px;border-top:1px solid var(--border)}
+.pc .takers{margin-top:12px;padding-bottom:14px}.pc .foot{margin-top:auto;margin-bottom:0;padding-top:12px;border-top:1px solid var(--border)}
 .desc{font:500 13.5px/1.55 var(--font-body);white-space:pre-line;margin:0}
 .more{display:none;margin-top:8px}.pc.open .more{display:block}.pc .more .desc{margin:0 0 8px}.more .pc-rew{margin-top:0}
 .pi-row{grid-column:1/-1;display:flex;gap:8px}.pi-row .pi{flex:1}
@@ -990,7 +990,7 @@ function render(){
  if(q)l=l.filter(m=>[m.titulo,m.local,m.mapa,m.descricao,m.estilo].join(' ').toLowerCase().includes(q));
   if(aba==='mim'){
   if(!me){$('board').innerHTML='<div class="empty">Entre com seu player para ver as missões do ranking do seu personagem.</div>';return}
-  if(!meusRanks.size){$('board').innerHTML='<div class="empty">Não encontrei o ranking dos seus personagens.</div>';return}
+  if(!meusRanks.size){const sem=meusChars.map(c=>esc(c.nome)).join(', ');$('board').innerHTML='<div class="empty">'+(meusChars.length?'Encontrei seus personagens ('+sem+'), mas a ficha deles não tem o rank preenchido.':'Não encontrei nenhum personagem vinculado ao seu player ('+esc(me.nome)+').')+'</div>';return}
   const disp=l.filter(m=>!indisponivel(m)),cs=meusChars.filter(c=>c.rank);
   $('board').innerHTML=cs.map(c=>{const ms=disp.filter(m=>rkN(m.ranking)===c.rank),ini=esc((c.nome[0]||'?').toUpperCase());
    return `<div class="mim-h" style="--rc:${rkCor(c.rank)}"><span class="mim-av">${c.foto?`<img src="${esc(c.foto)}" alt="" loading="lazy" onerror="this.outerHTML='<span>${ini}</span>'">`:`<span>${ini}</span>`}</span><b>${esc(c.nome)}</b><span class="mim-rk">• Rank ${esc(c.rank)}</span></div>`+(ms.length?ms.map(card).join(''):'<div class="empty" style="grid-column:1/-1;margin:0">Nenhuma missão disponível neste ranking.</div>')}).join('');
@@ -1374,16 +1374,32 @@ const rankDe=p=>{if(!p||typeof p!=='object')return null;for(const k of ['ranking
 /* mesma fonte do stores: lista de fichas (/api/ficha-salvar?lista=1), filtrada pelo(s) id(s) do player da sessão */
 let LST=null;
 async function carregaLista(){if(!LST){const r=await fetch('/api/ficha-salvar?lista=1');if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
+/* rank dentro da ficha: procura chaves ranking/rank (até 3 níveis) em f e em f.d */
+/* mesma regra do fichas.html: o rank vem dos Pontos de Ranking (d.pts_ranking); d.ranking é só a cópia gravada */
+const RANK_PTS=[0,1000,2500,5000,7000];
+function rankDeFicha(f){
+ const pts=f&&f.d&&f.d.pts_ranking;
+ if(pts!=null&&String(pts).trim()!==''){const n=parseInt(String(pts).replace(/\D/g,''),10)||0;let r=1;RANK_PTS.forEach((x,i)=>{if(n>=x)r=i+1});return String(r)}
+ const direto=rankDe(f)||rankDe(f&&f.d);if(direto)return direto;
+ const vai=(o,n)=>{if(!o||typeof o!=='object'||Array.isArray(o)||n>3)return null;
+  for(const[k,v]of Object.entries(o)){if(/^(ranking|rank)(_\w+)?$/i.test(k)&&(typeof v==='string'||typeof v==='number')){const x=String(v).match(/[1-5]/);if(x)return x[0]}}
+  for(const v of Object.values(o)){const r=vai(v,n+1);if(r)return r}return null};
+ return vai(f&&f.d,0)||vai(f,0);
+}
 async function carregarPersonagens(){
  meusRanks.clear();meusIds.clear();meusChars.length=0;
- const ids=[];if(ses?.player_id!=null)ids.push(String(ses.player_id));
+ const ids=[];if(ses?.player_id!=null&&String(ses.player_id)!=='admin')ids.push(String(ses.player_id));   /* 'admin' é o id genérico de ADM/chefe, não de um player: casaria com TODA ficha sem dono */
  try{const p=JSON.parse(localStorage.getItem('player_session'));if(p&&p.id!=null&&nrm(p.nome)===nrm(ses?.nome))ids.push(String(p.id))}catch{}
  if(me&&me.id!=null)ids.push(String(me.id));
  ids.forEach(x=>meusIds.add(x));
  let lista=[];try{lista=await carregaLista()}catch(e){console.warn('fichas:',e.message)}
  const nomes=new Map(),alvo=nrm(me.nome);
  (Array.isArray(lista)?lista:[]).filter(x=>x&&x.desativada!=='true'&&(x.player_id!=null&&ids.length?ids.includes(String(x.player_id)):nrm(x.player)===alvo)).forEach(x=>{
-  if(!x.nome)return;nomes.set(nrm(x.nome),x.nome);const r=rankDe(x)||rankDe(x.d);if(r)meusRanks.add(r);meusChars.push({nome:x.nome,foto:x.thumb||x.foto||null,rank:r})});
+  if(!x.nome)return;nomes.set(nrm(x.nome),x.nome);const r=rankDe(x)||rankDe(x.d);if(r)meusRanks.add(r);meusChars.push({nome:x.nome,slug:x.slug,foto:x.thumb||x.foto||null,rank:r})});
+ /* a lista não traz o rank: lê a ficha completa de quem ficou sem rank */
+ await Promise.all(meusChars.filter(c=>!c.rank&&c.slug).map(async c=>{
+  try{const r=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(c.slug));if(!r.ok)return;const f=await r.json(),rk=rankDeFicha(f);if(rk){c.rank=rk;meusRanks.add(rk)}}catch(e){console.warn('rank da ficha '+c.slug+':',e.message)}
+ }));
  meusChars.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
  return [...nomes.values()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
