@@ -1321,7 +1321,7 @@ body.edit-mode .ganhos-example-header{cursor:text}
   }
 
   /* ── editor da lista de acesso (Chefe e ADMs) — com host (elemento) desenha dentro da página; sem host abre um diálogo ── */
-  var SITES = ['torneios', 'stores', 'mapa', 'npcdex', 'fichas', 'missoes', 'weathercast', 'datadex'];
+  var SITES = ['index', 'torneios', 'stores', 'mapa', 'npcdex', 'fichas', 'missoes', 'weathercast', 'datadex'];
   var INP_I = 'width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;margin:6px 0';
   var BTN_I = 'padding:9px 16px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;font-weight:700;cursor:pointer';
   function editor(host) {
@@ -1411,6 +1411,7 @@ body.edit-mode .ganhos-example-header{cursor:text}
     pode: function () { return !!papel() && modoOn(); },            // ADM ou MOD deste site, com o botão ligado
     nome: nome, staff: function () { return staff; },
     toggle: toggle, onChange: function (f) { ouvintes.push(f); },
+    recarregar: function () { return carregar(true); },            // relê a lista de acesso do servidor (use após login/logout do player)
     cred: cred, credLimpar: credLimpar,                             // {n,s} da senha do player (cache só na aba); mande como admin_nome/admin_senha
     editor: editor                                                  // editor(host): desenha a equipe dentro de 'host'; sem host abre um diálogo (Chefe/ADM)
   };
@@ -4225,7 +4226,23 @@ window.calcSituSoma = function(){
     .cpk-chip-x{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;border:0;background:transparent;color:var(--muted);font-size:13px;line-height:1;cursor:pointer;padding:0}
     .cpk-chip-x:hover{background:rgba(211,47,47,.12);color:#d32f2f}
     .cpk-time-msg{font-size:10px;color:var(--muted);font-style:italic;min-height:13px;margin-top:5px}
-    #calc-pk-resumo{display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1.5px solid var(--border);font-size:13px;color:var(--text);line-height:1.6}`;
+    #calc-pk-resumo{display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1.5px solid var(--border);font-size:13px;color:var(--text);line-height:1.6}
+    /* ── Cabeçalho fixo (título + barra) ao rolar a página ── */
+    .cpk-panel{--cpk-top:0px;--cpk-sumh:44px}
+    @media(max-width:768px){.cpk-panel{--cpk-top:52px}} /* abaixo da barra de navegação do celular */
+    .cpk-sum{position:sticky;top:var(--cpk-top);z-index:30;background:var(--surface2);border-radius:10px 10px 0 0}
+    .cpk-panel:not([open]) .cpk-sum{border-radius:10px}
+    .cpk-bar{position:sticky;top:calc(var(--cpk-top) + var(--cpk-sumh));z-index:29;background:var(--surface2);margin:0 -16px 12px;padding:6px 16px 8px;border-bottom:1px solid var(--border);box-shadow:0 4px 8px -6px rgba(0,0,0,.25)}
+    @media(max-width:520px){.cpk-bar{margin:0 -10px 12px;padding:6px 10px 8px}}
+    /* ── Botões Atacante / Defensor (só quando os cards ficam empilhados) ── */
+    .cpk-lados{display:none;flex:1 0 100%;gap:6px}
+    .cpk-solo .cpk-lados{display:flex}
+    .cpk-lado{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:12px;padding:7px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.4px;cursor:pointer}
+    .cpk-lado .ic{width:15px;height:15px}
+    .cpk-lado.on{background:var(--brand);border-color:var(--brand);color:#fff}
+    .cpk-lado.on .ic{color:#fff!important}
+    .cpk-solo[data-lado="p1"] .cpk-card[data-s="p2"],.cpk-solo[data-lado="p1"] #cpk-p2-time,
+    .cpk-solo[data-lado="p2"] .cpk-card[data-s="p1"],.cpk-solo[data-lado="p2"] #cpk-p1-time{display:none}`;
     document.head.appendChild(st);
   }
   const optTipos = ph => '<option value="">'+ph+'</option>' + TIPOS.map(t => '<option value="'+t+'">'+cap(t)+'</option>').join('');
@@ -4253,7 +4270,7 @@ window.calcSituSoma = function(){
         </div>
       </div>`;
     return `
-      <div class="cpk-card">
+      <div class="cpk-card" data-s="${s}">
         <h4>${titulo}</h4>
         <div class="cpk-ficha">
           <div class="cpk-row">
@@ -4456,10 +4473,14 @@ window.calcSituSoma = function(){
         <button type="button" class="cpk-btn" id="cpk-swap" title="Troca todos os dados entre Pokémon 1 e 2">⇄ Trocar</button>
         <button type="button" class="cpk-btn mut" id="cpk-clear">Limpar</button>
         <button type="button" class="cpk-btn cpk-salvos-btn" id="cpk-salvos-btn" aria-expanded="false" aria-controls="cpk-salvos" title="Mostrar/ocultar seus Pokémon salvos">PKMN SALVOS <span class="cpk-salvos-n" id="cpk-salvos-n"></span><span class="cpk-salvos-seta">▾</span></button>
+        <div class="cpk-lados" role="tablist" aria-label="Escolher lado">
+          <button type="button" class="cpk-lado on" role="tab" aria-selected="true" data-lado="p1" title="Editar o Atacante (Pokémon 1) e ver os salvos dele">${ICO_ATK}Atacante</button>
+          <button type="button" class="cpk-lado" role="tab" aria-selected="false" data-lado="p2" title="Editar o Defensor (Pokémon 2) e ver os salvos dele">${ICO_DEF}Defensor</button>
+        </div>
       </div>
       <div class="cpk-salvos" id="cpk-salvos" hidden>
-        <div class="cpk-time" id="cpk-p1-time"></div>
-        <div class="cpk-time" id="cpk-p2-time"></div>
+        <div class="cpk-time" id="cpk-p1-time" data-s="p1"></div>
+        <div class="cpk-time" id="cpk-p2-time" data-s="p2"></div>
       </div>
       <div class="cpk-grid">${cardHtml('p1', ICO_ATK+' Atacante · Pokémon 1')}${cardHtml('p2', ICO_DEF+' Defensor · Pokémon 2')}</div>
       <label class="cpk-disp-bar" for="cpk-disputa-on">
@@ -4541,6 +4562,20 @@ window.calcSituSoma = function(){
     }));
     $('cpk-swap').addEventListener('click', trocarLados);
     ligarTime(panel);
+    // Atacante / Defensor: com os cards empilhados, mostra um lado por vez (card + PKMN SALVOS do mesmo lado)
+    panel.dataset.lado = 'p1';
+    const setLado = l => {
+      panel.dataset.lado = l;
+      panel.querySelectorAll('.cpk-lado').forEach(b => { const on = b.dataset.lado === l; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    };
+    panel.querySelectorAll('.cpk-lado').forEach(b => b.addEventListener('click', () => setLado(b.dataset.lado)));
+    const medir = () => {
+      const w = panel.clientWidth; if(!w) return;
+      const sm = panel.querySelector('.cpk-sum'); if(sm && sm.offsetHeight) panel.style.setProperty('--cpk-sumh', sm.offsetHeight + 'px');
+      panel.classList.toggle('cpk-solo', w < 730); // < 730px: grade em 1 coluna
+    };
+    if(window.ResizeObserver) new ResizeObserver(medir).observe(panel);
+    window.addEventListener('resize', medir); medir();
     $('cpk-clear').addEventListener('click', () => {
       panel.querySelectorAll('input[type=text],input[type=number]').forEach(el => { el.value = ''; });
       panel.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
@@ -5254,10 +5289,9 @@ window.calcSituSoma = function(){
       <div class="adm-login-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
       <div class="adm-login-title">Área ADM</div>
       <div class="adm-login-sub">Acesso restrito aos administradores</div>
-      <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="seu@email.com"/></div>
-      <div class="field"><label>Senha</label><input type="password" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()"/></div>
-      <button class="btn btn-primary btn-full" style="margin-top:4px" onclick="fazerLogin()">Entrar</button>
-      <div class="fb fb-err" id="login-erro">Usuário ou senha incorretos.</div>
+      <div class="adm-login-sub" style="margin-top:6px">Entre com o seu <b>player</b>. Quem é ADM ou MOD aparece com o selo <b>ADM</b>/<b>MOD</b> ao lado do nome (deixe o botão ligado).</div>
+      <button class="btn btn-primary btn-full" style="margin-top:10px" onclick="admVerificarAcesso()">Já entrei — verificar acesso</button>
+      <div class="fb fb-err" id="login-erro">Este player não é ADM nem MOD (ou o modo ADM/MOD está desligado).</div>
     </div>
   </div>
   <div id="adm-painel" style="display:none">
@@ -5275,7 +5309,6 @@ window.calcSituSoma = function(){
         <button class="adm-nav-btn" data-sec="bonus-adm" onclick="admTab('bonus-adm',this)"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.6L19.5 10l-5.7 1.8L12 17.4l-1.8-5.6L4.5 10l5.7-1.4L12 3z"/></svg></span>Bônus</button>
 
         <div class="adm-nav-group-label">Sistema</div>
-        <button class="adm-nav-btn" id="btn-sec-admins" onclick="admTab('admins',this)"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 19 4M16 4h4v4M19 4l-4 4"/></svg></span>Admins</button>
         <button class="adm-nav-btn" id="btn-sec-equipe" style="display:none" onclick="admTab('equipe',this)"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Equipe</button>
         <button class="adm-nav-btn" data-sec="editor" onclick="admTab('editor',this)"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>Editor Visual</button>
         <button class="adm-nav-btn" data-sec="manutencao" onclick="admTab('manutencao',this)"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/></svg></span>Manutenção</button>
@@ -5286,7 +5319,7 @@ window.calcSituSoma = function(){
         <button class="adm-nav-btn" data-sec="calculadora-adm" onclick="admTab('calculadora-adm',this)"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><circle cx="8.5" cy="12" r=".8" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r=".8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="12" r=".8" fill="currentColor" stroke="none"/><circle cx="8.5" cy="16" r=".8" fill="currentColor" stroke="none"/><circle cx="12" cy="16" r=".8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="16" r=".8" fill="currentColor" stroke="none"/></svg></span>Calculadora</button>
 
         <div class="adm-nav-sep"></div>
-        <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogout()"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>Sair</button>
+        <button class="adm-nav-btn adm-nav-danger" onclick="fazerLogoutPlayer()"><span class="adm-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>Sair</button>
       </div>
       <div class="adm-content">
 
@@ -5379,47 +5412,19 @@ window.calcSituSoma = function(){
           </div>
         </div>
 
-        <!-- ADMINS -->
-        <div class="adm-section" id="sec-admins">
-          <div class="sec-title">Administradores</div>
-          <div class="sec-sub">Gerencie quem tem acesso ao painel ADM e quais seções cada admin pode editar</div>
-          <div class="box" id="adm-add-box">
-            <div class="box-title">Novo administrador</div>
-            <div class="g2">
-              <div class="field"><label>Usuário (e-mail)</label><input type="text" id="adm-new-email" placeholder="novo@email.com"/></div>
-              <div class="field"><label>Senha</label><input type="password" id="adm-new-senha" placeholder="Mín. 6 caracteres"/></div>
-            </div>
-            <div class="field" style="margin-bottom:10px">
-              <label style="margin-bottom:6px;display:block">Permissões</label>
-              <div style="display:flex;flex-wrap:wrap;gap:3px" id="adm-new-perms">
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="personagens" checked style="margin:0"/> Players</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="npcs-adm" checked style="margin:0"/> NPCs</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="editor" style="margin:0"/> Editor</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="historicos" style="margin:0"/> Históricos</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="eventos" style="margin:0"/> Eventos</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="tramas" style="margin:0"/> Tramas</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="estacao" style="margin:0"/> Estação</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="paginas" style="margin:0"/> Páginas</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="calculadora-adm" style="margin:0"/> Calculadora</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="bonus-adm" style="margin:0"/> Bônus</label>
-                <label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;white-space:nowrap"><input type="checkbox" data-perm="manutencao" style="margin:0"/> Manutenção</label>
-              </div>
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="adicionarAdmin()">+ Adicionar Admin</button>
-            <div class="fb fb-ok" id="adm-fb-ok">✓ Admin adicionado!</div>
-            <div class="fb fb-err" id="adm-fb-err">—</div>
-          </div>
-          <div class="adm-table-wrap"><table class="adm-table">
-            <thead><tr><th>Usuário</th><th>Permissões</th><th>Ações</th></tr></thead>
-            <tbody id="tbody-admins"></tbody>
-          </table></div>
-        </div>
-
         <!-- EQUIPE (acesso por player: Chefe / ADM / MOD) -->
         <div class="adm-section" id="sec-equipe">
           <div class="sec-title">Equipe</div>
           <div class="sec-sub">Defina quem é ADM em todos os sites e quem é MOD de cada site. Só Chefe e ADMs veem esta aba.</div>
           <div class="box"><div id="equipe-host"></div></div>
+          <div class="box" id="mod-secoes-box">
+            <div class="box-title">Áreas do /adm liberadas para MOD</div>
+            <div class="sec-sub" style="margin-bottom:8px">Vale para todos os MODs deste site (index). Só ADM edita. ADM sempre vê tudo.</div>
+            <div id="mod-secoes-lista" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+            <button class="btn btn-primary btn-sm" onclick="salvarModSecoes()">Salvar áreas</button>
+            <div class="fb fb-ok" id="mod-secoes-ok">✓ Salvo!</div>
+            <div class="fb fb-err" id="mod-secoes-err">—</div>
+          </div>
         </div>
 
         <!-- EDITOR VISUAL -->
@@ -7748,10 +7753,8 @@ function admTab(sec,el){
   if(sec==='bonus-adm'){ setTimeout(renderBonusAdmLista,50); setTimeout(renderBonusAtivosAdmLista,50); }
   if(sec==='estacao'){ setTimeout(()=>{ marcarBtnEstacao(); renderEstMassa(); },0); }
   if(sec==='forcados'){ setTimeout(()=>{ populateFrcSelects(); renderFrcPool(); carregarForcados(); },0); }
-  // verifica permissão — toda seção exige permissão explícita (ou super admin)
-  const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
-  const _eqOk = sec==='equipe' && window.KPAdm && KPAdm.isAdm();
-  if(!_eqOk && !perms.includes(sec) && !isSuperAdmin()){
+  // permissão por papel do player: ADM vê tudo · MOD só as seções de MOD_SECOES
+  if(!admTemPerm(sec)){
     alert('Você não tem permissão para acessar esta seção.');return;
   }
   document.querySelectorAll('.adm-section').forEach(s=>s.classList.remove('active'));
@@ -7759,8 +7762,7 @@ function admTab(sec,el){
   document.querySelectorAll('.adm-nav-btn').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
   if(sec==='personagens'){renderTbodyPersonagens();renderTbodyPlayers();populateAdmSenhaSelect();admFichasInit();admPlayersTabsInit();carregarPlayersInativos();}
-  if(sec==='admins'){ if(!admins||admins.length===0){ dbRpc('admin_list',{}).then(r=>{admins=r||[];renderTbodyAdmins();}); } else { renderTbodyAdmins(); } }
-  if(sec==='equipe'){ if(window.KPAdm) KPAdm.editor(document.getElementById('equipe-host')); }
+  if(sec==='equipe'){ if(window.KPAdm) KPAdm.editor(document.getElementById('equipe-host')); carregarModSecoes().then(renderModSecoes); }
   if(sec==='editor'){carregarEstiloSalvo().then(e=>carregarEditorUI(e));}
   if(sec==='historicos'){
     // Popula selects de personagem buscando direto do banco
@@ -7804,66 +7806,73 @@ function admTab(sec,el){
 // Guardada só em memória (nunca em localStorage) — some ao recarregar a página.
 // Usada para reautenticar ações sensíveis (alterar/resetar senha de player, criar admin)
 // sem precisar manter a senha em texto puro em nenhum lugar persistente.
-let _admSenhaSessao = null;
-
-async function fazerLogin(){
-  const email=document.getElementById('login-email').value.trim();
-  const senha=document.getElementById('login-senha').value;
-  const errEl=document.getElementById('login-erro');
-  errEl.style.display='none';
-  // Autenticação via função do banco (admin_login) — a senha é conferida no
-  // servidor contra o hash; nunca baixamos a lista de admins com senha.
-  let match=null;
+// ══════════════════════════════════════
+// ACESSO ADM / MOD — por player (KPAdm). Não existe mais login por e-mail.
+//   ADM (chefe + admins da lista) = todas as seções · MOD = só MOD_SECOES.
+//   admLogado continua sendo o "está com acesso?" do resto do site: {email:<nome do player>, papel:'chefe'|'admin'|'mod'}
+//   e vira null quando o botão ADM/MOD ao lado do nome está desligado (aí a pessoa vê o site como player).
+// ══════════════════════════════════════
+let MOD_SECOES = ['personagens','npcs-adm','eventos','tramas','locenc'];   // padrão; o ADM muda em Equipe → "Áreas liberadas para MOD" (config.adm_mod_secoes)
+let _modSecoesOk = false;
+const SEC_ROTULOS = {personagens:'Players','npcs-adm':'NPCs',editor:'Editor',historicos:'Históricos',eventos:'Eventos',tramas:'Tramas',estacao:'Estação',forcados:'Forçar Resultado',paginas:'Páginas (editar)','calculadora-adm':'Calculadora','bonus-adm':'Bônus',manutencao:'Manutenção',locenc:'Locais de Encontro'};
+async function carregarModSecoes(){
   try{
-    const r = await dbRpc('admin_login', {p_nome: email, p_senha: senha});
-    match = Array.isArray(r) ? r[0] : r;
-  }catch(e){ console.error('[fazerLogin]', e); }
-  if(!match){errEl.style.display='block';return;}
-  const loggedEmail = match.nome;
-  admLogado={email:loggedEmail};
-  atualizarSeletoresLocais();
-  _admSenhaSessao = senha;
-  admEmitirSessaoFichas(loggedEmail, senha);   // sessão do Fichário (/fichas) já abre logada como ADM
-  localStorage.setItem('adm_session', JSON.stringify(admLogado));
-  renderHamburgerIcon();
-  mostrarBadgePlayer();
-  showEditBtnIfAdm();
-  renderPersonagensDatalist();
-  // admins fica só com dados públicos (sem senha) — usado pra permissões/telas
-  admins = await dbRpc('admin_list',{});
-  document.getElementById('adm-login-wrap').style.display='none';
-  document.getElementById('adm-painel').style.display='block';
-  document.getElementById('adm-user-label').textContent=loggedEmail;
-  loaded.adm=false;
-  await carregarAba('adm');
-  aplicarPermissoesSidebar();
+    const r = await dbGet('config','chave=eq.adm_mod_secoes');
+    let v = r && r[0] ? r[0].valor : null;
+    if(typeof v==='string'){ try{ v=JSON.parse(v); }catch(e){ v=null; } }
+    if(Array.isArray(v)) MOD_SECOES = v.filter(x=>ALL_PERMS.includes(x));
+    _modSecoesOk = true;
+  }catch(e){ console.warn('[mod_secoes]', e); }
 }
-async function fazerLogout(){
-  try{ const sv=JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null'); if(sv&&admLogado&&normalizarNome(sv.nome)===normalizarNome(admLogado.email)) localStorage.removeItem('kp_ficha_sessao'); }catch(e){}
-  admLogado=null;
-  atualizarSeletoresLocais();
-  _admFichaTok=null; admFichasLista=null;
-  _admSenhaSessao = null;
-  localStorage.removeItem('adm_session');
-  renderHamburgerIcon();
-  mostrarBadgePlayer();
-  showEditBtnIfAdm();
-  renderPersonagensDatalist();
-  document.getElementById('adm-login-wrap').style.display='block';
-  document.getElementById('adm-painel').style.display='none';
-  document.getElementById('login-email').value='';
-  document.getElementById('login-senha').value='';
+function renderModSecoes(){
+  const box = document.getElementById('mod-secoes-lista'); if(!box) return;
+  box.innerHTML = ALL_PERMS.map(k=>`<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px"><input type="checkbox" data-sec-mod="${k}" ${MOD_SECOES.includes(k)?'checked':''}/> ${SEC_ROTULOS[k]||k}</label>`).join('');
 }
-
-// Garante que temos a senha do admin logado em memória para chamar uma ação
-// sensível (RPC exige nome+senha do admin a cada chamada). Se a página foi
-// recarregada e a sessão foi restaurada do localStorage, pede a senha de novo.
-function garantirSenhaAdmSessao(){
-  if(_admSenhaSessao) return _admSenhaSessao;
-  const s = prompt('Confirme sua senha de admin para continuar:');
-  if(s) _admSenhaSessao = s;
-  return _admSenhaSessao;
+async function salvarModSecoes(){
+  const ok=document.getElementById('mod-secoes-ok'), er=document.getElementById('mod-secoes-err');
+  ok.style.display='none'; er.style.display='none';
+  if(!(window.KPAdm && KPAdm.isAdm())){ er.textContent='Apenas ADM pode alterar.'; er.style.display='block'; return; }
+  const arr=[...document.querySelectorAll('#mod-secoes-lista input[data-sec-mod]:checked')].map(c=>c.dataset.secMod);
+  try{ await salvarConfigChave('adm_mod_secoes', JSON.stringify(arr)); MOD_SECOES=arr; _modSecoesOk=true; ok.style.display='block'; setTimeout(()=>ok.style.display='none',2500); }
+  catch(e){ er.textContent='Erro ao salvar: '+(e.message||e); er.style.display='block'; }
 }
+function admPapel(){ return (window.KPAdm && KPAdm.pode()) ? KPAdm.papel() : null; }
+function admMostrarPainel(){
+  const lw=document.getElementById('adm-login-wrap'), pn=document.getElementById('adm-painel');
+  if(!lw||!pn) return;
+  lw.style.display = admLogado ? 'none' : 'block';
+  pn.style.display = admLogado ? 'block' : 'none';
+  const u=document.getElementById('adm-user-label');
+  if(u && admLogado) u.textContent = admLogado.email + ' · ' + (admLogado.papel==='mod' ? 'MOD' : 'ADM');
+}
+async function sincronizarAdm(){
+  const ass = a => a ? a.email+'|'+a.papel : '';
+  const antes = ass(admLogado);
+  const papel = admPapel();
+  if(papel && !_modSecoesOk) await carregarModSecoes();
+  admLogado = papel ? {email: String(KPAdm.nome()||''), papel} : null;
+  if(ass(admLogado)===antes) return;
+  [()=>atualizarSeletoresLocais(), ()=>renderHamburgerIcon(), ()=>mostrarBadgePlayer(), ()=>showEditBtnIfAdm(), ()=>renderPersonagensDatalist()]
+    .forEach(f=>{ try{ f(); }catch(e){} });
+  if(!admLogado){ try{ admFichasLista=null; }catch(e){} }
+  if(currentPage==='adm'){
+    if(admLogado){ loaded.adm=false; try{ await carregarAba('adm'); aplicarPermissoesSidebar(); }catch(e){ console.warn('[adm]', e); } }
+    admMostrarPainel();
+  }
+}
+async function admVerificarAcesso(){
+  try{ if(window.KPAdm && KPAdm.recarregar) await KPAdm.recarregar(); }catch(e){}
+  await sincronizarAdm();
+  admMostrarPainel();
+  const er=document.getElementById('login-erro'); if(er) er.style.display = admLogado ? 'none' : 'block';
+}
+// senha do PLAYER (cache só na aba) para as ações que o servidor confere (trocar senha, atribuir ficha…)
+async function admCred(msg){
+  if(!window.KPAdm) return null;
+  return await KPAdm.cred(msg || 'Confirme a senha do seu player para continuar.');
+}
+try{ localStorage.removeItem('adm_session'); }catch(e){}   // sessão antiga do login por e-mail
+if(window.KPAdm){ KPAdm.onChange(()=>{ sincronizarAdm(); }); KPAdm.ready.then(()=>sincronizarAdm()); }
 
 // ══════════════════════════════════════
 // PLAYER LOGIN
@@ -8041,6 +8050,8 @@ async function fazerLoginPlayer(){
   if(await playerEstaDesativado(match.id)){ errEl.textContent='Este player está desativado. Fale com a administração.'; errEl.style.display='block'; return; }
   playerLogado = {nome: match.nome, id: match.id};
   localStorage.setItem('player_session', JSON.stringify(playerLogado));
+  try{ if(window.KPAdm && KPAdm.recarregar) await KPAdm.recarregar(); }catch(e){}
+  sincronizarAdm();
   // Emite também a sessão do Fichário (kp_ficha_sessao) para o /fichas já abrir logado
   try{
     const rf = await fetch('/api/ficha-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nomeDigitado,senha})});
@@ -8189,12 +8200,13 @@ async function fazerLogoutPlayer(){
   playerLogado = null;
   _loginPlayerCache = null;
   localStorage.removeItem('player_session');
+  try{ if(window.KPAdm) KPAdm.credLimpar(); }catch(e){}
   // Não derruba a sessão do Fichário se ela for do ADM que continua logado neste navegador (mesma regra do logout do ADM)
   try{
     const sv = JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null');
-    const doAdm = !!(sv && admLogado && normalizarNome(sv.nome)===normalizarNome(admLogado.email));
-    if(!doAdm) localStorage.removeItem('kp_ficha_sessao');
+    localStorage.removeItem('kp_ficha_sessao');
   }catch(e){ localStorage.removeItem('kp_ficha_sessao'); }
+  setTimeout(sincronizarAdm,0);
   fichasNovas=[]; _fichasNovasTentou=false;
   mostrarBadgePlayer();
   renderPersonagensDatalist();
@@ -8303,12 +8315,12 @@ async function admAlterarSenhaPlayer(){
   errEl.style.display='none';
   if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
   if(novaSenha.length<4){ errEl.textContent='A senha deve ter pelo menos 4 caracteres.'; errEl.style.display='block'; return; }
-  const minhaSenha = garantirSenhaAdmSessao();
-  if(!minhaSenha) return;
+  const c = await admCred('Confirme a senha do seu player para alterar a senha de outro player.');
+  if(!c) return;
   try{
-    await dbRpc('admin_set_player_password', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_player_id: playerId, p_nova_senha: novaSenha});
+    await dbRpc('admin_set_player_password', {p_admin_nome: c.n, p_admin_senha: c.s, p_player_id: playerId, p_nova_senha: novaSenha});
   }catch(e){
-    _admSenhaSessao = null; // senha guardada pode estar errada/expirada
+    KPAdm.credLimpar(); // senha guardada pode estar errada/expirada
     errEl.textContent = 'Não autorizado ou erro ao salvar. Tente confirmar sua senha novamente.';
     errEl.style.display='block';
     return;
@@ -8327,12 +8339,12 @@ async function admResetarSenhaPlayer(){
   if(!playerId){ errEl.textContent='Selecione um player.'; errEl.style.display='block'; return; }
   const p = players.find(x=>String(x.id)===String(playerId));
   if(!confirm(`Resetar a senha de "${p?p.nome:'este player'}"? Ele poderá entrar com o mesmo login e criar uma nova senha.`)) return;
-  const minhaSenha = garantirSenhaAdmSessao();
-  if(!minhaSenha) return;
+  const c = await admCred('Confirme a senha do seu player para resetar a senha de outro player.');
+  if(!c) return;
   try{
-    await dbRpc('admin_set_player_password', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_player_id: playerId, p_nova_senha: null});
+    await dbRpc('admin_set_player_password', {p_admin_nome: c.n, p_admin_senha: c.s, p_player_id: playerId, p_nova_senha: null});
   }catch(e){
-    _admSenhaSessao = null;
+    KPAdm.credLimpar();
     errEl.textContent = 'Não autorizado ou erro ao resetar. Tente confirmar sua senha novamente.';
     errEl.style.display='block';
     return;
@@ -8356,22 +8368,9 @@ function populateAdmSenhaSelect(){
 }
 
 async function restaurarSessaoAdm(){
-  try{
-    const saved = localStorage.getItem('adm_session');
-    if(!saved) return false;
-    const sess = JSON.parse(saved);
-    if(!sess?.email) return false;
-    // Sempre valida contra o banco — nunca confia só no localStorage
-    const lista = await dbRpc('admin_list',{});
-    const match = (lista||[]).find(a=>a.nome===sess.email);
-    if(!match){ localStorage.removeItem('adm_session'); admLogado=null; return false; }
-    admLogado = {email: sess.email};
-    setTimeout(atualizarSeletoresLocais,0);
-    // _admSenhaSessao fica null após reload — ações sensíveis vão pedir a senha
-    // de novo via garantirSenhaAdmSessao(), o que é esperado e mais seguro.
-    admins = lista;
-    return true;
-  } catch(e){ admLogado=null; return false; }
+  try{ if(window.KPAdm) await KPAdm.ready; }catch(e){}
+  await sincronizarAdm();
+  return !!admLogado;
 }
 
 // ══════════════════════════════════════
@@ -8522,121 +8521,33 @@ async function salvarMensagemManutencao(){
 const SUPER_ADMIN = 'adm@nendo.ne';
 const ALL_PERMS = ['personagens','npcs-adm','editor','historicos','eventos','tramas','estacao','forcados','paginas','calculadora-adm','bonus-adm','manutencao','locenc'];
 
-function isSuperAdmin(){ return admLogado?.email === SUPER_ADMIN; }
+// "super admin" agora = ADM (chefe ou admin da lista) com o modo ADM ligado
+function isSuperAdmin(){ return !!(window.KPAdm && KPAdm.isAdm()); }
 
-function getAdminPerms(a){
-  // super admin tem tudo sempre
-  if(a.nome === SUPER_ADMIN) return ALL_PERMS;
-  // perms salvas no banco (array) ou padrão
-  const p = a.permissoes;
-  if(Array.isArray(p) && p.length) return p;
-  if(typeof p === 'string'){try{const arr=JSON.parse(p);if(Array.isArray(arr)&&arr.length)return arr;}catch(e){}}
-  return ['personagens'];
+function getAdminPerms(){
+  const p = admPapel();
+  if(p==='chefe' || p==='admin') return ALL_PERMS;
+  if(p==='mod') return MOD_SECOES;
+  return [];
+}
+function admTemPerm(sec){
+  if(sec==='equipe') return !!(window.KPAdm && KPAdm.isAdm());
+  return getAdminPerms().includes(sec);
 }
 
 function aplicarPermissoesSidebar(){
-  const perms = admLogado ? getAdminPerms(admins.find(a=>a.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]}) : [];
-  // Nenhuma seção é liberada por padrão — tudo depende de permissão explícita
-  // (ou de ser super admin, que já recebe ALL_PERMS via getAdminPerms).
+  const perms = getAdminPerms();
   document.querySelectorAll('.adm-nav-btn[data-sec]').forEach(btn=>{
-    const sec = btn.dataset.sec;
-    btn.style.display = perms.includes(sec) ? '' : 'none';
+    btn.style.display = perms.includes(btn.dataset.sec) ? '' : 'none';
   });
-  // botão admins: só super admin vê
   const btnEq = document.getElementById('btn-sec-equipe');
-  if(btnEq) btnEq.style.display = (window.KPAdm && KPAdm.isAdm()) ? '' : 'none';
-  const btnAdmins = document.getElementById('btn-sec-admins');
-  if(btnAdmins) btnAdmins.style.display = isSuperAdmin() ? '' : 'none';
-  // caixa de adicionar admin: só super admin
-  const addBox = document.getElementById('adm-add-box');
-  if(addBox) addBox.style.display = isSuperAdmin() ? '' : 'none';
+  if(btnEq) btnEq.style.display = admTemPerm('equipe') ? '' : 'none';
   // se a aba atual ficou oculta, vai para a primeira visível
   const activeBtn = document.querySelector('.adm-nav-btn.active');
   if(activeBtn && activeBtn.style.display==='none'){
     const first = document.querySelector('.adm-nav-btn:not([style*="display: none"]):not([style*="display:none"])');
     if(first) first.click();
   }
-}
-
-async function adicionarAdmin(){
-  if(!isSuperAdmin()){alert('Apenas o super admin pode adicionar admins.');return;}
-  const email=document.getElementById('adm-new-email').value.trim();
-  const senha=document.getElementById('adm-new-senha').value;
-  const errEl=document.getElementById('adm-fb-err');
-  document.getElementById('adm-fb-ok').style.display='none';errEl.style.display='none';
-  if(!email||senha.length<6){errEl.textContent='Preencha usuário e senha (mín. 6 caracteres).';errEl.style.display='block';return;}
-  if(admins.find(a=>a.nome===email)){errEl.textContent='Este usuário já está cadastrado.';errEl.style.display='block';return;}
-  const perms=[...document.querySelectorAll('#adm-new-perms input[type=checkbox]:checked')].map(c=>c.dataset.perm);
-
-  const minhaSenha = garantirSenhaAdmSessao();
-  if(!minhaSenha) return;
-  let novo=null;
-  try{
-    const r = await dbRpc('admin_create', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_novo_nome: email, p_nova_senha: senha, p_permissoes: perms});
-    novo = Array.isArray(r) ? r[0] : r;
-  }catch(e){
-    _admSenhaSessao = null;
-    errEl.textContent='Erro: '+(e.message||'não autorizado.');
-    errEl.style.display='block';
-    return;
-  }
-  if(novo){admins.push(novo);fb('adm-fb-ok');}
-
-  document.getElementById('adm-new-email').value='';document.getElementById('adm-new-senha').value='';
-  document.querySelectorAll('#adm-new-perms input[type=checkbox]').forEach(c=>{
-    c.checked=['personagens'].includes(c.dataset.perm);
-  });
-  renderTbodyAdmins();
-}
-async function removerAdmin(id,email){
-  if(!isSuperAdmin()){alert('Apenas o super admin pode remover admins.');return;}
-  if(email===SUPER_ADMIN){alert('O super admin não pode ser removido.');return;}
-  if(email===admLogado?.email){alert('Você não pode remover a si mesmo.');return;}
-  if(!confirm(`Remover o admin "${email}"?`))return;
-  const minhaSenha = garantirSenhaAdmSessao();
-  if(!minhaSenha) return;
-  try{
-    await dbRpc('admin_delete', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_target_id: id});
-  }catch(e){ _admSenhaSessao=null; alert('Não autorizado ou erro ao remover.'); return; }
-  admins=admins.filter(a=>a.id!==id);
-  renderTbodyAdmins();
-}
-async function salvarPermsAdmin(id, email){
-  if(!isSuperAdmin()) return;
-  const checks=[...document.querySelectorAll(`#perms-row-${id} input[type=checkbox]:checked`)].map(c=>c.dataset.perm);
-  const minhaSenha = garantirSenhaAdmSessao();
-  if(!minhaSenha) return;
-  try{
-    await dbRpc('admin_set_permissions', {p_admin_nome: admLogado.email, p_admin_senha: minhaSenha, p_target_id: id, p_permissoes: checks});
-  }catch(e){ _admSenhaSessao=null; alert('Não autorizado ou erro ao salvar permissões.'); return; }
-  const a=admins.find(x=>x.id===id);if(a)a.permissoes=checks;
-  renderTbodyAdmins();
-  fb('adm-fb-ok');
-}
-function renderTbodyAdmins(){
-  const superAdmin = isSuperAdmin();
-  const permIcons  = {personagens:'👥',biomas:'🗺️',pokemons:'⚡','npcs-adm':'🧑',editor:'🎨',historicos:'🗑️',eventos:'🎉',tramas:'🧵',estacao:'🌦️',forcados:'🎯',paginas:'📝','calculadora-adm':'🧮','bonus-adm':'✨',manutencao:'🚧',locenc:'🎲'};
-  const permNames  = {personagens:'Players',biomas:'Biomas',pokemons:'Pokémon','npcs-adm':'NPCs',editor:'Editor',historicos:'Históricos',eventos:'Eventos',tramas:'Tramas',estacao:'Estação',forcados:'Forçar Resultado',paginas:'Páginas','calculadora-adm':'Calculadora','bonus-adm':'Bônus',manutencao:'Manutenção',locenc:'Encontro Locais'};
-  const tbody = document.getElementById('tbody-admins');
-  if(!admins || admins.length === 0){
-    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);font-size:13px;padding:16px 10px">Nenhum administrador cadastrado.</td></tr>';
-    return;
-  }
-  tbody.innerHTML=admins.map(a=>{
-    const isSuper = a.nome===SUPER_ADMIN;
-    const isMe = a.nome===admLogado?.email;
-    const perms = getAdminPerms(a);
-    const permsCell = isSuper
-      ? '<span style="font-size:11px;background:#fdf3dc;color:#7a5010;padding:2px 8px;border-radius:8px;font-weight:700">⭐ Super Admin</span>'
-      : superAdmin
-        ? `<div id="perms-row-${a.id}" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">${ALL_PERMS.map(p=>`<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;white-space:nowrap"><input type="checkbox" data-perm="${p}" ${perms.includes(p)?'checked':''} style="margin:0"/> ${permIcons[p]} ${permNames[p]}</label>`).join('')}</div><button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px" onclick="salvarPermsAdmin('${a.id}','${a.email}')">Salvar</button>`
-        : perms.map(p=>`<span style="font-size:10px;background:var(--brand-light);color:var(--brand-mid);padding:2px 6px;border-radius:5px;font-weight:700;margin-right:2px;white-space:nowrap">${permIcons[p]} ${permNames[p]}</span>`).join('');
-    return`<tr>
-      <td>${a.nome}${isMe?' <span style="font-size:10px;color:var(--muted)">(você)</span>':''}${isSuper?' <span style="font-size:10px;color:#e8a020">★</span>':''}</td>
-      <td>${permsCell}</td>
-      <td>${!isSuper&&!isMe&&superAdmin?`<button class="btn btn-danger btn-sm" onclick="removerAdmin('${a.id}','${a.email}')">Remover</button>`:''}</td>
-    </tr>`;
-  }).join('');
 }
 
 // ══════════════════════════════════════
@@ -8771,14 +8682,6 @@ function admFichasMsg(txt, ok){
   setTimeout(()=>{ el.style.display='none'; }, ok ? 2500 : 6000);
 }
 // Sessão de admin do Fichário: emitida no login do ADM (e reaproveitada aqui); se faltar, emite de novo.
-async function admEmitirSessaoFichas(nome, senha){
-  try{
-    const r = await fetch('/api/ficha-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,senha})});
-    const j = await r.json().catch(()=>null);
-    if(r.ok && j?.token){ localStorage.setItem('kp_ficha_sessao', JSON.stringify(j)); _admFichaTok = j.token; return {token:j.token}; }
-    return {erro: j?.error || 'HTTP '+r.status};
-  }catch(e){ console.warn('[ficha-token adm]', e); return {erro:e.message}; }
-}
 async function admFichasInit(force){
   if(admFichasLista && !force){ renderTbodyPersonagens(); return; }
   if(admFichasCarregando && !force) return;
@@ -8828,16 +8731,16 @@ async function admAtribuirFicha(btn){
   if(!confirm((semPlayer ? `Remover o player da ficha "${e.nome}"?` : `Atribuir a ficha "${e.nome}" a ${alvo.nome}?`) + (atual?`\n\nPlayer atual: ${atual}`:''))) return;
   const isBtn = btn.tagName==='BUTTON'; const txt = isBtn ? btn.textContent : ''; btn.disabled = true; if(isBtn) btn.textContent = 'Salvando…';
   try{
-    const senha = garantirSenhaAdmSessao();
-    if(!senha) throw new Error('Senha do admin não informada.');
+    const c = await admCred('Confirme a senha do seu player para atribuir a ficha.');
+    if(!c) throw new Error('Senha não informada.');
     const pid = semPlayer ? 'admin' : alvo.id;
     // o servidor confere o ADM (nome+senha) e troca o dono no GitHub e no Supabase
     const r = await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      action:'atribuir', adm_nome:admLogado.email, adm_senha:senha, slug,
-      player_id:pid, player:semPlayer?'':alvo.nome, por:admLogado.email
+      action:'atribuir', adm_nome:c.n, adm_senha:c.s, slug,
+      player_id:pid, player:semPlayer?'':alvo.nome, por:c.n
     })});
     const j = await r.json().catch(()=>null);
-    if(!r.ok){ if(r.status===403||r.status===401) _admSenhaSessao = null; throw new Error(j?.error || 'HTTP '+r.status); }
+    if(!r.ok){ if(r.status===403||r.status===401) KPAdm.credLimpar(); throw new Error(j?.error || 'HTTP '+r.status); }
     e.player = semPlayer ? null : alvo.nome; e.player_id = pid; e.atualizado_em = j?.atualizado_em || e.atualizado_em;
     renderTbodyPersonagens();
     admFichasMsg(semPlayer ? `✓ "${e.nome}" ficou sem player.` : `✓ "${e.nome}" atribuída a ${alvo.nome}.`, true);
@@ -9911,10 +9814,7 @@ function showEditBtnIfAdm(){
   const btn = document.getElementById('page-edit-btn');
   if(!btn) return;
   const onEditablePage = EDITABLE_PAGES.includes(currentPage);
-  const temPermissao = isSuperAdmin() || (admLogado && (()=>{
-    const a = admins.find(x=>x.nome===admLogado.email)||{nome:admLogado.email,permissoes:[]};
-    return getAdminPerms(a).includes('paginas');
-  })());
+  const temPermissao = !!admLogado && admTemPerm('paginas');
   btn.style.display = (temPermissao && onEditablePage) ? 'flex' : 'none';
   if(!onEditablePage && document.body.classList.contains('edit-mode')) sairModoEdicao();
 }
@@ -17083,7 +16983,7 @@ const NAV_ICO_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const NAV_ICO_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2 11.4 11.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>';
 function isAdminConectado(){
   if(window.KPAdm&&KPAdm.isStaff()&&!KPAdm.modoOn()) return false;   // botão ADM desligado no nome do player = vê como player
-  return typeof admLogado!=='undefined' ? !!admLogado : !!localStorage.getItem('adm_session');
+  return typeof admLogado!=='undefined' ? !!admLogado : false;
 }
 function renderHamburgerIcon(){
   const btn=document.getElementById('nav-hamburger');
