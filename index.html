@@ -3672,6 +3672,7 @@ window.calcSituSoma = function(){
     { const rs = $('calc-resultado'); if(rs){ rs.style.opacity = faltam ? '.4' : ''; rs.title = faltam ? 'Selecione os dois Pokémon para calcular' : ''; } }
     renderDisputa();
     renderLinhas();
+    try{ renderTime('p1'); renderTime('p2'); }catch(_){}
   }
 
   // ── Dados dos Pokémon (banco + PokeAPI) ──────────────────
@@ -4204,6 +4205,20 @@ window.calcSituSoma = function(){
       .cpk-efetivo{font-size:10px}
     }
     .cpk-hints{font-size:11px;color:var(--muted);line-height:1.6;margin-top:4px}
+    .cpk-time{border-bottom:1.5px dashed var(--border);margin-bottom:10px;padding-bottom:10px}
+    .cpk-time-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .cpk-time-t{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-right:auto}
+    .cpk-time-t b{color:var(--brand);font-weight:800}
+    .cpk-time-chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+    .cpk-chip{position:relative;display:flex;align-items:center;justify-content:center;min-height:34px;padding:4px 22px 4px 8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;font-weight:700;line-height:1.2;cursor:pointer;text-align:center;width:100%;font-family:inherit}
+    .cpk-chip span.n{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+    .cpk-chip small{display:block;font-size:9px;font-weight:600;color:var(--muted)}
+    .cpk-chip.vazio{border-style:dashed;color:var(--muted);font-weight:600;padding:4px 8px}
+    .cpk-chip.on{border-color:var(--brand-mid);box-shadow:0 0 0 1.5px var(--brand-mid) inset}
+    .cpk-chip:disabled{opacity:.5;cursor:not-allowed}
+    .cpk-chip-x{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;border:0;background:transparent;color:var(--muted);font-size:13px;line-height:1;cursor:pointer;padding:0}
+    .cpk-chip-x:hover{background:rgba(211,47,47,.12);color:#d32f2f}
+    .cpk-time-msg{font-size:10px;color:var(--muted);font-style:italic;min-height:13px;margin-top:5px}
     #calc-pk-resumo{display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1.5px solid var(--border);font-size:13px;color:var(--text);line-height:1.6}`;
     document.head.appendChild(st);
   }
@@ -4240,6 +4255,7 @@ window.calcSituSoma = function(){
             <div class="cpk-f"><label class="l" for="${id('fpk')}">Pokémon da ficha</label><select id="${id('fpk')}"><option value="">—</option></select></div>
           </div>
         </div>
+        <div class="cpk-time" id="${id('time')}"></div>
         <div class="cpk-row n">
           <div class="cpk-f"><label class="l" for="${id('nome')}">Pokémon</label><input id="${id('nome')}" type="text" list="cpk-nomes" autocomplete="off" placeholder="Buscar…"/></div>
           <div class="cpk-f"><label class="l" for="${id('nivel')}">Nível</label><input id="${id('nivel')}" type="number" min="1" max="100" placeholder="Lv"/></div>
@@ -4320,6 +4336,7 @@ window.calcSituSoma = function(){
     const s1 = $('cpk-p1-status'), s2 = $('cpk-p2-status');
     if(s1 && s2){ const t = s1.textContent; s1.textContent = s2.textContent; s2.textContent = t; }
     const u = _ultimo.p1; _ultimo.p1 = _ultimo.p2; _ultimo.p2 = u;
+    { const sl = _slotDe.p1; _slotDe.p1 = _slotDe.p2; _slotDe.p2 = sl; }
     atualizar();
   }
 
@@ -4513,6 +4530,7 @@ window.calcSituSoma = function(){
       setV('cpk-p1-nivel', b.dataset.lv); setV('cpk-p2-nivel', b.dataset.lv); atualizar();
     }));
     $('cpk-swap').addEventListener('click', trocarLados);
+    ligarTime(panel);
     $('cpk-clear').addEventListener('click', () => {
       panel.querySelectorAll('input[type=text],input[type=number]').forEach(el => { el.value = ''; });
       panel.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
@@ -4526,7 +4544,7 @@ window.calcSituSoma = function(){
         _fichaPk[s] = []; _fichaUlt[s] = ''; _ftok[s]++; _fptok[s]++;
         mostrarSlots(s);
       });
-      _tok.p1++; _tok.p2++; _ultimo.p1 = ''; _ultimo.p2 = '';
+      _tok.p1++; _tok.p2++; _ultimo.p1 = ''; _ultimo.p2 = ''; _slotDe.p1 = -1; _slotDe.p2 = -1;
       _tocados.forEach(c => { if(NEUTRO[c]) NEUTRO[c](); }); _tocados.clear();
       atualizar();
     });
@@ -4550,6 +4568,191 @@ window.calcSituSoma = function(){
       try{ if(typeof PK !== 'undefined' && PK.load) PK.load().then(d => { if(typeof pokemonDB !== 'undefined' && !pokemonDB.length && Array.isArray(d)) pokemonDB = d; preencherNomes(); }).catch(()=>{}); }catch(e){}
     }
     atualizar();
+  }
+
+  // ── Meus Pokémon: até 6 por player (de ficha ou montados na calculadora) ──────────────
+  // Guarda uma "foto" do card (nome, nível, tipos, stats, golpes…) em config.calcpk_<id do player>
+  // e em localStorage (cache/offline). Estado de batalha (HP atual, estágios, Dynamax, "já usado") não é salvo.
+  const TIME_MAX = 6;
+  var _time = null, _slotDe = {p1:-1, p2:-1}, _timeMsg = {p1:'', p2:''}, _timeMsgT = {p1:0, p2:0}, _timeFila = Promise.resolve();
+  const TIME_CAMPOS = ['nome','nivel','t1','t2','teratipo','bola'];
+  const TIME_CHECKS = ['mega','tera'];
+  const TIME_STATS  = ['hp','atk','def','spa','spd','spe'];
+  const TIME_MV_TXT = ['nome','tipo','cat','poder'];
+  const TIME_MV_CK  = ['sem','crit','charge'];
+
+  function jogadorAtual(){
+    try{ if(typeof playerLogado !== 'undefined' && playerLogado && playerLogado.id != null) return {id: String(playerLogado.id), nome: playerLogado.nome || ''}; }catch(_){}
+    for(const S of [localStorage, sessionStorage]){
+      try{ const j = JSON.parse(S.getItem('player_session')); if(j && j.id != null) return {id: String(j.id), nome: j.nome || ''}; }catch(_){}
+    }
+    return null;
+  }
+  const timeChave = id => 'calcpk_' + id;
+  function timeLerLocal(id){
+    try{ const j = JSON.parse(localStorage.getItem(timeChave(id))); if(j && Array.isArray(j.slots)) return j; }catch(_){}
+    return null;
+  }
+  function timeNormaliza(j){
+    const slots = Array.from({length: TIME_MAX}, (_, i) => { const d = j && j.slots && j.slots[i]; return (d && d.nome) ? d : null; });
+    return {ts: (j && j.ts) || 0, slots};
+  }
+  function timeGravarLocal(){
+    if(!_time || !_time.id) return;
+    try{ localStorage.setItem(timeChave(_time.id), JSON.stringify({v:1, ts:_time.ts, slots:_time.slots})); }catch(_){}
+  }
+  async function timeGravarRemoto(){
+    if(!_time || !_time.id || typeof dbGet !== 'function') return false;
+    const chave = timeChave(_time.id), valor = JSON.stringify({v:1, ts:_time.ts, slots:_time.slots});
+    try{
+      const ex = await dbGet('config', 'chave=eq.' + encodeURIComponent(chave));
+      const r = (ex && ex[0]) ? await dbPatch('config', 'chave=eq.' + encodeURIComponent(chave), {valor}) : await dbPost('config', {chave, valor});
+      return Array.isArray(r) && r.length > 0;
+    }catch(e){ console.warn('[calc time]', e); return false; }
+  }
+  async function iniciarTime(j){
+    const id = j ? j.id : null;
+    const local = id ? timeNormaliza(timeLerLocal(id)) : timeNormaliza(null);
+    _time = {id, nome: j ? j.nome : '', ts: local.ts, slots: local.slots, carregando: !!id};
+    if(!id || typeof dbGet !== 'function'){ _time.carregando = false; return; }
+    try{
+      const r = await dbGet('config', 'chave=eq.' + encodeURIComponent(timeChave(id)));
+      if(!_time || _time.id !== id) return;
+      let remoto = null; try{ remoto = r && r[0] ? JSON.parse(r[0].valor) : null; }catch(_){}
+      if(remoto && Array.isArray(remoto.slots)){
+        const rm = timeNormaliza(remoto);
+        if(rm.ts >= _time.ts){ _time.ts = rm.ts; _time.slots = rm.slots; timeGravarLocal(); }
+        else timeGravarRemoto();                       // o do aparelho é mais novo: sobe pra conta
+      }else if(_time.slots.some(Boolean)){ timeGravarRemoto(); }
+    }catch(_){}
+    if(_time && _time.id === id){ _time.carregando = false; renderTime('p1'); renderTime('p2'); }
+  }
+
+  function timeMsg(s, txt, ms){
+    _timeMsg[s] = txt || ''; clearTimeout(_timeMsgT[s]);
+    if(txt && ms) _timeMsgT[s] = setTimeout(() => { _timeMsg[s] = ''; renderTime('p1'); renderTime('p2'); }, ms);
+    renderTime('p1'); renderTime('p2');   // o time é um só: os dois cards mostram o mesmo contador/espaços
+  }
+
+  // Foto do card
+  function timeFoto(s){
+    const g = k => $('cpk-'+s+'-'+k);
+    const d = {};
+    TIME_CAMPOS.forEach(k => { d[k] = (g(k)?.value || '').trim(); });
+    TIME_CHECKS.forEach(k => { d[k] = !!g(k)?.checked; });
+    d.base = {};
+    TIME_STATS.forEach(k => {
+      const el = g(k); if(!el || el.value === '') return;
+      const b = parseFloat(el.dataset.base), v = parseFloat(el.value);
+      const x = Number.isFinite(b) ? b : v;
+      if(Number.isFinite(x)) d.base[k] = x;
+    });
+    d.adapt = !!g('hab')?.dataset.adapt;
+    d.mv = SLOTS.map(i => {
+      const m = {}, h = x => $('cpk-'+s+'-m'+i+'-'+x);
+      TIME_MV_TXT.forEach(k => { m[k] = h(k)?.value || ''; });
+      TIME_MV_CK.forEach(k => { m[k] = !!h(k)?.checked; });
+      return m;
+    });
+    d.n = parseInt($('cpk-'+s+'-moves')?.dataset.n) || GOLPES_INICIAIS;
+    d.ativo = document.querySelector('input[name="cpk-'+s+'-ativo"]:checked')?.value || '1';
+    return d;
+  }
+
+  // Devolve a foto para o card (zera o estado de batalha)
+  function timeAplicar(s, d){
+    _tok[s]++; _fptok[s]++; _ftok[s]++;                  // cancela buscas pendentes deste lado
+    const set = (k, v) => setV('cpk-'+s+'-'+k, v);
+    // a Pokébola pode não estar na lista (ex.: veio da ficha)
+    { const sb = $('cpk-'+s+'-bola');
+      if(sb && d.bola && ![...sb.options].some(o => o.value === d.bola)){ const o = document.createElement('option'); o.value = d.bola; o.textContent = rotuloBola(d.bola); sb.appendChild(o); } }
+    TIME_CAMPOS.forEach(k => set(k, d[k] || ''));
+    TIME_CHECKS.forEach(k => { const el = $('cpk-'+s+'-'+k); if(el) el.checked = !!d[k]; });
+    set('nivel', d.nivel || '');
+    TIME_STATS.forEach(k => set(k, d.base && d.base[k] != null ? d.base[k] : ''));
+    set('hpatual', '');
+    ['atk','def','spa','spd','spe'].forEach(k => set('e'+k, '0'));
+    const dyn = $('cpk-'+s+'-dyn'); if(dyn) dyn.checked = false;
+    setAdapt(s, !!d.adapt);
+    SLOTS.forEach((i, k) => {
+      const m = (d.mv && d.mv[k]) || {};
+      TIME_MV_TXT.forEach(x => set('m'+i+'-'+x, m[x] != null ? m[x] : (x === 'cat' ? 'fis' : '')));
+      TIME_MV_CK.forEach(x => { const el = $('cpk-'+s+'-m'+i+'-'+x); if(el) el.checked = !!m[x]; });
+      const us = $('cpk-'+s+'-m'+i+'-usado'); if(us) us.checked = false;
+    });
+    const box = $('cpk-'+s+'-moves'); if(box) box.dataset.n = clamp(parseInt(d.n) || GOLPES_INICIAIS, GOLPES_INICIAIS, GOLPES_MAX);
+    const r = document.querySelector('input[name="cpk-'+s+'-ativo"][value="'+(d.ativo || '1')+'"]') || document.querySelector('input[name="cpk-'+s+'-ativo"][value="1"]');
+    if(r) r.checked = true;
+    _ultimo[s] = String(d.nome || '').trim().toLowerCase(); _statsOk[s] = true;
+    mostrarSlots(s);
+    const st = $('cpk-'+s+'-status'); if(st) st.textContent = 'Carregado do seu time: ' + d.nome + (d.nivel ? ' · Lv ' + d.nivel : '');
+  }
+
+  function timeSalvar(s, idx){
+    if(!_time || !_time.id){ timeMsg(s, 'Entre com seu player para guardar Pokémon.', 4000); return; }
+    const f = timeFoto(s);
+    if(!f.nome){ timeMsg(s, 'Escolha o Pokémon antes de salvar.', 4000); return; }
+    const mesmo = i => _time.slots[i] && normNome(_time.slots[i].nome) === normNome(f.nome);
+    if(idx == null) idx = (_slotDe[s] >= 0 && mesmo(_slotDe[s])) ? _slotDe[s] : _time.slots.findIndex(x => !x);
+    if(idx < 0){ timeMsg(s, 'Time cheio (6/6) — remova um com × ou carregue um e use Atualizar.', 5000); return; }
+    const novo = !_time.slots[idx];
+    _time.slots[idx] = f; _time.ts = Date.now(); _slotDe[s] = idx;
+    timeGravarLocal(); timeMsg(s, 'Salvando…');
+    _timeFila = _timeFila.then(timeGravarRemoto).then(ok => timeMsg(s, ok ? (novo ? 'Salvo no espaço ' : 'Atualizado no espaço ') + (idx+1) + '.' : 'Salvo só neste aparelho (sem conexão com a conta).', 4000));
+  }
+  function timeRemover(s, idx){
+    if(!_time || !_time.slots[idx]) return;
+    if(!confirm('Remover ' + _time.slots[idx].nome + ' do seu time?')) return;
+    _time.slots[idx] = null; _time.ts = Date.now();
+    ['p1','p2'].forEach(x => { if(_slotDe[x] === idx) _slotDe[x] = -1; });
+    timeGravarLocal(); timeMsg(s, 'Removido.');
+    _timeFila = _timeFila.then(timeGravarRemoto).then(ok => timeMsg(s, ok ? 'Removido.' : 'Removido só neste aparelho (sem conexão com a conta).', 3500));
+  }
+  function timeCarregar(s, idx){
+    const d = _time && _time.slots[idx]; if(!d) return;
+    timeAplicar(s, d); _slotDe[s] = idx;
+    atualizar();
+  }
+
+  function renderTime(s){
+    const box = $('cpk-'+s+'-time'); if(!box) return;
+    const j = jogadorAtual();
+    if(!_time || (_time.id || null) !== (j ? j.id : null)){ _slotDe.p1 = -1; _slotDe.p2 = -1; iniciarTime(j); }
+    const logado = !!(_time && _time.id);
+    const nomeCard = normNome($('cpk-'+s+'-nome')?.value || '');
+    const cheios = logado ? _time.slots.filter(Boolean).length : 0;
+    const noSlot = logado && _slotDe[s] >= 0 && _time.slots[_slotDe[s]] && normNome(_time.slots[_slotDe[s]].nome) === nomeCard;
+    let h = '<div class="cpk-time-h"><span class="cpk-time-t">Meus Pokémon <b>' + cheios + '/' + TIME_MAX + '</b></span>' +
+      '<button type="button" class="cpk-btn" data-act="salvar" data-s="'+s+'"' + (logado && !_time.carregando ? '' : ' disabled') +
+      ' title="Guarda o Pokémon deste card no seu time (nome, nível, tipos, stats e golpes)">' + (noSlot ? 'Atualizar' : 'Salvar') + '</button></div>';
+    h += '<div class="cpk-time-chips">';
+    for(let i = 0; i < TIME_MAX; i++){
+      const d = logado ? _time.slots[i] : null;
+      if(d){
+        h += '<div style="position:relative"><button type="button" class="cpk-chip' + (noSlot && _slotDe[s] === i ? ' on' : '') + '" data-act="carregar" data-s="'+s+'" data-i="'+i+'" title="Carregar ' + _esc(d.nome) + ' neste card">' +
+             '<span class="n">' + _esc(d.nome) + (d.nivel ? '<small>Lv ' + _esc(d.nivel) + '</small>' : '') + '</span></button>' +
+             '<button type="button" class="cpk-chip-x" data-act="remover" data-s="'+s+'" data-i="'+i+'" title="Remover do time" aria-label="Remover ' + _esc(d.nome) + '">×</button></div>';
+      }else{
+        h += '<button type="button" class="cpk-chip vazio" data-act="salvarEm" data-s="'+s+'" data-i="'+i+'"' + (logado && !_time.carregando ? '' : ' disabled') + ' title="Guardar o Pokémon deste card no espaço ' + (i+1) + '">＋ ' + (i+1) + '</button>';
+      }
+    }
+    h += '</div>';
+    const msg = !logado ? 'Entre com seu player para guardar até ' + TIME_MAX + ' Pokémon.' : (_time.carregando ? 'Carregando seu time…' : _timeMsg[s]);
+    h += '<div class="cpk-time-msg">' + _esc(msg || '') + '</div>';
+    if(box._h !== h){ box._h = h; box.innerHTML = h; }
+  }
+  function ligarTime(panel){
+    panel.addEventListener('click', e => {
+      const b = e.target.closest?.('[data-act]'); if(!b || !panel.contains(b) || b.disabled) return;
+      const s = b.dataset.s, i = parseInt(b.dataset.i);
+      if(b.dataset.act === 'salvar') timeSalvar(s);
+      else if(b.dataset.act === 'salvarEm') timeSalvar(s, i);
+      else if(b.dataset.act === 'carregar') timeCarregar(s, i);
+      else if(b.dataset.act === 'remover') timeRemover(s, i);
+    });
+    panel.addEventListener('toggle', () => { renderTime('p1'); renderTime('p2'); });
+    renderTime('p1'); renderTime('p2');
+    setInterval(() => { if(document.body.contains(panel)){ try{ renderTime('p1'); renderTime('p2'); }catch(_){} } }, 2500);   // pega login feito com o painel aberto
   }
 
   function garantirPainel(){
