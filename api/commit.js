@@ -284,8 +284,9 @@ async function hStores(token, body) {
    Recebe { missoes: [...novas/editadas], apagar: [ids] } (o mesmo lote que o missoes.html guarda como rascunho),
    aplica sobre o missoes.json publicado e faz UM commit. Aceita array puro ou { missoes: [...] } e mantém o formato.
    Campos fora de CAMPOS_MISSAO que já existam na missão publicada são preservados. */
-const CAMPOS_MISSAO = ['titulo', 'ranking', 'estilo', 'pre_requisitos', 'local', 'mapa', 'capturavel', 'repetivel', 'descricao', 'recompensas', 'ordem', 'repeticao', 'ativa', 'vagas'];
-const REPETICOES = new Set(['livre', 'diaria', 'semanal', 'nao']);
+const CAMPOS_MISSAO = ['titulo', 'ranking', 'estilo', 'pre_requisitos', 'local', 'mapa', 'capturavel', 'repetivel', 'descricao', 'recompensas', 'ordem', 'repeticao', 'repeticao_dias', 'ativa', 'vagas'];
+// mesmos valores do <select> de repetição do missoes.html ('dias' = personalizado, usa repeticao_dias)
+const REPETICOES = new Set(['livre', 'sem_limite', 'diaria', '3dias', 'semanal', 'quinzenal', 'mensal', 'bimestral', 'dias', 'nao']);
 function limpaMissao(m) {
   if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
   const id = m.id == null ? '' : String(m.id).trim();
@@ -301,6 +302,8 @@ function limpaMissao(m) {
   }
   if (typeof o.titulo !== 'string' || !o.titulo.trim()) return null;
   if (o.repeticao != null && !REPETICOES.has(o.repeticao)) return null;
+  if (o.repeticao === 'dias') { const d = parseInt(o.repeticao_dias, 10); if (!(d > 0 && d <= 3650)) return null; o.repeticao_dias = d; }
+  else delete o.repeticao_dias;
   return o;
 }
 async function lerArquivo(token, path) {
