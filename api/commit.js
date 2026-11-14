@@ -8,6 +8,7 @@ const OWNER = 'alphx-r';
 const REPO = process.env.GITHUB_REPO ? process.env.GITHUB_REPO.split('/')[1] : 'kingdomplatinum';
 const OWN = process.env.GITHUB_REPO ? process.env.GITHUB_REPO.split('/')[0] : OWNER;
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
+import crypto from 'crypto';
 const API = `https://api.github.com/repos/${OWN}/${REPO}`;
 
 const AUTH_URL = process.env.AUTH_SUPA_URL || 'https://ucbkodkjlbatttiuqjtv.supabase.co';
@@ -34,14 +35,50 @@ const ACEITAR_EMAIL_LEGADO = true;
 
 // Modo novo: nome+senha do PLAYER, conferidos no servidor, e papel lido de config.kp_staff.
 // chefe/admin editam tudo; MOD só edita o tipo do seu site (mods[tipo]). Retorna null se o corpo não usa o modo novo.
+// Crachá de equipe emitido pelo /api/ficha-token no login (nome + validade assinados com COMMIT_SECRET).
+function nomeDoCt(ct) {
+  const segredo = process.env.COMMIT_SECRET;
+  if (!segredo || typeof ct !== 'string') return null;
+  const [p, sig] = ct.split('.');
+  if (!p || !sig) return null;
+  const esperado = crypto.createHmac('sha256', segredo).update(p).digest('base64url');
+  const A = Buffer.from(sig), B = Buffer.from(esperado);
+  if (A.length !== B.length || !crypto.timingSafeEqual(A, B)) return null;
+  try {
+    const d = JSON.parse(Buffer.from(p, 'base64url').toString('utf8'));
+    return d && typeof d.n === 'string' && d.exp > Date.now() ? d.n : null;
+  } catch (e) { return null; }
+}
+
+const CT_DIAS = 30;
+function assinarCt(nome) {
+  const segredo = process.env.COMMIT_SECRET;
+  if (!segredo) return null;
+  const p = Buffer.from(JSON.stringify({ n: nome, exp: Date.now() + CT_DIAS * 864e5 })).toString('base64url');
+  return p + '.' + crypto.createHmac('sha256', segredo).update(p).digest('base64url');
+}
+
 async function adminOkPlayer(body, tipo) {
+  if (body.ct) {   // sessão: sem senha. O papel é lido de config.kp_staff a cada pedido.
+    const nome = nomeDoCt(body.ct);
+    if (nome) {
+      try {
+        const m = await import('./_staff.js'); const ST = m.default || m;
+        const p = ST.papel(await ST.lerStaff(), nome, tipo);
+        return p === 'chefe' || p === 'admin' || p === 'mod';
+      } catch (e) { return false; }
+    }
+    if (!body.admin_nome || !body.admin_senha) return false;   // crachá vencido/inválido e sem senha -> 401
+  }
   if (!body.admin_nome || !body.admin_senha) return null;
   try {
     const m = await import('./_staff.js'); const ST = m.default || m;
     const eu = await ST.verificarPlayer(body.admin_nome, body.admin_senha);
     if (!eu) return false;
     const p = ST.papel(await ST.lerStaff(), eu.nome, tipo);
-    return p === 'chefe' || p === 'admin' || p === 'mod';
+    const ok = p === 'chefe' || p === 'admin' || p === 'mod';
+    if (ok) body._ctNovo = assinarCt(eu.nome);   // senha confirmada: devolve um crachá novo (a pessoa não precisa digitar de novo)
+    return ok;
   } catch (e) { return false; }
 }
 
@@ -382,7 +419,8 @@ export default async function handler(req, res) {
       const ok = viaPlayer !== null ? viaPlayer : (ACEITAR_EMAIL_LEGADO && await adminOk(body.admin));
       if (!ok) return res.status(401).json({ error: 'Sem permissão. Entre com seu player (nome e senha) e ative o modo ADM.' });
     }
-    return res.status(200).json(await fn(token, body));
+    const out = await fn(token, body);
+    return res.status(200).json(body._ctNovo ? { ...out, ct: body._ctNovo } : out);
   } catch (e) {
     return res.status(e instanceof HttpErr ? e.status : 500).json({ error: e.message || 'Erro inesperado' });
   }
