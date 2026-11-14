@@ -8,6 +8,7 @@ const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
 const { aplicar } = require('./_itens');
 const { diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
 const T = require('./_torneios');   // torneios (arquivo com "_" não conta como função na Vercel)
+const ST = require('./_staff');     // lista de acesso (chefe/ADM/MOD) — config.kp_staff
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
 //   GET  /api/ficha-salvar?lista=1      -> data/index.json
 //   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
@@ -228,6 +229,7 @@ module.exports = async (req, res) => {
   try {
     const b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const { action = 'save', token, slug } = b;
+    if (action === 'staff_salvar') return await ST.salvar(b, res);   // chefe/ADM editam a equipe (nome+senha do player)
     if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
     if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
