@@ -319,9 +319,9 @@ dialog#imp{width:min(680px,94vw)}
   <div class="cfa"><button type="button" class="btn d" id="mq-del" style="flex:none;display:none">Descartar</button><button type="button" class="btn" onclick="mqm.close()">Cancelar</button><button type="button" class="btn p" id="mq-save">Salvar</button></div>
 </dialog>
 <dialog id="pbm" onclick="if(event.target===this)this.close()">
-  <div class="cfh"><h3>Publicar missões</h3><p id="pb-sub">Confirme com seu login de admin. O commit no missoes.json é automático e o site atualiza após o deploy.</p></div>
+  <div class="cfh"><h3>Publicar missões</h3><p id="pb-sub">Confirme com o nome e a senha do seu player. O commit no missoes.json é automático e o site atualiza após o deploy.</p></div>
   <div class="pbl" id="pb-list"></div>
-  <form class="acb" onsubmit="return false" autocomplete="on"><label>E-mail de admin</label><input id="pb-nome" autocomplete="username"/><label style="margin-top:10px">Senha</label><input id="pb-senha" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')$('pb-go').click()"/><div class="le2" id="pb-err"></div></form>
+  <form class="acb" onsubmit="return false" autocomplete="on"><label>Nome do player</label><input id="pb-nome" autocomplete="username"/><label style="margin-top:10px">Senha</label><input id="pb-senha" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')$('pb-go').click()"/><div class="le2" id="pb-err"></div></form>
   <div class="cfa"><button type="button" class="btn" onclick="pbm.close()">Cancelar</button><button type="button" class="btn p" id="pb-go">Publicar</button></div>
 </dialog>
 <dialog id="acm" onclick="if(event.target===this)this.close()">
@@ -786,15 +786,15 @@ $('mq-del').onclick=()=>{
 };
 function abrirPublicar(){
  if(!isAdm()||(!lerLocais().length&&!lerApagar().length))return;
- let em='';try{em=JSON.parse(localStorage.getItem('adm_session')||'null')?.email||''}catch{}
+ let em='';try{em=(window.KPAdm&&KPAdm.nome())||''}catch{}
  $('pb-list').innerHTML=listaPend();$('pb-nome').value=em;$('pb-senha').value='';$('pb-err').textContent='';pbm.showModal();(em?$('pb-senha'):$('pb-nome')).focus();
 }
 $('pb-go').onclick=async()=>{
  const nome=$('pb-nome').value.trim(),senha=$('pb-senha').value,err=$('pb-err'),lote=lerLocais().map(limpa),apagar=lerApagar();
- if(!nome||!senha){err.textContent='Informe e-mail e senha de admin.';return}
+ if(!nome||!senha){err.textContent='Informe o nome e a senha do seu player.';return}
  $('pb-go').disabled=true;err.textContent='';
  try{
-  const r=await fetch('/api/missoes_publicar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,senha,missoes:lote,apagar})});
+  const r=await fetch('/api/missoes_publicar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({admin_nome:nome,admin_senha:senha,missoes:lote,apagar})});
   const j=await r.json().catch(()=>null);
   if(!r.ok)throw new Error(j?.error||'HTTP '+r.status);
   $('pb-senha').value='';pbm.close();toast('Publicado! O site atualiza em instantes, quando o deploy da Vercel terminar.');
