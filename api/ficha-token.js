@@ -8,6 +8,14 @@ const H = k => String(k).startsWith('sb_')
 // Players com poder de admin (chefe + ADMs de config.kp_staff): entram com a senha de player, mas o token sai como 'admin',
 // que é o que o ficha_salvar do Supabase aceita para editar ficha de outro player. MOD não vira admin aqui.
 const S = require('./_staff');
+const crypto = require('crypto');
+// "Crachá de equipe" (ct): nome + validade assinados com COMMIT_SECRET (env da Vercel; qualquer texto longo e aleatório).
+// O /api/commit confere a assinatura e consulta config.kp_staff NA HORA, então tirar alguém da lista vale imediatamente.
+const CT_DIAS = 30;
+function assinarCt(nome, segredo) {
+  const p = Buffer.from(JSON.stringify({ n: nome, exp: Date.now() + CT_DIAS * 864e5 })).toString('base64url');
+  return p + '.' + crypto.createHmac('sha256', segredo).update(p).digest('base64url');
+}
 const ENV = ['INDEX_SUPA_URL', 'INDEX_SUPA_KEY', 'FICHAS_SUPA_URL', 'FICHAS_SUPA_SERVICE_KEY'];
 
 module.exports = async (req, res) => {
@@ -69,7 +77,9 @@ module.exports = async (req, res) => {
       console.error('ficha-token: ficha_emitir_token falhou:', b.status, await b.text().catch(() => ''));
       return res.status(500).json({ error: 'Falha ao iniciar a sessão.' });
     }
-    return res.status(200).json(await b.json());
+    const out = await b.json();
+    if (process.env.COMMIT_SECRET && out && typeof out === 'object' && !Array.isArray(out)) out.ct = assinarCt(nomeFinal, process.env.COMMIT_SECRET);
+    return res.status(200).json(out);
   } catch (e) {
     console.error('ficha-token:', e);
     return res.status(500).json({ error: 'Erro no servidor.' });
