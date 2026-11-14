@@ -53,7 +53,12 @@
       if ((!txt || txt === '—') && ses() && nome() && el.hasAttribute('data-kp-fill')) txt = nome();
       if (txt && raw !== txt) { busy = true; el.textContent = txt; busy = false; }
       var nx = el.nextElementSibling, sw = nx && nx.classList && nx.classList.contains('kp-sw') ? nx : null;
-      if (!p || !txt || txt === '—' || txt === 'Entrar') { if (sw) sw.remove(); return; }
+      var pv = el.previousElementSibling, rl = pv && pv.classList && pv.classList.contains('kp-role') ? pv : null;
+      var bd = el.closest ? el.closest('#nav-player-badge') : null;
+      if (!p || !txt || txt === '—' || txt === 'Entrar') { if (sw) sw.remove(); if (rl) rl.remove(); if (bd) bd.classList.remove('kp-staff'); return; }
+      if (bd) bd.classList.add('kp-staff');
+      if (!rl) { rl = document.createElement('span'); rl.className = 'kp-role'; el.parentNode.insertBefore(rl, el); }
+      rl.textContent = p === 'mod' ? 'MOD' : 'ADM'; rl.classList.toggle('off', !on);
       if (!sw) {
         sw = document.createElement('button'); sw.type = 'button'; sw.className = 'kp-sw';
         sw.setAttribute('role', 'switch'); sw.innerHTML = '<i></i>';
@@ -62,7 +67,7 @@
       }
       var tipo = p === 'mod' ? 'MOD' : 'ADM';
       sw.classList.toggle('on', on); sw.setAttribute('aria-checked', on ? 'true' : 'false');
-      sw.setAttribute('aria-label', 'Modo ' + tipo); sw.title = on ? 'Modo ' + tipo + ' ligado. Toque para ver como player' : 'Modo player. Toque para voltar ao ' + tipo;
+      sw.setAttribute('aria-label', 'Modo ' + tipo); sw.removeAttribute('title');
     });
   }
   function toggle() {
@@ -151,7 +156,7 @@
   }
 
   var st = document.createElement('style');
-  st.textContent = '.kp-sw{box-sizing:border-box;flex:none;position:relative;width:30px;height:17px;padding:0;margin:0 0 0 6px;border-radius:99px;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);cursor:pointer;transition:background .18s,border-color .18s;-webkit-tap-highlight-color:transparent}.kp-sw i{position:absolute;top:1.5px;left:1.5px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .18s}.kp-sw.on{background:#3bb54a;border-color:#3bb54a}.kp-sw.on i{transform:translateX(13px)}';
+  st.textContent = '.kp-role{flex:none;margin:0 6px 0 0;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.22);color:inherit;font-size:10px;font-weight:800;letter-spacing:.6px;line-height:1;transition:opacity .18s}.kp-role.off{opacity:.45}.kp-sw{box-sizing:border-box;flex:none;position:relative;width:30px;height:17px;padding:0;margin:0 0 0 6px;border-radius:99px;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);cursor:pointer;transition:background .18s,border-color .18s;-webkit-tap-highlight-color:transparent}.kp-sw i{position:absolute;top:1.5px;left:1.5px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .18s}.kp-sw.on{background:#3bb54a;border-color:#3bb54a}.kp-sw.on i{transform:translateX(13px)}';
   document.head.appendChild(st);
 
   function iniciar() {
