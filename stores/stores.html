@@ -588,6 +588,7 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{d
 .se-lz::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #555;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 #lst.cat .pcf{display:none!important}
 </style>
+<script src="/admin-player.js" data-site="stores"></script>
 </head>
 <body>
 <div class="loading-overlay" id="loading-overlay"><div class="loading-spinner"></div><div class="loading-text">Carregando Kingdom Platinum...</div></div>
@@ -687,7 +688,7 @@ function closeNavDrop(){
 }
 
 const IU='https://ucbkodkjlbatttiuqjtv.supabase.co',IK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4',SK='kp_ficha_sessao';
-const SELL_PCT=0.5,MAXQ=99,ADM_PLAYERS=['ricky','jef','lucas'];
+const SELL_PCT=0.5,MAXQ=99;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nk=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
@@ -790,24 +791,16 @@ const sellUnit=it=>{if(!it||!temVender()||isTM(it)||it.price==null||!Number.isFi
  if(isVenda(it))return Math.floor(p);
  return(f.pokemart?.enabled==null&&f.venda?.enabled==null)?Math.floor(p*pc):0};
 
-/* sessão: admin do index (adm_session) vira admin aqui */
+/* sessão: o acesso de ADM/MOD vem do player logado (admin-player.js, lista config.kp_staff); não usa mais o login por email do index */
 async function idxSync(){
- try{
-  let a=null;try{a=JSON.parse(localStorage.getItem('adm_session'))}catch{}
-  let ok=false;
-  if(a?.email){
-   const r=await fetch(IU+'/rest/v1/rpc/admin_list',{method:'POST',headers:{apikey:IK,Authorization:'Bearer '+IK,'Content-Type':'application/json'},body:'{}'});
-   if(r.ok){const l=await r.json();ok=Array.isArray(l)&&l.some(x=>x&&x.nome===a.email)}else return;
-  }
-  if(ok){ses={...(ses||{}),admin:true,idx:true};if(!ses.nome)ses.nome=a.email;localStorage.setItem(SK,JSON.stringify(ses))}
-  else if(ses?.idx){delete ses.admin;delete ses.idx;if(ses.token)localStorage.setItem(SK,JSON.stringify(ses));else{ses=null;localStorage.removeItem(SK)}}
- }catch{}
+ try{ if(ses?.idx){delete ses.admin;delete ses.idx;if(ses.token)localStorage.setItem(SK,JSON.stringify(ses));else{ses=null;localStorage.removeItem(SK)}} }catch{}
+ try{ await KPAdm.ready }catch{}
 }
-const realAdm=()=>!!ses&&(!!ses.admin||ADM_PLAYERS.includes(nrm(ses.nome)));
+const realAdm=()=>!!ses&&!!window.KPAdm&&['chefe','admin','mod'].includes(KPAdm.papel());   /* papel 'mod' = mod da loja (kp_staff.mods.stores) */
 /* chave MOD/Player (igual à dos torneios, mesma chave kp_preview): no modo player o ADM é tratado como jogador comum */
 let PREV=false;try{PREV=sessionStorage.getItem('kp_preview')==='1'}catch{}
 const isAdm=()=>realAdm()&&!PREV;
-const modSw=()=>realAdm()?`<button type="button" id="modsw" class="modsw${PREV?' off':''}" role="switch" aria-checked="${!PREV}" onclick="togPreview()" title="${PREV?'Modo player ativo. Clique para voltar ao modo MOD':'Modo MOD ativo. Clique para ver como player'}" aria-label="Alternar entre modo MOD e modo player"><span class="sw-t sw-mod">MOD</span><span class="sw-t sw-ply">Player</span><span class="sw-k"></span></button>`:'';
+const modSw=()=>'';   /* o botão ON/OFF agora fica no nome do player (admin-player.js) */
 function togPreview(){PREV=!PREV;try{sessionStorage.setItem('kp_preview',PREV?'1':'')}catch{}const b=document.getElementById('modsw');if(b){b.classList.toggle('off',PREV);b.setAttribute('aria-checked',String(!PREV));b.disabled=true}setTimeout(()=>{repaintMode();toast(PREV?'Modo player ativado':'Modo MOD ativado')},b?180:0)}
 /* redesenha com o que já está na memória (sem "Carregando…" nem novas buscas); só recarrega tudo se a tela principal ainda não foi montada */
 function repaintMode(){
@@ -952,7 +945,7 @@ function drawHub(){
 /* editor de lojas (só admin): grava stores/stores.json via /api/commit-stores */
 const EST_OPT=[['primavera','Primavera'],['verao','Verão'],['outono','Outono'],['inverno','Inverno']];
 const REC_OPT=[['reciclagem','Reciclagem'],['tm_voucher','TM Voucher']];
-const admEmail=()=>{try{return JSON.parse(localStorage.getItem('adm_session')||'null')?.email||null}catch{return null}};
+const admEmail=()=>window.KPAdm&&KPAdm.isStaff()?(KPAdm.nome()||null):null;   /* só indica se há staff logado; a senha é pedida ao salvar */
 const slugify=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
 let EDL=null;
 /* cor secundária sugerida: principal clara -> secundária mais escura; principal escura -> mais clara (mesmo tom) */
@@ -1045,12 +1038,13 @@ function openLojasAdm(){
  d.showModal()}
 async function gravaLojas(lista,okm){
  const er=m=>{const e=$('se-err');if(e)e.textContent=m||''},b=$('se-ok'),em=admEmail();
- if(!em){er('Para salvar, entre também no painel adm do site neste navegador.');return false}
+ if(!em){er('Para salvar, entre com o seu player (ADM ou MOD) e ative o modo ADM.');return false}
  if(b){b.disabled=true;b.textContent='Salvando…'}
  try{
-  const r=await fetch('/api/commit-stores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lojas:lista,admin:em})});
+  const c=await KPAdm.cred('Confirme a senha do seu player para salvar as lojas.');if(!c)throw new Error('Cancelado.');
+  const r=await fetch('/api/commit-stores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lojas:lista,admin_nome:c.n,admin_senha:c.s})});
   const j=await r.json().catch(()=>null);
-  if(!r.ok)throw new Error(j?.error||'Erro '+r.status);
+  if(!r.ok){if(r.status===401)KPAdm.credLimpar();throw new Error(j?.error||'Erro '+r.status)}
   LOJAS=j.lojas;try{localStorage.setItem('kp_lojas_pend',JSON.stringify({t:Date.now(),l:j.lojas}))}catch{}
   if($('slm')?.open)$('slm').close();
   toast(okm+' O site todo atualiza em cerca de 1 minuto.');
