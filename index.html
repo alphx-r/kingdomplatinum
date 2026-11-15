@@ -15407,7 +15407,8 @@ function _btnShareRoll(e){
   const dado=!!(e.tipo==='dado'||e._tipo==='dado'||(e.lados&&!e.pokes));
   return `<button type="button" class="hist-img-btn ico" onclick="${dado?'gerarImagemDadoId':'gerarImagemRolagem'}('${e.id}')" title="Compartilhar rolagem" aria-label="Compartilhar rolagem">${SVG_COMPARTILHAR}</button>`;
 }
-function imgDesenharDado(e,foto){
+function imgDesenharDado(e,foto,sprites){
+  sprites=sprites||{};
   IMG_T=imgTema(); const T=IMG_T;
   const W=1100,PAD=40,HEAD=224,BAND=HEAD-24;
   const lote=Array.isArray(e.lote)?e.lote:[], qd=lote.length>1?lote.length:1, lados=e.lados||'?';
@@ -15418,9 +15419,23 @@ function imgDesenharDado(e,foto){
   const MF='700 30px Nunito,sans-serif', mLines=wrap(motivo||'—',W-PAD*2-80,MF), LH=40;
   const mH=mLines.length*LH+44;
   // altura do bloco de resultado
+  // Lote com itens: agrupa itens iguais (ex.: 2x Aspear Berry vira um card "×2")
+  let grupos=null; const CARD_H=104, CARD_G=14, SUM_H=44;
+  if(temItem && qd>1){
+    const mp=new Map();
+    lote.forEach(r=>{
+      const nm=r.item||'Nada';
+      if(!mp.has(nm)) mp.set(nm,{nome:nm,item:r.item,nums:[],sabor:r.sabor,raridade:r.raridade});
+      mp.get(nm).nums.push(r.resultado);
+    });
+    grupos=[...mp.values()].map(g=>{
+      if(g.item){ const inf=_berryInfoPorNome(g.nome)||{}; g.sabor=g.sabor||inf.sabor; g.raridade=_raridadeNorm(g.raridade||inf.raridade); }
+      return g;
+    });
+  }
   let rH, chips=null, cols=1;
   if(qd===1){ rH=300; }
-  else if(temItem){ cols=2; rH=Math.ceil(lote.length/cols)*54+40; }
+  else if(grupos){ cols=2; rH=SUM_H+10+Math.ceil(grupos.length/cols)*(CARD_H+CARD_G)-CARD_G+10; }
   else { const CWD=104,CG=14; cols=Math.floor((W-PAD*2-40+CG)/(CWD+CG)); rH=Math.ceil(lote.length/cols)*(78+CG)+40; }
   const H=HEAD+26+mH+22+rH+80;
   cv.width=W; cv.height=H;
@@ -15444,11 +15459,11 @@ function imgDesenharDado(e,foto){
   c.fillText([qd+'d'+lados,e.evento_slug||'',e.hora&&e.data?e.hora+' · '+e.data:''].filter(Boolean).join('  •  '),tx,ay+52); c.globalAlpha=1;
   let y=HEAD+26;
   // motivo
-  imgRR(c,PAD,y,W-PAD*2,mH,18); c.fillStyle=T.surface; c.fill(); c.lineWidth=3; c.strokeStyle=T.border; c.stroke();
+  if(!grupos){ imgRR(c,PAD,y,W-PAD*2,mH,18); c.fillStyle=T.surface; c.fill(); c.lineWidth=3; c.strokeStyle=T.border; c.stroke(); }
   c.font=MF; c.fillStyle=T.text; c.textAlign='center'; c.textBaseline='middle';
   mLines.forEach((ln,i)=>c.fillText(ln,W/2,y+22+LH/2+i*LH)); y+=mH+22;
   // resultado
-  imgRR(c,PAD,y,W-PAD*2,rH,18); c.fillStyle=T.surface; c.fill(); c.lineWidth=3; c.strokeStyle=T.border; c.stroke();
+  if(!grupos){ imgRR(c,PAD,y,W-PAD*2,rH,18); c.fillStyle=T.surface; c.fill(); c.lineWidth=3; c.strokeStyle=T.border; c.stroke(); }
   if(qd===1){
     const r=lote.length===1?lote[0]:null, res=r?r.resultado:e.resultado, item=(r&&r.item!==undefined)?(r.item||'Nada'):null;
     c.textAlign='center'; c.textBaseline='middle';
@@ -15463,14 +15478,53 @@ function imgDesenharDado(e,foto){
       imgRR(c,bx,by,Math.max(14,bw*pct/100),14,7); c.fillStyle=pct>=80?'#1a7a1a':pct>=50?T.mid:pct>=20?T.accent:'#c0392b'; c.fill();
       c.font='700 26px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(res+' de '+lados+' ('+pct+'%)',W/2,by+44);
     }
-  } else if(temItem){
-    const colW=(W-PAD*2-40)/cols; c.textBaseline='middle';
-    lote.forEach((r,i)=>{
-      const rx=PAD+20+(i%cols)*colW, ry=y+20+Math.floor(i/cols)*54;
-      imgRR(c,rx,ry+4,64,42,12); c.fillStyle=T.mid; c.fill();
-      c.font='800 24px Nunito,sans-serif'; c.fillStyle='#fff'; c.textAlign='center'; c.fillText(String(r.resultado),rx+32,ry+26);
-      const it=r.item||'Nada'; let f=26; c.font='700 '+f+'px Nunito,sans-serif'; while(c.measureText(it).width>colW-100&&f>14){f--;c.font='700 '+f+'px Nunito,sans-serif';}
-      c.textAlign='left'; c.fillStyle=r.item?T.text:T.muted; c.fillText(it,rx+78,ry+26);
+  } else if(grupos){
+    // resumo: total + contagem por raridade
+    const cont={}; grupos.forEach(g=>{ if(g.item&&g.raridade) cont[g.raridade]=(cont[g.raridade]||0)+g.nums.length; });
+    const temSabor=grupos.some(g=>g.sabor);
+    c.textBaseline='middle'; c.textAlign='left';
+    let sx=PAD+4; const sy=y+SUM_H/2;
+    c.font='800 26px Nunito,sans-serif'; c.fillStyle=T.text;
+    const tot=qd+(temSabor?' berries':' itens'); c.fillText(tot,sx,sy); sx+=c.measureText(tot).width+22;
+    ['basica','intermedia','rara','bonus'].forEach(k=>{
+      if(!cont[k]) return;
+      c.beginPath(); c.arc(sx+7,sy,7,0,Math.PI*2); c.fillStyle=RARIDADE_COR[k]; c.fill();
+      const t=cont[k]+' '+RARIDADE_LABEL[k].toLowerCase()+(cont[k]>1&&k!=='bonus'?'s':''); c.font='700 20px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(t,sx+22,sy);
+      sx+=22+c.measureText(t).width+22;
+    });
+    const GX=14, cardW=(W-PAD*2-GX)/2, top=y+SUM_H+10;
+    const chip=(txt,x,cy,bg,fg,outline)=>{
+      c.font='800 15px Nunito,sans-serif'; const w=c.measureText(txt).width+22, h=28;
+      imgRR(c,x,cy-h/2,w,h,14);
+      if(outline){ c.fillStyle=T.surface; c.fill(); c.lineWidth=2; c.strokeStyle=bg; c.stroke(); c.fillStyle=bg; }
+      else { c.fillStyle=bg; c.fill(); c.fillStyle=fg; }
+      c.textAlign='center'; c.fillText(txt.toUpperCase(),x+w/2,cy+1); return w+8;
+    };
+    grupos.forEach((g,i)=>{
+      const rx=PAD+(i%cols)*(cardW+GX), ry=top+Math.floor(i/cols)*(CARD_H+CARD_G);
+      const sb=g.sabor?_saborInfo(g.sabor):null;
+      const acc=sb?sb.cor:(g.raridade?RARIDADE_COR[g.raridade]:T.border);
+      // card
+      imgRR(c,rx,ry,cardW,CARD_H,20); c.fillStyle=T.surface; c.fill(); c.lineWidth=2; c.strokeStyle=T.border; c.stroke();
+      // faixa lateral na cor do sabor
+      c.save(); imgRR(c,rx,ry,cardW,CARD_H,20); c.clip(); c.fillStyle=acc; c.fillRect(rx,ry,9,CARD_H); c.restore();
+      // sprite
+      const cx=rx+60, cy=ry+CARD_H/2;
+      c.beginPath(); c.arc(cx,cy,34,0,Math.PI*2); c.fillStyle=sb?imgMix(sb.cor,'#ffffff',.82):T.surface2; c.fill();
+      const sp=sprites[g.nome]; if(sp&&sp.width) c.drawImage(sp,cx-24,cy-24,48,48);
+      // nome
+      const tx=rx+112, rightW=96, maxN=cardW-(tx-rx)-rightW-8;
+      let f=28; c.font='800 '+f+'px Nunito,sans-serif'; while(c.measureText(g.nome).width>maxN&&f>15){f--;c.font='800 '+f+'px Nunito,sans-serif';}
+      c.textAlign='left'; c.textBaseline='middle'; c.fillStyle=g.item?T.text:T.muted; c.fillText(g.nome,tx,ry+36);
+      // chips de sabor e raridade
+      let cxp=tx; const chy=ry+74;
+      if(sb) cxp+=chip(sb.label,cxp,chy,sb.cor,'#fff',false);
+      if(g.raridade) cxp+=chip(RARIDADE_LABEL[g.raridade],cxp,chy,RARIDADE_COR[g.raridade],'#fff',true);
+      // número rolado (ou ×N quando repetiu)
+      c.textAlign='center'; c.textBaseline='middle';
+      const nx=rx+cardW-rightW/2-10;
+      if(g.nums.length===1){ c.font='700 40px Cinzel,serif'; c.fillStyle=acc; c.fillText(String(g.nums[0]),nx,cy+1); }
+      else { c.font='700 36px Cinzel,serif'; c.fillStyle=acc; c.fillText('×'+g.nums.length,nx,cy-10); c.font='700 16px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(g.nums.join(' · '),nx,cy+24); }
     });
   } else {
     const CWD=104,CH=78,CG=14, rowsN=Math.ceil(lote.length/cols); c.textBaseline='middle'; c.textAlign='center';
@@ -15489,10 +15543,22 @@ async function gerarImagemDado(e){
   const loadImg=src=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; setTimeout(()=>res(null),8000); });
   let fotoSrc=null; try{ const k=resolveKey(e.personagem); const pc=(personagens||[]).find(x=>normKey(x.nome)===k); fotoSrc=pc&&pc.img; }catch(_){}
   const foto=await loadImg(fotoSrc);
+  // sprites dos itens do lote (se algum bloquear CORS, só fica sem o ícone)
+  const sprites={};
+  try{
+    const nomes=[...new Set((Array.isArray(e.lote)?e.lote:[]).map(r=>r&&r.item).filter(Boolean))];
+    await Promise.all(nomes.map(async n=>{
+      const dx=(typeof _itemDexByName!=='undefined'&&_itemDexByName)?_itemDexByName.get(_itemDexNormalize(n)):null;
+      sprites[n]=await loadImg((dx&&dx.sprite)||_itemSpriteUrl(n));
+    }));
+  }catch(_){}
   const toBlob=cv=>new Promise((ok,no)=>{try{cv.toBlob(b=>b?ok(b):no(new Error('vazio')),'image/png');}catch(err){no(err);}});
   let blob;
-  try{ blob=await toBlob(imgDesenharDado(e,foto)); }
-  catch(_){ try{ blob=await toBlob(imgDesenharDado(e,null)); }catch(err){ imgToast('Não foi possível gerar a imagem.'); return; } }
+  try{ blob=await toBlob(imgDesenharDado(e,foto,sprites)); }
+  catch(_){
+    try{ blob=await toBlob(imgDesenharDado(e,null,sprites)); }
+    catch(_2){ try{ blob=await toBlob(imgDesenharDado(e,null,{})); }catch(err){ imgToast('Não foi possível gerar a imagem.'); return; } }
+  }
   const nome=('dado-'+(e.personagem||'')+'-'+(e.data||'')+'-'+(e.hora||'')).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()+'.png';
   imgMostrarModal(blob,nome);
 }
