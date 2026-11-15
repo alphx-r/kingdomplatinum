@@ -12527,7 +12527,29 @@ function _raridadeNorm(raridade){
   const chave = String(raridade).trim().toLowerCase();
   return RARIDADE_SINONIMOS[chave] || (RARIDADE_LABEL[chave] ? chave : null);
 }
-function _lootCardHtml(nome, diceLabel, raridade, nota, esgotado){
+// Procura nas pools do evento o item (formato berry) pelo nome — usado p/ completar
+// sabor/raridade em rolagens antigas do histórico que foram salvas sem esses campos.
+function _berryInfoPorNome(nome){
+  const pools = (typeof eventoAtual!=='undefined' && eventoAtual && Array.isArray(eventoAtual.pool_pools)) ? eventoAtual.pool_pools : [];
+  for(let k=0;k<pools.length;k++){
+    const its = (pools[k] && pools[k].itens) || [];
+    for(let i=0;i<its.length;i++){
+      const it = its[i];
+      if(it && typeof it==='object' && it.nome===nome) return it;
+    }
+  }
+  return null;
+}
+function _saborBadgeHtml(sabor){
+  const s = sabor ? _saborInfo(sabor) : null;
+  if(!s) return '';
+  return '<span class="loot-raridade-badge" style="background:'+s.cor+'">'+s.label+'</span>';
+}
+function _lootCardHtml(nome, diceLabel, raridade, nota, esgotado, sabor){
+  if(!esgotado && (!sabor || !raridade)){
+    const _inf = _berryInfoPorNome(nome);
+    if(_inf){ sabor = sabor || _inf.sabor; raridade = raridade || _inf.raridade; }
+  }
   const nomeAttr = String(nome).replace(/"/g,'&quot;');
   const nomeJs   = String(nome).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const dexCached = _itemDexByName && _itemDexByName.get(_itemDexNormalize(nome));
@@ -12547,7 +12569,7 @@ function _lootCardHtml(nome, diceLabel, raridade, nota, esgotado){
     +'<span class="loot-dice-badge">'+diceLabel+'</span>'
     +'<span class="loot-item-name" title="'+nomeAttr+'">'+nome+'</span>'
     +notaHtml
-    +raridadeBadge
+    +'<span style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">'+_saborBadgeHtml(sabor)+raridadeBadge+'</span>'
   +'</div>';
 }
 // Um item que comece com "###" vira um cabeçalho de grupo (linha inteira),
@@ -12664,6 +12686,10 @@ const obs = (poolAlvo?.obs||'').trim();
   const temObjeto = itens.some(function(it){ return it && typeof it==='object'; });
   const _temLim = !temObjeto && poolAlvo && poolAlvo.limites && Object.keys(poolAlvo.limites).length;
   // Render imediato com o histórico já carregado; depois refaz com o histórico completo do banco.
+  // A tabela de berries não pode ficar dentro do grid de 5 colunas (espremia tudo numa coluna).
+  grid.style.display = temObjeto ? 'block' : '';
+  const _boxModal = document.getElementById('loot-modal-box');
+  if(_boxModal) _boxModal.style.maxWidth = temObjeto ? '760px' : '';
   grid.innerHTML = temObjeto ? _berryTableHtml(itens)
     : _lootGridHtml(itens, _temLim ? poolAlvo : null, _temLim ? _contarUsoItens(eventoHistorico, ev) : null);
   _lootFetchSprites(itens);
@@ -19108,6 +19134,7 @@ function _dadoCardBodyHtml(o){
     itemHtml = `<div style="display:flex;align-items:center;gap:6px;padding:0 14px 10px">
       <img class="loot-item-sprite-img" data-item="${nomeAttr}" src="${src}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0" onerror="_lootItemImgError(this,'${nomeJs}')"/>
       <span style="font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:${cor}">🎁 ${nome}</span>
+      ${(function(){ const inf=_berryInfoPorNome(nome)||{}; const sb=o.sabor||inf.sabor, rk=_raridadeNorm(o.raridade||inf.raridade); return _saborBadgeHtml(sb)+(rk?'<span class="loot-raridade-badge" style="background:'+RARIDADE_COR[rk]+';margin-top:0">'+RARIDADE_LABEL[rk]+'</span>':''); })()}
       ${o.subDe ? `<span style="font-size:10px;color:var(--muted);font-style:italic">(${String(o.subDe).replace(/</g,'&lt;')} esgotou)</span>` : ''}
     </div>`;
   } else if(o.temPool){
@@ -19161,7 +19188,7 @@ async function rolarDadoEvento(){
     const resultado = Math.floor(Math.random() * lados) + 1;
     const itemObj = poolAtiva ? _itemObjDoResultado(ev, resultado, uso) : null;
     if(itemObj) uso[itemObj.nome] = (uso[itemObj.nome]||0) + 1; // já conta nas próximas rolagens do lote
-    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null, subDe: itemObj?(itemObj.substituidoDe||null):null});
+    rolagens.push({resultado, item: itemObj?itemObj.nome:null, raridade: itemObj?itemObj.raridade:null, sabor: itemObj?(itemObj.sabor||null):null, subDe: itemObj?(itemObj.substituidoDe||null):null});
   }
   const itensGanhos = rolagens.map(r=>r.item).filter(Boolean);
   const soma = rolagens.reduce((s,r)=>s+r.resultado,0);
@@ -19172,7 +19199,7 @@ async function rolarDadoEvento(){
   if(section){
     const rotulo = '🎲';
     const _unico = qtd === 1
-      ? '<div style="margin:0 -14px">' + _dadoCardBodyHtml({personagem, lados, motivo, resultado: rolagens[0].resultado, item: rolagens[0].item, subDe: rolagens[0].subDe, temPool: !!poolAtiva}) + '</div>'
+      ? '<div style="margin:0 -14px">' + _dadoCardBodyHtml({personagem, lados, motivo, resultado: rolagens[0].resultado, item: rolagens[0].item, raridade: rolagens[0].raridade, sabor: rolagens[0].sabor, subDe: rolagens[0].subDe, temPool: !!poolAtiva}) + '</div>'
       : '';
     const resumo = qtd === 1
       ? `${personagem} rolou <strong>1d${lados}</strong> para <strong>${motivo}</strong> e obteve: <strong style="color:var(--brand-mid)">${soma}</strong>`
@@ -19188,7 +19215,7 @@ async function rolarDadoEvento(){
       ${qtd === 1 ? _unico : (poolAtiva ? '' : `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">${resumo}</div>`)}
       ${qtd === 1 ? '' : `      <div class="loot-items-grid">
         ${rolagens.map(function(r){
-          if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
+          if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade, null, false, r.sabor);
           if(poolAtiva) return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
           return '<div class="loot-item-card"><span class="loot-dice-badge">'+r.resultado+'</span></div>';
         }).join('')}
@@ -19209,6 +19236,9 @@ async function rolarDadoEvento(){
   eventoHistorico.unshift(savedRow ? {...savedRow, tipo:'dado'} : {...entryColetiva, id: Date.now()+Math.random(), tipo:'dado'});
   eventoHistPagina = 0;
   renderHistoricoEvento();
+  // O histórico já mostra esta rolagem no topo (com sabor/raridade e botão de compartilhar);
+  // manter também o card ao vivo fazia o mesmo resultado aparecer duas vezes seguidas.
+  if(section) section.innerHTML = '';
   if(loaded.rolagens) renderRolagens();
 }
 
@@ -19286,7 +19316,7 @@ function renderHistoricoEvento(){
           </div>
           <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnShareRoll(e)}</span>
         </div>
-        ${_dadoCardBodyHtml({personagem:e.personagem, lados:max, motivo:e.motivo, resultado:r.resultado, item:r.item, subDe:r.subDe, temPool:true})}
+        ${_dadoCardBodyHtml({personagem:e.personagem, lados:max, motivo:e.motivo, resultado:r.resultado, item:r.item, raridade:r.raridade, sabor:r.sabor, subDe:r.subDe, temPool:true})}
       </div>`;
       }
       return `<div class="hist-entry">
@@ -19300,7 +19330,7 @@ function renderHistoricoEvento(){
         </div>
         <div class="loot-items-grid" style="padding:0 14px 10px">
           ${lote.map(function(r){
-            if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade);
+            if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade, null, false, r.sabor);
             return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
           }).join('')}
         </div>
