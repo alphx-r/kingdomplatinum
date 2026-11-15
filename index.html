@@ -15114,6 +15114,7 @@ function renderHistorico(){
   document.getElementById('hist-paginacao').style.display=totalPags>1?'flex':'none';
   const podeExcluirRolagemEncontro=(playerLogado?.nome||'').trim().toLowerCase()==='ricky';
   const ehAdm=podeExcluirRolagemEncontro||(typeof isAdminConectado==='function'&&isAdminConectado());
+  const podeRolarGolpes=ehAdm&&!_semRolarGolpes();   // ADMs lucas e jef não têm o botão "Rolar golpes"
   lista.innerHTML=pagina.map(e=>{
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
     const ph=pokes.map((pk,pkIdx)=>{
@@ -15157,7 +15158,7 @@ function renderHistorico(){
         <div class="hist-acts">
           <span style="font-size:11px;color:var(--muted);white-space:nowrap">${e.hora} · ${e.data}</span>
           <button type="button" class="hist-img-btn ico" onclick="gerarImagemRolagem('${e.id}')" title="Compartilhar rolagem" aria-label="Compartilhar rolagem">${SVG_COMPARTILHAR}</button>
-          ${(ehAdm&&pokes.some(pk=>pk&&pk.nome!=='???'&&pk.nivel!=null&&!(Array.isArray(pk.moves)&&pk.moves.length)))?`<button type="button" class="hist-img-btn" onclick="rolarGolpesEntrada('${e.id}')">🎲 Rolar golpes</button>`:''}
+          ${(podeRolarGolpes&&pokes.some(pk=>pk&&pk.nome!=='???'&&pk.nivel!=null&&!(Array.isArray(pk.moves)&&pk.moves.length)))?`<button type="button" class="hist-img-btn" onclick="rolarGolpesEntrada('${e.id}')">🎲 Rolar golpes</button>`:''}
           ${podeExcluirRolagemEncontro?`<button class="hist-del-btn" onclick="excluirRolagemEncontro('${e.id}')">Excluir</button>`:''}
         </div>
       </div>
@@ -15521,7 +15522,12 @@ function imgMostrarModal(blob,nome){
 }
 
 // ADM: sorteia os golpes dos Pokémon já existentes de uma rolagem (que têm nível mas ainda não têm golpes) e salva no histórico.
+function _semRolarGolpes(){
+  const n=String(playerLogado?.nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
+  return n==='lucas'||n==='jef';
+}
 async function rolarGolpesEntrada(id){
+  if(_semRolarGolpes()) return;
   const e=historico.find(x=>String(x.id)===String(id)); if(!e) return;
   const pokes=Array.isArray(e.pokes)?e.pokes:[], feitos=[];
   pokes.forEach(pk=>{
