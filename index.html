@@ -15430,10 +15430,10 @@ function imgDesenharDado(e,foto,sprites){
   // Lote com itens: agrupa itens iguais (ex.: 2x Aspear Berry vira um card "×2")
   let grupos=null; const CARD_H=104, CARD_G=14, SUM_H=44;
   if(temItem && qd>1){
-    const mp=new Map();
+    const mp=new Map(), _anB3=lote.some(r=>r&&r.bonus3)&&_bonus3Anulado(e.personagem);
     lote.forEach(r=>{
       const nm=r.item||'Nada', chave=nm+(r.bonus3?'|bonus3':'');
-      if(!mp.has(chave)) mp.set(chave,{nome:nm,item:r.item,nums:[],sabor:r.sabor,raridade:r.raridade,bonus3:!!r.bonus3});
+      if(!mp.has(chave)) mp.set(chave,{nome:nm,item:r.item,nums:[],sabor:r.sabor,raridade:r.raridade,bonus3:!!r.bonus3&&!_anB3,anulada:!!r.bonus3&&_anB3});
       mp.get(chave).nums.push(r.resultado);
     });
     grupos=[...mp.values()].map(g=>{
@@ -15488,7 +15488,7 @@ function imgDesenharDado(e,foto,sprites){
     }
   } else if(grupos){
     // resumo: total + contagem por raridade
-    const cont={}; grupos.forEach(g=>{ if(g.item&&g.raridade) cont[g.raridade]=(cont[g.raridade]||0)+g.nums.length; });
+    const cont={}; grupos.forEach(g=>{ if(g.item&&g.raridade&&!g.anulada) cont[g.raridade]=(cont[g.raridade]||0)+g.nums.length; });
     const temSabor=grupos.some(g=>g.sabor);
     c.textBaseline='middle'; c.textAlign='left';
     let sx=PAD+4; const sy=y+SUM_H/2;
@@ -15512,6 +15512,7 @@ function imgDesenharDado(e,foto,sprites){
       const rx=PAD+(i%cols)*(cardW+GX), ry=top+Math.floor(i/cols)*(CARD_H+CARD_G);
       const sb=g.sabor?_saborInfo(g.sabor):null;
       const acc=sb?sb.cor:(g.raridade?RARIDADE_COR[g.raridade]:T.border);
+      c.save(); if(g.anulada) c.globalAlpha=.38;
       // card
       imgRR(c,rx,ry,cardW,CARD_H,20); c.fillStyle=g.bonus3?'#fff8dc':T.surface; c.fill(); c.lineWidth=g.bonus3?5:2; c.strokeStyle=g.bonus3?'#e0a800':T.border; c.stroke();
       // faixa lateral na cor do sabor
@@ -15533,6 +15534,8 @@ function imgDesenharDado(e,foto,sprites){
       const nx=rx+cardW-rightW/2-10;
       if(g.nums.length===1){ c.font='700 40px Cinzel,serif'; c.fillStyle=acc; c.fillText(String(g.nums[0]),nx,cy+1); }
       else { c.font='700 36px Cinzel,serif'; c.fillStyle=acc; c.fillText('×'+g.nums.length,nx,cy-10); c.font='700 16px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(g.nums.join(' · '),nx,cy+24); }
+      c.restore();
+      if(g.anulada){ c.font='800 14px Nunito,sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle=T.muted; c.fillText('BERRY EXTRA ANULADA',rx+cardW-rightW/2-10,ry+CARD_H-14); }
     });
   } else {
     const CWD=104,CH=78,CG=14, rowsN=Math.ceil(lote.length/cols); c.textBaseline='middle'; c.textAlign='center';
@@ -19284,8 +19287,8 @@ async function _atualizarBonusCriadorUI(){
   if(wrap) wrap.title = eh ? 'Criador/Breeder: +1 dado nesta rolagem' : '';
 }
 
-// ── Berry extra da Lune Hoyer: todos os personagens podem pegar (1 por personagem) ──
-// Depois da 1ª rolagem do personagem no evento, o rolador vira 1d100 ("Rolar berry extra");
+// ── Berry extra da Lune Hoyer: só os 3 primeiros a postar (1 por personagem) ──
+// Depois da 1ª rolagem de um dos 3 primeiros personagens do evento, o rolador vira 1d100 ("Rolar berry extra");
 // ao rolar, a berry entra na MESMA rolagem do histórico, com contorno dourado.
 const EVENTOS_BONUS_TOP3 = { 'festivalculinario': 3 };      // slug -> quantos primeiros ganham
 let _bonusTop3Modo = false, _bonusTop3Prev = null;
@@ -19324,8 +19327,8 @@ async function _bonusTop3Estado(personagem){
   est.jaTem = rows.some(function(r){
     return normalizarNome(r.personagem || '') === k && Array.isArray(r.lote) && r.lote.some(function(x){ return x && x.bonus3; });
   });
-  est.elegivel = est.pos >= 1 && !est.jaTem;   // todos podem (1 berry extra por personagem)
-  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : '(sem rolagem)'));
+  est.elegivel = est.pos >= 1 && est.pos <= n && !est.jaTem;   // só os N primeiros (1 berry extra por personagem)
+  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : (est.pos > n ? '(fora dos primeiros)' : '(sem rolagem)')));
   return est;
 }
 // Compatibilidade: devolve a situação só se o personagem pode rolar a berry extra agora; senão null.
@@ -19333,10 +19336,28 @@ async function _bonusTop3Info(personagem){
   const est = await _bonusTop3Estado(personagem);
   return est.elegivel ? est : null;
 }
-const _TXT_AVISO_TOP3 = '⭐ Todos podem pegar a berry extra da Lune Hoyer: faça sua rolagem e depois role a berry extra.';
+
+// A berry extra de quem NÃO está entre os N primeiros a postar é anulada (aparece opaca no histórico e no compartilhar).
+function _bonus3Anulado(personagem){
+  try{
+    const n = _eventoBonusTop3(eventoAtual);
+    if(!n) return false;
+    const k = normalizarNome(personagem || '');
+    if(!k) return false;
+    const ordem = [];
+    (eventoHistorico || []).filter(function(r){ return r && Array.isArray(r.lote) && r.lote.length; }).slice().reverse().forEach(function(r){   // da mais antiga p/ a mais nova
+      const kk = normalizarNome(r.personagem || '');
+      if(kk && ordem.indexOf(kk) === -1) ordem.push(kk);
+    });
+    const idx = ordem.indexOf(k);
+    return idx >= n;
+  }catch(_){ return false; }
+}
+const _TXT_AVISO_TOP3 = '⭐ A berry extra da Lune Hoyer só vale para os 3 primeiros a postar.';
 const _TXT_AVISO_TOP3_OK = '⭐ Você pode tentar pegar a berry extra da Lune Hoyer agora! *Válido apenas para os três primeiros que postarem.*';
 function _txtAvisoTop3(est){
   if(est && est.jaTem) return '⭐ Você já recebeu a berry extra da Lune Hoyer.';
+  if(est && est.pos > est.n) return '⭐ A berry extra da Lune Hoyer só vale para os '+est.n+' primeiros a postar (você rolou em '+est.pos+'º lugar).';
   return _TXT_AVISO_TOP3;
 }
 function _avisoTop3(texto){
@@ -19603,6 +19624,15 @@ function mudarPaginaHistEvento(dir){
 // ── Rolagem extra (ex.: o Criador tem +1 dado) incluída na MESMA rolagem do histórico ──
 // Aparece no card do histórico para: admins, ou quem está com o mesmo personagem selecionado
 // no rolador. Cada rolagem aceita 1 extra (admin pode repetir).
+const _extraChk = {};
+// Fora do admin, o +1 só vale para Criador/Breeder (e só em evento com bônus de Criador).
+function _extraRollLiberado(e){
+  if(!_eventoBonusCriador(eventoAtual)) return false;
+  const k = normalizarNome(e.personagem || '');
+  if(Object.prototype.hasOwnProperty.call(_criadorCache, k)) return _criadorCache[k] === true;
+  if(!_extraChk[k]){ _extraChk[k] = true; _personagemEhCriador(e.personagem).then(function(ok){ if(ok) renderHistoricoEvento(); }); }
+  return false;
+}
 function _btnExtraRoll(e){
   try{
     if(!e || !Array.isArray(e.lote) || !e.lote.length) return '';
@@ -19610,7 +19640,7 @@ function _btnExtraRoll(e){
     const sel = (document.getElementById('evento-dice-personagem')?.value||'').trim().toLowerCase();
     const meu = sel && String(e.personagem||'').trim().toLowerCase() === sel;
     const admin = isAdminConectado();
-    if(!(admin || (meu && !jaTem))) return '';
+    if(!(admin || (meu && !jaTem && _extraRollLiberado(e)))) return '';
     return `<button type="button" class="hist-img-btn" onclick="rolarExtraLote('${e.id}')" title="Rolar +1 dado e incluir nesta rolagem" style="font-weight:800">🎲 +1</button>`;
   }catch(_){ return ''; }
 }
@@ -19619,6 +19649,7 @@ async function rolarExtraLote(id){
   const ent = eventoHistorico.find(function(x){ return String(x.id)===String(id); });
   if(!ev || !ent || !Array.isArray(ent.lote)){ alert('Rolagem não encontrada.'); return; }
   if(ent.lote.some(function(r){ return r && r.extra; }) && !isAdminConectado()){ alert('Esta rolagem já recebeu a rolagem extra.'); return; }
+  if(!isAdminConectado() && !(_eventoBonusCriador(ev) && await _personagemEhCriador(ent.personagem))){ alert('Só Criadores/Breeders podem rolar o dado extra.'); return; }
   const lados = parseInt(ent.lados) || 0;
   if(lados < 2){ alert('Dado inválido nesta rolagem.'); return; }
   if(!confirm('Rolar +1 d'+lados+' para '+ent.personagem+' e incluir nesta rolagem?')) return;
@@ -19754,7 +19785,7 @@ function renderHistoricoEvento(){
         </div>
         <div class="loot-items-grid" style="padding:0 14px 10px">
           ${lote.map(function(r){
-            if(r.item) return _lootCardHtml(r.item, String(r.resultado), r.raridade, r.extra?'extra':(r.bonus3?'berry extra':null), false, r.sabor, !!r.bonus3);
+            if(r.item){ const _an = !!r.bonus3 && _bonus3Anulado(e.personagem); return _lootCardHtml(r.item, String(r.resultado), r.raridade, _an?'berry extra anulada':(r.extra?'extra':(r.bonus3?'berry extra':null)), _an, r.sabor, !!r.bonus3 && !_an); }
             return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
           }).join('')}
         </div>
