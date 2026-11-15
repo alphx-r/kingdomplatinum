@@ -19328,10 +19328,10 @@ async function _bonusTop3Info(personagem){
   return est.elegivel ? est : null;
 }
 const _TXT_AVISO_TOP3 = '⭐ Aviso: é preciso ser um dos 3 primeiros a postar para receber a berry extra da Lune Hoyer. Os demais podem rolar normalmente.';
-const _TXT_AVISO_TOP3_OK = '⭐ Você é um dos 3 primeiros a postar! Role agora a berry extra da Lune Hoyer.';
+const _TXT_AVISO_TOP3_OK = '⭐ Você pode tentar pegar a berry extra da Lune Hoyer. Ela só vale para os 3 primeiros a postar.';
 function _txtAvisoTop3(est){
   if(est && est.jaTem) return '⭐ Você já recebeu a berry extra da Lune Hoyer.';
-  if(est && est.pos > est.n) return '⭐ Você rolou em '+est.pos+'º lugar: a berry extra da Lune Hoyer era só para os '+est.n+' primeiros a postar.';
+  if(est && est.pos > est.n) return '⭐ A berry extra da Lune Hoyer só vale para os '+est.n+' primeiros a postar (você rolou em '+est.pos+'º lugar).';
   return _TXT_AVISO_TOP3;
 }
 function _avisoTop3(texto){
@@ -19635,6 +19635,55 @@ async function rolarExtraLote(id){
   if(loaded.rolagens) renderRolagens();
 }
 
+// ── Excluir rolagem do histórico do evento (manual) ──
+// Quem pode: admin conectado, ou o player "ricky" (mesma regra do excluir do histórico geral).
+function _podeExcluirRolagemEvento(){
+  try{
+    if(isAdminConectado()) return true;
+    return (playerLogado && String(playerLogado.nome||'').trim().toLowerCase() === 'ricky');
+  }catch(_){ return false; }
+}
+function _btnDelRoll(e){
+  if(!e || e.id == null || !_podeExcluirRolagemEvento()) return '';
+  return `<button type="button" class="hist-img-btn ico" onclick="excluirRolagemEvento('${e.id}')" title="Excluir esta rolagem" aria-label="Excluir esta rolagem" style="color:#c0392b"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>`;
+}
+async function excluirRolagemEvento(id){
+  if(!_podeExcluirRolagemEvento()){ alert('Você não tem permissão para excluir esta rolagem.'); return; }
+  const ent = eventoHistorico.find(function(x){ return String(x.id)===String(id); });
+  if(!ent){ alert('Rolagem não encontrada.'); return; }
+  const ehDado = ent.tipo==='dado' || (ent.lados && !ent.pokes);
+  const qtd = Array.isArray(ent.lote) ? ent.lote.length : 1;
+  const desc = ehDado ? (qtd+'d'+(ent.lados||'?')) : 'encontro';
+  if(!confirm('Excluir a rolagem de '+ent.personagem+' ('+desc+') do histórico?\n\nIsso apaga do banco e não dá para desfazer.')) return;
+  const tabela = ehDado ? 'historico_dados' : 'historico';
+  try{
+    const res = await fetch(`${SUPA_URL}/rest/v1/${tabela}?id=eq.${encodeURIComponent(ent.id)}`, {
+      method:'DELETE',
+      headers:{ 'apikey':SUPA_KEY, 'Authorization':`Bearer ${SUPA_KEY}`, 'Prefer':'return=representation' }
+    });
+    const text = await res.text(); let json = null;
+    try{ json = text ? JSON.parse(text) : null; }catch(_){}
+    if(!res.ok || !Array.isArray(json) || !json.length){
+      const msg = (json && (json.message||json.hint||json.details)) || (res.ok ? 'nenhuma linha apagada (sem permissão no banco?)' : 'HTTP '+res.status);
+      console.error('[excluirRolagemEvento]', res.status, json||text);
+      alert('Não consegui excluir: ' + msg);
+      return;
+    }
+  }catch(err){
+    console.error('[excluirRolagemEvento] erro de rede:', err);
+    alert('Erro de rede ao excluir: ' + err.message);
+    return;
+  }
+  eventoHistorico = eventoHistorico.filter(function(x){ return String(x.id)!==String(id); });
+  try{ if(Array.isArray(historicoDados)) historicoDados = historicoDados.filter(function(x){ return String(x.id)!==String(id); }); }catch(_){}
+  const totalPags = Math.max(1, Math.ceil(eventoHistorico.length/EVENTO_HIST_POR_PAG));
+  eventoHistPagina = Math.min(eventoHistPagina, totalPags-1);
+  renderHistoricoEvento();
+  if(loaded.rolagens) renderRolagens();
+  _atualizarBonusTop3UI();          // a ordem dos 3 primeiros e a berry extra são recalculadas
+  _atualizarBonusCriadorUI();
+}
+
 function renderHistoricoEvento(){
   const wrap=document.getElementById('evento-historico-wrap');
   const lista=document.getElementById('evento-historico-lista');
@@ -19666,7 +19715,7 @@ function renderHistoricoEvento(){
             <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🎲 1d${max}</span>
             ${e.evento_slug?`<span class="rol-entry-bioma">${e.evento_slug}</span>`:''}
           </div>
-          <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnExtraRoll(e)}${_btnShareRoll(e)}</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnExtraRoll(e)}${_btnDelRoll(e)}${_btnShareRoll(e)}</span>
         </div>
         ${_dadoCardBodyHtml({personagem:e.personagem, lados:max, motivo:e.motivo, resultado:r.resultado, item:r.item, raridade:r.raridade, sabor:r.sabor, subDe:r.subDe, temPool:true})}
       </div>`;
@@ -19678,7 +19727,7 @@ function renderHistoricoEvento(){
             <span class="rol-entry-bioma" style="background:#e6f4e6;color:#1a7a1a">🎲 ${qtd}d${max}</span>
             ${e.evento_slug?`<span class="rol-entry-bioma">${e.evento_slug}</span>`:''}
           </div>
-          <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnExtraRoll(e)}${_btnShareRoll(e)}</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnExtraRoll(e)}${_btnDelRoll(e)}${_btnShareRoll(e)}</span>
         </div>
         <div class="loot-items-grid" style="padding:0 14px 10px">
           ${lote.map(function(r){
@@ -19697,7 +19746,7 @@ function renderHistoricoEvento(){
             <span style="font-size:12px;font-weight:700;color:var(--brand)">${e.personagem}</span>
             <span class="rol-entry-bioma" style="background:#f0e8ff;color:#5a1a9a">🎲 Dado · d${max}</span>
           </div>
-          <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnShareRoll(e)}</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnDelRoll(e)}${_btnShareRoll(e)}</span>
         </div>
         ${_dadoCardBodyHtml({personagem:e.personagem, lados:max, motivo:e.motivo, resultado:e.resultado, item:histItemGanho, temPool:false})}
       </div>`;
@@ -19730,7 +19779,7 @@ function renderHistoricoEvento(){
           ${e.bioma?`<span style="font-size:11px;color:var(--muted)">• ${e.bioma}</span>`:''}
           ${e.evento_slug?`<span class="rol-entry-bioma">${e.evento_slug}</span>`:''}
         </div>
-        <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnShareRoll(e)}</span>
+        <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnDelRoll(e)}${_btnShareRoll(e)}</span>
       </div>
       <div class="hist-body">${ph}</div>
     </div>`;
