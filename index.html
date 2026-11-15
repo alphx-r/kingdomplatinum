@@ -19287,46 +19287,80 @@ function _eventoBonusTop3(ev){
   const slug = String(ev && ev.slug || '').toLowerCase().replace(/[^a-z0-9]/g,'');
   return EVENTOS_BONUS_TOP3[slug] || 0;
 }
-// Devolve {row, posicao} se o personagem está entre os N primeiros a rolar e ainda não pegou a berry extra; senão null.
-async function _bonusTop3Info(personagem){
+// Situação do personagem na corrida dos primeiros: { pos (1,2,3… ou 0 se ainda não rolou), n, row, jaTem, elegivel, erro }
+async function _bonusTop3Estado(personagem){
   const ev = eventoAtual;
   const n = _eventoBonusTop3(ev);
   const k = normalizarNome(personagem || '');
-  if(!n || !k) return null;
+  const est = { pos:0, n:n, row:null, jaTem:false, elegivel:false, erro:false };
+  if(!n || !k) return est;
+  let rows = null;
   try{
     const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados?evento_slug=eq.${encodeURIComponent(ev.slug)}&lote=not.is.null&order=criado_em.asc&select=id,personagem,lote,lados,motivo,resultado&limit=300`, {
       headers:{ 'apikey':SUPA_KEY, 'Authorization':`Bearer ${SUPA_KEY}` }
     });
     if(!res.ok) throw new Error('HTTP '+res.status);
-    const rows = await res.json();
-    if(!Array.isArray(rows)) return null;
-    const ordem = [], primeira = {};
-    rows.forEach(function(r){
-      const kk = normalizarNome(r.personagem || '');
-      if(kk && !primeira[kk]){ primeira[kk] = r; ordem.push(kk); }
-    });
-    const pos = ordem.indexOf(k);
-    if(pos === -1 || pos >= n) return null;                       // fora dos primeiros
-    const jaTem = rows.some(function(r){
-      return normalizarNome(r.personagem || '') === k && Array.isArray(r.lote) && r.lote.some(function(x){ return x && x.bonus3; });
-    });
-    return jaTem ? null : { row: primeira[k], posicao: pos + 1 };
+    rows = await res.json();
+    if(!Array.isArray(rows)) throw new Error('resposta inválida');
   }catch(e){
-    console.warn('[bonus top3] não consegui ler o histórico:', e);
-    return null;
+    console.warn('[bonus top3] não consegui ler o histórico do banco; usando o da tela:', e);
+    est.erro = true;
+    rows = (eventoHistorico || []).filter(function(r){ return r && Array.isArray(r.lote) && r.id != null; }).slice().reverse();   // da mais antiga p/ a mais nova
   }
+  const ordem = [], primeira = {};
+  rows.forEach(function(r){
+    const kk = normalizarNome(r.personagem || '');
+    if(kk && !primeira[kk]){ primeira[kk] = r; ordem.push(kk); }
+  });
+  const idx = ordem.indexOf(k);
+  if(idx === -1){ console.info('[bonus top3]', personagem, '- ainda não rolou neste evento'); return est; }
+  est.pos = idx + 1; est.row = primeira[k];
+  est.jaTem = rows.some(function(r){
+    return normalizarNome(r.personagem || '') === k && Array.isArray(r.lote) && r.lote.some(function(x){ return x && x.bonus3; });
+  });
+  est.elegivel = est.pos <= n && !est.jaTem;
+  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : '(fora dos primeiros)'));
+  return est;
+}
+// Compatibilidade: devolve a situação só se o personagem pode rolar a berry extra agora; senão null.
+async function _bonusTop3Info(personagem){
+  const est = await _bonusTop3Estado(personagem);
+  return est.elegivel ? est : null;
+}
+const _TXT_AVISO_TOP3 = '⭐ Aviso: é preciso ser um dos 3 primeiros a postar para receber a berry extra da Lune Hoyer. Os demais podem rolar normalmente.';
+const _TXT_AVISO_TOP3_OK = '⭐ Você é um dos 3 primeiros a postar! Role agora a berry extra da Lune Hoyer.';
+function _txtAvisoTop3(est){
+  if(est && est.jaTem) return '⭐ Você já recebeu a berry extra da Lune Hoyer.';
+  if(est && est.pos > est.n) return '⭐ Você rolou em '+est.pos+'º lugar: a berry extra da Lune Hoyer era só para os '+est.n+' primeiros a postar.';
+  return _TXT_AVISO_TOP3;
+}
+function _avisoTop3(texto){
+  let el = document.getElementById('evento-bonus-aviso');
+  if(texto === null){ if(el) el.remove(); return; }
+  const ctrl = document.getElementById('evento-dice-controls');
+  if(!ctrl || !ctrl.parentNode) return;
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'evento-bonus-aviso';
+    el.style.cssText = 'margin:0 0 12px;padding:9px 13px;border-left:4px solid #e0a800;border-radius:8px;background:#fffbea;color:#5a4500;font-size:12.5px;font-weight:600;line-height:1.45';
+    ctrl.parentNode.insertBefore(el, ctrl);
+  }
+  el.textContent = texto;
 }
 async function _atualizarBonusTop3UI(){
   const ev = eventoAtual;
-  if(!ev || !_eventoBonusTop3(ev)) return;
+  if(!ev || !_eventoBonusTop3(ev)){ _avisoTop3(null); return; }
+  _avisoTop3(_bonusTop3Modo ? _TXT_AVISO_TOP3_OK : _TXT_AVISO_TOP3);
   const sel = document.getElementById('evento-dice-personagem');
   if(sel && !sel.dataset.bonusTop3){
     sel.dataset.bonusTop3 = '1';
     sel.addEventListener('change', _atualizarBonusTop3UI);
   }
   const nome = (sel && sel.value || '').trim();
-  const info = nome ? await _bonusTop3Info(nome) : null;
+  const est = nome ? await _bonusTop3Estado(nome) : null;
+  const info = est && est.elegivel ? est : null;
   if(eventoAtual !== ev || ((sel && sel.value || '').trim() !== nome)) return;     // mudou enquanto buscava
+  _avisoTop3(info ? _TXT_AVISO_TOP3_OK : _txtAvisoTop3(est));
   const qtdIn = document.getElementById('evento-qtd-roll'), qtdWrap = document.getElementById('evento-qtd-roll-wrap');
   const laIn = document.getElementById('evento-dice-lados'), rollBtn = document.getElementById('evento-dado-roll-btn');
   if(info){
