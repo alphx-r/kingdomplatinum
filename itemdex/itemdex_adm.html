@@ -1401,6 +1401,25 @@ async function kpCommitAuth() {
   return { admin_nome: c.n, admin_senha: c.s };
 }
 function kpCommitAuthFail(res) { if (res && (res.status === 401 || res.status === 403)) { try { KPAdm.credLimpar(); } catch (e) {} } }
+// Todos os commits no GitHub passam por UMA fila: commits simultâneos na mesma branch disputam a mesma ref
+// e o GitHub recusa com "Reference cannot be updated". Se ainda assim recusar, tenta de novo com espera.
+let _kpCommitChain = Promise.resolve();
+function kpCommitFetch(url, payload) {
+  const run = async () => {
+    const RETRY = /reference cannot be updated|not a fast[- ]forward|reference update failed|conflict/i;
+    let res;
+    for (let t = 0; t < 5; t++) {
+      res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      let j = {}; try { j = await res.clone().json(); } catch (e) {}
+      if (res.ok || !(res.status === 409 || RETRY.test(String(j.error || j.message || '')))) break;
+      await new Promise(r => setTimeout(r, 1200 * (t + 1)));
+    }
+    return res;
+  };
+  const p = _kpCommitChain.then(run, run);
+  _kpCommitChain = p.catch(() => {});
+  return p;
+}
 async function pushItemsJson() {
   if (_itemsCommitBusy) { _itemsCommitAgain = true; return; }
   if (!S.it.jsonReady || !S.it.all.length) return;
@@ -1424,7 +1443,7 @@ async function pushItemsJson() {
         const [path] = fila.shift();
         lote.push({ path, contentBase64: b64 }); tam += b64.length;
       }
-      const res = await fetch('/api/commit-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: data, images: lote, admin, ...auth }) });
+      const res = await kpCommitFetch('/api/commit-items', { items: data, images: lote, admin, ...auth });
       let result = {};
       try { result = await res.json(); } catch (e) {}
       if (!res.ok) kpCommitAuthFail(res);
@@ -2209,11 +2228,7 @@ async function pushImageToGithub(dataUrl, path) {
   let admin = null;
   try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
   const auth = await kpCommitAuth();
-  const res = await fetch('/api/commit-image', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, contentBase64: String(dataUrl).split(',')[1] || '', admin, message: `Atualiza ${path} (ItemDex ADM)`, ...auth }),
-  });
+  const res = await kpCommitFetch('/api/commit-image', { path, contentBase64: String(dataUrl).split(',')[1] || '', admin, message: `Atualiza ${path} (ItemDex ADM)`, ...auth });
   let j = {};
   try { j = await res.json(); } catch (e) {}
   if (!res.ok) kpCommitAuthFail(res);
@@ -2237,11 +2252,7 @@ async function pushImagesBatchToGithub(files, message) {
   for (const lote of lotes) {
     try {
       const auth = await kpCommitAuth();
-      const res = await fetch('/api/commit-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: lote, admin, message, ...auth }),
-      });
+      const res = await kpCommitFetch('/api/commit-image', { files: lote, admin, message, ...auth });
       let j = {}; try { j = await res.json(); } catch (e) {}
       if (!res.ok) kpCommitAuthFail(res);
       if (!res.ok) throw new Error(j.error || `Erro ${res.status} ao enviar pro GitHub`);
@@ -2641,10 +2652,7 @@ async function backupItemsNow() {
     let admin = null;
     try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
     const auth = await kpCommitAuth();
-    const res = await fetch('/api/commit-items', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: data, images: lote, admin, ...auth }),
-    });
+    const res = await kpCommitFetch('/api/commit-items', { items: data, images: lote, admin, ...auth });
     let result = {}; try { result = await res.json(); } catch (e) {}
     if (!res.ok) kpCommitAuthFail(res);
     if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
@@ -2701,11 +2709,7 @@ async function commitRewardsNow() {
     let admin = null;
     try { admin = JSON.parse(localStorage.getItem('adm_session') || 'null')?.email || null; } catch (e) {}
     const auth = await kpCommitAuth();
-    const res = await fetch('/api/commit-rewards', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rewards, admin, ...auth }),
-    });
+    const res = await kpCommitFetch('/api/commit-rewards', { rewards, admin, ...auth });
     let result = {};
     try { result = await res.json(); } catch (e) {}
     if (!res.ok) kpCommitAuthFail(res);
