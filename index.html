@@ -12563,7 +12563,7 @@ function _lootCardHtml(nome, diceLabel, raridade, nota, esgotado, sabor, dourado
     ? '<span style="font-size:9px;color:var(--muted);font-style:italic;text-align:center">('+String(nota).replace(/</g,'&lt;')+')</span>'
     : '';
   const _estCard = esgotado ? ' style="opacity:.45"'
-    : (dourado ? ' style="border:2px solid #e0a800;border-radius:12px;padding:6px 2px;background:linear-gradient(180deg,#fffbea,#fff3c4);box-shadow:0 0 0 3px rgba(224,168,0,.22),0 0 14px rgba(224,168,0,.5)" title="Berry extra (bônus dos 3 primeiros)"' : '');
+    : (dourado ? ' style="border:2px solid #e0a800;border-radius:12px;padding:6px 2px;background:linear-gradient(180deg,#fffbea,#fff3c4);box-shadow:0 0 0 3px rgba(224,168,0,.22),0 0 14px rgba(224,168,0,.5)" title="Berry extra"' : '');
   return '<div class="loot-item-card"'+_estCard+'>'
     +'<img class="loot-item-sprite-img" data-item="'+nomeAttr+'" src="'+src+'" '
       +'style="width:24px;height:24px;object-fit:contain" '
@@ -19278,8 +19278,8 @@ async function _atualizarBonusCriadorUI(){
   if(wrap) wrap.title = eh ? 'Criador/Breeder: +1 dado nesta rolagem' : '';
 }
 
-// ── Berry extra para os 3 primeiros a rolar (eventos listados abaixo) ──
-// Depois da 1ª rolagem de um dos 3 primeiros personagens do evento, o rolador vira 1d100 ("Rolar berry extra");
+// ── Berry extra da Lune Hoyer: todos os personagens podem pegar (1 por personagem) ──
+// Depois da 1ª rolagem do personagem no evento, o rolador vira 1d100 ("Rolar berry extra");
 // ao rolar, a berry entra na MESMA rolagem do histórico, com contorno dourado.
 const EVENTOS_BONUS_TOP3 = { 'festivalculinario': 3 };      // slug -> quantos primeiros ganham
 let _bonusTop3Modo = false, _bonusTop3Prev = null;
@@ -19318,8 +19318,8 @@ async function _bonusTop3Estado(personagem){
   est.jaTem = rows.some(function(r){
     return normalizarNome(r.personagem || '') === k && Array.isArray(r.lote) && r.lote.some(function(x){ return x && x.bonus3; });
   });
-  est.elegivel = est.pos <= n && !est.jaTem;
-  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : '(fora dos primeiros)'));
+  est.elegivel = est.pos >= 1 && !est.jaTem;   // todos podem (1 berry extra por personagem)
+  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : '(sem rolagem)'));
   return est;
 }
 // Compatibilidade: devolve a situação só se o personagem pode rolar a berry extra agora; senão null.
@@ -19327,11 +19327,10 @@ async function _bonusTop3Info(personagem){
   const est = await _bonusTop3Estado(personagem);
   return est.elegivel ? est : null;
 }
-const _TXT_AVISO_TOP3 = '⭐ Aviso: é preciso ser um dos 3 primeiros a postar para receber a berry extra da Lune Hoyer. Os demais podem rolar normalmente.';
-const _TXT_AVISO_TOP3_OK = '⭐ Você pode tentar pegar a berry extra da Lune Hoyer. Ela só vale para os 3 primeiros a postar.';
+const _TXT_AVISO_TOP3 = '⭐ Todos podem pegar a berry extra da Lune Hoyer: faça sua rolagem e depois role a berry extra.';
+const _TXT_AVISO_TOP3_OK = '⭐ Você pode pegar a berry extra da Lune Hoyer agora!';
 function _txtAvisoTop3(est){
   if(est && est.jaTem) return '⭐ Você já recebeu a berry extra da Lune Hoyer.';
-  if(est && est.pos > est.n) return '⭐ A berry extra da Lune Hoyer só vale para os '+est.n+' primeiros a postar (você rolou em '+est.pos+'º lugar).';
   return _TXT_AVISO_TOP3;
 }
 function _avisoTop3(texto){
@@ -19429,6 +19428,24 @@ async function _rolarBonusTop3(info){
   if(loaded.rolagens) renderRolagens();
   _atualizarBonusTop3UI();
 }
+
+
+// ── Recarga forçada: quando o valor de config.reload_forcado muda, quem está com a página aberta recarrega (1x por token) ──
+// Para disparar: UPDATE config SET valor='<novo-token>' WHERE chave='reload_forcado';  (ou INSERT se a linha não existir)
+async function _kpChecarReloadForcado(){
+  try{
+    const rows = await dbGet('config','chave=eq.reload_forcado&select=valor');
+    const tok = rows && rows[0] && rows[0].valor ? String(rows[0].valor) : '';
+    if(!tok) return;
+    let visto = null;
+    try{ visto = localStorage.getItem('kp_reload_visto'); }catch(_){}
+    if(visto === null){ try{ localStorage.setItem('kp_reload_visto', tok); }catch(_){} return; }   // 1º acesso com esta versão: só memoriza
+    if(visto !== tok){ try{ localStorage.setItem('kp_reload_visto', tok); }catch(_){} location.reload(); }
+  }catch(_){}
+}
+setTimeout(_kpChecarReloadForcado, 3000);
+setInterval(_kpChecarReloadForcado, 60000);
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) _kpChecarReloadForcado(); });
 
 // ── EVENTO: rolar dado (1 rolagem normal, ou N de uma vez quando há pool ativa) ──
 async function rolarDadoEvento(){
