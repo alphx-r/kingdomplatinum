@@ -1168,6 +1168,11 @@ body.edit-mode [data-editing="1"] :is(.ed-inserted-col,.ed-inserted-split-box)::
 .loot-desc-badge:hover{background:#fff3d2}
 .loot-desc-badge:active{transform:scale(.96)}
 .loot-desc-badge:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.loot-item-card{position:relative}
+.loot-del{position:absolute;top:2px;right:2px;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(192,57,43,.12);color:#c0392b;font:700 14px/18px system-ui,sans-serif;cursor:pointer;opacity:.75}
+.loot-anul{position:absolute;top:2px;left:2px;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(90,100,120,.14);color:#5a6478;font:700 12px/18px system-ui,sans-serif;cursor:pointer;opacity:.75}
+.loot-anul:hover{opacity:1;background:rgba(90,100,120,.28)}
+.loot-del:hover{opacity:1;background:rgba(192,57,43,.25)}
 /* Keep old tag styles for adm */
 /* Tabela pública de berries por sabor/raridade */
 .berry-tbl{ display:flex; flex-direction:column; border-radius:10px; overflow:hidden; border:1px solid #ccc; margin:10px 0; font-family:var(--font-body); }
@@ -15430,10 +15435,10 @@ function imgDesenharDado(e,foto,sprites){
   // Lote com itens: agrupa itens iguais (ex.: 2x Aspear Berry vira um card "×2")
   let grupos=null; const CARD_H=104, CARD_G=14, SUM_H=44;
   if(temItem && qd>1){
-    const mp=new Map(), _anB3=lote.some(r=>r&&r.bonus3)&&_bonus3Anulado(e.personagem);
+    const mp=new Map();
     lote.forEach(r=>{
-      const nm=r.item||'Nada', chave=nm+(r.bonus3?'|bonus3':'');
-      if(!mp.has(chave)) mp.set(chave,{nome:nm,item:r.item,nums:[],sabor:r.sabor,raridade:r.raridade,bonus3:!!r.bonus3&&!_anB3,anulada:!!r.bonus3&&_anB3});
+      const nm=r.item||'Nada', chave=nm+(r.bonus3?'|bonus3':'')+(r.anulada?'|anulada':'');
+      if(!mp.has(chave)) mp.set(chave,{nome:nm,item:r.item,nums:[],sabor:r.sabor,raridade:r.raridade,bonus3:!!r.bonus3&&!r.anulada,anulada:!!r.anulada});
       mp.get(chave).nums.push(r.resultado);
     });
     grupos=[...mp.values()].map(g=>{
@@ -15535,7 +15540,7 @@ function imgDesenharDado(e,foto,sprites){
       if(g.nums.length===1){ c.font='700 40px Cinzel,serif'; c.fillStyle=acc; c.fillText(String(g.nums[0]),nx,cy+1); }
       else { c.font='700 36px Cinzel,serif'; c.fillStyle=acc; c.fillText('×'+g.nums.length,nx,cy-10); c.font='700 16px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(g.nums.join(' · '),nx,cy+24); }
       c.restore();
-      if(g.anulada){ c.font='800 14px Nunito,sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle=T.muted; c.fillText('BERRY EXTRA ANULADA',rx+cardW-rightW/2-10,ry+CARD_H-14); }
+      if(g.anulada){ c.font='800 14px Nunito,sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle=T.muted; c.fillText('ANULADA',rx+cardW-rightW/2-10,ry+CARD_H-14); }
     });
   } else {
     const CWD=104,CH=78,CG=14, rowsN=Math.ceil(lote.length/cols); c.textBaseline='middle'; c.textAlign='center';
@@ -19337,22 +19342,6 @@ async function _bonusTop3Info(personagem){
   return est.elegivel ? est : null;
 }
 
-// A berry extra de quem NÃO está entre os N primeiros a postar é anulada (aparece opaca no histórico e no compartilhar).
-function _bonus3Anulado(personagem){
-  try{
-    const n = _eventoBonusTop3(eventoAtual);
-    if(!n) return false;
-    const k = normalizarNome(personagem || '');
-    if(!k) return false;
-    const ordem = [];
-    (eventoHistorico || []).filter(function(r){ return r && Array.isArray(r.lote) && r.lote.length; }).slice().reverse().forEach(function(r){   // da mais antiga p/ a mais nova
-      const kk = normalizarNome(r.personagem || '');
-      if(kk && ordem.indexOf(kk) === -1) ordem.push(kk);
-    });
-    const idx = ordem.indexOf(k);
-    return idx >= n;
-  }catch(_){ return false; }
-}
 const _TXT_AVISO_TOP3 = '⭐ A berry extra da Lune Hoyer só vale para os 3 primeiros a postar.';
 const _TXT_AVISO_TOP3_OK = '⭐ Você pode tentar pegar a berry extra da Lune Hoyer agora! *Válido apenas para os três primeiros que postarem.*';
 function _txtAvisoTop3(est){
@@ -19622,17 +19611,7 @@ function mudarPaginaHistEvento(dir){
 }
 
 // ── Rolagem extra (ex.: o Criador tem +1 dado) incluída na MESMA rolagem do histórico ──
-// Aparece no card do histórico para: admins, ou quem está com o mesmo personagem selecionado
-// no rolador. Cada rolagem aceita 1 extra (admin pode repetir).
-const _extraChk = {};
-// Fora do admin, o +1 só vale para Criador/Breeder (e só em evento com bônus de Criador).
-function _extraRollLiberado(e){
-  if(!_eventoBonusCriador(eventoAtual)) return false;
-  const k = normalizarNome(e.personagem || '');
-  if(Object.prototype.hasOwnProperty.call(_criadorCache, k)) return _criadorCache[k] === true;
-  if(!_extraChk[k]){ _extraChk[k] = true; _personagemEhCriador(e.personagem).then(function(ok){ if(ok) renderHistoricoEvento(); }); }
-  return false;
-}
+// Aparece no card do histórico só para o ADM (pode repetir).
 function _btnExtraRoll(e){
   try{
     if(!e || !Array.isArray(e.lote) || !e.lote.length) return '';
@@ -19640,7 +19619,7 @@ function _btnExtraRoll(e){
     const sel = (document.getElementById('evento-dice-personagem')?.value||'').trim().toLowerCase();
     const meu = sel && String(e.personagem||'').trim().toLowerCase() === sel;
     const admin = isAdminConectado();
-    if(!(admin || (meu && !jaTem && _extraRollLiberado(e)))) return '';
+    if(!admin) return '';   // o +1 é só do ADM
     return `<button type="button" class="hist-img-btn" onclick="rolarExtraLote('${e.id}')" title="Rolar +1 dado e incluir nesta rolagem" style="font-weight:800">🎲 +1</button>`;
   }catch(_){ return ''; }
 }
@@ -19648,8 +19627,7 @@ async function rolarExtraLote(id){
   const ev = eventoAtual;
   const ent = eventoHistorico.find(function(x){ return String(x.id)===String(id); });
   if(!ev || !ent || !Array.isArray(ent.lote)){ alert('Rolagem não encontrada.'); return; }
-  if(ent.lote.some(function(r){ return r && r.extra; }) && !isAdminConectado()){ alert('Esta rolagem já recebeu a rolagem extra.'); return; }
-  if(!isAdminConectado() && !(_eventoBonusCriador(ev) && await _personagemEhCriador(ent.personagem))){ alert('Só Criadores/Breeders podem rolar o dado extra.'); return; }
+  if(!isAdminConectado()){ alert('Só o ADM pode rolar o dado extra.'); return; }
   const lados = parseInt(ent.lados) || 0;
   if(lados < 2){ alert('Dado inválido nesta rolagem.'); return; }
   if(!confirm('Rolar +1 d'+lados+' para '+ent.personagem+' e incluir nesta rolagem?')) return;
@@ -19696,6 +19674,81 @@ function _podeExcluirRolagemEvento(){
     if(isAdminConectado()) return true;
     return (playerLogado && String(playerLogado.nome||'').trim().toLowerCase() === 'ricky');
   }catch(_){ return false; }
+}
+// ── Excluir UMA berry (um dado) de dentro de uma rolagem em lote do histórico — admin ou ricky ──
+function _btnDelBerry(e, i){
+  if(!e || e.id == null || !_podeExcluirRolagemEvento()) return '';
+  const an = !!(e.lote && e.lote[i] && e.lote[i].anulada);
+  return '<button type="button" class="loot-anul" onclick="alternarAnuladaBerry(\''+e.id+'\','+i+')" title="'+(an?'Desfazer anulação (voltar a valer)':'Anular (deixar opaca)')+'" aria-label="Anular ou desfazer">'+(an?'↺':'⊘')+'</button>'
+    +'<button type="button" class="loot-del" onclick="excluirBerryLote(\''+e.id+'\','+i+')" title="Excluir esta berry" aria-label="Excluir esta berry">×</button>';
+}
+// Anula (deixa opaca no histórico e no compartilhar) ou desfaz a anulação de UMA berry — marcador `anulada` salvo na própria berry.
+async function alternarAnuladaBerry(id, i){
+  if(!_podeExcluirRolagemEvento()){ alert('Você não tem permissão.'); return; }
+  const ent = eventoHistorico.find(function(x){ return String(x.id)===String(id); });
+  if(!ent || !Array.isArray(ent.lote) || !ent.lote[i]){ alert('Berry não encontrada.'); return; }
+  const novoLote = ent.lote.map(function(x, k){
+    if(k !== i) return x;
+    const y = Object.assign({}, x);
+    if(y.anulada) delete y.anulada; else y.anulada = true;
+    return y;
+  });
+  try{
+    const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados?id=eq.${encodeURIComponent(ent.id)}`, {
+      method:'PATCH',
+      headers:{ 'apikey':SUPA_KEY, 'Authorization':`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', 'Prefer':'return=representation' },
+      body: JSON.stringify({ lote: novoLote })
+    });
+    const text = await res.text(); let json = null;
+    try{ json = text ? JSON.parse(text) : null; }catch(_){}
+    if(!res.ok || !Array.isArray(json) || !json.length){
+      const msg = (json && (json.message||json.hint||json.details)) || (res.ok ? 'nenhuma linha atualizada (sem permissão?)' : 'HTTP '+res.status);
+      console.error('[alternarAnuladaBerry]', res.status, json||text);
+      alert('Não consegui salvar: ' + msg);
+      return;
+    }
+  }catch(err){
+    console.error('[alternarAnuladaBerry] erro de rede:', err);
+    alert('Erro de rede: ' + err.message);
+    return;
+  }
+  ent.lote = novoLote;
+  renderHistoricoEvento();
+  if(loaded.rolagens) renderRolagens();
+}
+async function excluirBerryLote(id, i){
+  if(!_podeExcluirRolagemEvento()){ alert('Você não tem permissão para excluir.'); return; }
+  const ent = eventoHistorico.find(function(x){ return String(x.id)===String(id); });
+  if(!ent || !Array.isArray(ent.lote) || !ent.lote[i]){ alert('Berry não encontrada.'); return; }
+  if(ent.lote.length === 1){ return excluirRolagemEvento(id); }   // era a única: apaga a rolagem inteira (ela pede confirmação)
+  const r = ent.lote[i];
+  if(!confirm('Excluir '+(r.item || 'este dado')+' ('+r.resultado+') da rolagem de '+ent.personagem+'?')) return;
+  const novoLote = ent.lote.filter(function(_, k){ return k !== i; });
+  const soma = novoLote.reduce(function(t,x){ return t + (x.resultado||0); }, 0);
+  try{
+    const res = await fetch(`${SUPA_URL}/rest/v1/historico_dados?id=eq.${encodeURIComponent(ent.id)}`, {
+      method:'PATCH',
+      headers:{ 'apikey':SUPA_KEY, 'Authorization':`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', 'Prefer':'return=representation' },
+      body: JSON.stringify({ lote: novoLote, resultado: soma })
+    });
+    const text = await res.text(); let json = null;
+    try{ json = text ? JSON.parse(text) : null; }catch(_){}
+    if(!res.ok || !Array.isArray(json) || !json.length){
+      const msg = (json && (json.message||json.hint||json.details)) || (res.ok ? 'nenhuma linha atualizada (sem permissão?)' : 'HTTP '+res.status);
+      console.error('[excluirBerryLote]', res.status, json||text);
+      alert('Não consegui excluir a berry: ' + msg);
+      return;
+    }
+  }catch(err){
+    console.error('[excluirBerryLote] erro de rede:', err);
+    alert('Erro de rede ao excluir a berry: ' + err.message);
+    return;
+  }
+  ent.lote = novoLote; ent.resultado = soma;
+  renderHistoricoEvento();
+  if(loaded.rolagens) renderRolagens();
+  _atualizarBonusTop3UI();
+  _atualizarBonusCriadorUI();
 }
 function _btnDelRoll(e){
   if(!e || e.id == null || !_podeExcluirRolagemEvento()) return '';
@@ -19784,9 +19837,10 @@ function renderHistoricoEvento(){
           <span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">${e.hora||''} · ${e.data||''}</span>${_btnExtraRoll(e)}${_btnDelRoll(e)}${_btnShareRoll(e)}</span>
         </div>
         <div class="loot-items-grid" style="padding:0 14px 10px">
-          ${lote.map(function(r){
-            if(r.item){ const _an = !!r.bonus3 && _bonus3Anulado(e.personagem); return _lootCardHtml(r.item, String(r.resultado), r.raridade, _an?'berry extra anulada':(r.extra?'extra':(r.bonus3?'berry extra':null)), _an, r.sabor, !!r.bonus3 && !_an); }
-            return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span></div>';
+          ${lote.map(function(r, _i){
+            const _bx = _btnDelBerry(e, _i);
+            if(r.item){ const _an = !!r.anulada; const _h = _lootCardHtml(r.item, String(r.resultado), r.raridade, _an?'anulada':(r.extra?'extra':(r.bonus3?'berry extra':null)), _an, r.sabor, !!r.bonus3 && !_an); return _bx ? _h.replace(/<\/div>$/, _bx+'</div>') : _h; }
+            return '<div class="loot-item-card"><span class="loot-dice-badge" style="background:#9aa5b1">'+r.resultado+'</span><span class="loot-item-name" style="color:var(--muted);font-style:italic">Nada</span>'+_bx+'</div>';
           }).join('')}
         </div>
       </div>`;
