@@ -151,8 +151,14 @@ async function atribuir(b, res) {
 
   // 1) é ADM mesmo?
   const a = await fetch(`${IU}/rest/v1/rpc/admin_login`, { method: 'POST', headers: H(IK), body: JSON.stringify({ p_nome: adm_nome, p_senha: adm_senha }) });
-  let adm = a.ok ? await a.json().catch(() => null) : null; adm = Array.isArray(adm) ? adm[0] : adm;
-  if (!adm || !adm.nome) return res.status(403).json({ error: 'Nome ou senha de admin incorretos.' });
+  if (!a.ok) {   // antes, qualquer falha da RPC virava "senha incorreta": agora separa senha errada de problema de configuração
+    const t = await a.text().catch(() => ''); let m = ''; try { m = String(JSON.parse(t).message || ''); } catch {}
+    console.warn('ficha-salvar atribuir: admin_login HTTP', a.status, t.slice(0, 200));
+    if (a.status === 400) return res.status(403).json({ error: 'Nome ou senha de admin incorretos.' + (m ? ' (' + m.slice(0, 120) + ')' : '') });
+    return res.status(502).json({ error: 'Não consegui conferir o admin (admin_login: HTTP ' + a.status + (m ? ' – ' + m.slice(0, 120) : '') + '). Confira INDEX_SUPA_URL / INDEX_SUPA_KEY e se a função admin_login existe no projeto do index.' });
+  }
+  let adm = await a.json().catch(() => null); adm = Array.isArray(adm) ? adm[0] : adm;
+  if (!adm || !adm.nome) { console.warn('ficha-salvar atribuir: admin_login sem retorno válido para', adm_nome, '- tipo:', Array.isArray(adm) ? 'array' : typeof adm); return res.status(403).json({ error: 'Nome ou senha de admin incorretos.' }); }
 
   // 2) novo dono
   const semPlayer = b.player_id === 'admin' || !String(b.player || '').trim();
@@ -173,6 +179,8 @@ async function atribuir(b, res) {
   });
   if (!p.ok) { const t = await p.text().catch(() => ''); return res.status(502).json({ error: 'O Supabase recusou a troca de dono: ' + (t.slice(0, 200) || 'HTTP ' + p.status) }); }
   const linhas = await p.json().catch(() => []);
+  // PATCH que não acha a linha devolve 200 com []: o dono NÃO mudou no Supabase (era isso que deixava a ficha "de outro player")
+  if (Array.isArray(linhas) && linhas.length === 0) return res.status(404).json({ error: 'A ficha "' + slug + '" não foi achada na tabela fichas do Supabase (ou o acesso foi bloqueado): o dono NÃO foi trocado.' });
 
   // 5) GitHub: ficha + histórico + índice num commit só
   let saida = null;
