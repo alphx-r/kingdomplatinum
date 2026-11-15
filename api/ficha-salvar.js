@@ -155,6 +155,7 @@ async function atribuir(b, res) {
     const t = await a.text().catch(() => ''); let m = ''; try { m = String(JSON.parse(t).message || ''); } catch {}
     console.warn('ficha-salvar atribuir: admin_login HTTP', a.status, t.slice(0, 200));
     if (a.status === 400) return res.status(403).json({ error: 'Nome ou senha de admin incorretos.' + (m ? ' (' + m.slice(0, 120) + ')' : '') });
+    if (m && /operator|function|column|relation|syntax|cast|type/i.test(m)) return res.status(502).json({ error: 'A função admin_login deu erro dentro do Supabase (HTTP ' + a.status + '): ' + m.slice(0, 200) + '. O problema está no SQL da função, não na senha.' });
     return res.status(502).json({ error: 'Não consegui conferir o admin (admin_login: HTTP ' + a.status + (m ? ' – ' + m.slice(0, 120) : '') + '). Confira INDEX_SUPA_URL / INDEX_SUPA_KEY e se a função admin_login existe no projeto do index.' });
   }
   let adm = await a.json().catch(() => null); adm = Array.isArray(adm) ? adm[0] : adm;
