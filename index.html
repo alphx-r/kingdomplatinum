@@ -6132,6 +6132,10 @@ window.calcSituSoma = function(){
                     <label>Máximo permitido</label>
                     <input type="number" id="ev-qtd-max" value="50" min="1" max="50"/>
                   </div>
+                <div style="margin-top:12px;display:flex;gap:6px;align-items:flex-start">
+                  <input type="checkbox" id="ev-berry-extra" style="cursor:pointer;margin-top:3px"/>
+                  <label for="ev-berry-extra" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer;line-height:1.4">⭐ Berry extra da Lune Hoyer ativa<br><span style="font-weight:400;color:var(--muted)">Liga o "Rolar berry extra" no rolador: quem já rolou neste evento e ainda não pegou pode rolar 1 dado extra (entra na mesma rolagem, com contorno dourado).</span></label>
+                </div>
                 </div>
               </div>
             </div>
@@ -6839,6 +6843,10 @@ window.calcSituSoma = function(){
             <label>Máximo permitido</label>
             <input type="number" id="edit-ev-qtd-max" value="50" min="1" max="50"/>
           </div>
+                <div style="margin-top:12px;display:flex;gap:6px;align-items:flex-start">
+                  <input type="checkbox" id="edit-ev-berry-extra" style="cursor:pointer;margin-top:3px"/>
+                  <label for="edit-ev-berry-extra" style="font-size:12px;font-weight:600;color:var(--text);cursor:pointer;line-height:1.4">⭐ Berry extra da Lune Hoyer ativa<br><span style="font-weight:400;color:var(--muted)">Liga o "Rolar berry extra" no rolador: quem já rolou neste evento e ainda não pegou pode rolar 1 dado extra (entra na mesma rolagem, com contorno dourado).</span></label>
+                </div>
         </div>
       </div>
       <!-- POOL DE ITENS (edição) -->
@@ -19034,11 +19042,14 @@ function evQtdLerConfig(prefix){
   const clamp = v => Math.min(Math.max(parseInt(v)||1,1),QTD_ROLL_MAX_ABS);
   const valor = clamp(document.getElementById(prefix+'-qtd-valor')?.value);
   const max   = clamp(document.getElementById(prefix+'-qtd-max')?.value || QTD_ROLL_MAX_ABS);
-  return {
+  const out = {
     qtd_modo:  modo,
     qtd_valor: modo==='nenhum' ? null : valor,
     qtd_max:   modo==='livre'  ? Math.max(max, valor) : null
   };
+  const be = document.getElementById(prefix+'-berry-extra');
+  if(be && (be.checked || be.dataset.col==='1')) out.berry_extra = !!be.checked;   // só manda se marcado ou se a coluna já existe no banco
+  return out;
 }
 function evQtdPreencher(prefix, ev){
   const modo = ev.qtd_modo || 'nenhum';
@@ -19046,6 +19057,8 @@ function evQtdPreencher(prefix, ev){
   set('qtd-modo', modo);
   set('qtd-valor', ev.qtd_valor || 10);
   set('qtd-max',   ev.qtd_max   || QTD_ROLL_MAX_ABS);
+  const be = document.getElementById(prefix+'-berry-extra');
+  if(be){ be.checked = ev.berry_extra === true; be.dataset.col = ('berry_extra' in ev) ? '1' : ''; }
   evQtdModoToggle(prefix);
 }
 // Resolve como o campo deve se comportar para o jogador.
@@ -19298,8 +19311,7 @@ async function _atualizarBonusCriadorUI(){
 const EVENTOS_BONUS_TOP3 = { 'festivalculinario': 3 };      // slug -> quantos primeiros ganham
 let _bonusTop3Modo = false, _bonusTop3Prev = null;
 function _eventoBonusTop3(ev){
-  const slug = String(ev && ev.slug || '').toLowerCase().replace(/[^a-z0-9]/g,'');
-  return EVENTOS_BONUS_TOP3[slug] || 0;
+  return (ev && ev.berry_extra === true) ? 99 : 0;     // ligado no cadastro do evento (campo "Berry extra da Lune Hoyer ativa"); sem limite de posição
 }
 // Situação do personagem na corrida dos primeiros: { pos (1,2,3… ou 0 se ainda não rolou), n, row, jaTem, elegivel, erro }
 async function _bonusTop3Estado(personagem){
@@ -19332,8 +19344,8 @@ async function _bonusTop3Estado(personagem){
   est.jaTem = rows.some(function(r){
     return normalizarNome(r.personagem || '') === k && Array.isArray(r.lote) && r.lote.some(function(x){ return x && x.bonus3; });
   });
-  est.elegivel = est.pos >= 1 && est.pos <= n && !est.jaTem;   // só os N primeiros (1 berry extra por personagem)
-  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : (est.pos > n ? '(fora dos primeiros)' : '(sem rolagem)')));
+  est.elegivel = est.pos >= 1 && !est.jaTem;   // evento com a berry extra ativa: quem já rolou e ainda não pegou (1 por personagem)
+  console.info('[bonus top3]', personagem, '- posição', est.pos, 'de', n, est.jaTem ? '(já recebeu a berry extra)' : (est.elegivel ? '(elegível)' : '(sem rolagem)'));
   return est;
 }
 // Compatibilidade: devolve a situação só se o personagem pode rolar a berry extra agora; senão null.
@@ -19342,11 +19354,10 @@ async function _bonusTop3Info(personagem){
   return est.elegivel ? est : null;
 }
 
-const _TXT_AVISO_TOP3 = '⭐ A berry extra da Lune Hoyer só vale para os 3 primeiros a postar.';
+const _TXT_AVISO_TOP3 = '⭐ A berry extra da Lune Hoyer está ativa: faça sua rolagem primeiro.';
 const _TXT_AVISO_TOP3_OK = '⭐ Você pode tentar pegar a berry extra da Lune Hoyer agora! *Válido apenas para os três primeiros que postarem.*';
 function _txtAvisoTop3(est){
   if(est && est.jaTem) return '⭐ Você já recebeu a berry extra da Lune Hoyer.';
-  if(est && est.pos > est.n) return '⭐ A berry extra da Lune Hoyer só vale para os '+est.n+' primeiros a postar (você rolou em '+est.pos+'º lugar).';
   return _TXT_AVISO_TOP3;
 }
 function _avisoTop3(texto){
@@ -19364,7 +19375,11 @@ function _avisoTop3(texto){
 }
 async function _atualizarBonusTop3UI(){
   const ev = eventoAtual;
-  if(!ev || !_eventoBonusTop3(ev)){ _avisoTop3(null); return; }
+  if(!ev || !_eventoBonusTop3(ev)){
+    _avisoTop3(null);
+    if(_bonusTop3Modo){ _bonusTop3Modo = false; _restaurarRoladorBerry(ev); }
+    return;
+  }
   _avisoTop3(_bonusTop3Modo ? _TXT_AVISO_TOP3_OK : _TXT_AVISO_TOP3);
   const sel = document.getElementById('evento-dice-personagem');
   if(sel && !sel.dataset.bonusTop3){
@@ -19390,13 +19405,18 @@ async function _atualizarBonusTop3UI(){
     if(rollBtn){ rollBtn.textContent = '⭐ Rolar berry extra (1d'+lados+')'; rollBtn.style.background = '#b8860b'; }
   } else if(_bonusTop3Modo){
     _bonusTop3Modo = false;
-    const cfg = _eventoQtdCfg(ev);
-    if(qtdWrap){ qtdWrap.style.display = cfg.mostrar ? '' : 'none'; qtdWrap.style.opacity = cfg.travado ? '.6' : ''; qtdWrap.style.pointerEvents = cfg.travado ? 'none' : ''; qtdWrap.title = ''; }
-    if(qtdIn){ qtdIn.value = cfg.valor; qtdIn.readOnly = cfg.travado; }
-    if(laIn && _bonusTop3Prev && _bonusTop3Prev.lados != null){ laIn.value = _bonusTop3Prev.lados; if(typeof sincEventoDiceBtn==='function') sincEventoDiceBtn(); }
-    if(rollBtn && _bonusTop3Prev){ rollBtn.textContent = _bonusTop3Prev.btn; rollBtn.style.background = _bonusTop3Prev.bg; }
-    _atualizarBonusCriadorUI();          // volta o +1 de Criador no campo, se for o caso
+    _restaurarRoladorBerry(ev);
   }
+}
+function _restaurarRoladorBerry(ev){
+  const qtdIn = document.getElementById('evento-qtd-roll'), qtdWrap = document.getElementById('evento-qtd-roll-wrap');
+  const laIn = document.getElementById('evento-dice-lados'), rollBtn = document.getElementById('evento-dado-roll-btn');
+  const cfg = _eventoQtdCfg(ev);
+  if(qtdWrap){ qtdWrap.style.display = cfg.mostrar ? '' : 'none'; qtdWrap.style.opacity = cfg.travado ? '.6' : ''; qtdWrap.style.pointerEvents = cfg.travado ? 'none' : ''; qtdWrap.title = ''; }
+  if(qtdIn){ qtdIn.value = cfg.valor; qtdIn.readOnly = cfg.travado; }
+  if(laIn && _bonusTop3Prev && _bonusTop3Prev.lados != null){ laIn.value = _bonusTop3Prev.lados; if(typeof sincEventoDiceBtn==='function') sincEventoDiceBtn(); }
+  if(rollBtn && _bonusTop3Prev){ rollBtn.textContent = _bonusTop3Prev.btn; rollBtn.style.background = _bonusTop3Prev.bg; }
+  _atualizarBonusCriadorUI();          // volta o +1 de Criador no campo, se for o caso
 }
 async function _rolarBonusTop3(info){
   const ev = eventoAtual, row = info.row;
@@ -19478,7 +19498,7 @@ async function rolarDadoEvento(){
   const motivo     = motivoEl?.value.trim() || '';
 
   if(!personagem){ alert('Selecione o personagem!'); personagemEl?.focus(); return; }
-  // Entre os 3 primeiros e ainda sem a berry extra: este clique rola só o dado extra, dentro da rolagem existente
+  // Evento com a berry extra ativa e personagem que já rolou e ainda não pegou: este clique rola só o dado extra, dentro da rolagem existente
   if(_eventoBonusTop3(ev)){
     const _b = await _bonusTop3Info(personagem);
     if(_b){ await _rolarBonusTop3(_b); return; }
