@@ -1088,6 +1088,10 @@ function mny(e){const v=e.value,c=e.selectionStart??v.length,nd=v.slice(0,c).rep
 /* players com poder de admin: podem editar qualquer ficha */
 const ADM_PLAYERS=['ricky','jef','lucas'];
 const admPlayer=()=>!!ses&&!ses.admin&&ADM_PLAYERS.includes(nrm(ses.nome));
+/* PlayerZero: ficha só para testes — aparece no começo da lista e abre apenas para ADM/Chefe (com o switch ADM ligado) */
+const PZ='playerzero',isPZ=x=>!!x&&(x.slug===PZ||nrm(x.nome)===PZ);
+const pzOk=()=>window.KPAdm?KPAdm.isAdm():!!ses&&(!!ses.admin||admPlayer());
+const pzVirtual=()=>({slug:PZ,nome:'PlayerZero',player:'PlayerZero',player_id:'zero',classe:'Ficha de testes',time:[]});
 const dono=()=>f&&ses&&(ses.admin||admPlayer()||(ses.player_id!=null&&String(ses.player_id)===String(f.player_id)));
 const has=a=>(a||[]).some(x=>x&&x.nome);
 /* texto rico (negrito / itálico / link) */
@@ -1195,14 +1199,30 @@ const dcPct=x=>{const n=parseInt(x&&x.desconto);return n>0&&n<=100?n:0};
 const INFO_K=new Set(['map','oldmap','note','lostpaper','cd']);
 const infoNk=n=>INFO_K.has(nk(n));
 const psNk=n=>/^personalized./.test(nk(n));
+/* Pokéblock (exceto Rainbow): pergunta se foi Ganho ou Fabricado; fabricado = 3 berries (básica/intermédia/rara) do sabor dele */
+const bkNk=n=>{const k=nk(n);return/pokblock$/.test(k)&&!/^rainbow/.test(k)};
+const BK_SAB={bitter:'amarga',dry:'seca',sour:'azeda',spicy:'apimentada',sweet:'doce'};
+const BK_ESP=new Set(['enigmaberry','starfberry']);
+const bkSab=n=>BK_SAB[nk(n).replace(/pokblock$/,'')]||'';
+const bkTier=it=>{const r=nk(it&&it.flags&&it.flags.raridade);return r==='comum'?1:r==='incomum'?5:r==='rara'?10:0};
+let BK_VAL=new Map(),BK_PREV=[],BK_M=1;
+const bkVal=b=>BK_ESP.has(nk(b))?20:(BK_VAL.get(nk(b))||0);
+const bkSum=v=>v.reduce((t,b)=>t+(b?bkVal(b):0),0);
+const bkDesc=x=>x&&bkNk(x.nome)&&x.bko==='fab'&&x.bkb&&x.bkb.length?'Berries: '+x.bkb.join(', '):'';
+const bkHave=n=>(f.d.inventario||[]).reduce((t,x)=>x&&nk(x.nome)===nk(n)?t+(parseInt(x.qtd)||1):t,0);
+const bkAv=n=>bkHave(n)+BK_PREV.filter(b=>nk(b)===nk(n)).length*BK_M;
+function bkTake(n,q){const a=f.d.inventario||[];for(let i=0;i<a.length&&q>0;i++){const x=a[i];if(!x||nk(x.nome)!==nk(n))continue;const c=parseInt(x.qtd)||1,t=Math.min(c,q);q-=t;if(c-t>0)x.qtd=c-t;else{a.splice(i,1);i--}}}
+function bkGive(n,q){const a=f.d.inventario=f.d.inventario||[],e=a.find(x=>x&&nk(x.nome)===nk(n));if(e)e.qtd=(parseInt(e.qtd)||1)+q;else a.push({nome:n,qtd:q,bag:'forage'})}
+/* devolve as berries da receita anterior (se houver) e debita as novas, m = quantas unidades do Pokéblock */
+function bkApply(prev,nw,m){(prev||[]).forEach(b=>bkGive(b,m));(nw||[]).forEach(b=>bkTake(b,m))}
 const psBase=n=>String(n||'').replace(/^\s*personalized\s+/i,'').trim()||String(n||'');
 const synIt=it=>!!it&&(/synthetic/.test(nk(it.category))||/determinadahabilidade/.test(nk(it.item_desc)));
 const SYN_RE=/uma determinada habilidade/i;
 let ITMc=null,ITMq=0;
 function invLoad(){if(ITMc||ITMq)return;ITMq=1;ITL().then(m=>{ITMc=m;if(f)render()}).catch(()=>{})}
-const invKind=x=>{if(!x||!x.nome)return'';if(infoNk(x.nome))return'info';if(psNk(x.nome))return'pers';return synIt(ITMc&&ITMc.get(nk(x.nome)))?'syn':''};
+const invKind=x=>{if(!x||!x.nome)return'';if(infoNk(x.nome))return'info';if(psNk(x.nome))return'pers';if(bkNk(x.nome))return'blk';return synIt(ITMc&&ITMc.get(nk(x.nome)))?'syn':''};
 /* atributos do cartão: nome exibido, habilidade (Synthetic) e informações (só na visualização) */
-const invDa=(x,vw)=>`data-fm="${esc(x.forma||'')}" data-nm="${esc(invNm(x))}" data-hb="${esc(habFmt(x.hab))}"${vw&&x.info?` data-xi="${esc(x.info)}"`:''}`;
+const invDa=(x,vw)=>`data-fm="${esc(x.forma||'')}" data-nm="${esc(invNm(x))}" data-hb="${esc(habFmt(x.hab))}"${x&&bkNk(x.nome)&&x.happ!=null?` data-hp="${esc(x.happ)}"`:''}${(bkDesc(x)||(vw&&x.info))?` data-xi="${esc(bkDesc(x)||x.info)}"`:''}`;
 /* edição desses itens: botão de lápis no canto do cartão, abre o modal */
 const invPen=(x,i)=>invKind(x)?`<button type="button" class="inv-pen" title="Editar" aria-label="Editar ${esc(x.nome)}" onclick="exOpen(null,${i})">✎</button>`:'';
 const habFmt=h=>{h=String(h||'');return/^[a-z0-9-]+$/.test(h)?h.split('-').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '):h};
@@ -1223,8 +1243,9 @@ function plmCancel(){plPend=null;plm.close()}
 let exPend=null;
 async function synPoke(nm){const L=await PKL(),w=String(nm||'').trim().split(/\s+/);for(let n=Math.min(w.length,3);n>=1;n--){const k=nk(w.slice(0,n).join(' ')),p=L.find(q=>q.k===k&&q.ab&&q.ab.length)||L.find(q=>q.ak&&q.ak.includes(k)&&q.ab&&q.ab.length);if(p)return p}return null}
 async function exOpen(n,i){const x=i!=null?(f.d.inventario||[])[i]:null,nm=n||(x&&x.nome)||'';if(!nm)return;
- const k=infoNk(nm)?'info':psNk(nm)?'pers':'syn';exPend={n:nm,i,k,bag:invTg};const cur=x||{};let h='',t='';
+ const k=infoNk(nm)?'info':psNk(nm)?'pers':bkNk(nm)?'blk':'syn';exPend={n:nm,i,k,bag:invTg};exm.style.width='';const cur=x||{};let h='',t='';
  const ta=(v,ph)=>`<textarea class="in" id="exinfo" maxlength="800" placeholder="${ph}" oninput="const c=this.nextElementSibling;c.textContent=this.value.length+'/800';c.classList.toggle('full',this.value.length>=800)">${esc(v||'')}</textarea>${CC(v,800)}`;
+ if(k==='blk'){await bkUi(nm,cur);return}
  if(k==='syn'){const p=await synPoke(nm);t='Qual habilidade o '+nm+' concede?';
   if(p){let AN=new Map();try{(await ABL()).forEach(v=>AN.set(nk(v),v))}catch{}const ab=[...new Set(p.ab.map(a=>AN.get(nk(a))||habFmt(a)))];h=`<div class="exs">Habilidades de ${esc(p.nome)}</div>`+ab.map(a=>`<label class="exr"><input type="radio" name="exhb" value="${esc(a)}"${nk(cur.hab)===nk(a)?' checked':''}><span>${esc(a)}</span></label>`).join('')}
   else{const all=[...new Set(await ABL())].sort((a,b)=>a.localeCompare(b));h=`<div class="exs">Não encontrei o Pokémon deste item. Escolha a habilidade:</div><select class="in" id="exsel"><option value="">Selecione a habilidade...</option>${all.map(a=>`<option value="${esc(a)}"${nk(cur.hab)===nk(a)?' selected':''}>${esc(a)}</option>`).join('')}</select>`}}
@@ -1233,21 +1254,49 @@ async function exOpen(n,i){const x=i!=null?(f.d.inventario||[])[i]:null,nm=n||(x
   h=`<div class="exs">Se for um Pokémon, o nome dele substitui “Personalized”. Se não for, descreva a personalização.</div><select class="in" id="expk" onchange="document.getElementById('exiw').style.display=this.value?'none':''"><option value="">Não é um Pokémon</option>${l.map(q=>`<option value="${esc(q.nome)}"${q.nome===cur.forma?' selected':''}>${esc(q.nome)}</option>`).join('')}</select><div id="exiw"${cur.forma?' style="display:none"':''}>${ta(cur.info,'Qual é a personalização?')}</div>`}
  document.getElementById('exmt').textContent=t;document.getElementById('exmb').innerHTML=h;exm.showModal()}
 function exOk(){const q=exPend;if(!q)return;let o={};
- if(q.k==='syn'){const v=(document.querySelector('#exmb input[name=exhb]:checked')||document.getElementById('exsel')||{}).value;if(!v){toast('Selecione a habilidade');return}o={hab:v}}
+ if(q.k==='blk'){o=bkRead();if(!o)return}
+  else if(q.k==='syn'){const v=(document.querySelector('#exmb input[name=exhb]:checked')||document.getElementById('exsel')||{}).value;if(!v){toast('Selecione a habilidade');return}o={hab:v}}
  else if(q.k==='info')o={info:(document.getElementById('exinfo').value||'').trim()};
  else{const pk=document.getElementById('expk').value;o=pk?{forma:pk,info:''}:{forma:'',info:(document.getElementById('exinfo').value||'').trim()}}
  exPend=null;exm.close();
  const a=f.d.inventario=f.d.inventario||[];
- if(q.i!=null){const x=a[q.i];if(x){Object.assign(x,o);if('forma' in o&&!o.forma)delete x.forma;if('info' in o&&!o.info)delete x.info;render()}return}
- const same=q.k==='syn'?e=>e.hab===o.hab:q.k==='pers'&&o.forma?e=>e.forma===o.forma&&!e.info:null,
+ if(q.i!=null){const x=a[q.i];if(x){const pv=q.k==='blk'&&x.bko==='fab'?(x.bkb||[]).slice():[],pm=parseInt(x.qtd)||1;Object.assign(x,o);if('forma' in o&&!o.forma)delete x.forma;if('info' in o&&!o.info)delete x.info;if('bkb' in o&&!(o.bkb&&o.bkb.length))delete x.bkb;if(q.k==='blk')bkApply(pv,o.bkb||[],pm);render()}return}
+ const same=q.k==='blk'?e=>e.happ===o.happ&&e.bko===o.bko&&(e.bkb||[]).join('|')===(o.bkb||[]).join('|'):q.k==='syn'?e=>e.hab===o.hab:q.k==='pers'&&o.forma?e=>e.forma===o.forma&&!e.info:null,
   e=same&&a.find(x=>x&&nk(x.nome)===nk(q.n)&&(x.bag?bg(x):'item')===q.bag&&same(x));
- if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const n={nome:q.n,qtd:1,bag:q.bag};if(o.hab)n.hab=o.hab;if(o.forma)n.forma=o.forma;if(o.info)n.info=o.info;a.push(n)}
+ if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const n={nome:q.n,qtd:1,bag:q.bag};if(o.hab)n.hab=o.hab;if(o.happ!=null){n.happ=o.happ;n.bko=o.bko;if(o.bkb&&o.bkb.length)n.bkb=o.bkb}if(o.forma)n.forma=o.forma;if(o.info)n.info=o.info;a.push(n)}
+ if(q.k==='blk')bkApply([],o.bkb||[],1);
  render();toast(e?'Quantidade aumentada':'Item adicionado')}
 function exCancel(){exPend=null;exm.close()}
+/* Pokéblock: Ganho (informa o happiness) ou Fabricado (3 berries do sabor dele; cada uma vale +1 comum, +5 incomum, +10 rara; Enigma/Starf valem +20; as berries são debitadas da ficha) */
+async function bkUi(nm,cur){
+ const M=await ITL(),sb=bkSab(nm),bs=[...M.values()].filter(it=>it.flags&&it.flags.berry);
+ if(!bs.length){toast('Lista de berries indisponível');exPend=null;return}
+ const ds=it=>{const m=String(it.item_desc||'').match(/Essa Berry é[^.]*?\b(amarga|apimentada|azeda|doce|seca)\b/i);return m?m[1].toLowerCase():''};
+ const srt=(a,b)=>a.name.localeCompare(b.name),esp=bs.filter(it=>BK_ESP.has(nk(it.name))).sort(srt);
+ const l=bs.filter(it=>!BK_ESP.has(nk(it.name))&&bkTier(it)&&(!sb||ds(it)===sb)).sort(srt);
+ BK_VAL=new Map(bs.map(it=>[nk(it.name),bkTier(it)]));BK_M=cur.nome?(parseInt(cur.qtd)||1):1;BK_PREV=cur.bko==='fab'?(cur.bkb||[]).slice():[];
+ const fab=cur.bko==='fab',sel=cur.bkb||[];
+ const op=(it,v,j)=>{const av=bkAv(it.name);return`<option value="${esc(it.name)}"${sel[j]===it.name?' selected':''}${av<BK_M?' disabled':''}>${esc(it.name)} · +${v} · tem ${av}</option>`};
+ const cols=['Um','Dois','Três'].map((t,j)=>`<div><div class="exs" style="margin:6px 0 4px">Berry ${t}</div><select class="in bks" style="font-size:13px;padding:8px 6px" onchange="bkCalc()"><option value="">—</option>${l.map(it=>op(it,bkTier(it),j)).join('')}<optgroup label="Especiais (+20)">${esp.map(it=>op(it,20,j)).join('')}</optgroup></select></div>`).join('');
+ document.getElementById('exmt').textContent='Como foi obtido o '+nm+'?';
+ document.getElementById('exmb').innerHTML=`<label class="exr"><input type="radio" name="bko" value="gan"${fab?'':' checked'} onchange="bkMode()"><span>Ganho</span></label><label class="exr"><input type="radio" name="bko" value="fab"${fab?' checked':''} onchange="bkMode()"><span>Fabricado</span></label>`
+  +`<div id="bkg"${fab?' style="display:none"':''}><div class="exs" style="text-align:left;margin:8px 0 4px">Quanto de happiness ele fornece?</div><input type="number" class="in" id="bkhp" min="0" step="1" inputmode="numeric" placeholder="HAPP" value="${!fab&&cur.happ!=null?cur.happ:''}"></div>`
+  +`<div id="bkf"${fab?'':' style="display:none"'}>${sb?`<div class="exs" style="margin:8px 0 0">Berries ${esc(sb)}s · escolha as 3 berries (podem repetir se você tiver; Enigma/Starf valem +20). Elas serão debitadas da ficha.</div>`:''}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${cols}</div><div id="bktot" class="exs" style="margin:10px 0 0;font-size:14px"></div><div id="bkerr" class="exs" style="margin:4px 0 0;color:#c0392b"></div></div>`;
+ exm.style.width='min(640px,94vw)';exm.showModal();bkCalc()}
+function bkMode(){const fab=(document.querySelector('#exmb input[name=bko]:checked')||{}).value==='fab';document.getElementById('bkg').style.display=fab?'none':'';document.getElementById('bkf').style.display=fab?'':'none'}
+function bkFalta(v){const c={};v.filter(Boolean).forEach(b=>{c[b]=(c[b]||0)+1});return Object.keys(c).filter(b=>c[b]*BK_M>bkAv(b)).map(b=>b+' (precisa '+c[b]*BK_M+', tem '+bkAv(b)+')')}
+function bkCalc(){const v=[...document.querySelectorAll('#exmb select.bks')].map(s=>s.value),t=document.getElementById('bktot'),e=document.getElementById('bkerr');if(t)t.textContent=(v.every(Boolean)?'Total: +':'Parcial: +')+bkSum(v)+' HAPP';const m=bkFalta(v);if(e)e.textContent=m.length?'Berries insuficientes na ficha: '+m.join(', '):''}
+function bkRead(){
+ const fab=(document.querySelector('#exmb input[name=bko]:checked')||{}).value==='fab';
+ if(!fab){const t=document.getElementById('bkhp').value.trim(),n=parseInt(t);if(t===''||!(n>=0)){toast('Informe quanto de happiness o Pokéblock fornece');return null}return{happ:n,bko:'gan',bkb:[]}}
+ const v=[...document.querySelectorAll('#exmb select.bks')].map(x=>x.value);
+ if(v.some(x=>!x)){toast('Selecione as 3 berries. Se faltar alguma, não é possível fabricar');return null}
+ const m=bkFalta(v);if(m.length){toast('Berries insuficientes na ficha: '+m.join(', '));return null}
+ return{happ:bkSum(v),bko:'fab',bkb:v}}
 /* aba "Todos": o item vai para a bag certa dele (mesma regra do filtro "Específicos"); sem categoria conhecida → Item Bag */
 function bagDe(it){if(!it)return'item';const r=[['tm',isTM],['pill',isPill],['snack',isSnack],['forage',isForage],['trash',isTrash],['alpha',isAlfa]].find(x=>x[1](it));return r?r[0]:'item'}
 async function invAdd(n){if(invSc==='all'){const it=(await ITL()).get(nk(n)),b=bagDe(it);if(BAGS.some(x=>x[0]===b)){invTg=b;invTab=b}}
- if(invTg==='alpha'){alfaAdd(n);return}{const it=(await ITL()).get(nk(n));if(infoNk(n)||psNk(n)||synIt(it)){invm.close();exOpen(n);return}}if(plNk(n)){invm.close();plmOpen(n);return}if(dcNk(n)){invm.close();dcOpen(n);return}invAddFin(n,'')}
+ if(invTg==='alpha'){alfaAdd(n);return}{const it=(await ITL()).get(nk(n));if(infoNk(n)||psNk(n)||bkNk(n)||synIt(it)){invm.close();exOpen(n);return}}if(plNk(n)){invm.close();plmOpen(n);return}if(dcNk(n)){invm.close();dcOpen(n);return}invAddFin(n,'')}
 function invAddFin(n,fm){const a=f.d.inventario=f.d.inventario||[],k=nk(n),e=a.find(x=>x&&nk(x.nome)===k&&bg(x)===invTg&&(x.forma||'')===(fm||''));if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const o={nome:n,qtd:1,bag:invTg};if(fm)o.forma=fm;a.push(o)}invm.close();render();toast(e?'Quantidade aumentada':'Item adicionado')}
 /* box: mesmo modelo de slot do time principal; 6 slots base + upgrades (quantidade vinda do items.json) */
 const BX_BASE=6,BX_MAX=120;let BX_MINI=2,BX_UP=5,BXL=0,BXSM='',BXSU='';
@@ -1400,7 +1449,7 @@ function mskAn(e){const d=e.value.replace(/\D/g,'').slice(0,4);let D='',M='',i=0
 let DIRD=null,DIRP=null,relSelI=-1;
 const nrm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const npq=c=>fetch(PU+'/rest/v1/npcs?select='+c+'&order=nome.asc',{headers:{apikey:PKK,Authorization:'Bearer '+PKK,Range:'0-9999'}}).then(r=>r.ok?r.json():null).catch(()=>null);
-function dirLoad(){return DIRP??=Promise.all([carregaLista().catch(()=>[]),npq('slug,nome,categoria,foto').then(x=>x||npq('slug,nome,categoria')).then(x=>x||[])]).then(([pl,np])=>{DIRD={pl:(pl||[]).filter(x=>x.nome&&x.desativada!=='true'),np:(Array.isArray(np)?np:[]).filter(x=>x.nome)};return DIRD})}
+function dirLoad(){return DIRP??=Promise.all([carregaLista().catch(()=>[]),npq('slug,nome,categoria,foto').then(x=>x||npq('slug,nome,categoria')).then(x=>x||[])]).then(([pl,np])=>{DIRD={pl:(pl||[]).filter(x=>x.nome&&x.desativada!=='true'&&(!isPZ(x)||pzOk())),np:(Array.isArray(np)?np:[]).filter(x=>x.nome)};return DIRD})}
 function relAv(){if(!DIRD)return;document.querySelectorAll('.rav[data-as]').forEach(el=>{const m=(el.dataset.ar==='npc'?DIRD.np:DIRD.pl).find(x=>x.slug===el.dataset.as);if(m?.foto)el.innerHTML=`<img src="${esc(m.foto)}" alt="">`})}
 const RPG=2;let relPgI=0;
 function relPgApply(){const g=document.querySelector('.rg');if(!g)return;const it=[...g.children],mx=Math.max(0,it.length-RPG);relPgI=Math.max(0,Math.min(relPgI,mx));it.forEach((e,k)=>{e.style.display=k>=relPgI&&k<relPgI+RPG?'':'none'});const p=document.querySelector('.rpb.rpp'),x=document.querySelector('.rpb.rpx');if(p)p.style.display=relPgI>0?'':'none';if(x)x.style.display=relPgI<mx?'':'none'}
@@ -1575,7 +1624,7 @@ const capw=t=>{t=String(t||'');return t.charAt(0).toUpperCase()+t.slice(1)};
 const tipoIc=(t,nt)=>{t=String(t||'').toLowerCase().trim();if(!t)return'';const ofc=TIPOS_OFC.has(t),u=(ofc?TIPO_SVG_BASE:TIPO_FAKE_BASE)+'/'+encodeURIComponent(t)+'.svg';return `<img class="pc-mti" src="${u}"${nt?'':` title="${esc(capw(t))}"`} alt="${esc(capw(t))}"${ofc?'':` onerror="this.onerror=null;this.src='/sprites/types/${encodeURIComponent(t)}.svg'"`}>`};
 const CST={smart:'clever',beauty:'beautiful',beautify:'beautiful'};
 const mvInfo=mx=>{const cls=String(mx.damage_class||'').toLowerCase(),cs=String(mx.contest_style||'').toLowerCase(),p=[];if(cls)p.push(`<span class="pc-dc pc-dc-${cls}">${capw(cls)}</span>`);p.push('Pow '+(mx.power??'—'));p.push('Acc '+(mx.accuracy??'—'));if(cs)p.push(capw(CST[cs]||cs));return p.join(' · ')};
-const sprites=()=>{document.querySelectorAll('img[data-n]').forEach(async i=>{let sh=!!i.dataset.sh;if(i.dataset.pk){const[K,j]=i.dataset.pk.split('.'),px=f?.d?.[K]?.[+j];if(px&&isMod(px)&&px.foto){i.src=px.foto;return}if(px&&ftv(px)==='Shiny')sh=true}const x=await(sh?spriteSh(i.dataset.n):sprite(i.dataset.n));if(x)i.src=x;else i.removeAttribute('src')});document.querySelectorAll('datalist[data-ab]').forEach(async e=>{const p=await pkFind(e.dataset.ab),mine=p?.ab||[],all=await ABL();const sn=new Set();e.innerHTML=[...mine,...all].filter(v=>{const k=nk(v);if(sn.has(k))return false;sn.add(k);return true}).map(v=>`<option value="${esc(v)}">`).join('')});document.querySelectorAll('.pc-mv[data-mi]').forEach(async e=>{const mx=(await MVX()).get(nk(e.dataset.mi));if(!mx)return;e.querySelector('.pc-mi').innerHTML=tipoIc(mx.type)+tipoIc(mx.type2);e.querySelector('.pc-mm').innerHTML=mvInfo(mx);if(mx.descricao)e.title=mx.descricao});document.querySelectorAll('.inv-th[data-it]').forEach(async im=>{const it=(await ITL()).get(nk(im.dataset.it));if(it?.sprite){im.src=it.sprite;im.style.display=''}else im.style.display='none'});document.querySelectorAll('.inv-c[data-it]').forEach(async c=>{const it=(await ITL()).get(nk(c.dataset.it));if(!it)return;const im=c.querySelector('.inv-i');if(it.sprite){im.src=it.sprite;im.style.display=''}c.querySelector('.inv-n').textContent=c.dataset.nm||it.name;{const dd=c.querySelector('.inv-d');if(dd&&(it.item_desc||c.dataset.xi)){let t=it.item_desc||'';if(c.dataset.hb&&t)t=t.replace(SYN_RE,'a habilidade '+c.dataset.hb);dd.innerHTML=(t?invDesc(t):'')+(c.dataset.xi?'<div class="inv-xi">'+esc(c.dataset.xi).replace(/\n/g,'<br>')+'</div>':'')}}});document.querySelectorAll('datalist[data-mv]').forEach(async e=>{e.innerHTML=(await MVL()).map(v=>`<option value="${esc(v)}">`).join('')});document.querySelectorAll('[data-ti]').forEach(async e=>{const t=await tiposDe(e.dataset.ti);e.innerHTML=t.map(v=>tipoIc(v,1)).join('')});document.querySelectorAll('[data-t]').forEach(async e=>{const t=await tiposDe(e.dataset.t);e.innerHTML=t.map(tipoImg).join('')})};
+const sprites=()=>{document.querySelectorAll('img[data-n]').forEach(async i=>{let sh=!!i.dataset.sh;if(i.dataset.pk){const[K,j]=i.dataset.pk.split('.'),px=f?.d?.[K]?.[+j];if(px&&isMod(px)&&px.foto){i.src=px.foto;return}if(px&&ftv(px)==='Shiny')sh=true}const x=await(sh?spriteSh(i.dataset.n):sprite(i.dataset.n));if(x)i.src=x;else i.removeAttribute('src')});document.querySelectorAll('datalist[data-ab]').forEach(async e=>{const p=await pkFind(e.dataset.ab),mine=p?.ab||[],all=await ABL();const sn=new Set();e.innerHTML=[...mine,...all].filter(v=>{const k=nk(v);if(sn.has(k))return false;sn.add(k);return true}).map(v=>`<option value="${esc(v)}">`).join('')});document.querySelectorAll('.pc-mv[data-mi]').forEach(async e=>{const mx=(await MVX()).get(nk(e.dataset.mi));if(!mx)return;e.querySelector('.pc-mi').innerHTML=tipoIc(mx.type)+tipoIc(mx.type2);e.querySelector('.pc-mm').innerHTML=mvInfo(mx);if(mx.descricao)e.title=mx.descricao});document.querySelectorAll('.inv-th[data-it]').forEach(async im=>{const it=(await ITL()).get(nk(im.dataset.it));if(it?.sprite){im.src=it.sprite;im.style.display=''}else im.style.display='none'});document.querySelectorAll('.inv-c[data-it]').forEach(async c=>{const it=(await ITL()).get(nk(c.dataset.it));if(!it)return;const im=c.querySelector('.inv-i');if(it.sprite){im.src=it.sprite;im.style.display=''}c.querySelector('.inv-n').textContent=c.dataset.nm||it.name;{const dd=c.querySelector('.inv-d');if(dd&&(it.item_desc||c.dataset.xi||c.dataset.hp)){let t=it.item_desc||'',xi=c.dataset.xi||'';if(c.dataset.hb&&t)t=t.replace(SYN_RE,'a habilidade '+c.dataset.hb);if(c.dataset.hp){const hp='+'+c.dataset.hp+' HAPP';if(/\+\s*X\s*HAPP/i.test(t))t=t.replace(/\+\s*X\s*HAPP/gi,hp);else xi=hp+(xi?'\n'+xi:'')}dd.innerHTML=(t?invDesc(t):'')+(xi?'<div class="inv-xi">'+esc(xi).replace(/\n/g,'<br>')+'</div>':'')}}});document.querySelectorAll('datalist[data-mv]').forEach(async e=>{e.innerHTML=(await MVL()).map(v=>`<option value="${esc(v)}">`).join('')});document.querySelectorAll('[data-ti]').forEach(async e=>{const t=await tiposDe(e.dataset.ti);e.innerHTML=t.map(v=>tipoIc(v,1)).join('')});document.querySelectorAll('[data-t]').forEach(async e=>{const t=await tiposDe(e.dataset.t);e.innerHTML=t.map(tipoImg).join('')})};
 
 /* pokébolas que liberam o 9º golpe (padrão: 8 golpes) */
 const BALLMV={diveball:['Surf','Dive'],netball:['String Shot']};
@@ -1741,7 +1790,7 @@ async function carregaLista(){if(!LST){SHC.clear();const r=await fetch('/api/fic
 /* limite: cada player só pode ter 2 fichas ativas (admin não tem limite) */
 const LIM_ATIVAS=2,LIM_MSG='Limite atingido: cada player só pode ter 2 fichas ativas. Desative uma das fichas antigas (Fichas > Desativadas) para criar ou reativar outra.';
 async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;const l=await carregaLista(),me=String(ses.nome||'').trim().toLowerCase();
- return l.filter(x=>x&&x.slug!==exceto&&x.desativada!=='true'&&(x.player_id!=null&&ses.player_id!=null?x.player_id===ses.player_id:String(x.player||'').trim().toLowerCase()===me)).length>=LIM_ATIVAS}
+ return l.filter(x=>x&&!isPZ(x)&&x.slug!==exceto&&x.desativada!=='true'&&(x.player_id!=null&&ses.player_id!=null?x.player_id===ses.player_id:String(x.player||'').trim().toLowerCase()===me)).length>=LIM_ATIVAS}
 /* fichas agora vivem em JSON no GitHub; o servidor (Vercel) valida a sessão e faz o commit */
 async function salvarFicha(x){if(x.d)x.d.ranking=String(rankDe(x.d.pts_ranking));
  let mud,bd;const F0=x._F;   /* merge por campo: manda só QUAIS campos de d este usuário mudou + o valor-base deles */
@@ -1913,17 +1962,23 @@ async function vLista(id,des){modo('L');corLimpa();DES=!!des;document.title=(DES
  if(id===rid)drawL()}
 /* ficha sem dono: sem player, criada pelo ADM (player_id 'admin') ou com o login do admin (e-mail) no lugar do player */
 const semDono=x=>!String(x?.player||'').trim()||String(x.player_id)==='admin'||String(x.player).includes('@');
-function drawL(){const q=qi.value.toLowerCase().trim(),l=LST.filter(x=>off(x)===DES&&(!q||(x.nome+' '+(x.player||'')).toLowerCase().includes(q)));
+function drawL(){const q=qi.value.toLowerCase().trim(),zk=pzOk(),bs=LST.filter(x=>!isPZ(x)||zk);if(zk&&!DES&&!bs.some(isPZ))bs.unshift(pzVirtual());let l=bs.filter(x=>off(x)===DES&&(!q||(x.nome+' '+(x.player||'')).toLowerCase().includes(q)));l=[...l.filter(isPZ),...l.filter(x=>!isPZ(x))];
  const tm=x=>{const t=Array.isArray(x.time)?x.time:[];return Array.from({length:6},(_,i)=>t[i]?.nome?`<span title="${esc(t[i].apelido||t[i].nome)}"><img data-n="${esc(t[i].nome)}"${ftv(t[i])==='Shiny'?' data-sh="1"':''} alt=""></span>`:'<span></span>').join('')};
- grid.innerHTML=l.length?l.map(x=>`<a class="fc" href="/fichas/${encodeURIComponent(x.slug)}" data-r><span class="ctag${semDono(x)?' sp':''}">${semDono(x)?'Sem player':esc(x.player)}</span>${x.foto?`<img src="${x.foto}" alt="">`:`<div class="fph">${esc((x.nome||'?')[0])}</div>`}<div class="fn">${esc(x.nome)}</div><div class="cl">${esc(x.classe||'')}</div><div class="tm">${tm(x)}</div></a>`).join(''):`<div class="em">${DES&&!q?'Nenhuma ficha desativada.':'Nenhuma ficha encontrada.'}</div>`;
+ grid.innerHTML=l.length?l.map(x=>`<a class="fc" href="/fichas/${encodeURIComponent(x.slug)}" data-r><span class="ctag${semDono(x)&&!isPZ(x)?' sp':''}">${isPZ(x)?'Teste':semDono(x)?'Sem player':esc(x.player)}</span>${x.foto?`<img src="${x.foto}" alt="">`:`<div class="fph">${esc((x.nome||'?')[0])}</div>`}<div class="fn">${esc(x.nome)}</div><div class="cl">${esc(x.classe||'')}</div><div class="tm">${tm(x)}</div></a>`).join(''):`<div class="em">${DES&&!q?'Nenhuma ficha desativada.':'Nenhuma ficha encontrada.'}</div>`;
  sprites();shLazy(l)}
 
+if(window.KPAdm){const _pzRd=()=>{try{if(document.getElementById('qi')&&LST)drawL()}catch(e){}};KPAdm.onChange(_pzRd);KPAdm.ready.then(_pzRd)}
 async function vFicha(slug,id){modo('F');document.title='Ficha | Kingdom Platinum';
  if(slug==='nova'){corLimpa();document.title='Nova ficha | Kingdom Platinum';if(!ses){render();lg.showModal();return}
   try{if(await atingiuLimite()){alert(LIM_MSG);go('/fichas',true);return}}catch{}
   f={slug:'',player_id:ses.admin?'admin':ses.player_id,nome:'',d:{player:ses.admin?'':ses.nome,pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'1.000',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;render();return}
  render();app.innerHTML='<div class="wrap"><div class="lt">Carregando ficha...</div></div>';{const c=corLer();if(c&&c.slug===slug)setColors(c,true);else corLimpa()}
- try{const r=await lerFicha(slug).then(x=>x?[x]:[]);if(id!==rid)return;
+ if(slug===PZ){if(window.KPAdm)await Promise.race([KPAdm.ready,new Promise(r=>setTimeout(r,6000))]);if(id!==rid)return}
+ const pzNo=slug===PZ&&!pzOk();
+ try{const r=pzNo?[]:await lerFicha(slug).then(x=>x?[x]:[]);if(id!==rid)return;
+  if(!r.length&&slug===PZ&&!pzNo){   /* ainda não existe: abre em branco para o ADM criar (o 1º salvar cria a ficha de testes) */
+   if(!ses){corLimpa();render();lg.showModal();return}
+   f={slug:PZ,player_id:ses.admin?'admin':ses.player_id,nome:'PlayerZero',d:{player:'PlayerZero',pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'1.000',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;document.title='PlayerZero | Fichário';render();return}
   if(!r.length){app.innerHTML='<div class="wrap"><div class="lt">Ficha não encontrada. <a href="/fichas" data-r>← Voltar ao fichário</a></div></div>';return}f=r[0]}
  catch(e){if(id===rid)app.innerHTML='<div class="wrap"><div class="lt" style="color:#c00">Erro: '+esc(e.message)+'</div></div>';return}
  f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});f._bd=JSON.parse(JSON.stringify(f.d));document.title=(f.nome||'Ficha')+' | Fichário';render();fixStats()}
