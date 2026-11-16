@@ -1706,14 +1706,16 @@ function limpa(){CB={};CS={};CUP=null;VCH={};drawList();drawSum()}
 
 /* histórico: player vê o das próprias compras (ficha ativa); ADM/MOD vê o de todos os personagens: últimas 30 transações por loja, gravadas na própria ficha em d.historico_lojas (campo l = slug da loja) */
 /* uma transação do histórico; quem = personagem (só aparece na visão de ADM/MOD) */
-function histRow(h,quem){const df=h.d-h.a,ls=a=>a.map(x=>x[1]+'× '+esc(x[0])).join(', ');
- return`<div style="padding:8px 0;border-top:1px solid var(--bd);font:500 13px/1.45 var(--font-body)"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(new Date(h.t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}))}</b><b class="${df<0?'neg':'pos'}">${df<0?'−':'+'}${fm(Math.abs(df))}</b></div>${quem?`<div style="font-weight:700;color:var(--muted)">${esc(quem)}</div>`:''}${h.b?.length?`<div>Compra: ${ls(h.b)}</div>`:''}${h.s?.length?`<div>Venda: ${ls(h.s)}</div>`:''}${h.vd?`<div>TM Voucher${h.vn>1?' ×'+h.vn:''}: −${fm(h.vd)}</div>`:''}${h.cp?`<div>${esc(h.cn||'Cupom')}: −${fm(h.cp)}</div>`:''}<small style="color:var(--muted)">Saldo ${fm(h.a)} → ${fm(h.d)}</small></div>`}
+const SHI='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
+let HSH=[];   /* transações exibidas no modal (o botão de compartilhar usa o índice) */
+function histRow(h,quem,meta){const df=h.d-h.a,ls=a=>a.map(x=>x[1]+'× '+esc(x[0])).join(', '),k=HSH.push({h,...(meta||{})})-1;
+ return`<div style="padding:8px 0;border-top:1px solid var(--bd);font:500 13px/1.45 var(--font-body)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${esc(new Date(h.t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}))}</b><span style="display:flex;align-items:center;gap:8px"><b class="${df<0?'neg':'pos'}">${df<0?'−':'+'}${fm(Math.abs(df))}</b><button type="button" class="btn s" onclick="shareHist(${k})" title="Compartilhar" aria-label="Compartilhar" style="padding:4px 8px;min-height:0;line-height:0">${SHI}</button></span></div>${quem?`<div style="font-weight:700;color:var(--muted)">${esc(quem)}</div>`:''}${h.b?.length?`<div>Compra: ${ls(h.b)}</div>`:''}${h.s?.length?`<div>Venda: ${ls(h.s)}</div>`:''}${h.vd?`<div>TM Voucher${h.vn>1?' ×'+h.vn:''}: −${fm(h.vd)}</div>`:''}${h.cp?`<div>${esc(h.cn||'Cupom')}: −${fm(h.cp)}</div>`:''}<small style="color:var(--muted)">Saldo ${fm(h.a)} → ${fm(h.d)}</small></div>`}
 const histDoLoja=x=>x.l===chaveLoja()||x.l===SL||(LJ.antigos||[]).includes(x.l);
 function histDlg(w){let d=$('hsm');if(!d){d=document.createElement('dialog');d.id='hsm';document.body.appendChild(d)}d.style.width='min('+w+',94vw)';return d}
 const HFECHAR='<div class="mb"><button type="button" class="btn s" onclick="hsm.close()">Fechar</button></div>';
 function openHist(){if(isAdm())return openHistAll();if(!F)return toast('Escolha uma ficha');
- const d=histDlg('520px'),H=histAll(F.d).filter(histDoLoja);
- d.innerHTML=`<div class="mtl">Histórico · ${esc(LJ.nome)} · ${esc(F.nome||'')}</div>${H.length?H.map(h=>histRow(h)).join(''):'<div class="lt" style="padding:16px">Nenhuma transação registrada.</div>'}${HFECHAR}`;d.showModal()}
+ const d=histDlg('520px'),H=histAll(F.d).filter(histDoLoja);HSH=[];
+ d.innerHTML=`<div class="mtl">Histórico · ${esc(LJ.nome)} · ${esc(F.nome||'')}</div>${H.length?H.map(h=>histRow(h,'',{nome:F.nome,foto:F.foto||F.thumb})).join(''):'<div class="lt" style="padding:16px">Nenhuma transação registrada.</div>'}${HFECHAR}`;d.showModal()}
 /* ADM/MOD: histórico de TODOS os personagens nesta loja (lê a ficha de cada um; mais recentes primeiro) */
 let HALL=[];
 async function openHistAll(){
@@ -1721,13 +1723,64 @@ async function openHistAll(){
  d.innerHTML=tt+'<div class="lt" style="padding:16px">Carregando histórico…</div>'+HFECHAR;d.showModal();
  try{
   const L=(await carregaLista()).filter(x=>x&&x.slug),out=[];let i=0;
-  await Promise.all(Array.from({length:6},async()=>{while(i<L.length){const f=L[i++];try{const r=await lerFicha(f.slug);if(r)histAll(r.d||{}).filter(histDoLoja).forEach(h=>out.push({h,q:(r.nome||f.nome||f.slug)+(f.player?' · '+f.player:'')}))}catch{}}}));
+  await Promise.all(Array.from({length:6},async()=>{while(i<L.length){const f=L[i++];try{const r=await lerFicha(f.slug);if(r)histAll(r.d||{}).filter(histDoLoja).forEach(h=>out.push({h,n:r.nome||f.nome||f.slug,foto:r.foto||r.thumb||f.foto||f.thumb||'',q:(r.nome||f.nome||f.slug)+(f.player?' · '+f.player:'')}))}catch{}}}));
   HALL=out.sort((a,b)=>String(b.h.t).localeCompare(String(a.h.t)));
   d.innerHTML=tt+'<input class="in" id="hsq" type="search" autocomplete="off" placeholder="Filtrar por personagem ou player…" style="width:100%;margin:6px 0" oninput="drawHistAll()"><div id="hsl"></div>'+HFECHAR;drawHistAll()
  }catch(e){d.innerHTML=tt+'<div class="lt" style="padding:16px">Erro ao carregar: '+esc(e.message)+'</div>'+HFECHAR}}
 function drawHistAll(){const q=nrm($('hsq')?.value||''),el=$('hsl');if(!el)return;
- const H=HALL.filter(x=>!q||nrm(x.q).includes(q)),M=200;
- el.innerHTML=H.length?H.slice(0,M).map(x=>histRow(x.h,x.q)).join('')+(H.length>M?`<div class="lt" style="padding:10px">Mostrando as ${M} mais recentes de ${H.length}. Use o filtro para refinar.</div>`:''):'<div class="lt" style="padding:16px">Nenhuma transação registrada.</div>'}
+ const H=HALL.filter(x=>!q||nrm(x.q).includes(q)),M=200;HSH=[];
+ el.innerHTML=H.length?H.slice(0,M).map(x=>histRow(x.h,x.q,{nome:x.n,foto:x.foto})).join('')+(H.length>M?`<div class="lt" style="padding:10px">Mostrando as ${M} mais recentes de ${H.length}. Use o filtro para refinar.</div>`:''):'<div class="lt" style="padding:16px">Nenhuma transação registrada.</div>'}
+/* compartilhar uma transação: monta um cartão em imagem (cores da loja) e abre o compartilhar do aparelho; sem suporte, baixa o PNG */
+const loadImg=src=>new Promise(r=>{if(!src)return r(null);const i=new Image();i.crossOrigin='anonymous';i.onload=()=>r(i);i.onerror=()=>r(null);i.src=src});
+async function shareHist(k){const x=HSH[k];if(!x)return;const h=x.h;
+ try{
+  try{await document.fonts?.ready}catch{}
+  const cs=getComputedStyle(document.documentElement),g=n=>cs.getPropertyValue(n).trim(),c1=g('--brand')||'#1a3a5c',c2=g('--brand-mid')||'#2563a8',ft=g('--font-title')||'serif',fb=g('--font-body')||'sans-serif';
+  const img=await loadImg(x.foto),rows=[],add=(t,a,sg)=>(a||[]).forEach(r=>{const v=(+r[2]||0)*r[1];rows.push([t,r[1]+'× '+r[0],v?sg+fm(v):''])});
+  add('Compra',h.b,'−');add('Venda',h.s,'+');
+  if(h.vd)rows.push(['Voucher','TM Voucher'+(h.vn>1?' ×'+h.vn:''),'−'+fm(h.vd)]);
+  if(h.cp)rows.push(['Cupom',h.cn||'Cupom','−'+fm(h.cp)]);
+  const W=1080,P=64,HD=260,RH=72,df=h.d-h.a,H=HD+56+Math.max(rows.length,1)*RH+40+230+80;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+  const fit=(t,mw)=>{t=String(t);if(c.measureText(t).width<=mw)return t;while(t.length>1&&c.measureText(t+'…').width>mw)t=t.slice(0,-1);return t+'…'};
+  c.fillStyle='#fff';c.fillRect(0,0,W,H);
+  const gr=c.createLinearGradient(0,0,W,HD);gr.addColorStop(0,c1);gr.addColorStop(1,c2);c.fillStyle=gr;c.fillRect(0,0,W,HD);
+  const R=70,cx=P+R,cy=HD/2;c.save();c.beginPath();c.arc(cx,cy,R,0,7);c.closePath();c.fillStyle='rgba(255,255,255,.18)';c.fill();c.clip();
+  if(img){const m=Math.min(img.width,img.height),sw=m,sx=(img.width-m)/2,sy=(img.height-m)/2;c.drawImage(img,sx,sy,sw,sw,cx-R,cy-R,R*2,R*2)}
+  else{c.fillStyle='#fff';c.font='700 64px '+ft;c.textAlign='center';c.textBaseline='middle';c.fillText(((x.nome||'?')[0]||'?').toUpperCase(),cx,cy+4)}
+  c.restore();c.textAlign='left';c.textBaseline='alphabetic';
+  const tx=P+R*2+40,mw=W-tx-P;
+  c.fillStyle='rgba(255,255,255,.8)';c.font='700 28px '+fb;c.fillText(fit((LJ.nome||'Loja').toUpperCase(),mw),tx,cy-34);
+  c.fillStyle='#fff';c.font='700 54px '+ft;c.fillText(fit(x.nome||'Personagem',mw),tx,cy+22);
+  c.fillStyle='rgba(255,255,255,.85)';c.font='600 28px '+fb;c.fillText(new Date(h.t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}),tx,cy+66);
+  let y=HD+56;
+  if(!rows.length)rows.push(['','Sem itens','']);
+  rows.forEach(r=>{c.fillStyle='#6b7a99';c.font='700 24px '+fb;c.fillText(r[0].toUpperCase(),P,y+26);
+   c.fillStyle='#1a1f2e';c.font='700 32px '+fb;c.textAlign='right';c.fillText(r[2],W-P,y+28);const vw=c.measureText(r[2]).width;c.textAlign='left';
+   c.fillText(fit(r[1],W-P-(P+190)-vw-24),P+190,y+28);c.fillStyle='#e3e8f2';c.fillRect(P,y+RH-14,W-P*2,2);y+=RH});
+  y+=26;c.fillStyle='#f0f3f8';c.beginPath();c.roundRect?c.roundRect(P,y,W-P*2,200,24):c.rect(P,y,W-P*2,200);c.fill();
+  c.fillStyle='#6b7a99';c.font='700 26px '+fb;c.fillText('TOTAL',P+40,y+56);
+  c.textAlign='right';c.fillStyle=df<0?'#c0392b':'#1e8e4e';c.font='800 64px '+fb;c.fillText((df<0?'−':'+')+fm(Math.abs(df)),W-P-40,y+70);
+  c.textAlign='left';c.fillStyle='#6b7a99';c.font='600 28px '+fb;c.fillText('Saldo '+fm(h.a)+' → '+fm(h.d),P+40,y+150);
+  c.textAlign='center';c.fillStyle='#9aa6bd';c.font='700 24px '+ft;c.fillText('KINGDOM PLATINUM',W/2,H-30);
+  const bl=await new Promise(r=>cv.toBlob(r,'image/png'));if(!bl)throw new Error('Não foi possível gerar a imagem.');
+  const nm='historico-'+nrm((LJ.nome||'loja')+' '+(x.nome||'')).replace(/[^a-z0-9]+/g,'-')+'.png';
+  histImgModal(bl,nm)
+ }catch(e){toast(e.message||'Erro ao compartilhar')}}
+/* prévia da imagem com Baixar / Copiar (cinza, em cima) e Compartilhar (preenchido, embaixo) — mesmo modal do index */
+function histImgModal(blob,nome){
+ const url=URL.createObjectURL(blob),file=new File([blob],nome,{type:'image/png'}),canShare=!!(navigator.canShare&&navigator.canShare({files:[file]})),canCopy=!!(navigator.clipboard&&window.ClipboardItem),
+  bs='display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;font-size:14px;';
+ const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100001;display:flex;align-items:center;justify-content:center;padding:12px';
+ ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:94dvh;display:flex;flex-direction:column;gap:10px;padding:12px;overflow:hidden"><div style="flex:1 1 auto;min-height:0;overflow:auto;border-radius:10px;border:1px solid #dde3ee"><img src="${url}" style="display:block;width:100%;height:auto"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:0 0 auto"><button class="btn" data-a="dl" style="${bs}${canCopy?'':'grid-column:1/-1'}">Baixar</button>${canCopy?`<button class="btn" data-a="copy" style="${bs}">Copiar</button>`:''}${canShare?`<button class="btn p" data-a="share" style="${bs}grid-column:1/-1">Compartilhar</button>`:''}<button class="btn" data-a="x" style="${bs}grid-column:1/-1">Fechar</button></div></div>`;
+ const close=()=>{URL.revokeObjectURL(url);ov.remove()};
+ ov.addEventListener('click',ev=>{const a=ev.target.dataset&&ev.target.dataset.a;
+  if(ev.target===ov||a==='x')return close();
+  if(a==='share')navigator.share({files:[file],title:'Histórico · '+LJ.nome}).catch(()=>{});
+  if(a==='dl'){const l=document.createElement('a');l.href=url;l.download=nome;l.click()}
+  if(a==='copy'){const bt=ev.target,t0=bt.textContent,say=m=>{bt.textContent=m;setTimeout(()=>bt.textContent=t0,1600)};navigator.clipboard.write([new ClipboardItem({'image/png':blob})]).then(()=>say('Copiado!')).catch(()=>say('Não foi possível'))}});
+ /* dentro do <dialog> do histórico (ele fica na camada de cima do navegador; um elemento fora dele ficaria escondido atrás) */
+ const hd=$('hsm');(hd&&hd.open?hd:document.body).appendChild(ov)}
 /* cupons */
 async function aplicaCupom(){const e=$('cpe'),c=$('cpi').value.trim().toUpperCase();if(!c)return;e.textContent='';
  try{const r=await irpc('pokemart_cupom_check',{p_codigo:c,p_loja:chaveLoja()});if(!r||!r.codigo)throw new Error('Cupom inválido ou expirado.');CUP=r;toast('Cupom aplicado');drawSum()}catch(x){e.textContent=x.message}}
