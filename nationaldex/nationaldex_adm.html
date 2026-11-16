@@ -2046,7 +2046,13 @@ function pkjStatus(txt, tipo, temporario) {
   clearTimeout(pkjStatus._t);
   if (txt && (tipo === 'ok' || temporario)) pkjStatus._t = setTimeout(() => { if (el.textContent === txt) el.style.display = 'none'; }, tipo === 'ok' ? 4000 : 3000);
 }
+let _pkjLoadP = null;
 async function pkjLoad() {
+  if (_pkjLoadP) return _pkjLoadP;   // loadPokemon e loadRpgPokemon chamam juntos: baixa o JSON uma vez só
+  _pkjLoadP = _pkjLoadReal().finally(() => { _pkjLoadP = null; });
+  return _pkjLoadP;
+}
+async function _pkjLoadReal() {
   let rows;
   try { rows = await pkjFetchRemote(); }
   catch (e) { throw new Error('Não consegui ler o pokemon.json do GitHub (' + e.message + ')'); }
@@ -2175,15 +2181,23 @@ function pkjAtualizarTela() {
 }
 // pokemon.json mais recente do GitHub. A API não passa por cache de CDN (o raw pode atrasar alguns minutos); se falhar, cai no raw.
 async function pkjFetchRemote() {
+  // 1) raw.githubusercontent (CDN, sem limite de requisições; ?v=Date.now() força versão nova) — com timeout pra nunca ficar girando.
+  // 2) API do GitHub só como reserva (sem token ela é limitada a 60 req/h por IP e some em VPN/rede compartilhada).
+  const comTimeout = (url, opts, ms) => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
+  };
+  let erroRaw = '';
   try {
-    const r = await fetch(`https://api.github.com/repos/${KP_JSON_REPO}/contents/pokemon.json?ref=main`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' } });
+    const r = await comTimeout(`https://raw.githubusercontent.com/${KP_JSON_REPO}/main/pokemon.json?v=${Date.now()}`, { cache: 'no-store' }, 30000);
+    if (r.ok) { const rows = await r.json(); if (Array.isArray(rows)) return rows; erroRaw = 'formato inesperado (esperava uma lista)'; }
+    else erroRaw = 'HTTP ' + r.status;
+  } catch (e) { erroRaw = e.name === 'AbortError' ? 'demorou mais de 30s' : e.message; }
+  try {
+    const r = await comTimeout(`https://api.github.com/repos/${KP_JSON_REPO}/contents/pokemon.json?ref=main`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' } }, 30000);
     if (r.ok) { const rows = await r.json(); if (Array.isArray(rows)) return rows; }
-  } catch (e) { /* cai no raw */ }
-  const r2 = await fetch(`https://raw.githubusercontent.com/${KP_JSON_REPO}/main/pokemon.json?v=${Date.now()}`, { cache: 'no-store' });
-  if (!r2.ok) throw new Error('HTTP ' + r2.status);
-  const rows = await r2.json();
-  if (!Array.isArray(rows)) throw new Error('formato inesperado (esperava uma lista)');
-  return rows;
+    throw new Error('API HTTP ' + r.status);
+  } catch (e) { throw new Error(`raw: ${erroRaw} · api: ${e.name === 'AbortError' ? 'demorou mais de 30s' : e.message}`); }
 }
 // Mescla com o remoto; se houver conflito de campo, pergunta quem prevalece.
 function pkjMesclarPerguntando(remoteRows) {
