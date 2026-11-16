@@ -1681,7 +1681,7 @@ body.edit-mode .ganhos-example-header{cursor:text}
   var bdg = g('nav-player-badge');
   if (bdg) bdg.addEventListener('click', function (e) {
     if (e.target.closest('.kp-sw, .player-logout-btn')) return;
-    if (window.KPAdm && KPAdm.isStaff()) location.href = '/adm';
+    if (window.KPAdm && KPAdm.pode()) location.href = '/adm';
   });
 })();
 </script>
@@ -8001,9 +8001,22 @@ async function sincronizarAdm(){
   if(papel && !_modSecoesOk) await carregarModSecoes();
   admLogado = papel ? {email: String(KPAdm.nome()||''), papel} : null;
   if(ass(admLogado)===antes) return;
-  [()=>atualizarSeletoresLocais(), ()=>renderHamburgerIcon(), ()=>mostrarBadgePlayer(), ()=>showEditBtnIfAdm(), ()=>renderPersonagensDatalist()]
+  [()=>atualizarSeletoresLocais(), ()=>renderHamburgerIcon(), ()=>mostrarBadgePlayer(), ()=>showEditBtnIfAdm(), ()=>renderPersonagensDatalist(), ()=>{ if(typeof renderHistDados==='function') renderHistDados(); }, ()=>{ if(typeof renderHistorico==='function'&&typeof historico!=='undefined'&&historico.length) renderHistorico(); }, ()=>{ if(typeof renderHistoricoEvento==='function') renderHistoricoEvento(); }]
     .forEach(f=>{ try{ f(); }catch(e){} });
-  if(!admLogado){ try{ admFichasLista=null; }catch(e){} }
+  if(!admLogado){
+    try{ admFichasLista=null; }catch(e){}
+    try{ loaded.adm=false; }catch(e){}
+    try{ document.querySelectorAll('#modal-cidade-overlay,#modal-npc-overlay,#modal-transferir-npc-overlay,#modal-pk-uni-overlay,#modal-editar-evento-overlay,#modal-editar-evc-overlay,#modal-pool-overlay,#modal-desativar-npcs-overlay,#modal-frc-edit-overlay').forEach(m=>m.style.display='none'); }catch(e){}
+  }
+  // telas públicas que mostram coisas extras para staff (rascunhos de trama, hubs, eventos)
+  try{ if(typeof renderEventosHub==='function' && loaded['eventos-hub']) renderEventosHub(); }catch(e){}
+  try{ if(typeof renderTramasHub==='function' && loaded['tramas']) renderTramasHub(); }catch(e){}
+  try{
+    if(typeof iniciarPaginaTrama==='function' && document.getElementById('page-trama-view')?.classList.contains('active')){
+      const m=location.pathname.match(/^\/trama\/([^/]+)/); if(m) iniciarPaginaTrama(decodeURIComponent(m[1]));
+    }
+  }catch(e){}
+  try{ if(typeof renderNpcs==='function' && loaded['npcs']) renderNpcs(); }catch(e){}
   if(currentPage==='adm'){
     if(admLogado){ loaded.adm=false; try{ await carregarAba('adm'); aplicarPermissoesSidebar(); }catch(e){ console.warn('[adm]', e); } }
     admMostrarPainel();
@@ -9965,7 +9978,7 @@ function showEditBtnIfAdm(){
   const onEditablePage = EDITABLE_PAGES.includes(currentPage);
   const temPermissao = !!admLogado && admTemPerm('paginas');
   btn.style.display = (temPermissao && onEditablePage) ? 'flex' : 'none';
-  if(!onEditablePage && document.body.classList.contains('edit-mode')) sairModoEdicao();
+  if((!onEditablePage||!temPermissao) && document.body.classList.contains('edit-mode')) sairModoEdicao();
 }
 
 // ── Nav drop ────────────────────────────────────────────────────
@@ -15160,7 +15173,7 @@ function renderHistorico(){
   document.getElementById('hist-prev').style.display=histPagina>0?'':'none';
   document.getElementById('hist-next').style.display=histPagina<totalPags-1?'':'none';
   document.getElementById('hist-paginacao').style.display=totalPags>1?'flex':'none';
-  const podeExcluirRolagemEncontro=(playerLogado?.nome||'').trim().toLowerCase()==='ricky';
+  const podeExcluirRolagemEncontro=_ehRickyComModoAdm();
   const ehAdm=podeExcluirRolagemEncontro||(typeof isAdminConectado==='function'&&isAdminConectado());
   lista.innerHTML=pagina.map(e=>{
     const pokes=Array.isArray(e.pokes)?e.pokes:[];
@@ -15656,7 +15669,7 @@ async function rolarGolpesEntrada(id){
   imgToast('Golpes rolados em '+feitos.length+' Pokémon');
 }
 async function excluirRolagemEncontro(id){
-  if((playerLogado?.nome||'').trim().toLowerCase()!=='ricky'){alert('Você não tem permissão para excluir esta rolagem.');return;}
+  if(!_ehRickyComModoAdm()){alert('Você não tem permissão para excluir esta rolagem.');return;}
   if(!confirm('Excluir esta rolagem do histórico?'))return;
   await dbDel('historico',`id=eq.${id}`);
   historico=historico.filter(e=>String(e.id)!==String(id));
@@ -16023,7 +16036,7 @@ function renderHistDados(){
   document.getElementById('dice-hist-prev').style.display=dadosPagina>0?'':'none';
   document.getElementById('dice-hist-next').style.display=dadosPagina<totalPags-1?'':'none';
   document.getElementById('dice-hist-paginacao').style.display=totalPags>1?'flex':'none';
-  const podeExcluirRolagem=(playerLogado?.nome||'').trim().toLowerCase()==='ricky';
+  const podeExcluirRolagem=_ehRickyComModoAdm();
   lista.innerHTML=pagina.map((e,i)=>{
     const motivoStr=e.motivo?` para <strong>${e.motivo}</strong>`:'';
     const btnDel=(`<button type="button" class="hist-img-btn ico" onclick="gerarImagemDadoId('${e.id}')" title="Compartilhar rolagem" aria-label="Compartilhar rolagem">${SVG_COMPARTILHAR}</button>`)+(podeExcluirRolagem?`<button class="dice-hist-del" onclick="excluirRolagemDado('${e.id}')">Excluir</button>`:'');
@@ -16042,7 +16055,7 @@ function renderHistDados(){
 }
 
 async function excluirRolagemDado(id){
-  if((playerLogado?.nome||'').trim().toLowerCase()!=='ricky'){alert('Você não tem permissão para excluir esta rolagem.');return;}
+  if(!_ehRickyComModoAdm()){alert('Você não tem permissão para excluir esta rolagem.');return;}
   if(!confirm('Excluir esta rolagem do histórico?'))return;
   await dbDel('historico_dados',`id=eq.${id}`);
   historicoDados=historicoDados.filter(e=>String(e.id)!==String(id));
@@ -17234,6 +17247,13 @@ const NAV_ICO_MENU  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const NAV_ICO_GAMEPAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>';
 const NAV_ICO_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
 const NAV_ICO_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2 11.4 11.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>';
+function _ehRickyComModoAdm(){
+  // "ricky" só tem poder de exclusão com o modo ADM ligado; com o switch em PLAYER perde tudo
+  try{
+    if(window.KPAdm&&KPAdm.isStaff()&&!KPAdm.modoOn()) return false;
+    return String((typeof playerLogado!=='undefined'&&playerLogado&&playerLogado.nome)||'').trim().toLowerCase()==='ricky';
+  }catch(_){ return false; }
+}
 function isAdminConectado(){
   if(window.KPAdm&&KPAdm.isStaff()&&!KPAdm.modoOn()) return false;   // botão ADM desligado no nome do player = vê como player
   return typeof admLogado!=='undefined' ? !!admLogado : false;
@@ -19691,7 +19711,7 @@ async function rolarExtraLote(id){
 function _podeExcluirRolagemEvento(){
   try{
     if(isAdminConectado()) return true;
-    return (playerLogado && String(playerLogado.nome||'').trim().toLowerCase() === 'ricky');
+    return _ehRickyComModoAdm();
   }catch(_){ return false; }
 }
 // ── Excluir UMA berry (um dado) de dentro de uma rolagem em lote do histórico — admin ou ricky ──
