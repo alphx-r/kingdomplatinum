@@ -90,6 +90,12 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 }
 .nav.expanded #nav-player-badge .player-logout-btn{opacity:1;width:auto;padding:0 0 0 6px;pointer-events:auto;transition:opacity .2s ease .08s}
 #nav-player-badge .player-logout-btn:hover{color:#fff}
+/* switch ADM/MOD (admin-player.js): escondido com o menu recolhido, aparece só com o menu aberto */
+#nav-player-badge .kp-sw{display:none}
+.nav.expanded #nav-player-badge .kp-sw{display:block}
+#nav-player-badge .kp-role{display:none;margin:0}
+.nav.expanded #nav-player-badge .kp-role{display:block}
+#nav-player-badge.kp-staff{cursor:pointer}
 .btn{padding:8px 16px;border-radius:3px;border:0;font:700 13px var(--fb);cursor:pointer;background:#eee;color:#222;border:1px solid #ccc}
 .btn:hover{opacity:.85}
 .btn.p{background:var(--brand-mid);color:#fff;border-color:var(--brand-mid)}
@@ -143,6 +149,8 @@ body.nav-expanded{padding-left:0!important}
 a.nav-login{margin:0 6px 0 0}
 #nav-player-badge,.nav.expanded #nav-player-badge{padding:9px 14px!important;gap:8px!important;max-width:42vw}
 .nav-bottom{min-width:0}
+#nav-player-badge .kp-sw,.nav.expanded #nav-player-badge .kp-sw{display:block!important;margin-left:0!important}
+#nav-player-badge #nav-player-name,.nav #nav-player-badge #nav-player-name,.nav.expanded #nav-player-badge #nav-player-name,.nav #nav-player-badge .kp-role,.nav.expanded #nav-player-badge .kp-role,.nav #nav-player-badge .player-logout-btn,.nav.expanded #nav-player-badge .player-logout-btn{display:none!important}
 }
 dialog#lg{background:#717171;border:1.5px solid rgba(255,255,255,.15);border-radius:16px;padding:36px 32px 28px;width:min(380px,94vw);box-shadow:0 16px 60px rgba(0,0,0,.5);color:#fff}
 dialog#lg::backdrop{background:rgba(10,20,40,.92);backdrop-filter:blur(6px)}
@@ -799,10 +807,11 @@ async function idxSync(){
 const realAdm=()=>!!ses&&!!window.KPAdm&&['chefe','admin','mod'].includes(KPAdm.papel());   /* papel 'mod' = mod da loja (kp_staff.mods.stores) */
 /* chave MOD/Player (igual à dos torneios, mesma chave kp_preview): no modo player o ADM é tratado como jogador comum */
 let PREV=false;try{PREV=sessionStorage.getItem('kp_preview')==='1'}catch{}
-const isAdm=()=>realAdm()&&!PREV;
+const isAdm=()=>realAdm()&&!PREV&&!!KPAdm.pode();   /* só vale com o switch ADM/MOD ligado (KPAdm.pode) */
 const modSw=()=>'';   /* o botão ON/OFF agora fica no nome do player (admin-player.js) */
 function togPreview(){PREV=!PREV;try{sessionStorage.setItem('kp_preview',PREV?'1':'')}catch{}const b=document.getElementById('modsw');if(b){b.classList.toggle('off',PREV);b.setAttribute('aria-checked',String(!PREV));b.disabled=true}setTimeout(()=>{repaintMode();toast(PREV?'Modo player ativado':'Modo MOD ativado')},b?180:0)}
 /* redesenha com o que já está na memória (sem "Carregando…" nem novas buscas); só recarrega tudo se a tela principal ainda não foi montada */
+try{ if(window.KPAdm) KPAdm.onChange(function(){ try{ PREV=!KPAdm.modoOn(); repaintMode(); }catch(e){} }); }catch(e){}
 function repaintMode(){
  if(!document.querySelector('.pmh')){bootCore();return}
  if(!SL){drawHub();return}
@@ -945,7 +954,7 @@ function drawHub(){
 /* editor de lojas (só admin): grava stores/stores.json via /api/commit-stores */
 const EST_OPT=[['primavera','Primavera'],['verao','Verão'],['outono','Outono'],['inverno','Inverno']];
 const REC_OPT=[['reciclagem','Reciclagem'],['tm_voucher','TM Voucher']];
-const admEmail=()=>window.KPAdm&&KPAdm.isStaff()?(KPAdm.nome()||null):null;   /* só indica se há staff logado; a senha é pedida ao salvar */
+const admEmail=()=>window.KPAdm&&KPAdm.pode()?(KPAdm.nome()||null):null;   /* só indica se há staff logado; a senha é pedida ao salvar */
 const slugify=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
 let EDL=null;
 /* cor secundária sugerida: principal clara -> secundária mais escura; principal escura -> mais clara (mesmo tom) */
