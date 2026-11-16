@@ -1564,15 +1564,9 @@ async function fetchFullPokemon(id){
     if(full){ _fullPkCache[key]=full; _pkDbMap[key]=full; return full; }
     throw new Error('id não encontrado no pokemon.json');
   }catch(jsonErr){
-    console.warn('pokemon.json falhou (fetchFullPokemon), tentando fallback via Supabase…', jsonErr);
+    console.warn('pokemon.json falhou (fetchFullPokemon)', jsonErr);
+    return _pkDbMap[key];   // sem fallback no Supabase (egress)
   }
-  try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/pokemons?id=eq.${id}&select=*`,{headers:SH_ADM});
-    const rows=await r.json();
-    const full=rows&&rows[0];
-    if(full){ _fullPkCache[key]=full; _pkDbMap[key]=full; }
-    return full;
-  }catch(e){ return _pkDbMap[key]; }
 }
 
 // Descrições PT das habilidades — fonte oficial: abilities.json
@@ -1676,8 +1670,9 @@ const PK = (() => {
       // Fonte oficial: pokemon.json. Filtra e enxuga em memória pra manter
       // o mesmo formato que a grade/lista espera (gridCard/listRow).
       const all = await loadPokemonJson();
+      // Só aparece o que está PUBLICADO no ADM (approved=true, o 🌐). Ter sprite não basta.
       _data = all
-        .filter(p => p.approved===true || (p.sprite!==null && p.sprite!==undefined))
+        .filter(p => p.approved===true)
         .map(p => withFormasAltCount({
           id:p.id, name:p.name, sprite:p.sprite, sprite_shiny:p.sprite_shiny,
           tipo1:p.tipo1, tipo2:p.tipo2, approved:p.approved, url_slug:p.url_slug,
@@ -1686,21 +1681,9 @@ const PK = (() => {
       _loaded = true;
       return _data;
     } catch(jsonErr) {
-      console.warn('pokemon.json falhou, tentando fallback via Supabase…', jsonErr);
+      console.warn('pokemon.json falhou', jsonErr);   // sem fallback no Supabase (egress)
+      _data = [];
     }
-    try {
-      // FALLBACK — só roda se o JSON acima falhar.
-      // Enxuto de propósito: só os campos que a grade/lista realmente
-      // renderiza. Bio, biomas, evolucoes, movesets dentro de
-      // formas_alt/formas_alfa etc. só são buscados sob demanda em
-      // fetchFullPokemon(), quando a ficha de um Pokémon é aberta —
-      // evita baixar esse payload pesado de ~1000+ registros de uma vez.
-      _data = await sbFetchAllPages(
-        `${SUPA_URL}/rest/v1/pokemons?select=id,name,sprite,sprite_shiny,tipo1,tipo2,approved,url_slug,formas_alt_count&or=(approved.eq.true,sprite.not.is.null)`,
-        SH_ADM
-      );
-      _loaded = true;
-    } catch(e) { _data = []; }
     return _data;
   }
   function getAll() { return _data; }
@@ -1735,8 +1718,8 @@ async function loadRpgData(){
         const jsonAll = await loadPokemonJson();
         nameRows = jsonAll.map(p=>({id:p.id, name:p.name, tipo1:p.tipo1, tipo2:p.tipo2}));
       }catch(jsonErr){
-        console.warn('pokemon.json falhou (nameRows), tentando fallback via Supabase…', jsonErr);
-        nameRows = await sbFetchAllPages(`${SUPA_URL}/rest/v1/pokemons?select=id,name,tipo1,tipo2`, SH_ADM);
+        console.warn('pokemon.json falhou (nameRows)', jsonErr);
+        nameRows = [];
       }
       nameRows.filter(p=>/^\d+$/.test(String(p.id))).forEach(p=>{
         const key=String(p.id);
@@ -1772,11 +1755,8 @@ async function loadRegionalAltEntries(){
         .filter(p=>Array.isArray(p.formas_alt) && p.formas_alt.length>0)
         .map(p=>({id:p.id, name:p.name, url_slug:p.url_slug, formas_alt:p.formas_alt}));
     }catch(jsonErr){
-      console.warn('pokemon.json falhou (regionalAlt), tentando fallback via Supabase…', jsonErr);
-      rows = await sbFetchAllPages(
-        `${SUPA_URL}/rest/v1/pokemons?formas_alt_count=gt.0&select=id,name,url_slug,formas_alt`,
-        SH_ADM
-      );
+      console.warn('pokemon.json falhou (regionalAlt)', jsonErr);
+      rows = [];
     }
     rows.forEach(row=>{
       // Mesma prioridade usada em rpgUrlSlug(): url_slug cadastrado > nome > id.
