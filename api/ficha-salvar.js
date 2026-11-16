@@ -26,6 +26,36 @@ const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${R
 const MAX_IMG = 1.5 * 1024 * 1024;
 const LIM_ATIVAS = 2;   // máximo de fichas ativas por player
 
+// MERGE 3-WAY DO INVENTÁRIO (Bag): em vez de tratar a Bag inteira como um campo só (e recusar o save quando
+// duas pessoas mexem nela ao mesmo tempo), junta item por item. `base` = como estava quando o navegador carregou,
+// `mine` = o que este navegador quer salvar, `theirs` = o que está gravado agora (mudança de outra pessoa/loja/index).
+// Identidade do item = todos os campos menos `qtd` (nome, bag, forma, desconto, vinculado...). Por item:
+//   - só um lado mudou a quantidade -> vale o lado que mudou
+//   - os dois mudaram -> soma as diferenças: mine + theirs - base (nunca abaixo de 0)
+// Ordem: a do navegador (o player pode reordenar); itens que só a outra pessoa adicionou entram no fim.
+const qtdDe = x => { const n = parseInt(x && x.qtd, 10); return Number.isFinite(n) && n > 0 ? n : 1; };
+const idDe = x => { const o = {}; Object.keys(x || {}).sort().forEach(k => { if (k !== 'qtd') o[k] = x[k]; }); return JSON.stringify(o); };
+function agrupaInv(a) {
+  const m = new Map();
+  for (const x of (Array.isArray(a) ? a : [])) {
+    if (!x || typeof x !== 'object' || !x.nome) continue;
+    const id = idDe(x), e = m.get(id);
+    if (e) e.q += qtdDe(x); else m.set(id, { x, q: qtdDe(x) });
+  }
+  return m;
+}
+function mesclaInventario(base, mine, theirs) {
+  const B = agrupaInv(base), M = agrupaInv(mine), T = agrupaInv(theirs), out = [];
+  const qtd = (id) => {
+    const b = B.get(id)?.q || 0, m = M.get(id)?.q || 0, t = T.get(id)?.q || 0;
+    return m === b ? t : (t === b ? m : Math.max(0, m + t - b));
+  };
+  const poe = (x, q) => { if (q > 0) out.push({ ...x, qtd: q }); };
+  for (const [id, e] of M) poe(e.x, qtd(id));
+  for (const [id, e] of T) if (!M.has(id)) poe(e.x, qtd(id));
+  return out;
+}
+
 async function sbRpc(nome, body) {
   const r = await fetch(SB_URL + '/rest/v1/rpc/' + nome, {
     method: 'POST',
@@ -442,13 +472,19 @@ module.exports = async (req, res) => {
           const J = v => JSON.stringify(v);
           const sd = cur.d || {}, bd = (b.bd && typeof b.bd === 'object') ? b.bd : {}, nd = { ...sd }, conf = [];
           const mud = b.mud.map(String).filter(k => !['__proto__', 'constructor', 'prototype', 'player'].includes(k));
+          const juntados = [];   // campos unificados item a item (o navegador precisa receber o resultado)
           for (const k of mud) {
-            if (J(sd[k]) !== J(bd[k]) && J(sd[k]) !== J(b.d[k])) conf.push(k);   // mudou no servidor E no navegador, com valores diferentes
+            if (J(sd[k]) !== J(bd[k]) && J(sd[k]) !== J(b.d[k])) {   // mudou no servidor E no navegador, com valores diferentes
+              if (k === 'inventario' && Array.isArray(b.d[k]) && Array.isArray(sd[k])) {   // Bag: junta item por item em vez de recusar
+                nd[k] = mesclaInventario(bd[k], b.d[k], sd[k]); juntados.push(k); continue;
+              }
+              conf.push(k);
+            }
             if (b.d[k] === undefined) delete nd[k]; else nd[k] = b.d[k];
           }
           if (conf.length) throw Object.assign(new Error(`Os campos (${conf.join(', ')}) foram alterados em outro lugar ao mesmo tempo que você (uso de item, compra, outra pessoa...). Recarregue a página antes de salvar para não perder essas mudanças.`), { status: 409, code: 'conflito', campos: conf });
           const outros = {};   // campos que a outra pessoa mudou e que o navegador ainda não tem
-          for (const k of Object.keys(nd)) if (!mud.includes(k) && J(nd[k]) !== J(b.d[k])) outros[k] = nd[k];
+          for (const k of Object.keys(nd)) if ((!mud.includes(k) || juntados.includes(k)) && J(nd[k]) !== J(b.d[k])) outros[k] = nd[k];
           fin = { ...ficha, d: nd };
           mesclado = { d: nd, outros };
         }
