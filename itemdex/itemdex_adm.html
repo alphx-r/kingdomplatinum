@@ -928,6 +928,27 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 .pend-row.clk{cursor:pointer}
 
 </style>
+<script>
+/* ===== Dados e imagens: os JSON e os sprites vivem no repo kpfichas_db =====
+   JSON: lidos do raw.githubusercontent (com ?v= por minuto, para refletir commits novos logo).
+   Imagens: caminhos sprites/... apontam para o kpfichas_db.
+   KP_LEGACY = true: se algo ainda não estiver no kpfichas_db, tenta a cópia antiga (kingdomplatinum).
+   Depois de migrar tudo e conferir, troque para false. */
+const KP_LEGACY=true;
+const DB_RAW='https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/';
+const OLD_RAW='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/';
+const kpAsset=u=>{if(typeof u!=='string'||!u)return u;let m=u.match(/^\/?(sprites\/.+)$/);if(m)return DB_RAW+m[1];
+ m=u.match(/^https:\/\/(?:cdn\.jsdelivr\.net\/gh\/alphx-r\/kingdomplatinum@[^\/]+|raw\.githubusercontent\.com\/alphx-r\/kingdomplatinum\/(?:refs\/heads\/)?[^\/]+)\/(sprites\/.+)$/);
+ return m?DB_RAW+m[1]:u};
+const kpUrls=(p,...extra)=>[DB_RAW+p+'?v='+Math.floor(Date.now()/60000),...(KP_LEGACY?['/'+p,...extra,OLD_RAW+p]:[])];
+const dbJson=async(p,...extra)=>{for(const u of kpUrls(p,...extra)){try{const r=await fetch(u);if(r.ok)return await r.json()}catch(e){}}return null};
+/* imagem que falha: tenta o outro repo uma vez (novo -> antigo só com KP_LEGACY; antigo -> novo sempre). data-kpb="1" desliga. */
+addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG'||t.dataset.kpb)return;
+ const m=(t.getAttribute('src')||'').match(/^https:\/\/(?:raw\.githubusercontent\.com\/alphx-r\/(kpfichas_db|kingdomplatinum)\/(?:refs\/heads\/)?main|cdn\.jsdelivr\.net\/gh\/alphx-r\/(kpfichas_db|kingdomplatinum)@main)\/(sprites\/.+)$/);
+ if(!m)return;const novo=(m[1]||m[2])==='kpfichas_db';if(novo&&!KP_LEGACY)return;
+ t.dataset.kpb='1';e.stopPropagation();t.src=(novo?OLD_RAW:DB_RAW)+m[3]},true);
+addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.kpb)delete t.dataset.kpb},true);
+</script>
 </head>
 <body>
 <!-- KP-GATE-BODY:BEGIN (gerado por build_gate.py — não edite à mão) --><div id="kp-gate"><div class="kg-box"><div class="kg-wait">Verificando acesso…</div><div class="kg-lock"><div class="kg-ico">🔒</div><div class="kg-t">Acesso restrito</div><div class="kg-s">Faça login como admin no site principal para acessá-lo.</div><a class="kg-b" href="/">Ir ao site principal</a></div></div></div><!-- KP-GATE-BODY:END -->
@@ -1106,21 +1127,14 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 <script>
 /* ícones de itens (sprites/items) saem pelo jsDelivr, não pelo deploy da Vercel */
-const CDN_REPO='https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/';
 const PENDING_IMGS = new Map(); // caminho no repo -> dataURL aguardando commit
 let ITEMS_DIRTY = false;
 const itemSrc = p => {
   const key = decodeURIComponent((p || '').split('?')[0]).replace(/^\//, '');
   if (PENDING_IMGS.has(key)) return PENDING_IMGS.get(key);
-  return (p || '').replace(/^\/?sprites\/items\//, CDN_REPO + 'sprites/items/');
+  return kpAsset(p || '');
 };
-/* fallback de ícones: jsDelivr -> raw.githubusercontent -> caminho original (Vercel) */
-const RAW_REPO='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/';
-document.addEventListener('error',e=>{
-  const im=e.target; if(!im||im.tagName!=='IMG')return;
-  if(im.src.startsWith(CDN_REPO)){im.dataset.cdnRest=im.src.slice(CDN_REPO.length);im.dataset.cdnTry='1';im.src=RAW_REPO+im.dataset.cdnRest;}
-  else if(im.dataset.cdnTry==='1'&&im.src.startsWith(RAW_REPO)){im.dataset.cdnTry='2';im.src='/'+im.dataset.cdnRest;}
-},true);
+/* fallback de ícones (kpfichas_db -> legado) vem do bloco no <head> */
 
 /* ══════════════════════════════════════════
    SUPABASE CONFIG
@@ -2333,7 +2347,7 @@ function toggleItemPriceField(wrapId, checked) {
 // fica só a PokéMart. Slugs que o item já tem e não estão no arquivo continuam aparecendo.
 let ADM_LOJAS = [{ slug: 'pokemart', nome: 'PokéMart' }];
 async function loadLojas() {
-  for (const u of [DADOS_RAW + 'stores/stores.json', '/stores/stores.json', '/stores.json', 'https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/stores/stores.json']) {
+  for (const u of [DADOS_RAW + 'stores/stores.json', ...(KP_LEGACY ? ['/stores/stores.json', '/stores.json'] : [])]) {
     try {
       const r = await fetch(u + '?v=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) continue;
@@ -2632,8 +2646,8 @@ function closeNewItemForm() {
 }
 
 // Gera o items.json (mesmo formato usado pelo fallback do ItemDex) e manda
-// pra rota serverless /api/commit-items, que commita direto na raiz do repo
-// alphx-r/kingdomplatinum (mesmo lugar do pokemon.json). O token do GitHub
+// pra rota serverless /api/commit-items, que commita no repo de dados
+// alphx-r/kpfichas_db (items.json e imagens, mesmo lugar do pokemon.json). O token do GitHub
 // nunca passa pelo cliente — fica só como env var (GITHUB_TOKEN) na Vercel,
 // lido pela function em /api/commit-items.js (evita repetir o vazamento
 // de token que já aconteceu quando isso rodava no navegador).
@@ -2738,7 +2752,7 @@ async function commitRewardsNow() {
 // categoria (ou do tipo de conquista) do item. O "?v=" é o início do sha do
 // arquivo: se a imagem mudar no GitHub, o endereço muda e o navegador baixa
 // a nova.
-const GH_REPO = 'alphx-r/kingdomplatinum';
+const GH_REPO = 'alphx-r/kpfichas_db';   // sprites/items e sprites/rewards ficam no repo de dados
 const GH_BRANCH = 'main';
 const GH_ITEMS_DIR = 'sprites/items';
 const GH_REWARDS_DIR = 'sprites/rewards';
