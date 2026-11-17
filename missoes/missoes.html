@@ -585,6 +585,27 @@ dialog#imp{width:min(680px,94vw)}
 
 </style>
 <!-- KP-NAV-CSS2:BEGIN (gerado por build_nav.py — não edite à mão) --><style id="kp-nav-css">a.nav-drop-item,a.nav-drop-item:hover{text-decoration:none}</style><!-- KP-NAV-CSS2:END -->
+<script>
+/* ===== Dados e imagens: os JSON e os sprites vivem no repo kpfichas_db =====
+   JSON: lidos do raw.githubusercontent (com ?v= por minuto, para refletir commits novos logo).
+   Imagens: caminhos sprites/... apontam para o kpfichas_db.
+   KP_LEGACY = true: se algo ainda não estiver no kpfichas_db, tenta a cópia antiga (kingdomplatinum).
+   Depois de migrar tudo e conferir, troque para false. */
+const KP_LEGACY=true;
+const DB_RAW='https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/';
+const OLD_RAW='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/';
+const kpAsset=u=>{if(typeof u!=='string'||!u)return u;let m=u.match(/^\/?(sprites\/.+)$/);if(m)return DB_RAW+m[1];
+ m=u.match(/^https:\/\/(?:cdn\.jsdelivr\.net\/gh\/alphx-r\/kingdomplatinum@[^\/]+|raw\.githubusercontent\.com\/alphx-r\/kingdomplatinum\/(?:refs\/heads\/)?[^\/]+)\/(sprites\/.+)$/);
+ return m?DB_RAW+m[1]:u};
+const kpUrls=(p,...extra)=>[DB_RAW+p+'?v='+Math.floor(Date.now()/60000),...(KP_LEGACY?['/'+p,...extra,OLD_RAW+p]:[])];
+const dbJson=async(p,...extra)=>{for(const u of kpUrls(p,...extra)){try{const r=await fetch(u);if(r.ok)return await r.json()}catch(e){}}return null};
+/* imagem que falha: tenta o outro repo uma vez (novo -> antigo só com KP_LEGACY; antigo -> novo sempre). data-kpb="1" desliga. */
+addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG'||t.dataset.kpb)return;
+ const m=(t.getAttribute('src')||'').match(/^https:\/\/(?:raw\.githubusercontent\.com\/alphx-r\/(kpfichas_db|kingdomplatinum)\/(?:refs\/heads\/)?main|cdn\.jsdelivr\.net\/gh\/alphx-r\/(kpfichas_db|kingdomplatinum)@main)\/(sprites\/.+)$/);
+ if(!m)return;const novo=(m[1]||m[2])==='kpfichas_db';if(novo&&!KP_LEGACY)return;
+ t.dataset.kpb='1';e.stopPropagation();t.src=(novo?OLD_RAW:DB_RAW)+m[3]},true);
+addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.kpb)delete t.dataset.kpb},true);
+</script>
 </head>
 <body>
 <div class="loading-overlay" id="loading-overlay"><div class="loading-spinner"></div><div class="loading-text">Carregando Kingdom Platinum...</div></div>
@@ -601,23 +622,6 @@ dialog#imp{width:min(680px,94vw)}
 <div class="nav-drop-wrap" id="nav-drop-wrap"><button class="nav-drop-btn" id="nav-drop-btn" onclick="toggleNavDrop(event)"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"></circle></svg></span><span class="nav-label">Mais</span><span class="nav-drop-arrow">▾</span></button><div class="nav-drop-menu" id="nav-drop-menu"><a class="nav-drop-item" href="/sistemas"><span class="nav-label">Sistemas</span></a><a class="nav-drop-item" href="/ganhos"><span class="nav-label">Ganhos</span></a><a class="nav-drop-item" href="/nature"><span class="nav-label">Natures</span></a><a class="nav-drop-item" href="/batalhas"><span class="nav-label">Batalhas</span></a></div></div></div><div class="nav-bottom"><button class="nav-login" id="btn-entrar" onclick="KPNav.entrar()"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"></rect><line x1="7" y1="10.5" x2="7" y2="14.5"></line><line x1="5" y1="12.5" x2="9" y2="12.5"></line><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"></circle><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"></circle></svg></span><span class="nav-label">Entrar</span></button><div id="nav-player-badge"><span id="nav-player-ico" class="nav-player-ico"></span><span id="nav-player-name">—</span><button class="player-logout-btn" onclick="KPNav.sair()" title="Sair">✕</button></div></div></nav>
 <div class="nav-overlay" id="nav-overlay" onclick="closeSidenavMobile()"></div>
 <script>
-/* ===== Dados e imagens: tudo vive no repo kpfichas_db (JSON e sprites) =====
-   Os JSON vêm do raw (com ?v= por minuto, para refletir commits novos logo) e, se falhar, da cópia antiga.
-   Imagens: sprites/... passam a apontar para o kpfichas_db (jsDelivr -> raw -> repo antigo, em cascata). */
-const KP_DB='alphx-r/kpfichas_db',KP_OLD='alphx-r/kingdomplatinum';
-const DB_RAW='https://raw.githubusercontent.com/'+KP_DB+'/main/';
-const DB_CDN='https://cdn.jsdelivr.net/gh/'+KP_DB+'@main/';
-const OLD_RAW='https://raw.githubusercontent.com/'+KP_OLD+'/main/';
-const OLD_CDN='https://cdn.jsdelivr.net/gh/'+KP_OLD+'@main/';
-const kpAsset=u=>{if(typeof u!=='string'||!u)return u;let m=u.match(/^\/?(sprites\/.+)$/);if(m)return DB_CDN+m[1];
- m=u.match(/^https:\/\/(?:cdn\.jsdelivr\.net\/gh\/alphx-r\/kingdomplatinum@[^\/]+|raw\.githubusercontent\.com\/alphx-r\/kingdomplatinum\/(?:refs\/heads\/)?[^\/]+)\/(sprites\/.+)$/);
- return m?DB_CDN+m[1]:u};
-const KP_IMG_CHAIN=[DB_CDN,DB_RAW,OLD_RAW];
-addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG')return;const s=t.getAttribute('src')||'';
- const i=KP_IMG_CHAIN.findIndex(b=>s.startsWith(b));if(i<0||i>=KP_IMG_CHAIN.length-1)return;
- e.stopPropagation();t.src=KP_IMG_CHAIN[i+1]+s.slice(KP_IMG_CHAIN[i].length).split('?')[0]},true);
-async function dbJson(path){let err='';for(const u of [DB_RAW+path+'?v='+Math.floor(Date.now()/60000),'/'+path]){try{const r=await fetch(u,{cache:'no-cache'});if(r.ok)return await r.json();err='HTTP '+r.status}catch(e){err=e.message}}throw new Error(path.split('/').pop()+' '+err)}
-
 (function () {
   if (window.KPNav) return;
   var IDX = false, AUTO = false, ADMURL = '', legacyBox = false;
@@ -965,7 +969,7 @@ const souEu=a=>!!me&&(String(a.player_id)===String(me.id)||meusIds.has(String(a.
 async function carregarDados(){
  try{
   const[jm,ac]=await Promise.all([
-   dbJson('missoes/missoes.json'),
+   dbJson('missoes/missoes.json').then(d=>{if(d==null)throw new Error('missoes.json indisponível (repo kpfichas_db)');return d}),
    api('missoes_aceitas?select=*&status=neq.cancelada&order=aceita_em.asc')]);
   const rl=Array.isArray(jm)?jm:(jm.missoes||[]);RAW={fmt:Array.isArray(jm)?'a':'o',jm,rl};
   missoes=rl.map((m,i)=>({ativa:true,repeticao:'livre',ordem:i,...m,id:String(m.id)}));
