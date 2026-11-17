@@ -7,7 +7,7 @@
 <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
 <!-- Stores (/stores e /stores/:slug; /pokemart também cai aqui com slug "pokemart"): hub de lojas + loja individual.
      Lojas vêm do stores.json (slug, nome, modo loja|catalogo, compra, sell_pct, estacoes, requisitos, recursos[reciclagem,tm_voucher]).
-     Itens vêm do items.json: item pertence à loja se it.lojas inclui o slug (fallback PokéMart: flags.pokemart.enabled===true). Preço único por item.
+     Os JSON (stores, items, moves) e os sprites vêm do repo kpfichas_db. Itens vêm do items.json: item pertence à loja se it.lojas inclui o slug (fallback PokéMart: flags.pokemart.enabled===true). Preço único por item.
      Compra desconta o dinheiro e soma na Bag; venda tira da Bag e soma o dinheiro (ver sellUnit). Salva via /api/ficha-salvar.
      vercel.json: /stores, /stores/:slug e /pokemart -> /stores.html -->
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -603,7 +603,7 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{d
 <nav class="nav" id="main-nav">
   <div class="nav-top">
     <button class="nav-hamburger" id="nav-hamburger" onclick="toggleSidenav()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
-    <div class="nav-logo"><img src="https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/sprites/rpg/kp-logo-darkgray.png" style="height:26px;object-fit:contain;" alt="Kingdom Platinum"></div>
+    <div class="nav-logo"><img src="https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/sprites/rpg/kp-logo-darkgray.png" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/sprites/rpg/kp-logo-darkgray.png'" style="height:26px;object-fit:contain;" alt="Kingdom Platinum"></div>
   </div>
   <div class="nav-links" id="nav-links"></div>
   <script src="/nav.js"></script>
@@ -701,6 +701,22 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nk=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const nrm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+/* ===== Dados e imagens: tudo vive no repo kpfichas_db (JSON e sprites) =====
+   Os JSON vêm do raw (com ?v= por minuto, para refletir commits novos logo) e, se falhar, da cópia antiga.
+   Imagens: sprites/... passam a apontar para o kpfichas_db (jsDelivr -> raw -> repo antigo, em cascata). */
+const KP_DB='alphx-r/kpfichas_db',KP_OLD='alphx-r/kingdomplatinum';
+const DB_RAW='https://raw.githubusercontent.com/'+KP_DB+'/main/';
+const DB_CDN='https://cdn.jsdelivr.net/gh/'+KP_DB+'@main/';
+const OLD_RAW='https://raw.githubusercontent.com/'+KP_OLD+'/main/';
+const OLD_CDN='https://cdn.jsdelivr.net/gh/'+KP_OLD+'@main/';
+const kpAsset=u=>{if(typeof u!=='string'||!u)return u;let m=u.match(/^\/?(sprites\/.+)$/);if(m)return DB_CDN+m[1];
+ m=u.match(/^https:\/\/(?:cdn\.jsdelivr\.net\/gh\/alphx-r\/kingdomplatinum@[^\/]+|raw\.githubusercontent\.com\/alphx-r\/kingdomplatinum\/(?:refs\/heads\/)?[^\/]+)\/(sprites\/.+)$/);
+ return m?DB_CDN+m[1]:u};
+const KP_IMG_CHAIN=[DB_CDN,DB_RAW,OLD_RAW];
+addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG')return;const s=t.getAttribute('src')||'';
+ const i=KP_IMG_CHAIN.findIndex(b=>s.startsWith(b));if(i<0||i>=KP_IMG_CHAIN.length-1)return;
+ e.stopPropagation();t.src=KP_IMG_CHAIN[i+1]+s.slice(KP_IMG_CHAIN[i].length).split('?')[0]},true);
+const dbJson=async path=>{for(const u of [DB_RAW+path+'?v='+Math.floor(Date.now()/60000),'/'+path,OLD_CDN+path]){const d=await fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);if(d!=null)return d}return null};
 const jl=u=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);
 const fnum=v=>String(v??'').replace(/\D/g,'').replace(/^0+(?=\d)/,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 const dig=v=>parseInt(String(v??'').replace(/\D/g,''))||0;
@@ -742,7 +758,7 @@ let LOJAS=null,LJ=null,EST=null,CATALOGO=false;
 const PATH=location.pathname.replace(/\/+$/,'');
 let SL=(()=>{const m=PATH.match(/^\/stores\/([^\/]+)$/i);if(m)return decodeURIComponent(m[1]).toLowerCase();if(/^\/pokemart(\.html)?$/i.test(PATH))return'pokemart';const q=new URLSearchParams(location.search).get('slug');return q?q.toLowerCase():''})();
 const LJPEND=()=>{try{const p=JSON.parse(localStorage.getItem('kp_lojas_pend')||'null');if(p&&Array.isArray(p.l)&&Date.now()-p.t<180000)return p.l}catch{}return null};
-const LJL=()=>LJPEND()?Promise.resolve(LJPEND()):jl('/stores/stores.json').then(d=>Array.isArray(d)?d:jl('/stores.json')).then(d=>Array.isArray(d)?d:jl(CDN_REPO+'stores/stores.json')).then(d=>Array.isArray(d)?d:[]);
+const LJL=()=>LJPEND()?Promise.resolve(LJPEND()):dbJson('stores/stores.json').then(d=>Array.isArray(d)?d:[]);
 const recs=l=>Array.isArray(l?.recursos)?l.recursos:[];
 const temRec=()=>recs(LJ).includes('reciclagem');
 const temVch=()=>recs(LJ).includes('tm_voucher');
@@ -779,9 +795,9 @@ const pr=r=>r.unit>0?fm(r.unit):'—';
 {const t=new URLSearchParams(location.search).get('tab');if(/^(reciclagem|recycling|r)$/i.test(t||''))TAB='r'}
 
 /* itens: items.json do repositório */
-const CDN_REPO='https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/';
-const itemSrc=p=>(p||'').replace(/^\/?sprites\/items\//,CDN_REPO+'sprites/items/');
-let ITD;const ITL=()=>ITD??=jl('/itemdex/items.json').then(d=>d||jl('/items.json')).then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:itemSrc(x.sprite||x.image||x.img),item_desc:x.item_desc||x.desc||x.descricao})});return m});
+const CDN_REPO=DB_CDN;
+const itemSrc=p=>kpAsset(p||'');
+let ITD;const ITL=()=>ITD??=dbJson('itemdex/items.json').then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:itemSrc(x.sprite||x.image||x.img),item_desc:x.item_desc||x.desc||x.descricao})});return m});
 const isTM=it=>!!it&&nk(it.name)!=='tmvoucher'&&(/^(tms?|technicalmachines?|machines?)$/.test(nk(it.category))||/^tm\s?\d/i.test(it.name||''));
 const isPill=it=>!!it&&/\bpills?\b|p[ií]lulas?/i.test((it.category||'')+' '+(it.name||''));
 const catOf=r=>isTM(r.it)?'TMs':(r.it?.category||'Outros');
@@ -925,7 +941,7 @@ function cardLoja(l){
  const st=`--sb:${esc(t.brand||'#1a3a5c')};--sm:${esc(t.brandMid||'#2563a8')};--sa:${esc(t.accent||'#e8a020')}`;
  const tl=[l.ativa===false?'<span>Oculta</span>':'','<span>'+(cp.online?'Online':'Presencial')+'</span>',vip?'<span class="v">★ VIP</span>':'',saz?'<span>Sazonal</span>':''].join('');
  const cta=!ab?`Fechada · volta em ${esc(estTxt(l))}`:cat?'Ver catálogo <span>→</span>':'Entrar na loja <span>→</span>';
- const b=`<div class="sh-hd"><div class="sh-bn" data-i="${esc((l.nome||'?')[0])}">${l.banner?`<img class="sh-ban" src="${esc(l.banner)}" alt="" onerror="this.remove()">`:''}${promoHtml(l,'sh-pr')}<div class="sh-row"><div class="sh-tl">${tl}</div><span class="sh-pl ${ab?'on':'fc'}">${ab?'● Aberta':'Fechada'}</span></div></div>${isAdm()?`<button type="button" class="sh-ed" onclick="event.preventDefault();event.stopPropagation();editLoja('${esc(l.slug)}')">✎ Editar</button>`:''}<span class="sh-lg">${l.logo?`<img src="${esc(l.logo)}" alt="" onerror="this.parentNode.textContent='${esc((l.nome||'?')[0]).replace(/'/g,'')}'">`:esc((l.nome||'?')[0])}</span></div>`
+ const b=`<div class="sh-hd"><div class="sh-bn" data-i="${esc((l.nome||'?')[0])}">${l.banner?`<img class="sh-ban" src="${esc(kpAsset(l.banner))}" alt="" onerror="this.remove()">`:''}${promoHtml(l,'sh-pr')}<div class="sh-row"><div class="sh-tl">${tl}</div><span class="sh-pl ${ab?'on':'fc'}">${ab?'● Aberta':'Fechada'}</span></div></div>${isAdm()?`<button type="button" class="sh-ed" onclick="event.preventDefault();event.stopPropagation();editLoja('${esc(l.slug)}')">✎ Editar</button>`:''}<span class="sh-lg">${l.logo?`<img src="${esc(kpAsset(l.logo))}" alt="" onerror="this.parentNode.textContent='${esc((l.nome||'?')[0]).replace(/'/g,'')}'">`:esc((l.nome||'?')[0])}</span></div>`
   +`<div class="sh-bd"><div><b>${esc(l.nome)}</b>${l.localizacao?`<small>${esc(l.localizacao)}</small>`:''}</div>${l.descricao?`<p>${esc(l.descricao)}</p>`:''}<div class="sh-mt"><span data-n>&nbsp;</span><span>${[cp.vende&&'Vende',cp.compra&&'Compra'].filter(Boolean).join(' · ')||'Só catálogo'}</span></div></div><div class="sh-ft">${cta}</div>`;
  return ab?`<a class="sh-c" style="${st}" data-s="${esc(l.slug)}" href="/stores/${encodeURIComponent(l.slug)}">${b}</a>`:`<div class="sh-c off" style="${st}" data-s="${esc(l.slug)}">${b}</div>`}
 function fillHub(){
@@ -1115,7 +1131,7 @@ async function pick(slug){
 function render(){
  if(F&&!isAdm()&&!reqOk(LJ,F)){$('app').innerHTML=msg(`A loja <b>${esc(LJ.nome)}</b> é exclusiva para jogadores <b>VIP</b>.<br>A ficha <b>${esc(F.nome||'')}</b> não tem acesso.<br><br>${FL.length>1?'<button class="btn s" onclick="openQm()">Trocar ficha</button> ':''}<a href="/stores">Ver outras lojas</a>`);ensureCart();return}
  const th=F?(F.thumb||F.foto):null;
- $('app').innerHTML=`<div class="pmh"><div class="pmw pmht">${LJ.logo?`<span class="pmlg"><img src="${esc(LJ.logo)}" alt="" onerror="this.parentNode.remove()"></span>`:''}<div class="pmb"><b>${esc(LJ.nome)}</b></div>
+ $('app').innerHTML=`<div class="pmh"><div class="pmw pmht">${LJ.logo?`<span class="pmlg"><img src="${esc(kpAsset(LJ.logo))}" alt="" onerror="this.parentNode.remove()"></span>`:''}<div class="pmb"><b>${esc(LJ.nome)}</b></div>
  <input class="in pmq" id="q" type="search" autocomplete="off" placeholder="Buscar em ${esc(LJ.nome)}..." value="${esc(Q)}" oninput="Q=this.value;drawList()">
  ${modSw()}
  <button type="button" class="pmbt pmcart" onclick="openHist()" title="Histórico" aria-label="Histórico"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button>
@@ -1651,7 +1667,7 @@ function rowsAtuais(){
 /* sprites dos TMs (repo, pasta sprites/items/tms) por tipo do golpe em movedex/moves.json */
 const TMTIPOS=['bug','dark','dragon','electric','fairy','fighting','fire','flying','ghost','grass','ground','ice','light','normal','poison','psychic','rock','scent','steel','water'];
 let MV=new Map();
-const MVL=()=>jl('/movedex/moves.json').then(d=>d||jl(CDN_REPO+'movedex/moves.json')).then(a=>{const m=new Map();(Array.isArray(a)?a:[]).forEach(x=>{if(x&&x.name)m.set(x.name,x)});return m}).catch(()=>new Map());
+const MVL=()=>dbJson('movedex/moves.json').then(a=>{const m=new Map();(Array.isArray(a)?a:[]).forEach(x=>{if(x&&x.name)m.set(x.name,x)});return m}).catch(()=>new Map());
 const mvSlug=n=>String(n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/['’`.]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 function tmParse(name){const m=String(name||'').match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.*)$/i);return{num:m?m[1].padStart(3,'0'):'',move:m?(m[2]||name):String(name||'')}}
 function tmTipo(it){const mv=MV.get(mvSlug(tmParse(it.name).move));const t=nk(mv?.type||it.move_type||it.type||'');return TMTIPOS.includes(t)?t:'normal'}
