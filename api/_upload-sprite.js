@@ -17,7 +17,7 @@ import { commit } from './_gh.js';
 
 const MAX_FILES = 10;
 const MAX_FILE_BYTES = 3 * 1024 * 1024;           // 3 MB por imagem (limite da Vercel ~4,5 MB por requisição)
-const PATH_OK = /^sprites\/pokemon\/(shiny\/)?[^/\\]+\.(png|jpe?g|webp)$/i;
+const PATH_OK = /^sprites\/pokemon\/(alfa\/)?(shiny\/)?[^/\\]+\.(png|jpe?g|webp)$/i;   // alfa/ opcional: Formas Alfa
 
 function autorizado(req) {
   const esperado = process.env.ADMIN_UPLOAD_KEY || '';
