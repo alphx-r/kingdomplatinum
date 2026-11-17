@@ -2,6 +2,236 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<!-- KP-ADMIN:BEGIN site=npcdex (gerado por build_gate.py) --><script data-site="npcdex">
+/* admin-player.js — acesso por PLAYER (Chefe / ADM / MOD por site) + switch ao lado do nome do player.
+   Uso (em TODO html, no <head>):  <script src="/admin-player.js"><\/script>
+   Opcional: data-site="torneios" para forçar o nome do site (senão sai do caminho da URL).
+   A lista vem de config.kp_staff (projeto do index):
+     { "chefe":"ricky", "admins":["jef","lucas"], "mods":{ "torneios":[], "stores":[] } }
+   IMPORTANTE: isto só controla a INTERFACE. Quem protege os dados é o servidor (token do player). */
+(function () {
+  if (window.KPAdm) return;
+  var SU = 'https://ucbkodkjlbatttiuqjtv.supabase.co', SKEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
+  var KS = 'kp_ficha_sessao', KP = 'kp_preview', KC = 'kp_staff_cache', KT = 'kp_staff_ts', KJ = 'player_session', TTL = 600000;
+  /* lê/grava nos DOIS storages: sessionStorage (esta aba) e localStorage (vale para as outras abas e visitas).
+     rd(k, true) = a aba tem prioridade; rd(k) = o localStorage tem prioridade. A senha (kp_adm_cred) fica só na aba, de propósito. */
+  function rd(k, sf) { var f = [function () { return sessionStorage.getItem(k); }, function () { return localStorage.getItem(k); }]; if (!sf) f.reverse(); for (var i = 0; i < f.length; i++) { try { var v = f[i](); if (v != null) return v; } catch (e) {} } return null; }
+  function wr(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} try { localStorage.setItem(k, v); } catch (e) {} }
+  function js(k, sf) { try { return JSON.parse(rd(k, sf)); } catch (e) { return null; } }
+  var PADRAO = { chefe: 'ricky', admins: ['jef', 'lucas'], mods: {} };
+  var nrm = function (s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase(); };
+
+  var cs = document.currentScript;
+  var SITE = (cs && cs.getAttribute('data-site')) || (function () {
+    var p = location.pathname.replace(/\/+$/, '').replace(/\.html$/, '').split('/').pop() || 'index';
+    return { pokemart: 'stores' }[p] || p;
+  })();
+
+  function lista(a) { return Array.isArray(a) ? a.map(function (x) { return nrm(x && typeof x === 'object' ? x.nome : x); }).filter(Boolean) : []; }
+  function norm(v) {
+    if (!v || typeof v !== 'object') return null;
+    var mods = {}; Object.keys(v.mods || {}).forEach(function (k) { mods[String(k).toLowerCase()] = lista(v.mods[k]); });
+    return { chefe: nrm(v.chefe) || PADRAO.chefe, admins: lista(v.admins), mods: mods };
+  }
+  var staff = norm(js(KC)) || PADRAO;
+
+  function ses() { var s = js(KS); return s && s.token ? s : null; }
+  /* o nome vem do Fichário (kp_ficha_sessao) ou, na falta dele, do login do index (player_session) */
+  function nome() { var s = js(KS); if (s && s.nome) return s.nome; var j = js(KJ); return j && j.nome ? j.nome : ''; }
+  function papel() {
+    var n = nrm(nome()); if (!n) return null;
+    if (n === staff.chefe) return 'chefe';
+    if (staff.admins.indexOf(n) >= 0) return 'admin';
+    var m = staff.mods[SITE]; if (m && m.indexOf(n) >= 0) return 'mod';
+    return null;
+  }
+  function modoOn() { return rd(KP, true) !== '1'; }
+
+  var ouvintes = [];
+  function emit() { ouvintes.forEach(function (f) { try { f(); } catch (e) {} }); }
+
+  /* ── switch ao lado do nome do player (liga/desliga o modo ADM/MOD); o clique no nome continua com a página ── */
+  var busy = false;
+  var SEL = '#nav-player-name,#nav-who';
+  function pintar() {
+    if (busy) return;
+    var p = papel(), on = modoOn();
+    Array.prototype.forEach.call(document.querySelectorAll(SEL), function (el) {
+      var raw = el.textContent, txt = raw.replace(/^(ADM|MOD)\s+/, '').trim();
+      /* páginas sem código próprio para o nome (npcdex...): preenche com o player logado */
+      if ((!txt || txt === '—') && nome() && el.hasAttribute('data-kp-fill')) txt = nome();
+      if (txt && raw !== txt) { busy = true; el.textContent = txt; busy = false; }
+      var nx = el.nextElementSibling, sw = nx && nx.classList && nx.classList.contains('kp-sw') ? nx : null;
+      var pv = el.previousElementSibling, rl = pv && pv.classList && pv.classList.contains('kp-role') ? pv : null;
+      var bd = el.closest ? el.closest('#nav-player-badge') : null;
+      if (!p || !txt || txt === '—' || txt === 'Entrar') { if (sw) sw.remove(); if (rl) rl.remove(); if (bd) bd.classList.remove('kp-staff'); return; }
+      if (bd) bd.classList.add('kp-staff');
+      if (!rl) { rl = document.createElement('span'); rl.className = 'kp-role'; el.parentNode.insertBefore(rl, el); }
+      rl.textContent = p === 'mod' ? 'MOD' : 'ADM'; rl.classList.toggle('off', !on);
+      if (!sw) {
+        sw = document.createElement('button'); sw.type = 'button'; sw.className = 'kp-sw';
+        sw.setAttribute('role', 'switch'); sw.innerHTML = '<i></i>';
+        sw.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggle(); });
+        el.parentNode.insertBefore(sw, el.nextSibling);
+      }
+      var tipo = p === 'mod' ? 'MOD' : 'ADM';
+      sw.classList.toggle('on', on); sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      sw.setAttribute('aria-label', 'Modo ' + tipo); sw.removeAttribute('title');
+    });
+  }
+  function toggle() {
+    if (!papel()) return;
+    /* torneios/stores já têm togPreview(): ela grava kp_preview e repinta a página */
+    if (typeof window.togPreview === 'function') { window.togPreview(); setTimeout(function () { try { var sv = sessionStorage.getItem(KP); if (sv != null) localStorage.setItem(KP, sv); } catch (e) {} pintar(); emit(); }, 260); return; }
+    wr(KP, modoOn() ? '1' : '');
+    pintar(); emit();
+  }
+
+
+  /* ── senha do player (para ações que gravam no servidor); fica só nesta aba ── */
+  var KK = 'kp_adm_cred';
+  function el(tag, css, html) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (html != null) e.innerHTML = html; return e; }
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  var DLG = 'padding:20px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:var(--bg,#1b1b20);color:var(--text,#fff);max-width:min(92vw,460px);width:100%;font:14px/1.4 system-ui,sans-serif';
+  var INP = 'width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font:inherit;margin:6px 0';
+  var BTN = 'padding:9px 16px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:inherit;font:inherit;font-weight:700;cursor:pointer';
+  function credLimpar() { try { sessionStorage.removeItem(KK); } catch (e) {} }
+  function cred(msg) {
+    return new Promise(function (ok) {
+      var c = null; try { c = JSON.parse(sessionStorage.getItem(KK)); } catch (e) {}
+      if (c && c.n && c.s) return ok(c);
+      var d = el('dialog', DLG);
+      d.innerHTML = '<h3 style="margin:0 0 6px">Confirme sua senha</h3><p style="margin:0 0 8px;opacity:.75">' + esc(msg || 'Para salvar, confirme a senha do seu player.') + '</p>' +
+        '<input id="kpc-n" style="' + INP + '" placeholder="Nome do player" value="' + esc(nome()) + '"><input id="kpc-s" type="password" style="' + INP + '" placeholder="Senha">' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button id="kpc-x" style="' + BTN + '">Cancelar</button><button id="kpc-o" style="' + BTN + ';background:#3bb54a;border-color:#3bb54a">Confirmar</button></div>';
+      var v = null; document.body.appendChild(d);
+      var go = function () { var n = d.querySelector('#kpc-n').value.trim(), s = d.querySelector('#kpc-s').value; if (!n || !s) return; v = { n: n, s: s }; try { sessionStorage.setItem(KK, JSON.stringify(v)); } catch (e) {} d.close(); };
+      d.querySelector('#kpc-o').onclick = go; d.querySelector('#kpc-x').onclick = function () { d.close(); };
+      d.querySelector('#kpc-s').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+      d.addEventListener('close', function () { d.remove(); ok(v); }, { once: true }); d.showModal();
+    });
+  }
+
+  /* ── editor da lista de acesso (Chefe e ADMs) — com host (elemento) desenha dentro da página; sem host abre um diálogo ── */
+  var SITES = ['torneios', 'stores', 'mapa', 'npcdex', 'fichas', 'missoes', 'weathercast', 'datadex'];
+  var INP_I = 'width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;margin:6px 0';
+  var BTN_I = 'padding:9px 16px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;font-weight:700;cursor:pointer';
+  function editor(host) {
+    var p = papel(); if (p !== 'chefe' && p !== 'admin') return;
+    var inl = !!(host && host.nodeType === 1);
+    var cInp = inl ? INP_I : INP, cBtn = inl ? BTN_I : BTN;
+    var cChip = inl ? 'background:var(--surface2,#eef1f7);border:1px solid var(--border,#dde3ee)' : 'background:rgba(255,255,255,.1)';
+    var nv = JSON.parse(JSON.stringify(staff)); nv.mods = nv.mods || {};
+    SITES.forEach(function (k) { if (!nv.mods[k]) nv.mods[k] = []; });
+    var d = inl ? el('div') : el('dialog', DLG + ';max-height:88vh;overflow:auto'), dl = el('datalist'); dl.id = 'kpe-pl'; d.appendChild(dl);
+    fetch(SU + '/rest/v1/players?select=nome&order=nome.asc', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } }).then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (L) { dl.innerHTML = (L || []).map(function (x) { return '<option value="' + esc(x.nome) + '">'; }).join(''); }).catch(function () {});
+    var corpo = el('div'); d.appendChild(corpo);
+    function sec(titulo, arr) {
+      var h = '<div style="margin:12px 0 4px;font-weight:800">' + esc(titulo) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px">' +
+        (arr.map(function (n, i) { return '<span style="padding:4px 10px;border-radius:99px;' + cChip + '">' + esc(n) + ' <a href="#" data-del="' + i + '" style="color:inherit;text-decoration:none;opacity:.7">✕</a></span>'; }).join('') || '<span style="opacity:.6">ninguém</span>') + '</div>' +
+        '<div style="display:flex;gap:6px"><input list="kpe-pl" placeholder="Adicionar player…" style="' + cInp + '"><button data-add style="' + cBtn + ';margin:6px 0">+</button></div>';
+      var box = el('div', '', h);
+      box.addEventListener('click', function (e) {
+        var a = e.target.closest('[data-del]'), b = e.target.closest('[data-add]');
+        if (a) { e.preventDefault(); arr.splice(+a.getAttribute('data-del'), 1); desenha(); }
+        if (b) { var n = nrm(box.querySelector('input').value); if (n && arr.indexOf(n) < 0 && n !== nv.chefe) { arr.push(n); desenha(); } }
+      });
+      return box;
+    }
+    function desenha() {
+      corpo.innerHTML = (inl ? '' : '<h3 style="margin:0 0 4px">Equipe de acesso</h3>') + '<p style="margin:0;opacity:.75">Chefe: <b>' + esc(nv.chefe) + '</b>. O chefe só é trocado direto no banco.</p>';
+      corpo.appendChild(sec('ADMs (todos os sites)', nv.admins));
+      Object.keys(nv.mods).sort().forEach(function (k) { corpo.appendChild(sec('MODs · ' + k, nv.mods[k])); });
+      var rod = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px', '<span id="kpe-err" style="flex:1;color:' + (inl ? 'var(--red,#c0392b)' : '#ff8a8a') + ';align-self:center"></span><button id="kpe-x" style="' + cBtn + '">' + (inl ? 'Desfazer' : 'Fechar') + '</button><button id="kpe-s" style="' + cBtn + ';background:#3bb54a;border-color:#3bb54a;color:#fff">Salvar</button>');
+      corpo.appendChild(rod);
+      rod.querySelector('#kpe-x').onclick = function () { if (inl) editor(host); else d.close(); };
+      rod.querySelector('#kpe-s').onclick = async function () {
+        var err = rod.querySelector('#kpe-err'); err.textContent = '';
+        var c = await cred('Confirme a senha do seu player para salvar a equipe.'); if (!c) return;
+        try {
+          var r = await fetch('/api/ficha-salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'staff_salvar', nome: c.n, senha: c.s, staff: nv }) });
+          var j = await r.json().catch(function () { return {}; });
+          if (!r.ok) { if (r.status === 401 || r.status === 403) credLimpar(); throw new Error(j.error || 'Erro ' + r.status); }
+          staff = norm(j.staff) || staff; wr(KC, JSON.stringify(staff)); wr(KT, String(Date.now()));
+          pintar(); emit();
+          if (inl) { err.style.color = '#2e8b3a'; err.textContent = 'Equipe salva ✓'; } else d.close();
+        } catch (e) { err.textContent = e.message; }
+      };
+    }
+    desenha();
+    if (inl) { host.innerHTML = ''; host.appendChild(d); return; }
+    document.body.appendChild(d); d.addEventListener('close', function () { d.remove(); }, { once: true }); d.showModal();
+  }
+
+  var st = document.createElement('style');
+  st.textContent = '.kp-role{flex:none;margin:0 6px 0 0;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.22);color:inherit;font-size:10px;font-weight:800;letter-spacing:.6px;line-height:1;transition:opacity .18s}.kp-role.off{opacity:.45}.kp-sw{box-sizing:border-box;flex:none;position:relative;width:30px;height:17px;padding:0;margin:0 0 0 6px;border-radius:99px;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);cursor:pointer;transition:background .18s,border-color .18s;-webkit-tap-highlight-color:transparent}.kp-sw i{position:absolute;top:1.5px;left:1.5px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .18s}.kp-sw.on{background:#3bb54a;border-color:#3bb54a}.kp-sw.on i{transform:translateX(13px)}';
+  document.head.appendChild(st);
+
+  function iniciar() {
+    Array.prototype.forEach.call(document.querySelectorAll(SEL), function (el) {
+      new MutationObserver(pintar).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    pintar();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+  window.addEventListener('storage', function (e) { if (e.key === KS || e.key === KJ) carregar(false); else if (e.key === KP) { pintar(); emit(); } });
+
+  /* ── carrega a lista de acesso: só vai ao servidor se há player identificado e o cache (local+aba) passou de 10 min ── */
+  function carregar(forcar) {
+    var fresco = !!js(KC) && Date.now() - (+rd(KT) || 0) < TTL;
+    if (!forcar && (!nome() || fresco)) return Promise.resolve().then(function () { pintar(); emit(); });
+    return fetch(SU + '/rest/v1/config?chave=eq.kp_staff&select=valor', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) {
+        var v = rows && rows[0] && rows[0].valor; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+        var n = norm(v); if (n) { staff = n; wr(KC, JSON.stringify(v)); wr(KT, String(Date.now())); }
+      })
+      .catch(function () {})
+      .then(function () { pintar(); emit(); });
+  }
+  var ready = carregar(false);
+
+  window.KPAdm = {
+    site: SITE, ready: ready,
+    papel: papel,                                                   // 'chefe' | 'admin' | 'mod' | null (ignora o botão)
+    isStaff: function () { return !!papel(); },                     // tem acesso, mesmo no modo player
+    modoOn: modoOn,
+    isChefe: function () { return papel() === 'chefe' && modoOn(); },
+    isAdm: function () { var p = papel(); return (p === 'chefe' || p === 'admin') && modoOn(); },   // use isto para liberar telas/botões de ADM
+    isMod: function () { return papel() === 'mod' && modoOn(); },
+    pode: function () { return !!papel() && modoOn(); },            // ADM ou MOD deste site, com o botão ligado
+    nome: nome, staff: function () { return staff; },
+    toggle: toggle, onChange: function (f) { ouvintes.push(f); },
+    cred: cred, credLimpar: credLimpar,                             // {n,s} da senha do player (cache só na aba); mande como admin_nome/admin_senha
+    editor: editor                                                  // editor(host): desenha a equipe dentro de 'host'; sem host abre um diálogo (Chefe/ADM)
+  };
+})();
+
+</script><!-- KP-ADMIN:END -->
+<!-- KP-GATE-HEAD:BEGIN (gerado por build_gate.py) --><style id="kp-gate-css">html:not(.kp-ok) body>*:not(#kp-gate){display:none!important}
+html.kp-ok #kp-gate{display:none!important}
+#kp-gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:var(--bg,#f4f6fb);color:var(--text,var(--ink,#1a1f2e));font:14px/1.45 var(--font-body,system-ui,sans-serif)}
+#kp-gate .kg-box{width:100%;max-width:380px;text-align:center;background:var(--surface,var(--panel,#fff));border:1.5px solid var(--border,var(--line,#dde3ee));border-radius:14px;padding:32px 28px;box-shadow:0 10px 40px rgba(0,0,0,.18)}
+#kp-gate .kg-ico{width:56px;height:56px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:26px;background:rgba(127,127,127,.16)}
+#kp-gate .kg-t{font:700 18px var(--font-title,inherit);margin-bottom:6px}
+#kp-gate .kg-s{font-size:13px;opacity:.78;margin-bottom:22px}
+#kp-gate .kg-b{display:inline-block;padding:10px 18px;border-radius:8px;font-weight:700;text-decoration:none;background:var(--brand,var(--cyan,#2563a8));color:#fff}
+html.kp-wait #kp-gate .kg-lock{display:none}
+html:not(.kp-wait) #kp-gate .kg-wait{display:none}</style>
+<script>
+(function () {
+  var h = document.documentElement, A = window.KPAdm, pend = true;
+  /* libera só se o player logado está na lista (Chefe/ADM, ou MOD deste site). Espera a lista carregar antes de trancar de vez. */
+  function dec() {
+    var ok = !!(A && A.isStaff());
+    h.classList.toggle('kp-ok', ok);
+    h.classList.toggle('kp-wait', !ok && pend && !!(A && A.nome()));
+  }
+  dec();
+  if (A) { A.onChange(dec); A.ready.then(function () { pend = false; dec(); }); } else { pend = false; dec(); }
+})();
+</script><!-- KP-GATE-HEAD:END -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NPCdex ADM — Kingdom Platinum</title>
 <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
@@ -112,24 +342,13 @@ html{
 </style>
 </head>
 <body>
+<!-- KP-GATE-BODY:BEGIN (gerado por build_gate.py — não edite à mão) --><div id="kp-gate"><div class="kg-box"><div class="kg-wait">Verificando acesso…</div><div class="kg-lock"><div class="kg-ico">🔒</div><div class="kg-t">Acesso restrito</div><div class="kg-s">Faça login como admin no site principal para acessá-lo.</div><a class="kg-b" href="/">Ir ao site principal</a></div></div></div><!-- KP-GATE-BODY:END -->
 
 <nav class="nav">
   <a class="nav-logo" href="https://kingdomplatinum.vercel.app"><img src="https://64.media.tumblr.com/bb526b9df0c7703d60a3e491a3f2ecf6/25947a08ea9632bf-74/s1280x1920/cff7702dac61e7830b197041196e3f7da571140b.pnj" alt="Kingdom Platinum"></a>
   <div class="nav-title"><span class="dot"></span> NPCdex · Admin</div>
   <a class="nav-back" href="/npcdex">← Voltar ao NPCdex</a>
 </nav>
-
-<!-- GATE: senha -->
-<div class="gate" id="gate">
-  <div class="gate-box">
-    <div class="gate-icon">🔒</div>
-    <div class="gate-title">Acesso restrito</div>
-    <div class="gate-sub">Painel administrativo do NPCdex</div>
-    <input class="gate-input" type="password" id="gate-senha" placeholder="Senha" onkeydown="if(event.key==='Enter')confirmarGate()">
-    <div class="gate-err" id="gate-err">Senha incorreta.</div>
-    <button class="gate-btn" onclick="confirmarGate()">Entrar</button>
-  </div>
-</div>
 
 <!-- SHELL: painel -->
 <div class="shell" id="shell">
@@ -219,10 +438,7 @@ html{
 const SUPA_URL='https://fatdzivyqipmcbzaiftc.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdGR6aXZ5cWlwbWNiemFpZnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NTMyNDAsImV4cCI6MjA5ODQyOTI0MH0.0SRPZt1RYSpEbPQazv7ttHJBZNDOyIax2YRO49bvpmE';
 
-// ── ATENÇÃO: precisa ser IDÊNTICA à senha em npcdex.html e npc_ficha.html
-const ADMIN_PASSWORD='trocaessasenha';
-const ADMIN_KEY='kp_npcdex_admin';
-const isAdmin=()=>localStorage.getItem(ADMIN_KEY)==='1';
+const isAdmin=()=>!!(window.KPAdm&&KPAdm.isStaff());
 
 async function api(path,opts={}){
   const isGet=!opts.method||opts.method==='GET';
@@ -284,23 +500,8 @@ function toast(msg,cor='var(--cyan)'){
 }
 
 // ── Gate ──
-function confirmarGate(){
-  const v=document.getElementById('gate-senha').value;
-  if(v===ADMIN_PASSWORD){
-    localStorage.setItem(ADMIN_KEY,'1');
-    entrarShell();
-  } else {
-    document.getElementById('gate-err').style.display='block';
-  }
-}
-function sairAdm(){
-  localStorage.removeItem(ADMIN_KEY);
-  document.getElementById('shell').classList.remove('open');
-  document.getElementById('gate').style.display='flex';
-  document.getElementById('gate-senha').value='';
-}
+function sairAdm(){ location.href='/npcdex'; }
 function entrarShell(){
-  document.getElementById('gate').style.display='none';
   document.getElementById('shell').classList.add('open');
   carregarNpcs();
 }
@@ -437,7 +638,7 @@ async function criarNpc(){
 }
 
 // ── Init ──
-if(isAdmin()) entrarShell();
+(function(){ var feito=false; function ir(){ if(!feito&&isAdmin()){ feito=true; entrarShell(); } } ir(); if(window.KPAdm){ KPAdm.ready.then(ir); KPAdm.onChange(ir); } })();
 </script>
 </body>
 </html>
