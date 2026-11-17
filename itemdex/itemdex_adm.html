@@ -1080,7 +1080,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
         </div>
         <select class="mv-meta-input" id="it-f-cat" style="max-width:180px" onchange="filterIt()"><option value="">Todas categorias</option></select>
         <button class="btn btn-outline btn-sm" onclick="addNewCategory()" title="Cria uma nova categoria pra organizar os itens">＋ Categoria</button>
-        <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar items.json</button>
+        <button class="btn btn-outline btn-sm" id="it-backup-btn" onclick="backupItemsNow()" title="Gera o items.json atualizado e commita no repo alphx-r/kpfichas_db (os ícones novos vão para o repo do site)">📤 Commitar items.json</button>
         <button class="btn btn-outline btn-sm" id="it-rewards-btn" onclick="commitRewardsNow()" title="Lê as pastas sprites/rewards (badges, ribbons, pins, randoms) no GitHub, monta o rewards.json e commita em itemdex/rewards.json — é a lista de conquistas usada nas fichas">🏅 Commitar rewards.json</button>
         <button class="btn btn-outline btn-sm" id="it-gh-btn" onclick="atualizarImagensGithub()" title="Lê as pastas sprites/items (itens) e sprites/rewards (conquistas) do repositório no GitHub e troca o ícone de cada item pela imagem de mesmo nome">🖼️ IMGs GIT</button>
         <button class="btn btn-outline btn-sm" id="it-tm-price-btn" onclick="setAllTmPrices(3000)" title="Muda o preço de todos os TMs para 3000 (mantém as flags PokéMart/Venda como estão)">💿 TMs → 3000</button>
@@ -1366,8 +1366,8 @@ function buildItemsPayload() {
 async function protegerItensRemotos(data) {
   let remote = null;
   const urls = [
-    [`https://api.github.com/repos/${GH_REPO}/contents/itemdex/items.json?ref=${GH_BRANCH}`, { Accept: 'application/vnd.github.raw+json' }],
-    [`https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}/itemdex/items.json?t=${Date.now()}`, {}],
+    [`${DADOS_RAW}itemdex/items.json?t=${Date.now()}`, {}],
+    [`https://api.github.com/repos/${DADOS_API_REPO}/contents/itemdex/items.json?ref=main`, { Accept: 'application/vnd.github.raw+json' }],
   ];
   for (const [u, headers] of urls) {
     try { const r = await fetch(u, { headers, cache: 'no-store' }); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) { remote = j; break; } } } catch (e) {}
@@ -1721,7 +1721,10 @@ function categoryOptionsHtml(current) {
 }
 
 // items.json (raiz do repo; o ItemDex público e as fichas usam o mesmo arquivo). Aceita nomes de campo em PT/EN.
-const ITEMS_JSON_URLS = ['/itemdex/items.json', '/items.json'];
+// Os JSON agora ficam no repo de dados (kpfichas_db), junto do pokemon.json; as cópias do site ficam só como reserva.
+const DADOS_RAW = 'https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/';
+const DADOS_API_REPO = 'alphx-r/kpfichas_db';
+const ITEMS_JSON_URLS = [DADOS_RAW + 'itemdex/items.json', '/itemdex/items.json', '/items.json'];
 async function fetchItemsJson() {
   for (const u of ITEMS_JSON_URLS) {
     try {
@@ -2330,7 +2333,7 @@ function toggleItemPriceField(wrapId, checked) {
 // fica só a PokéMart. Slugs que o item já tem e não estão no arquivo continuam aparecendo.
 let ADM_LOJAS = [{ slug: 'pokemart', nome: 'PokéMart' }];
 async function loadLojas() {
-  for (const u of ['/stores/stores.json', '/stores.json', 'https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/stores/stores.json']) {
+  for (const u of [DADOS_RAW + 'stores/stores.json', '/stores/stores.json', '/stores.json', 'https://cdn.jsdelivr.net/gh/alphx-r/kingdomplatinum@main/stores/stores.json']) {
     try {
       const r = await fetch(u + '?v=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) continue;
