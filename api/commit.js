@@ -11,14 +11,29 @@ const BRANCH = process.env.GITHUB_BRANCH || 'main';
 import crypto from 'crypto';
 const API = `https://api.github.com/repos/${OWN}/${REPO}`;
 
+// TODOS os JSON (abilities, moves, items, rewards, stores, missões) ficam no repo de dados (kpfichas_db), o mesmo do
+// pokemon.json do nationaldex_adm, com as mesmas pastas de antes (itemdex/items.json, movedex/moves.json...).
+// Token: GH_SPRITE_TOKEN (o mesmo que a rota do nationaldex usa no kpfichas_db), com GITHUB_TOKEN como reserva.
+// Imagens (sprites/...) continuam no repo do site: as páginas apontam para elas.
+// Para um tipo voltar a gravar no repo do site (enquanto as páginas que leem aquele JSON não migram),
+// liste-o na env JSON_NO_SITE, ex.: JSON_NO_SITE=stores,missoes
+const DADOS_REPO = process.env.JSON_REPO || 'alphx-r/kpfichas_db';
+const DADOS_BRANCH = process.env.JSON_BRANCH || 'main';
+const DADOS_API = `https://api.github.com/repos/${DADOS_REPO}`;
+const NO_REPO_DO_SITE = new Set((process.env.JSON_NO_SITE || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+function alvoJson(tipo, tokenSite) {
+  if (NO_REPO_DO_SITE.has(tipo)) return { token: tokenSite, api: API, branch: BRANCH };
+  return { token: process.env.GH_SPRITE_TOKEN || tokenSite, api: DADOS_API, branch: DADOS_BRANCH };
+}
+
 const AUTH_URL = process.env.AUTH_SUPA_URL || 'https://ucbkodkjlbatttiuqjtv.supabase.co';
 const AUTH_KEY = process.env.AUTH_SUPA_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 
-// abilities e moves nunca checaram admin (as páginas deles não enviam o campo "admin").
-// Deixe false para não quebrar essas duas páginas; quando elas passarem a enviar
-// admin: <email do adm_session>, troque para true e o endpoint fica protegido.
-const EXIGIR_ADMIN_EM_TODOS = false;
-const SEM_ADMIN_LEGADO = new Set(['abilities', 'moves']);
+// abilities e moves agora também enviam admin_nome/admin_senha (abilitydex_adm e movedex_adm novos),
+// então TODOS os tipos exigem player com papel de chefe/ADM/MOD. SEM_ADMIN_LEGADO fica só como lista vazia
+// (para liberar um tipo temporariamente, ponha o nome dele aqui e EXIGIR_ADMIN_EM_TODOS = false).
+const EXIGIR_ADMIN_EM_TODOS = true;
+const SEM_ADMIN_LEGADO = new Set();
 
 class HttpErr extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
@@ -97,11 +112,11 @@ async function adminOk(email) {
 }
 
 // Cria/atualiza UM arquivo via Contents API. conteudo: { texto } (utf8) ou { base64 }.
-async function putArquivo(token, path, conteudo, mensagem, { pularSeIgual = false } = {}) {
-  const url = `${API}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+async function putArquivo(token, path, conteudo, mensagem, { pularSeIgual = false, api = API, branch = BRANCH } = {}) {
+  const url = `${api}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
   const H = ghHeaders(token);
   let sha, antigo = null;
-  const cur = await fetch(`${url}?ref=${encodeURIComponent(BRANCH)}`, { headers: H });
+  const cur = await fetch(`${url}?ref=${encodeURIComponent(branch)}`, { headers: H });
   if (cur.ok) {
     const j = await cur.json();
     sha = j.sha;
@@ -114,7 +129,7 @@ async function putArquivo(token, path, conteudo, mensagem, { pularSeIgual = fals
   const put = await fetch(url, {
     method: 'PUT',
     headers: { ...H, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: String(mensagem).slice(0, 200), content: b64, branch: BRANCH, ...(sha ? { sha } : {}) }),
+    body: JSON.stringify({ message: String(mensagem).slice(0, 200), content: b64, branch, ...(sha ? { sha } : {}) }),
   });
   const out = await put.json().catch(() => ({}));
   if (!put.ok) throw new HttpErr(502, out.message || `GitHub respondeu HTTP ${put.status} ao commitar ${path}`);
@@ -125,8 +140,9 @@ async function putArquivo(token, path, conteudo, mensagem, { pularSeIgual = fals
 async function hAbilities(token, body) {
   const { abilities } = body;
   if (!Array.isArray(abilities)) throw new HttpErr(400, 'Payload inválido: esperado { abilities: [...] }.');
-  const r = await putArquivo(token, 'abilitydex/abilities.json', { texto: JSON.stringify(abilities, null, 2) },
-    `chore: atualiza abilities.json (${abilities.length} habilidades) via abilitydex_adm`);
+  const T = alvoJson('abilities', token);
+  const r = await putArquivo(T.token, 'abilitydex/abilities.json', { texto: JSON.stringify(abilities, null, 2) },
+    `chore: atualiza abilities.json (${abilities.length} habilidades) via abilitydex_adm`, { api: T.api, branch: T.branch });
   return { ok: true, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
 }
 
@@ -134,8 +150,9 @@ async function hAbilities(token, body) {
 async function hMoves(token, body) {
   const { moves } = body;
   if (!Array.isArray(moves)) throw new HttpErr(400, 'Payload inválido: esperado { moves: [...] }.');
-  const r = await putArquivo(token, 'movedex/moves.json', { texto: JSON.stringify(moves, null, 2) },
-    `chore: atualiza moves.json (${moves.length} moves) via movedex_adm`);
+  const T = alvoJson('moves', token);
+  const r = await putArquivo(T.token, 'movedex/moves.json', { texto: JSON.stringify(moves, null, 2) },
+    `chore: atualiza moves.json (${moves.length} moves) via movedex_adm`, { api: T.api, branch: T.branch });
   return { ok: true, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
 }
 
@@ -162,8 +179,9 @@ const formataRewards = r => '{\n' + REW_CATS.map(c => `  "${c}": [` + (r[c].leng
 async function hRewards(token, body) {
   const rewards = limpaRewards(body.rewards);
   if (!rewards) throw new HttpErr(400, 'Conteúdo do rewards.json inválido');
-  const r = await putArquivo(token, 'itemdex/rewards.json', { texto: formataRewards(rewards) },
-    'Atualiza itemdex/rewards.json (ItemDex ADM)', { pularSeIgual: true });
+  const T = alvoJson('rewards', token);
+  const r = await putArquivo(T.token, 'itemdex/rewards.json', { texto: formataRewards(rewards) },
+    'Atualiza itemdex/rewards.json (ItemDex ADM)', { pularSeIgual: true, api: T.api, branch: T.branch });
   return r.unchanged ? { ok: true, unchanged: true } : { ok: true, sha: r.sha };
 }
 
@@ -177,30 +195,36 @@ async function hItems(token, body) {
     if (!/^[A-Za-z0-9+/=]+$/.test(im.contentBase64 || '') || im.contentBase64.length > 2_000_000) throw new HttpErr(400, `Imagem inválida ou grande demais: ${im.path}`);
   }
   const FILE = 'itemdex/items.json';
-  const H = { ...ghHeaders(token), 'Content-Type': 'application/json' };
-  const gh = async (path, method = 'GET', b) => {
-    const r = await fetch(`${API}/${path}`, { method, headers: H, body: b ? JSON.stringify(b) : undefined });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.message || `GitHub HTTP ${r.status}`);
-    return d;
-  };
-  const headSha = (await gh(`git/ref/heads/${BRANCH}`)).object.sha;
-  const baseTree = (await gh(`git/commits/${headSha}`)).tree.sha;
-  const entries = [];
-  for (const im of images) {
-    const b = await gh('git/blobs', 'POST', { content: im.contentBase64, encoding: 'base64' });
-    entries.push({ path: im.path, mode: '100644', type: 'blob', sha: b.sha });
+  // 1) imagens (sprites/...) ficam no repo do site, num commit só — antes do JSON, pra o JSON nunca apontar pra imagem que não subiu
+  let commitImg = null;
+  if (images.length) {
+    const H = { ...ghHeaders(token), 'Content-Type': 'application/json' };
+    const gh = async (path, method = 'GET', b) => {
+      const r = await fetch(`${API}/${path}`, { method, headers: H, body: b ? JSON.stringify(b) : undefined });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || `GitHub HTTP ${r.status}`);
+      return d;
+    };
+    const headSha = (await gh(`git/ref/heads/${BRANCH}`)).object.sha;
+    const baseTree = (await gh(`git/commits/${headSha}`)).tree.sha;
+    const entries = [];
+    for (const im of images) {
+      const bl = await gh('git/blobs', 'POST', { content: im.contentBase64, encoding: 'base64' });
+      entries.push({ path: im.path, mode: '100644', type: 'blob', sha: bl.sha });
+    }
+    const tree = await gh('git/trees', 'POST', { base_tree: baseTree, tree: entries });
+    if (tree.sha !== baseTree) {
+      const commit = await gh('git/commits', 'POST', { message: `chore: atualiza ${images.length} imagem(ns) de itens via itemdex_adm`, tree: tree.sha, parents: [headSha] });
+      await gh(`git/refs/heads/${BRANCH}`, 'PATCH', { sha: commit.sha });
+      commitImg = commit.sha;
+    }
   }
-  const jb = await gh('git/blobs', 'POST', { content: JSON.stringify(items, null, 2), encoding: 'utf-8' });
-  entries.push({ path: FILE, mode: '100644', type: 'blob', sha: jb.sha });
-  const tree = await gh('git/trees', 'POST', { base_tree: baseTree, tree: entries });
-  if (tree.sha === baseTree) return { ok: true, unchanged: true };
-  const commit = await gh('git/commits', 'POST', {
-    message: `chore: atualiza ${FILE} (${items.length} itens, ${images.length} imagens) via itemdex_adm`,
-    tree: tree.sha, parents: [headSha],
-  });
-  await gh(`git/refs/heads/${BRANCH}`, 'PATCH', { sha: commit.sha });
-  return { ok: true, commitSha: commit.sha };
+  // 2) items.json no repo de dados
+  const T = alvoJson('items', token);
+  const r = await putArquivo(T.token, FILE, { texto: JSON.stringify(items, null, 2) },
+    `chore: atualiza ${FILE} (${items.length} itens, ${images.length} imagens) via itemdex_adm`, { pularSeIgual: true, api: T.api, branch: T.branch });
+  if (r.unchanged && !commitImg) return { ok: true, unchanged: true };
+  return { ok: true, commitSha: r.commitSha || commitImg, imagensCommit: commitImg };
 }
 
 /* ───────────── image (uma imagem em sprites/) ───────────── */
@@ -312,8 +336,9 @@ function limpaLojas(lista) {
 async function hStores(token, body) {
   const lojas = limpaLojas(body.lojas);
   if (!lojas) throw new HttpErr(400, 'Conteúdo do stores.json inválido (confira slug, nome, cores e se há slugs repetidos).');
-  const r = await putArquivo(token, 'stores/stores.json', { texto: JSON.stringify(lojas, null, 2) + '\n' },
-    'Atualiza stores/stores.json (Stores ADM)', { pularSeIgual: true });
+  const T = alvoJson('stores', token);
+  const r = await putArquivo(T.token, 'stores/stores.json', { texto: JSON.stringify(lojas, null, 2) + '\n' },
+    'Atualiza stores/stores.json (Stores ADM)', { pularSeIgual: true, api: T.api, branch: T.branch });
   return r.unchanged ? { ok: true, unchanged: true, lojas } : { ok: true, sha: r.sha, lojas };
 }
 
@@ -343,8 +368,8 @@ function limpaMissao(m) {
   else delete o.repeticao_dias;
   return o;
 }
-async function lerArquivo(token, path) {
-  const url = `${API}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(BRANCH)}`;
+async function lerArquivo(token, path, { api = API, branch = BRANCH } = {}) {
+  const url = `${api}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`;
   const r = await fetch(url, { headers: ghHeaders(token) });
   if (r.status === 404) return null;
   if (!r.ok) throw new HttpErr(502, `GitHub respondeu HTTP ${r.status} ao ler ${path}`);
@@ -361,7 +386,8 @@ async function hMissoes(token, body) {
   if (!lote.length && !ids.length) throw new HttpErr(400, 'Nada para publicar.');
 
   const FILE = 'missoes/missoes.json';
-  const texto = await lerArquivo(token, FILE);
+  const T = alvoJson('missoes', token);
+  const texto = await lerArquivo(T.token, FILE, { api: T.api, branch: T.branch });
   let raiz = [];
   if (texto != null) { try { raiz = JSON.parse(texto); } catch (e) { throw new HttpErr(502, 'missoes.json atual não é um JSON válido.'); } }
   const ehArray = Array.isArray(raiz);
@@ -384,14 +410,44 @@ async function hMissoes(token, body) {
     apagadas = antes - lista.length;
   }
   const saida = ehArray ? lista : { ...raiz, missoes: lista };
-  const r = await putArquivo(token, FILE, { texto: JSON.stringify(saida, null, 2) + '\n' },
-    `Quests Guild: +${novas} nova(s), ~${editadas} editada(s), -${apagadas} apagada(s) (missoes.html)`, { pularSeIgual: true });
+  const r = await putArquivo(T.token, FILE, { texto: JSON.stringify(saida, null, 2) + '\n' },
+    `Quests Guild: +${novas} nova(s), ~${editadas} editada(s), -${apagadas} apagada(s) (missoes.html)`, { pularSeIgual: true, api: T.api, branch: T.branch });
   return r.unchanged ? { ok: true, unchanged: true, novas, editadas, apagadas }
                      : { ok: true, novas, editadas, apagadas, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
 }
 
+/* ───────────── copiar (migração: repo do site → kpfichas_db) ─────────────
+   Copia, byte a byte, UM dos JSON abaixo do repo do site para o repo de dados (usado pelo migrar_json.html).
+   Não toca em nada além desses caminhos. Se o destino já existe e é diferente, só substitui com sobrescrever: true. */
+const COPIAVEIS = ['abilitydex/abilities.json', 'movedex/moves.json', 'itemdex/items.json', 'itemdex/rewards.json', 'stores/stores.json', 'missoes/missoes.json'];
+// lê o arquivo como texto cru (a Contents API em JSON vem vazia acima de 1 MB; o formato raw não tem esse limite)
+async function lerBruto(token, path, { api = API, branch = BRANCH } = {}) {
+  const url = `${api}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`;
+  const r = await fetch(url, { headers: { ...ghHeaders(token), Accept: 'application/vnd.github.raw+json' } });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new HttpErr(502, `GitHub respondeu HTTP ${r.status} ao ler ${path}`);
+  return await r.text();
+}
+async function hCopiar(token, body) {
+  const { arquivo, sobrescrever } = body;
+  if (typeof arquivo !== 'string' || !COPIAVEIS.includes(arquivo)) throw new HttpErr(400, 'Arquivo não permitido para cópia: ' + arquivo);
+  const origem = await lerBruto(token, arquivo);
+  if (origem == null) return { ok: true, status: 'sem_origem', arquivo };
+  if (!origem.trim()) throw new HttpErr(422, `A origem (${arquivo}) está vazia — nada foi copiado.`);
+  try { JSON.parse(origem); } catch (e) { throw new HttpErr(422, `A origem (${arquivo}) não é um JSON válido — nada foi copiado.`); }
+  const T = alvoJson('copiar', token);
+  const destino = await lerBruto(T.token, arquivo, { api: T.api, branch: T.branch });
+  const bytes = Buffer.byteLength(origem, 'utf8');
+  if (destino != null) {
+    if (destino === origem) return { ok: true, status: 'igual', arquivo, bytes };
+    if (!sobrescrever) return { ok: true, status: 'ja_existe', arquivo, bytes, bytesDestino: Buffer.byteLength(destino, 'utf8') };
+  }
+  const r = await putArquivo(T.token, arquivo, { texto: origem }, `chore: copia ${arquivo} do repo do site para o kpfichas_db`, { api: T.api, branch: T.branch });
+  return { ok: true, status: destino != null ? 'sobrescrito' : 'copiado', arquivo, bytes, commitSha: r.commitSha };
+}
+
 /* ───────────── roteamento ───────────── */
-const TIPOS = { abilities: hAbilities, moves: hMoves, rewards: hRewards, items: hItems, image: hImage, stores: hStores, missoes: hMissoes };
+const TIPOS = { abilities: hAbilities, moves: hMoves, rewards: hRewards, items: hItems, image: hImage, stores: hStores, missoes: hMissoes, copiar: hCopiar };
 
 function tipoDe(req) {
   const q = req.query && req.query.tipo;
