@@ -597,13 +597,34 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{d
 #lst.cat .pcf{display:none!important}
 </style>
 <script src="/admin-player.js" data-site="stores"></script>
+<script>
+/* ===== Dados e imagens: os JSON e os sprites vivem no repo kpfichas_db =====
+   JSON: lidos do raw.githubusercontent (com ?v= por minuto, para refletir commits novos logo).
+   Imagens: caminhos sprites/... apontam para o kpfichas_db.
+   KP_LEGACY = true: se algo ainda não estiver no kpfichas_db, tenta a cópia antiga (kingdomplatinum).
+   Depois de migrar tudo e conferir, troque para false. */
+const KP_LEGACY=true;
+const DB_RAW='https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/';
+const OLD_RAW='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/main/';
+const kpAsset=u=>{if(typeof u!=='string'||!u)return u;let m=u.match(/^\/?(sprites\/.+)$/);if(m)return DB_RAW+m[1];
+ m=u.match(/^https:\/\/(?:cdn\.jsdelivr\.net\/gh\/alphx-r\/kingdomplatinum@[^\/]+|raw\.githubusercontent\.com\/alphx-r\/kingdomplatinum\/(?:refs\/heads\/)?[^\/]+)\/(sprites\/.+)$/);
+ return m?DB_RAW+m[1]:u};
+const kpUrls=(p,...extra)=>[DB_RAW+p+'?v='+Math.floor(Date.now()/60000),...(KP_LEGACY?['/'+p,...extra,OLD_RAW+p]:[])];
+const dbJson=async(p,...extra)=>{for(const u of kpUrls(p,...extra)){try{const r=await fetch(u);if(r.ok)return await r.json()}catch(e){}}return null};
+/* imagem que falha: tenta o outro repo uma vez (novo -> antigo só com KP_LEGACY; antigo -> novo sempre). data-kpb="1" desliga. */
+addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG'||t.dataset.kpb)return;
+ const m=(t.getAttribute('src')||'').match(/^https:\/\/(?:raw\.githubusercontent\.com\/alphx-r\/(kpfichas_db|kingdomplatinum)\/(?:refs\/heads\/)?main|cdn\.jsdelivr\.net\/gh\/alphx-r\/(kpfichas_db|kingdomplatinum)@main)\/(sprites\/.+)$/);
+ if(!m)return;const novo=(m[1]||m[2])==='kpfichas_db';if(novo&&!KP_LEGACY)return;
+ t.dataset.kpb='1';e.stopPropagation();t.src=(novo?OLD_RAW:DB_RAW)+m[3]},true);
+addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.kpb)delete t.dataset.kpb},true);
+</script>
 </head>
 <body>
 <div class="loading-overlay" id="loading-overlay"><div class="loading-spinner"></div><div class="loading-text">Carregando Kingdom Platinum...</div></div>
 <nav class="nav" id="main-nav">
   <div class="nav-top">
     <button class="nav-hamburger" id="nav-hamburger" onclick="toggleSidenav()" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
-    <div class="nav-logo"><img src="https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/sprites/rpg/kp-logo-darkgray.png" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/alphx-r/kingdomplatinum/refs/heads/main/sprites/rpg/kp-logo-darkgray.png'" style="height:26px;object-fit:contain;" alt="Kingdom Platinum"></div>
+    <div class="nav-logo"><img src="https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/sprites/rpg/kp-logo-darkgray.png" style="height:26px;object-fit:contain;" alt="Kingdom Platinum"></div>
   </div>
   <div class="nav-links" id="nav-links"></div>
   <script src="/nav.js"></script>
@@ -701,22 +722,6 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nk=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const nrm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-/* ===== Dados e imagens: tudo vive no repo kpfichas_db (JSON e sprites) =====
-   Os JSON vêm do raw (com ?v= por minuto, para refletir commits novos logo) e, se falhar, da cópia antiga.
-   Imagens: sprites/... passam a apontar para o kpfichas_db (jsDelivr -> raw -> repo antigo, em cascata). */
-const KP_DB='alphx-r/kpfichas_db',KP_OLD='alphx-r/kingdomplatinum';
-const DB_RAW='https://raw.githubusercontent.com/'+KP_DB+'/main/';
-const DB_CDN='https://cdn.jsdelivr.net/gh/'+KP_DB+'@main/';
-const OLD_RAW='https://raw.githubusercontent.com/'+KP_OLD+'/main/';
-const OLD_CDN='https://cdn.jsdelivr.net/gh/'+KP_OLD+'@main/';
-const kpAsset=u=>{if(typeof u!=='string'||!u)return u;let m=u.match(/^\/?(sprites\/.+)$/);if(m)return DB_CDN+m[1];
- m=u.match(/^https:\/\/(?:cdn\.jsdelivr\.net\/gh\/alphx-r\/kingdomplatinum@[^\/]+|raw\.githubusercontent\.com\/alphx-r\/kingdomplatinum\/(?:refs\/heads\/)?[^\/]+)\/(sprites\/.+)$/);
- return m?DB_CDN+m[1]:u};
-const KP_IMG_CHAIN=[DB_CDN,DB_RAW,OLD_RAW];
-addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG')return;const s=t.getAttribute('src')||'';
- const i=KP_IMG_CHAIN.findIndex(b=>s.startsWith(b));if(i<0||i>=KP_IMG_CHAIN.length-1)return;
- e.stopPropagation();t.src=KP_IMG_CHAIN[i+1]+s.slice(KP_IMG_CHAIN[i].length).split('?')[0]},true);
-const dbJson=async path=>{for(const u of [DB_RAW+path+'?v='+Math.floor(Date.now()/60000),'/'+path,OLD_CDN+path]){const d=await fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);if(d!=null)return d}return null};
 const jl=u=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);
 const fnum=v=>String(v??'').replace(/\D/g,'').replace(/^0+(?=\d)/,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 const dig=v=>parseInt(String(v??'').replace(/\D/g,''))||0;
@@ -758,7 +763,7 @@ let LOJAS=null,LJ=null,EST=null,CATALOGO=false;
 const PATH=location.pathname.replace(/\/+$/,'');
 let SL=(()=>{const m=PATH.match(/^\/stores\/([^\/]+)$/i);if(m)return decodeURIComponent(m[1]).toLowerCase();if(/^\/pokemart(\.html)?$/i.test(PATH))return'pokemart';const q=new URLSearchParams(location.search).get('slug');return q?q.toLowerCase():''})();
 const LJPEND=()=>{try{const p=JSON.parse(localStorage.getItem('kp_lojas_pend')||'null');if(p&&Array.isArray(p.l)&&Date.now()-p.t<180000)return p.l}catch{}return null};
-const LJL=()=>LJPEND()?Promise.resolve(LJPEND()):dbJson('stores/stores.json').then(d=>Array.isArray(d)?d:[]);
+const LJL=()=>LJPEND()?Promise.resolve(LJPEND()):dbJson('stores/stores.json','/stores.json').then(d=>Array.isArray(d)?d:[]);
 const recs=l=>Array.isArray(l?.recursos)?l.recursos:[];
 const temRec=()=>recs(LJ).includes('reciclagem');
 const temVch=()=>recs(LJ).includes('tm_voucher');
@@ -795,9 +800,8 @@ const pr=r=>r.unit>0?fm(r.unit):'—';
 {const t=new URLSearchParams(location.search).get('tab');if(/^(reciclagem|recycling|r)$/i.test(t||''))TAB='r'}
 
 /* itens: items.json do repositório */
-const CDN_REPO=DB_CDN;
 const itemSrc=p=>kpAsset(p||'');
-let ITD;const ITL=()=>ITD??=dbJson('itemdex/items.json').then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:itemSrc(x.sprite||x.image||x.img),item_desc:x.item_desc||x.desc||x.descricao})});return m});
+let ITD;const ITL=()=>ITD??=dbJson('itemdex/items.json','/items.json').then(d=>{const m=new Map();(Array.isArray(d)?d:[]).forEach(x=>{if(!x)return;const n=x.name||x.nome;if(n)m.set(nk(n),{...x,name:n,sprite:itemSrc(x.sprite||x.image||x.img),item_desc:x.item_desc||x.desc||x.descricao})});return m});
 const isTM=it=>!!it&&nk(it.name)!=='tmvoucher'&&(/^(tms?|technicalmachines?|machines?)$/.test(nk(it.category))||/^tm\s?\d/i.test(it.name||''));
 const isPill=it=>!!it&&/\bpills?\b|p[ií]lulas?/i.test((it.category||'')+' '+(it.name||''));
 const catOf=r=>isTM(r.it)?'TMs':(r.it?.category||'Outros');
@@ -1671,7 +1675,7 @@ const MVL=()=>dbJson('movedex/moves.json').then(a=>{const m=new Map();(Array.isA
 const mvSlug=n=>String(n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/['’`.]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 function tmParse(name){const m=String(name||'').match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.*)$/i);return{num:m?m[1].padStart(3,'0'):'',move:m?(m[2]||name):String(name||'')}}
 function tmTipo(it){const mv=MV.get(mvSlug(tmParse(it.name).move));const t=nk(mv?.type||it.move_type||it.type||'');return TMTIPOS.includes(t)?t:'normal'}
-function tmSprites(){if(!ITM)return;ITM.forEach(it=>{if(isTM(it))it.sprite=CDN_REPO+'sprites/items/tms/tm-'+tmTipo(it)+'.png'})}
+function tmSprites(){if(!ITM)return;ITM.forEach(it=>{if(isTM(it))it.sprite=DB_RAW+'sprites/items/tms/tm-'+tmTipo(it)+'.png'})}
 function tmCard(r,n,C){const t=tmParse(r.nome);
  return`<div class="pc tm${n?' on':''}" data-k="${esc(r.k)}"><div class="pct"><span class="pci">${r.it?.sprite?`<img src="${esc(r.it.sprite)}" alt="" loading="lazy">`:''}</span><h3>${esc(t.move)}</h3></div><span class="pcc">${t.num?'TM'+esc(t.num):'TM'}</span><div class="pcf"><b class="lp${LJ?.moeda_item?' mo':''}">${TAB!=='s'?'':'+'}${pr(r)}</b>${n?`<div class="stp"><button type="button" data-a="-">−</button><input type="number" min="0" max="${r.mx}" value="${n}" aria-label="Quantidade"><button type="button" data-a="+">+</button></div>`:`<button type="button" class="btn p s" data-a="+">${TAB!=='s'?'Adicionar':'Vender'}</button>`}</div></div>`}
 function drawList(){
