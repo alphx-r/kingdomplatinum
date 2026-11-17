@@ -14,9 +14,10 @@ const API = `https://api.github.com/repos/${OWN}/${REPO}`;
 // TODOS os JSON (abilities, moves, items, rewards, stores, missões) ficam no repo de dados (kpfichas_db), o mesmo do
 // pokemon.json do nationaldex_adm, com as mesmas pastas de antes (itemdex/items.json, movedex/moves.json...).
 // Token: GH_SPRITE_TOKEN (o mesmo que a rota do nationaldex usa no kpfichas_db), com GITHUB_TOKEN como reserva.
-// Imagens (sprites/...) continuam no repo do site: as páginas apontam para elas.
+// Imagens (sprites/...) TAMBÉM vão para o repo de dados (kpfichas_db): as páginas apontam para lá.
+// Para as imagens voltarem a ir ao repo do site, ponha "imagens" em JSON_NO_SITE (ex.: JSON_NO_SITE=imagens).
 // Para um tipo voltar a gravar no repo do site (enquanto as páginas que leem aquele JSON não migram),
-// liste-o na env JSON_NO_SITE, ex.: JSON_NO_SITE=stores,missoes
+// liste-o na env JSON_NO_SITE, ex.: JSON_NO_SITE=stores,missoes,imagens
 const DADOS_REPO = process.env.JSON_REPO || 'alphx-r/kpfichas_db';
 const DADOS_BRANCH = process.env.JSON_BRANCH || 'main';
 const DADOS_API = `https://api.github.com/repos/${DADOS_REPO}`;
@@ -195,17 +196,18 @@ async function hItems(token, body) {
     if (!/^[A-Za-z0-9+/=]+$/.test(im.contentBase64 || '') || im.contentBase64.length > 2_000_000) throw new HttpErr(400, `Imagem inválida ou grande demais: ${im.path}`);
   }
   const FILE = 'itemdex/items.json';
-  // 1) imagens (sprites/...) ficam no repo do site, num commit só — antes do JSON, pra o JSON nunca apontar pra imagem que não subiu
+  // 1) imagens (sprites/...) vão para o repo de dados (kpfichas_db), num commit só — antes do JSON, pra o JSON nunca apontar pra imagem que não subiu
   let commitImg = null;
   if (images.length) {
-    const H = { ...ghHeaders(token), 'Content-Type': 'application/json' };
+    const TI = alvoJson('imagens', token);
+    const H = { ...ghHeaders(TI.token), 'Content-Type': 'application/json' };
     const gh = async (path, method = 'GET', b) => {
-      const r = await fetch(`${API}/${path}`, { method, headers: H, body: b ? JSON.stringify(b) : undefined });
+      const r = await fetch(`${TI.api}/${path}`, { method, headers: H, body: b ? JSON.stringify(b) : undefined });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.message || `GitHub HTTP ${r.status}`);
       return d;
     };
-    const headSha = (await gh(`git/ref/heads/${BRANCH}`)).object.sha;
+    const headSha = (await gh(`git/ref/heads/${TI.branch}`)).object.sha;
     const baseTree = (await gh(`git/commits/${headSha}`)).tree.sha;
     const entries = [];
     for (const im of images) {
@@ -215,7 +217,7 @@ async function hItems(token, body) {
     const tree = await gh('git/trees', 'POST', { base_tree: baseTree, tree: entries });
     if (tree.sha !== baseTree) {
       const commit = await gh('git/commits', 'POST', { message: `chore: atualiza ${images.length} imagem(ns) de itens via itemdex_adm`, tree: tree.sha, parents: [headSha] });
-      await gh(`git/refs/heads/${BRANCH}`, 'PATCH', { sha: commit.sha });
+      await gh(`git/refs/heads/${TI.branch}`, 'PATCH', { sha: commit.sha });
       commitImg = commit.sha;
     }
   }
@@ -234,7 +236,8 @@ async function hImage(token, body) {
     throw new HttpErr(400, 'Caminho não permitido. Use sprites/items/<categoria>/ ou sprites/rewards/<badges|ribbons|pins|randoms>/ com nome em minúsculas.');
   if (!contentBase64 || !/^[A-Za-z0-9+/=]+$/.test(contentBase64)) throw new HttpErr(400, 'Imagem inválida.');
   if (contentBase64.length > 2_000_000) throw new HttpErr(413, 'Imagem grande demais (máx. ~1,5 MB).');
-  const r = await putArquivo(token, path, { base64: contentBase64 }, message || `Atualiza ${path}`);
+  const T = alvoJson('imagens', token);
+  const r = await putArquivo(T.token, path, { base64: contentBase64 }, message || `Atualiza ${path}`, { api: T.api, branch: T.branch });
   return { ok: true, path, sha: r.sha, commit: r.commitSha };
 }
 
