@@ -925,7 +925,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
   <div class="adm-header">
     <div>
       <div class="adm-title">Move<span>Dex</span> <span style="font-size:13px;color:var(--muted)">— Painel ADM</span></div>
-      <div class="adm-desc">Gerencie traduções e atributos de movimentos para pt-BR. Dados salvos no Supabase e disponíveis para todos.</div>
+      <div class="adm-desc">Gerencie traduções e atributos de movimentos para pt-BR. Os dados ficam no moves.json (GitHub): as edições ficam no navegador até clicar em “Commitar moves.json”.</div>
     </div>
   </div>
 
@@ -950,9 +950,9 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="mv-f-pend" onclick="setMvFilter('pend')">Pendentes</button>
       <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
-      <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e sobe pro Supabase (sem sobrescrever traduções já feitas)" style="margin-left:auto">📥 Importar da PokeAPI</button>
-      <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e ajusta is_tm / tm_number dos moves no Supabase (usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
-      <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Gera o moves.json atualizado e commita direto no repo alphx-r/kingdomplatinum">📤 Commitar moves.json</button>
+      <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e adiciona à lista (sem sobrescrever traduções já feitas). Fica pendente até commitar o moves.json" style="margin-left:auto">📥 Importar da PokeAPI</button>
+      <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e ajusta is_tm / tm_number dos moves (pendente até commitar; usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
+      <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Baixa o moves.json do kpfichas_db, mescla com as edições de outros admins e commita no repo alphx-r/kpfichas_db">📤 Commitar moves.json</button>
       <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
     <div id="mv-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando movimentos…</div></div></div>
@@ -979,7 +979,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 <div class="modal-ov" id="new-move-modal">
   <div class="modal" style="position:relative">
     <div class="modal-title" style="margin-bottom:4px">＋ Novo Move Customizado</div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Adicione um movimento homebrew. Será salvo no Supabase e disponível para exportação pela API própria.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Adicione um movimento homebrew. Entra na lista e só vai para o moves.json quando você clicar em “Commitar moves.json”.</p>
     <div style="max-width:720px">
       <div style="margin-bottom:12px">
         <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
@@ -1022,7 +1022,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       </div>
       <div class="modal-foot" style="padding:0;margin-top:8px">
         <button class="btn btn-outline" onclick="closeModal('new-move-modal')">Cancelar</button>
-        <button class="btn btn-success" onclick="saveNewMove()">✓ Salvar no Supabase</button>
+        <button class="btn btn-success" onclick="saveNewMove()">✓ Adicionar à lista</button>
       </div>
     </div>
   </div>
@@ -1030,66 +1030,142 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
 
 <script>
 /* ══════════════════════════════════════════
-   SUPABASE CONFIG
+   DADOS — os moves vivem no movedex/moves.json do repo kpfichas_db (GitHub), NÃO no Supabase.
+   (o HTML fica no repo principal; o JSON fica no kpfichas_db, igual ao pokemon.json do nationaldex_adm)
+   • Leitura: baixa o moves.json do GitHub uma vez e guarda em memória (S.mv.dbMap).
+   • Edição: mvUpsert/mvDelete só mexem na memória (nada é gravado até commitar).
+   • Gravação: botão "Commitar moves.json" → baixa o remoto de novo, mescla com o que
+     outros admins commitaram (3 vias: base × minha × remota) e manda pra /api/commit-moves.
 ══════════════════════════════════════════ */
-const SUPA_URL = 'https://vnccljhhexlsthjaaorr.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuY2NsamhoZXhsc3RoamFhb3JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyOTI5NjEsImV4cCI6MjEwMDg2ODk2MX0.XtKUKNMq7MG_NAQo74nbIsvJCKFE-qhH4_AxULF7M1k';
-const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY };
+const MV_REPO = 'alphx-r/kpfichas_db';   // mesmo repo do pokemon.json (KP_JSON_REPO no nationaldex_adm)
+const MV_PATH = 'movedex/moves.json';
+const MVJ = { loaded: false };
+let _mvjLoadP = null;
 
-async function sbSelect(table, eq = null) {
-  let url = `${SUPA_URL}/rest/v1/${table}?select=*`;
-  if (eq) url += `&${eq.col}=eq.${eq.val}`;
-  return await sbFetchAllPages(url, SH);
+// JSON "estável" (chaves ordenadas) pra comparar valores; undefined e null contam como iguais
+function mvStable(v) {
+  if (v === undefined || v === null) return 'null';
+  if (typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(mvStable).join(',') + ']';
+  return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + mvStable(v[k])).join(',') + '}';
 }
+function mvStrip(o) { return Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => !k.startsWith('_') && v !== undefined)); }
 
-async function sbFetchAllPages(url, headers, pageSize = 1000) {
-  let all = [];
-  let from = 0;
-  while (true) {
-    const r = await fetch(url, { headers: { ...headers, Range: `${from}-${from + pageSize - 1}` } });
-    if (!r.ok && r.status !== 206) throw new Error(await r.text());
-    const page = await r.json();
-    all = all.concat(page);
-    if (page.length < pageSize) break;
-    from += pageSize;
+async function mvFetchRemote() {
+  const comTimeout = (url, opts, ms) => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
+  };
+  const lista = j => { if (j && !Array.isArray(j) && Array.isArray(j.moves)) j = j.moves; return Array.isArray(j) ? j.filter(r => r && r.name) : null; };
+  const tentativas = [
+    () => comTimeout(`https://raw.githubusercontent.com/${MV_REPO}/main/${MV_PATH}?v=${Date.now()}`, { cache: 'no-store' }, 30000),
+    () => comTimeout(`https://api.github.com/repos/${MV_REPO}/contents/${MV_PATH}?ref=main`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' } }, 30000),
+  ];
+  let erro = '';
+  for (const t of tentativas) {
+    try {
+      const r = await t();
+      if (!r.ok) { erro = 'HTTP ' + r.status; continue; }
+      const l = lista(await r.json());
+      if (l) return l;
+      erro = 'formato inesperado (esperava uma lista)';
+    } catch (e) { erro = e.name === 'AbortError' ? 'demorou mais de 30s' : e.message; }
   }
-  return all;
+  throw new Error(`Não consegui ler o ${MV_PATH} do GitHub (${erro}).`);
 }
 
-// Tabela usa "name" como chave natural (não "id"), então o upsert precisa
-// dizer isso explicitamente pro Postgres via on_conflict — sem isso, cada
-// edição virava um INSERT novo em vez de um UPDATE, duplicando a linha.
-async function sbUpsert(table, row, _retriedMissing) {
-  _retriedMissing = _retriedMissing || new Set();
-  const url = `${SUPA_URL}/rest/v1/${table}?on_conflict=name`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { ...SH, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify(row)
-  });
-  if (!r.ok) {
-    const errText = await r.text();
-    const m = errText.match(/Could not find the '([^']+)' column/);
-    if (m && !_retriedMissing.has(m[1]) && (m[1] in row)) {
-      console.warn(`[sbUpsert] Coluna "${m[1]}" não existe na tabela "${table}" — salvando sem ela.`);
-      const rowSemCampo = { ...row };
-      delete rowSemCampo[m[1]];
-      _retriedMissing.add(m[1]);
-      if (typeof toast === 'function') toast(`⚠️ Campo "${m[1]}" não foi salvo (coluna não existe no banco ainda) — o resto foi salvo normalmente.`, 'err');
-      return sbUpsert(table, rowSemCampo, _retriedMissing);
+async function mvEnsureLoaded() {
+  if (MVJ.loaded) return;
+  if (!_mvjLoadP) {
+    _mvjLoadP = (async () => {
+      const rows = await mvFetchRemote();
+      S.mv.dbMap = {};
+      rows.forEach(r => { S.mv.dbMap[r.name] = r; });
+      mvSetBase(JSON.parse(JSON.stringify(rows)));   // BASE da mesclagem: exatamente o que está no GitHub agora
+      MVJ.loaded = true;
+    })().finally(() => { _mvjLoadP = null; });
+  }
+  return _mvjLoadP;
+}
+
+// Mesmas semânticas do antigo upsert "merge-duplicates": colunas não enviadas são mantidas.
+function mvUpsert(row) {
+  if (!MVJ.loaded) throw new Error('A lista de moves ainda não carregou do moves.json — recarregue a página.');
+  const name = String(row.name);
+  S.mv.dbMap[name] = { ...(S.mv.dbMap[name] || {}), ...row };
+  return S.mv.dbMap[name];
+}
+function mvDelete(name) {
+  if (!MVJ.loaded) throw new Error('A lista de moves ainda não carregou do moves.json — recarregue a página.');
+  delete S.mv.dbMap[name];
+}
+
+// Credenciais do player (nome + senha) para a rota /api/commit-moves: o servidor confere o player
+// e o papel (chefe/ADM/MOD). A senha é pedida uma vez por aba (KPAdm.cred guarda só em sessionStorage).
+async function kpCommitAuth() {
+  if (!window.KPAdm) return {};
+  if (!KPAdm.pode()) throw new Error('Ative o modo ADM (botão ao lado do seu nome) para commitar.');
+  const c = await KPAdm.cred('Para commitar no GitHub, confirme a senha do seu player.');
+  if (!c) throw new Error('Commit cancelado: senha não confirmada.');
+  return { admin_nome: c.n, admin_senha: c.s };
+}
+function kpCommitAuthFail(res) { if (res && (res.status === 401 || res.status === 403)) { try { KPAdm.credLimpar(); } catch (e) {} } }
+
+/* ── Mesclagem de 3 vias (protege contra sobrescrever o que outro admin commitou) ──
+   BASE = moves.json como estava quando esta página carregou (ou no último commit);
+   MINHA = memória; REMOTA = moves.json atual no GitHub.
+   Quem só mexeu de um lado leva a mudança; mexeram nos dois → campo a campo;
+   o mesmo campo editado dos dois lados = conflito (o admin escolhe quem prevalece). */
+function mvMerge3(base, localMap, remoteRows, preferLocal) {
+  base = base || {};
+  const remote = {}, ids = [];
+  (remoteRows || []).forEach(r => { if (r && r.name) { if (!(r.name in remote)) ids.push(r.name); remote[r.name] = r; } });
+  Object.keys(localMap || {}).forEach(n => { if (!(n in remote)) ids.push(n); });
+  const rows = [], conflicts = [], notas = { puxados: [], apagadosPorOutros: [] };
+  for (const n of ids) {
+    const Lm = localMap && localMap[n] ? mvStrip(localMap[n]) : undefined;
+    const Rm = remote[n] ? mvStrip(remote[n]) : undefined;
+    const Bm = base[n] ? mvStrip(base[n]) : undefined;
+    const Ls = Lm && mvStable(Lm), Rs = Rm && mvStable(Rm), Bs = Bm && mvStable(Bm);
+    if (Lm && Rm) {
+      if (Ls === Rs) { rows.push(Lm); continue; }
+      if (Bm && Ls === Bs) { rows.push(Rm); notas.puxados.push(n); continue; }   // só o outro mexeu
+      if (Bm && Rs === Bs) { rows.push(Lm); continue; }                           // só eu mexi
+      const out = {};
+      for (const k of new Set([...Object.keys(Lm), ...Object.keys(Rm)])) {
+        const l = mvStable(Lm[k]), r = mvStable(Rm[k]), b = Bm ? mvStable(Bm[k]) : undefined;
+        let v;
+        if (l === r) v = Lm[k];
+        else if (Bm && l === b) v = Rm[k];
+        else if (Bm && r === b) v = Lm[k];
+        else { conflicts.push({ name: n, campo: k }); v = preferLocal ? Lm[k] : Rm[k]; }
+        if (v !== undefined) out[k] = v;
+      }
+      rows.push(out);
+    } else if (Lm && !Rm) {
+      if (!Bm) { rows.push(Lm); continue; }                                       // move novo meu
+      if (Ls === Bs) { notas.apagadosPorOutros.push(n); continue; }               // outro apagou e eu não mexi → apaga
+      conflicts.push({ name: n, campo: '(outro admin excluiu este move)' });
+      if (preferLocal) rows.push(Lm); else notas.apagadosPorOutros.push(n);
+    } else if (!Lm && Rm) {
+      if (!Bm) { rows.push(Rm); notas.puxados.push(n); continue; }                // move novo de outro admin
+      if (Rs === Bs) continue;                                                    // eu apaguei e ninguém mexeu → apaga
+      conflicts.push({ name: n, campo: '(você excluiu, mas outro admin editou)' });
+      if (!preferLocal) { rows.push(Rm); notas.puxados.push(n); }
     }
-    throw new Error(errText);
   }
-  const text = await r.text();
-  return text ? JSON.parse(text) : {};
+  rows.sort((x, y) => String(x.name).localeCompare(String(y.name)));
+  return { rows, conflicts, notas };
 }
-
-async function sbDeleteByName(table, name) {
-  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?name=eq.${encodeURIComponent(name)}`, {
-    method: 'DELETE',
-    headers: SH
-  });
-  if (!r.ok) throw new Error(await r.text());
+function mvMergePerguntando(remoteRows) {
+  let res = mvMerge3(MVB.base, S.mv.dbMap, remoteRows, true);
+  if (res.conflicts.length) {
+    const lista = res.conflicts.slice(0, 10).map(c => `• ${cap(c.name)} — ${c.campo}`).join('\n');
+    const mais = res.conflicts.length > 10 ? `\n…e mais ${res.conflicts.length - 10}.` : '';
+    const minha = confirm(`⚠️ Outro admin alterou os MESMOS campos que você (${res.conflicts.length}):\n\n${lista}${mais}\n\nOK = manter a MINHA versão nesses campos\nCancelar = manter a versão do OUTRO admin`);
+    if (!minha) res = mvMerge3(MVB.base, S.mv.dbMap, remoteRows, false);
+  }
+  return res;
 }
 
 /* ══════════════════════════════════════════
@@ -1232,7 +1308,7 @@ async function syncTmsFromItems() {
       if (lista.has(mv)) dup.push(nome);
       lista.set(mv, parseInt(m[1], 10));
     });
-    if (!lista.size) { toast('Nenhum TM do items.json bateu com um move do banco.', 'err'); return; }
+    if (!lista.size) { toast('Nenhum TM do items.json bateu com um move da lista.', 'err'); return; }
 
     const mudar = [];
     Object.entries(S.mv.dbMap).forEach(([name, row]) => {
@@ -1245,9 +1321,9 @@ async function syncTmsFromItems() {
     const desmarcar = mudar.filter(x => !x.is_tm).length;
     if (!mudar.length) { toast(`✅ Já está sincronizado (${lista.size} TMs).`, 'ok'); return; }
 
-    const extra = (semMove.length ? `\n\n⚠️ ${semMove.length} item(ns) TM sem move correspondente no banco (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}` : '')
+    const extra = (semMove.length ? `\n\n⚠️ ${semMove.length} item(ns) TM sem move correspondente na lista (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}` : '')
       + (dup.length ? `\n⚠️ Número repetido para o mesmo move: ${dup.slice(0, 5).join(', ')}` : '');
-    if (!confirm(`TMs no items.json: ${lista.size}\n\n• ${marcar} move(s) vão virar TM\n• ${renum} move(s) já eram TM e terão o número atualizado\n• ${desmarcar} move(s) deixam de ser TM (não estão na lista)${extra}\n\nAplicar no Supabase?`)) return;
+    if (!confirm(`TMs no items.json: ${lista.size}\n\n• ${marcar} move(s) vão virar TM\n• ${renum} move(s) já eram TM e terão o número atualizado\n• ${desmarcar} move(s) deixam de ser TM (não estão na lista)${extra}\n\nAplicar? (fica pendente até commitar o moves.json)`)) return;
 
     showProgress('Sincronizando TMs…');
     let ok = 0, fail = 0, feito = 0;
@@ -1262,7 +1338,7 @@ async function syncTmsFromItems() {
           contest_style: e.contest_style || null, is_tm: c.is_tm, tm_number: c.tm_number,
           approved: !!e.approved, updated_at: agora
         };
-        try { await sbUpsert('moves', row); ok++; } catch (err) { fail++; erros.push(`${c.name}: ${err.message}`); }
+        try { await mvUpsert(row); ok++; } catch (err) { fail++; erros.push(`${c.name}: ${err.message}`); }
         updateProgress(++feito, mudar.length);
       }));
     }
@@ -1305,7 +1381,7 @@ function renderMvList() {
   if (!items.length) {
     con.innerHTML = S.mv.all.length
       ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhum movimento encontrado</div></div>`
-      : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum movimento no banco ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "📥 Importar da PokeAPI" acima para popular a lista.</div></div>`;
+      : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum movimento no moves.json ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "📥 Importar da PokeAPI" acima para popular a lista.</div></div>`;
     return;
   }
   updateMvStats();
@@ -1396,7 +1472,7 @@ function renderMvList() {
           <span class="save-ind" id="mv-ind-${item.name}">✓ Salvo!</span>
           <button class="btn btn-outline btn-sm" onclick="saveMv('${item.name}',false)">💾 Salvar rascunho</button>
           <button class="btn btn-success btn-sm" onclick="saveMv('${item.name}',true)">✓ Aprovar</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteMove('${item.name}')" title="Remove este movimento do banco de dados" style="margin-left:auto">🗑️ Excluir</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMove('${item.name}')" title="Remove este movimento da lista (vale no próximo commit)" style="margin-left:auto">🗑️ Excluir</button>
         </div>
       </div>
     </div>`;
@@ -1429,9 +1505,8 @@ async function saveMv(name, approve) {
   if (is_tm && !tm_number) { toast('Informe o número da TM.', 'err'); return; }
   try {
     const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, is_tm, tm_number, approved: approve, updated_at: new Date().toISOString() };
-    await sbUpsert('moves', row);
-    S.mv.dbMap[name] = row;
-    item.type = type; item.type2 = type2; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
+    await mvUpsert(row);
+        item.type = type; item.type2 = type2; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
     const ind = document.getElementById('mv-ind-' + name);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     const entry = document.getElementById('mv-entry-' + name);
@@ -1455,7 +1530,7 @@ async function saveMv(name, approve) {
       } else if (tmBadge) { tmBadge.remove(); }
     }
     updateMvStats();
-    toast(approve ? '✓ Aprovado e publicado!' : '💾 Rascunho salvo!', 'ok');
+    toast(approve ? '✓ Aprovado — falta commitar o moves.json' : '💾 Rascunho salvo — falta commitar o moves.json', 'ok');
   } catch (e) { toast('Erro: ' + e.message, 'err'); }
 }
 
@@ -1471,9 +1546,9 @@ function updateMvStats() {
 }
 
 async function deleteMove(name) {
-  if (!confirm(`Excluir o movimento "${cap(name)}" do banco de dados?\n\nPokémon que já têm esse move no moveset continuam com o nome salvo, mas ele deixa de aparecer na lista de Moves e perde descrição/atributos/status de TM.`)) return;
+  if (!confirm(`Excluir o movimento "${cap(name)}" da lista?\n\nPokémon que já têm esse move no moveset continuam com o nome salvo, mas ele deixa de aparecer na lista de Moves e perde descrição/atributos/status de TM.`)) return;
   try {
-    await sbDeleteByName('moves', name);
+    await mvDelete(name);
     delete S.mv.dbMap[name];
     S.mv.all = S.mv.all.filter(m => m.name !== name);
     applyMvFilter();
@@ -1481,34 +1556,32 @@ async function deleteMove(name) {
   } catch (e) { toast('Erro ao excluir: ' + e.message, 'err'); }
 }
 
+function mvRebuildList() {
+  const items = Object.values(S.mv.dbMap).map(r => ({
+    name: r.name, power: r.power, pp: r.pp, accuracy: r.accuracy,
+    damage_class: r.damage_class || '', type: r.type || '', type2: r.type2 || ''
+  }));
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  S.mv.all = items;
+  S.mv.filtered = items;
+  renderMvList();
+  applyMvFilter();
+}
+
+// Só vai ao GitHub na primeira vez; depois apenas redesenha a lista a partir da memória
+// (assim as edições ainda não commitadas nunca são descartadas).
 async function loadMoves() {
   try {
-    const dbRows = await sbSelect('moves');
-    S.mv.dbMap = {};
-    const items = dbRows.map(r => {
-      S.mv.dbMap[r.name] = r;
-      return {
-        name: r.name,
-        power: r.power,
-        pp: r.pp,
-        accuracy: r.accuracy,
-        damage_class: r.damage_class || '',
-        type: r.type || '',
-        type2: r.type2 || ''
-      };
-    });
-    items.sort((a, b) => a.name.localeCompare(b.name));
-    S.mv.all = items;
-    S.mv.filtered = items;
-    renderMvList();
-    applyMvFilter();
+    await mvEnsureLoaded();
+    mvRebuildList();
   } catch (e) {
-    document.getElementById('mv-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar movimentos</div></div>`;
+    const msg = String(e.message || e).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    document.getElementById('mv-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar movimentos</div><div style="font-size:12px;color:var(--muted);margin-top:6px">${msg}</div></div>`;
   }
 }
 
 async function importMovesFromPokeapi() {
-  if (!confirm('Isso vai buscar todos os movimentos da PokeAPI (~900) e subir pro Supabase: nome, tipo, categoria, poder, precisão, PP, contest style e número da dex. Se a descrição ainda estiver vazia, preenche com o texto em inglês (pra traduzir depois). NÃO sobrescreve descrição já preenchida nem status de aprovação já salvos. Pode demorar 2-3 minutos. Continuar?')) return;
+  if (!confirm('Isso vai buscar todos os movimentos da PokeAPI (~900) e adicionar à lista (pendente até commitar o moves.json): nome, tipo, categoria, poder, precisão, PP, contest style e número da dex. Se a descrição ainda estiver vazia, preenche com o texto em inglês (pra traduzir depois). NÃO sobrescreve descrição já preenchida nem status de aprovação já salvos. Pode demorar 2-3 minutos. Continuar?')) return;
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
@@ -1519,8 +1592,8 @@ async function importMovesFromPokeapi() {
     if (!listRes.ok) throw new Error('PokeAPI: HTTP ' + listRes.status);
     const list = (await listRes.json()).results;
 
-    const dbRows = await sbSelect('moves');
-    const dbMap = {}; dbRows.forEach(r => { dbMap[r.name] = r; });
+    await mvEnsureLoaded();
+    const dbMap = S.mv.dbMap;
 
     let ok = 0, fail = 0, i = 0;
     const total = list.length;
@@ -1555,7 +1628,7 @@ async function importMovesFromPokeapi() {
             approved: !!existing.approved,
             updated_at: existing.updated_at || new Date().toISOString()
           };
-          await sbUpsert('moves', row);
+          await mvUpsert(row);
           ok++;
         } catch (e) { fail++; erros.push(`${item.name}: ${e.message}`); }
       }));
@@ -1572,43 +1645,39 @@ async function importMovesFromPokeapi() {
   }
 }
 
-// Gera o moves.json (mesmo formato usado pelo fallback do MoveDex e do
-// NationalDex) e manda pra rota serverless /api/commit-moves, que commita
-// direto em movedex/moves.json no repo alphx-r/kingdomplatinum. O token do
-// GitHub nunca passa pelo cliente — fica só como env var (GITHUB_TOKEN) na
-// Vercel, lido pela function em /api/commit-moves.js.
+// Commita o moves.json no repo alphx-r/kpfichas_db pela rota serverless /api/commit-moves
+// (o token do GitHub fica só na Vercel). Antes de enviar, baixa o moves.json atual e mescla com o que
+// outros admins já commitaram. Este é o ÚNICO ponto que grava — nada mais é salvo em lugar nenhum.
 async function backupMovesNow() {
   const btn = document.getElementById('mv-backup-btn');
   const origLabel = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
   try {
-    const data = S.mv.all.map(m => {
-      const db = S.mv.dbMap[m.name] || {};
-      return {
-        name: m.name,
-        descricao: db.descricao || '',
-        type: db.type || m.type || null,
-        type2: db.type2 ?? m.type2 ?? null,
-        damage_class: db.damage_class || m.damage_class || null,
-        power: db.power ?? m.power ?? null,
-        accuracy: db.accuracy ?? m.accuracy ?? null,
-        approved: !!db.approved,
-        contest_style: db.contest_style || m.contest_style || null,
-        is_tm: !!db.is_tm,
-        tm_number: db.tm_number ?? null,
-        updated_at: db.updated_at || null,
-      };
-    });
-    const res = await fetch('/api/commit-moves', {
+    if (!MVJ.loaded || !Object.keys(S.mv.dbMap).length) throw new Error('A lista de moves não está carregada — recarregue a página antes de commitar.');
+    const auth = await kpCommitAuth();
+    // 1) moves.json atual do GitHub — se não der pra conferir, NÃO grava (evita apagar o trabalho de outros admins)
+    let remote;
+    try { remote = await mvFetchRemote(); }
+    catch (e) { throw new Error(e.message + ' Nada foi gravado, para não sobrescrever o trabalho de outros admins.'); }
+    // 2) mescla (3 vias) e aplica na memória — bloco síncrono, sem await no meio
+    const res = mvMergePerguntando(remote);
+    if (res.rows.length < remote.length - 25) throw new Error(`Segurança: o resultado teria ${res.rows.length} moves, mas o moves.json no GitHub tem ${remote.length}. Recarregue a página antes de commitar para não apagar o trabalho de outros admins.`);
+    S.mv.dbMap = {};
+    res.rows.forEach(r => { S.mv.dbMap[r.name] = r; });
+    const puxou = res.notas.puxados.length + res.notas.apagadosPorOutros.length;
+    // 3) commit
+    const r = await fetch('/api/commit-moves', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ moves: data }),
+      body: JSON.stringify({ moves: res.rows, ...auth }),
     });
     let result = {};
-    try { result = await res.json(); } catch (e) {}
-    if (!res.ok) throw new Error(result.error || `Erro ${res.status} ao commitar`);
-    toast(`✅ moves.json commitado no GitHub (${data.length} moves).`, 'ok');
-    try { mvSetBase(data); chgRefresh(); } catch (e) {}
+    try { result = await r.json(); } catch (e) {}
+    if (!r.ok) { kpCommitAuthFail(r); if (puxou) mvRebuildList(); throw new Error(result.error || `Erro ${r.status} ao commitar`); }
+    mvSetBase(JSON.parse(JSON.stringify(res.rows)));   // o que foi commitado vira a nova base
+    if (puxou) mvRebuildList();
+    toast(`✅ moves.json commitado no GitHub (${res.rows.length} moves)${puxou ? ` · ${puxou} vieram de outros admins` : ''}.`, 'ok');
+    try { chgRefresh(); } catch (e) {}
   } catch (e) {
     toast('Erro ao commitar moves.json: ' + e.message, 'err');
   } finally {
@@ -1630,9 +1699,8 @@ async function saveNewMove() {
   if (!name) { toast('Nome é obrigatório.', 'err'); return; }
   try {
     const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style: contest_style||null, approved: false, updated_at: new Date().toISOString() };
-    await sbUpsert('moves', row);
-    S.mv.dbMap[name] = row;
-    if (!S.mv.all.find(m => m.name === name)) {
+    await mvUpsert(row);
+        if (!S.mv.all.find(m => m.name === name)) {
       S.mv.all.push({ name, type, type2, damage_class, power, accuracy, contest_style });
       S.mv.all.sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -1643,7 +1711,7 @@ async function saveNewMove() {
     document.getElementById('nmv-type2').value = '';
     document.getElementById('nmv-cat').value = '';
     document.getElementById('nmv-style').value = '';
-    toast(`Move "${name}" salvo!`, 'ok');
+    toast(`Move "${name}" adicionado — falta commitar o moves.json.`, 'ok');
   } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
 }
 
@@ -1801,30 +1869,14 @@ function chgSoon() { clearTimeout(CHG.timer); CHG.timer = setTimeout(chgRefresh,
 /* ── Adaptador do MoveDex: compara o estado atual com o moves.json commitado no GitHub ── */
 const MVB = { base: null };
 const MV_FIELDS = [['descricao', 'Descrição'], ['type', 'Tipo'], ['type2', 'Tipo 2'], ['damage_class', 'Categoria'], ['power', 'Poder'], ['accuracy', 'Precisão'], ['contest_style', 'Contest style'], ['approved', 'Aprovado'], ['is_tm', 'É TM'], ['tm_number', 'Número da TM']];
-function mvPayload() {
-  return S.mv.all.map(m => {
-    const db = S.mv.dbMap[m.name] || {};
-    return { name: m.name, descricao: db.descricao || '', type: db.type || m.type || null, type2: db.type2 ?? m.type2 ?? null,
-      damage_class: db.damage_class || m.damage_class || null, power: db.power ?? m.power ?? null, accuracy: db.accuracy ?? m.accuracy ?? null,
-      approved: !!db.approved, contest_style: db.contest_style || m.contest_style || null, is_tm: !!db.is_tm, tm_number: db.tm_number ?? null };
-  });
+function mvPayload() {   // linhas completas (com campos extras), ordenadas por nome
+  return Object.values(S.mv.dbMap).map(mvStrip).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 function mvNorm(k, v) { if (k === 'approved' || k === 'is_tm') return !!v; return (v === undefined || v === '') ? null : v; }
 function mvSetBase(rows) { const m = {}; (rows || []).forEach(r => { if (r && r.name) m[r.name] = r; }); MVB.base = m; }
-async function mvLoadBase() {
-  const repo = 'alphx-r/kingdomplatinum';
-  const tries = [
-    () => fetch(`https://api.github.com/repos/${repo}/contents/movedex/moves.json?ref=main`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' } }),
-    () => fetch(`https://raw.githubusercontent.com/${repo}/main/movedex/moves.json?v=${Date.now()}`, { cache: 'no-store' }),
-  ];
-  for (const t of tries) {
-    try { const r = await t(); if (!r.ok) continue; let j = await r.json(); if (j && !Array.isArray(j) && Array.isArray(j.moves)) j = j.moves; if (Array.isArray(j) && j.length) { mvSetBase(j); chgSoon(); return; } } catch (e) { /* tenta o próximo */ }
-  }
-  console.warn('[chg] não consegui ler o movedex/moves.json do GitHub');
-}
 window.CHG_ADAPTER = {
   noun: 'move',
-  note: 'Já salvo no Supabase; falta commitar o moves.json.',
+  note: 'Só no navegador até commitar o moves.json.',
   commit() { togglePendPanel(false); backupMovesNow(); },
   showFab(d) { return !d.noBase && (d.add.length + d.mod.length + d.del.length) > 0; },
   get() {
@@ -1848,7 +1900,13 @@ window.CHG_ADAPTER = {
   const f = window[n]; if (typeof f !== 'function') return;
   window[n] = function () { const r = f.apply(this, arguments); if (r && typeof r.then === 'function') r.then(chgSoon, chgSoon); else chgSoon(); return r; };
 });
-chgEnsureDom(); mvLoadBase();
+chgEnsureDom();
+window.addEventListener('beforeunload', e => {
+  try {
+    const d = window.CHG_ADAPTER.get();
+    if (!d.noBase && (d.add.length + d.mod.length + d.del.length) > 0) { e.preventDefault(); e.returnValue = ''; }
+  } catch (_) {}
+});
 
 </script>
 </body>
