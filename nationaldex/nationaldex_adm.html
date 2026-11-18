@@ -1116,6 +1116,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="pk-reg-btn" data-reg="Hisui"  onclick="navRegiao(this)">Hisui</button>
       <button class="pk-reg-btn" data-reg="Paldea" onclick="navRegiao(this)">Paldea</button>
       <button class="pk-reg-btn" data-reg="Nendo"  onclick="navRegiao(this)">Nendo</button>
+      <button class="pk-reg-btn" data-reg="Specials" onclick="navRegiao(this)">Specials</button>
     </div>
     <div class="toolbar">
       <div class="sinput-wrap">
@@ -1500,6 +1501,12 @@ Ember"></textarea><div class="moveset-bulk-actions"><button type="button" class=
           <div class="field-lbl pt" style="margin-bottom:4px">Classificação</div>
           <input class="mv-meta-input" id="nrpg-classificacao" type="text" placeholder="Ex: Pokémon Rato" style="width:100%">
         </div>
+      </div>
+      <div class="nrpg-base-only nrpg-tab-normal" style="margin:2px 0 10px">
+        <label style="display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;cursor:pointer">
+          <input type="checkbox" id="nrpg-special" style="width:15px;height:15px;accent-color:var(--brand-mid)">
+          Slot Specials <span style="font-weight:400;color:var(--muted)">(ID S0001…, não aparece na NationalDex e não abre slug)</span>
+        </label>
       </div>
       <style>@media(max-width:640px){#nrpg-inline-form .two-col,#nrpg-inline-form > div[style*="grid-template-columns:1fr 1fr 110px 1.3fr"]{grid-template-columns:1fr!important}}</style>
 
@@ -3420,9 +3427,10 @@ function renderPkList() {
     { nome: 'Hisui',   range: [899, 905]        },
     { nome: 'Paldea',  range: [906, 1025]       },
     { nome: 'Nendo',   range: [1026, Infinity]  },
+    { nome: 'Specials', range: [0, -1]          },   // só por prefixo S (ex: S0001) — nunca por número
   ];
 
-  const PREFIX_REGIAO = { A: 'Alola', G: 'Galar', H: 'Hisui', P: 'Paldea', N: 'Nendo' };
+  const PREFIX_REGIAO = { A: 'Alola', G: 'Galar', H: 'Hisui', P: 'Paldea', N: 'Nendo', S: 'Specials' };
 
   function getRegiao(id) {
     const s = String(id);
@@ -6927,7 +6935,7 @@ async function savePkModal(approve) {
 
     const row = {
       id: String(newId), name: displayName,
-      url_slug: slug,
+      url_slug: /^S\d/i.test(String(newId)) ? null : slug,   // Specials: sem slug
       bio: bioPt,
       classification,
       sprite, sprite_shiny: spriteShiny,
@@ -8357,6 +8365,7 @@ function nrpgAddFormFromNav() {
 }
 
 function nrpgResetForm() {
+  const _sp = document.getElementById('nrpg-special'); if (_sp) _sp.checked = false;
   // Destrava o slug automático — é um cadastro novo, então o slug deve voltar
   // a acompanhar o nome até a 1ª vez que for definido (ver nrpgSyncSlug).
   const nrpgSlugEl = document.getElementById('nrpg-slug');
@@ -8415,9 +8424,12 @@ async function saveNewRpgPokemon() {
   const b64Shiny = ssPrev?.dataset.b64 || null;
 
   // Gera ID automático: próximo N disponível (ou usa o número de Pokédex informado)
-  const existingNIds = S.rpg.all.map(p => p.id).filter(i => /^N\d+$/i.test(i)).map(i => parseInt(i.slice(1)));
+  // Slot Specials: marcado no formulário OU número Pokédex digitado com prefixo S (ex: S0003)
+  const isSpecial = !!document.getElementById('nrpg-special')?.checked || /^S\d+$/i.test(pokedexNum || '');
+  const idPfx = isSpecial ? 'S' : 'N';
+  const existingNIds = [...S.rpg.all, ...S.pk.all].map(p => String(p.id)).filter(i => new RegExp('^' + idPfx + '\\d+$', 'i').test(i)).map(i => parseInt(i.slice(1)));
   const nextN = existingNIds.length ? Math.max(...existingNIds) + 1 : 1;
-  const id = pokedexNum || ('N' + String(nextN).padStart(4, '0'));
+  const id = pokedexNum || (idPfx + String(nextN).padStart(4, '0'));
 
   if (!nomeRaw)  { toast('Nome é obrigatório.', 'err'); return; }
   if (!tipo1)    { toast('Selecione o Tipo Primário.', 'err'); return; }
@@ -8426,7 +8438,7 @@ async function saveNewRpgPokemon() {
   // Bloqueia ID duplicado (evita sobrescrever/duplicar um Pokémon existente)
   // Nota: IDs da cadeia evolutiva não são o ID do novo Pokémon — não confundir
   const jaExisteRpg = S.rpg.all.some(p => String(p.id) === String(id));
-  const jaExistePk  = !pokedexNum?.match(/^N/i) && S.pk.all.some(p => String(p.id) === String(id)); // IDs tipo N#### são sempre RPG, não oficial
+  const jaExistePk  = !pokedexNum?.match(/^[NS]/i) && S.pk.all.some(p => String(p.id) === String(id)); // IDs tipo N#### são sempre RPG, não oficial
   if (jaExisteRpg || jaExistePk) {
     const origem = jaExisteRpg ? 'RPG' : 'Pokémon oficial';
     toast(`Já existe um ${origem} com o número "${id}". Deixe o campo Pokédex vazio para gerar automaticamente, ou use outro número.`, 'err');
@@ -8467,7 +8479,7 @@ async function saveNewRpgPokemon() {
     const formasAlt = await faltProcessAndRead('nrpg-formas-alt', id);
 
     const row = {
-      id, name, url_slug: buildAutoSlug(name, id),
+      id, name, url_slug: /^S\d/i.test(String(id)) ? null : buildAutoSlug(name, id),   // Specials: sem slug
       classification,
       tipo1, tipo2,
       habilidade1, habilidade2,
