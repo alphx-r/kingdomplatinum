@@ -2174,6 +2174,7 @@ function pkjAplicarNaMemoria(rows) {
     Object.assign(cur, r);
   });
   Object.keys(map).forEach(id => { if (!vistos.has(id)) delete map[id]; });
+  if (typeof rpgResync === 'function') rpgResync();
 }
 function pkjAtualizarTela() {
   try {
@@ -4720,6 +4721,30 @@ function evoPopulateList(listId, items = []) {
    de uma das formas_alt do base, e aquela forma especifica.
 ============================================ */
 
+// Ao renumerar um Pokémon, reescreve o id antigo dele dentro de listas de evolução
+// (a dele e a dos outros estágios). Casa por id E nome, pois formas_alt dividem o id do base.
+function evoRenameInList(list, oldId, newId, nomes) {
+  if (!Array.isArray(list)) return false;
+  const ns = new Set((nomes || []).map(n => String(n || '').trim().toLowerCase()).filter(Boolean));
+  let mudou = false;
+  list.forEach(e => {
+    if (!e || evoNormId(e.id) !== evoNormId(oldId)) return;
+    if (ns.size && !ns.has(String(e.name || '').trim().toLowerCase())) return;
+    e.id = String(newId); mudou = true;
+  });
+  return mudou;
+}
+function evoRenameEverywhere(oldId, newId, nomes) {
+  Object.values(S.pk.dbMap || {}).forEach(r => {
+    evoRenameInList(r.evolucoes, oldId, newId, nomes);
+    (r.formas_alt || []).forEach(f => { if (f) evoRenameInList(f.evolucoes, oldId, newId, nomes); });
+  });
+  (S.pk.all || []).forEach(r => {
+    evoRenameInList(r.evolucoes, oldId, newId, nomes);
+    (r.formas_alt || []).forEach(f => { if (f) evoRenameInList(f.evolucoes, oldId, newId, nomes); });
+  });
+}
+
 // Normaliza um id de Pokedex pra comparacao (aceita "001", "N0001", "A0025"
 // etc, exatamente como digitado nos campos de evolucao e no id do banco).
 function evoNormId(id) {
@@ -6930,7 +6955,12 @@ async function savePkModal(approve) {
       try { await sbDelete('pokemons', id); } catch(e) {}
       delete S.pk.dbMap[id];
       // Atualiza referência no array in-memory
+      const _nomesAntigos = [pk.name, displayName];
       S.pk.all.filter(p => String(p.id) === String(id)).forEach(p => { p.id = newId; });
+      // Reescreve o id antigo nas cadeias evolutivas (desta forma, das formas_alt e dos outros estágios)
+      evoRenameInList(evolucoes, id, newId, _nomesAntigos);
+      formasAlt.forEach(f => { if (f) evoRenameInList(f.evolucoes, id, newId, _nomesAntigos); });
+      evoRenameEverywhere(id, newId, _nomesAntigos);
     }
 
     const row = {
@@ -6965,6 +6995,7 @@ async function savePkModal(approve) {
     await sbUpsert('pokemons', row);
     S.pk.dbMap[newId] = row;
     Object.assign(pk, row);
+    rpgResync();   // evita fantasma do id antigo na lista RPG
     // Mantém a evolutionary chain sincronizada: se este Pokémon (ou alguma
     // forma alternativa dele) cita outros estágios já existentes no banco,
     // replica a mesma cadeia neles também.
@@ -6991,6 +7022,7 @@ async function deletePkModal() {
     delete S.pk.dbMap[id];
     await pkjFlush();
     S.pk.all = S.pk.all.filter(p => String(p.id) !== String(id));
+    rpgResync();
     applyPkFilter();
     updatePkStats();
     closeModal('edit-pokemon-modal');
@@ -7914,6 +7946,19 @@ async function rpgFetchBiomas() {
 
 Object.assign(S, { rpg: { all: [], filtered: [], filter: 'all', _loaded: false } });
 
+// Reconstrói a lista RPG (cópia) a partir do dbMap, que é a fonte da verdade.
+// Sem isso, renumerar/deletar/sincronizar deixava "fantasmas" (ex.: N0030) em S.rpg.all.
+function rpgResync() {
+  try {
+    if (!S.rpg || !S.pk || !S.pk.dbMap) return;
+    if (!S.rpg._loaded && !(S.rpg.all || []).length) return;   // aba RPG ainda não carregada: nada a corrigir
+    S.rpg.all = Object.values(S.pk.dbMap).filter(r => r.is_fakemon).map(r => ({ ...r }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+    if (typeof applyRpgFilter === 'function') applyRpgFilter(); else S.rpg.filtered = S.rpg.all;
+    if (typeof updateRpgStats === 'function') updateRpgStats();
+  } catch (e) { console.warn('[rpgResync]', e); }
+}
+
 let rpgFilter = 'all';
 function setRpgFilter(f) {
   rpgFilter = f;
@@ -8427,7 +8472,7 @@ async function saveNewRpgPokemon() {
   // Slot Specials: marcado no formulário OU número Pokédex digitado com prefixo S (ex: S0003)
   const isSpecial = !!document.getElementById('nrpg-special')?.checked || /^S\d+$/i.test(pokedexNum || '');
   const idPfx = isSpecial ? 'S' : 'N';
-  const existingNIds = [...S.rpg.all, ...S.pk.all].map(p => String(p.id)).filter(i => new RegExp('^' + idPfx + '\\d+$', 'i').test(i)).map(i => parseInt(i.slice(1)));
+  const existingNIds = [...Object.keys(S.pk.dbMap || {}), ...S.rpg.all.map(p => p.id), ...S.pk.all.map(p => p.id)].map(x => String(x)).filter(i => new RegExp('^' + idPfx + '\\d+$', 'i').test(i)).map(i => parseInt(i.slice(1)));
   const nextN = existingNIds.length ? Math.max(...existingNIds) + 1 : 1;
   const id = pokedexNum || (idPfx + String(nextN).padStart(4, '0'));
 
@@ -8437,8 +8482,8 @@ async function saveNewRpgPokemon() {
 
   // Bloqueia ID duplicado (evita sobrescrever/duplicar um Pokémon existente)
   // Nota: IDs da cadeia evolutiva não são o ID do novo Pokémon — não confundir
-  const jaExisteRpg = S.rpg.all.some(p => String(p.id) === String(id));
-  const jaExistePk  = !pokedexNum?.match(/^[NS]/i) && S.pk.all.some(p => String(p.id) === String(id)); // IDs tipo N#### são sempre RPG, não oficial
+  const jaExisteRpg = !!(S.pk.dbMap || {})[String(id)];   // dbMap = fonte da verdade (S.rpg.all pode estar defasada)
+  const jaExistePk  = !pokedexNum?.match(/^[NS]/i) && (S.pk.all.some(p => String(p.id) === String(id)) || !!(S.pk.dbMap || {})[String(id)]); // IDs tipo N#### são sempre RPG, não oficial
   if (jaExisteRpg || jaExistePk) {
     const origem = jaExisteRpg ? 'RPG' : 'Pokémon oficial';
     toast(`Já existe um ${origem} com o número "${id}". Deixe o campo Pokédex vazio para gerar automaticamente, ou use outro número.`, 'err');
