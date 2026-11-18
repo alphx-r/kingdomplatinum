@@ -1520,19 +1520,21 @@ function kpFixSprites(rec){
 const PK_JSON_REPO='alphx-r/kpfichas_db'; // repositório onde o ADM commita o pokemon.json (os sprites continuam em alphx-r/kingdomplatinum)
 const PK_JSON_BRANCH='main';
 const PK_JSON_PATH='pokemon.json'; // mesmo caminho do POKEMON_JSON_PATH no servidor
+// Slot "Specials" (ids S0001…): existe no sistema/admin, mas nunca aparece na NationalDex nem abre página/slug.
+const kpNaoEhSpecial=p=>!/^S\d/i.test(String(p&&p.id));
 async function loadPokemonJson(){
   if(_pkJsonCache) return _pkJsonCache;
   if(PK_JSON_REPO){
     try{
       const url=`https://raw.githubusercontent.com/${PK_JSON_REPO}/${PK_JSON_BRANCH}/${PK_JSON_PATH}?v=${Math.floor(Date.now()/60000)}`;
       const r=await fetch(url);
-      if(r.ok){ _pkJsonCache=(await r.json()).map(kpFixSprites); return _pkJsonCache; }
+      if(r.ok){ _pkJsonCache=(await r.json()).filter(kpNaoEhSpecial).map(kpFixSprites); return _pkJsonCache; }
       throw new Error('HTTP '+r.status);
     }catch(e){ console.warn('pokemon.json via GitHub falhou, usando /pokemon.json do site…',e); }
   }
   const res=await fetch('/pokemon.json',{cache:'no-store'});
   if(!res.ok) throw new Error('pokemon.json não encontrado');
-  _pkJsonCache=(await res.json()).map(kpFixSprites);
+  _pkJsonCache=(await res.json()).filter(kpNaoEhSpecial).map(kpFixSprites);
   return _pkJsonCache;
 }
 // formas_alt_count não existe no JSON — deriva do array formas_alt, igual
