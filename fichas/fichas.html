@@ -1709,11 +1709,10 @@ function _shDraw(x,sp,ft){
  c.fillStyle='#fff';c.fillRect(0,0,W,H);
  c.fillStyle=PRI;c.fillRect(0,0,W,110);c.fillStyle=SEC;c.fillRect(0,110,W,6);
  c.textBaseline='middle';c.textAlign='left';c.fillStyle=ON;
- c.globalAlpha=.85;c.font=F(600,18);c.fillText('KINGDOM PLATINUM · POKÉMON',P,34);c.globalAlpha=1;
  const nome=(x.apelido&&x.nome?x.apelido+' ('+x.nome+')':x.nome||x.apelido||'Pokémon');
  let fs=44;c.font=FT.replace('{S}',fs);while(c.measureText(nome).width>W-P*2-150&&fs>22){fs--;c.font=FT.replace('{S}',fs)}
- c.fillText(nome,P,72);
- if(x.level){c.textAlign='right';c.font=F(800,34);c.fillText('Lv. '+x.level,W-P,60);c.textAlign='left'}
+ c.fillText(nome,P,56);
+ if(x.level){c.textAlign='right';c.font=F(800,34);c.fillText('Lv. '+x.level,W-P,56);c.textAlign='left'}
  const top=150;
  // sprite
  rr(P,top,230,230,14);c.fillStyle='#f4f4f4';c.fill();
@@ -1743,6 +1742,23 @@ function _shDraw(x,sp,ft){
   y+=rows*40}
  c.textAlign='center';c.fillStyle='#888';c.font=F(600,15);c.fillText((f?.nome?f.nome+' · ':'')+'PKMN Kingdom Platinum · Região Nendo',W/2,H-24);
  return cv}
+function _shHead(W,foto,n){
+ const cs=getComputedStyle(document.documentElement),PRI=cs.getPropertyValue('--pri').trim()||'#1a1a1a',SEC=cs.getPropertyValue('--sec').trim()||'#3a3a3a',ON=cs.getPropertyValue('--on-pri').trim()||'#fff';
+ const H=190,B=H-8,cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+ c.fillStyle='#fff';c.fillRect(0,0,W,H);
+ const g=c.createLinearGradient(0,0,W,B);g.addColorStop(0,PRI);g.addColorStop(1,SEC);c.fillStyle=g;c.fillRect(0,0,W,B);c.fillStyle=SEC;c.fillRect(0,B,W,8);
+ const AV=120,ax=36+AV/2+6,ay=B/2;
+ c.beginPath();c.arc(ax,ay,AV/2+5,0,Math.PI*2);c.fillStyle=ON;c.globalAlpha=.9;c.fill();c.globalAlpha=1;
+ c.save();c.beginPath();c.arc(ax,ay,AV/2,0,Math.PI*2);c.fillStyle='#ddd';c.fill();c.clip();
+ if(foto&&foto.width){const sc=Math.max(AV/foto.width,AV/foto.height),dw=foto.width*sc,dh=foto.height*sc;c.drawImage(foto,ax-dw/2,ay-AV/2-(dh-AV)*.2,dw,dh)}
+ else{c.fillStyle='#777';c.font='700 56px Cinzel,serif';c.textAlign='center';c.textBaseline='middle';c.fillText(((f?.nome||'?')[0]||'?').toUpperCase(),ax,ay+3)}
+ c.restore();
+ const tx=ax+AV/2+30,mw=W-tx-36;c.textAlign='left';c.textBaseline='middle';c.fillStyle=ON;
+ c.globalAlpha=.85;c.font='600 18px Nunito,sans-serif';c.fillText('KINGDOM PLATINUM · POKÉMON',tx,ay-42);c.globalAlpha=1;
+ let fs=46;const nome=f?.nome||'';c.font='700 '+fs+'px Cinzel,serif';while(c.measureText(nome).width>mw&&fs>22){fs--;c.font='700 '+fs+'px Cinzel,serif'}
+ c.fillText(nome,tx,ay+2);
+ c.globalAlpha=.9;c.font='600 22px Nunito,sans-serif';c.fillText(n+(n>1?' Pokémon':' Pokémon'),tx,ay+44);c.globalAlpha=1;
+ return cv}
 let SHSEL=[];const SHMAX=6;
 function shUp(on){const b=document.getElementById('dxgo');if(b){b.style.display=on?'':'none';b.disabled=!SHSEL.length;b.textContent=SHSEL.length?'Gerar imagem ('+SHSEL.length+')':'Gerar imagem'}
  document.querySelectorAll('#dxg .dxc.sh').forEach(e=>{const k=SHSEL.indexOf(e.dataset.k);e.classList.toggle('on',k>=0);if(k>=0)e.dataset.o=k+1;else delete e.dataset.o})}
@@ -1754,10 +1770,12 @@ async function pkShareGo(){
  const info=await Promise.all(L.map(async x=>{let src='';try{src=(isMod(x)&&x.foto)?x.foto:await(ftv(x)==='Shiny'?spriteSh(x.nome):sprite(x.nome))}catch(_){}
   let tipos=[];try{tipos=isDel(x)?delTipos(x):await tiposDe(x.nome)}catch(_){}return{sp:await _shLoad(src),ft:{tipos}}}));
  const toB=cv=>new Promise((ok,no)=>{try{cv.toBlob(b=>b?ok(b):no(new Error('vazio')),'image/png')}catch(e){no(e)}});
- const mk=sp=>{const cs=L.map((x,i)=>_shDraw(x,sp?info[i].sp:null,info[i].ft));if(cs.length===1)return cs[0];
+ const foto=await _shLoad(f?.foto);
+ const mk0=sp=>{const cs=L.map((x,i)=>_shDraw(x,sp?info[i].sp:null,info[i].ft));if(cs.length===1)return cs[0];
   const G=24,cols=2,rows=Math.ceil(cs.length/cols),cw=cs[0].width,H=[];for(let r=0;r<rows;r++)H.push(Math.max(...cs.slice(r*cols,r*cols+cols).map(c=>c.height)));
   const cv=document.createElement('canvas');cv.width=cw*cols+G*(cols+1);cv.height=H.reduce((a,b)=>a+b,0)+G*(rows+1);const c=cv.getContext('2d');c.fillStyle='#e8e8e8';c.fillRect(0,0,cv.width,cv.height);
   let y=G;for(let r=0;r<rows;r++){cs.slice(r*cols,r*cols+cols).forEach((k,q)=>c.drawImage(k,G+q*(cw+G),y));y+=H[r]+G}return cv};
+ const mk=sp=>{const b=mk0(sp),h=_shHead(b.width,sp?foto:null,L.length),o=document.createElement('canvas');o.width=b.width;o.height=h.height+b.height;const c=o.getContext('2d');c.drawImage(h,0,0);c.drawImage(b,0,h.height);return o};
  let blob;try{blob=await toB(mk(true))}catch(_){try{blob=await toB(mk(false))}catch(e){toast('Não foi possível gerar a imagem.');return}}
  const x=L[0],nm=('pokemon-'+(L.length>1?(f?.nome||'time')+'-'+L.length:(x.apelido||x.nome))).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()+'.png';
  _shModal(blob,nm)}
