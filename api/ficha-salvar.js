@@ -9,6 +9,7 @@ const { aplicar } = require('./_itens');
 const { diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
 const T = require('./_torneios');   // torneios (arquivo com "_" não conta como função na Vercel)
 const ST = require('./_staff');     // lista de acesso (chefe/ADM/MOD) — config.kp_staff
+const NP = require('./_npcs');       // NPCs do npcdex em JSON (data/npcs/...)
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
 //   GET  /api/ficha-salvar?lista=1      -> data/index.json
 //   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
@@ -248,6 +249,10 @@ module.exports = async (req, res) => {
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5');
         return res.status(200).send(t || '[]');
       }
+      if (q.npcmigrar) { res.setHeader('Cache-Control', 'no-store'); return await NP.migrar(q, res); }
+      if (q.npcs) return await NP.lista(res);
+      if (q.npc) return await NP.obter(q.npc, res);
+      if (q.npchist) return await NP.historico(q.npchist, res);
       if (q.torneios) { res.setHeader('Cache-Control', 'no-store'); return await T.lista(res); }
       if (q.torneio) { res.setHeader('Cache-Control', 'no-store'); return await T.obter(q.torneio, res); }
       if (q.lista) {
@@ -270,6 +275,7 @@ module.exports = async (req, res) => {
     const { action = 'save', token, slug } = b;
     if (action === 'staff_salvar') return await ST.salvar(b, res);   // chefe/ADM editam a equipe (nome+senha do player)
     if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
+    if (/^npc_/.test(action)) return await NP.acao(action, b, res);   // ADM edita NPC com nome+senha do player
     if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
     if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
