@@ -1230,6 +1230,8 @@ function bgDl(e){e.currentTarget.classList.remove('dgo')}
 function bgDp(e,j){e.preventDefault();e.currentTarget.classList.remove('dgo');const i=bgDrag;bgDrag=-1;if(i>=0)bgMv(i,j)}
 function bgDe(){bgDrag=-1;document.querySelectorAll('.inv-c.dgo').forEach(e=>e.classList.remove('dgo'))}
 /* normaliza o inventário a cada render: (1) Poké Balls que estão na Item Bag vão para a Ball Pocket (soma na quantidade se já houver a mesma); (2) o Pokétch é sempre o primeiro item da Item Bag */
+/* dinheiro inicial (1.000 C$) só entra quando o Pokétch é adicionado — uma única vez, e só se o saldo ainda for zero */
+function pktInicial(){const d=f.d;if(d.pkt_bonus)return;d.pkt_bonus=true;if(!String(d.dinheiro||'').replace(/\D/g,'').replace(/^0+/,''))d.dinheiro='1.000'}
 const isPkt=x=>!!x&&!!x.nome&&/^pok[e]?tch/.test(nk(x.nome));
 function invNorm(){const a=f&&f.d&&f.d.inventario;if(!Array.isArray(a))return;
  if(ITMc){for(let i=0;i<a.length;i++){const x=a[i];if(!x||!x.nome||bg(x)!=='item'||!isBall(ITMc.get(nk(x.nome))))continue;
@@ -1352,7 +1354,7 @@ function bkRead(){
 function bagDe(it){if(!it)return'item';const r=[['tm',isTM],['pill',isPill],['med',isMed],['snack',isSnack],['forage',isForage],['trash',isTrash],['ball',isBall],['alpha',isAlfa]].find(x=>x[1](it));return r?r[0]:'item'}
 async function invAdd(n){if(invSc==='all'){const it=(await ITL()).get(nk(n)),b=bagDe(it);if(BAGS.some(x=>x[0]===b)){invTg=b;invTab=b}}
  if(invTg==='alpha'){alfaAdd(n);return}{const it=(await ITL()).get(nk(n));if(infoNk(n)||psNk(n)||bkNk(n)||synIt(it)){invm.close();exOpen(n);return}}if(plNk(n)){invm.close();plmOpen(n);return}if(dcNk(n)){invm.close();dcOpen(n);return}invAddFin(n,'')}
-function invAddFin(n,fm){const a=f.d.inventario=f.d.inventario||[],k=nk(n),e=a.find(x=>x&&nk(x.nome)===k&&bg(x)===invTg&&(x.forma||'')===(fm||''));if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const o={nome:n,qtd:1,bag:invTg};if(fm)o.forma=fm;a.push(o)}invm.close();render();toast(e?'Quantidade aumentada':'Item adicionado')}
+function invAddFin(n,fm){const a=f.d.inventario=f.d.inventario||[],k=nk(n),e=a.find(x=>x&&nk(x.nome)===k&&bg(x)===invTg&&(x.forma||'')===(fm||''));if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const o={nome:n,qtd:1,bag:invTg};if(fm)o.forma=fm;a.push(o)}if(isPkt({nome:n}))pktInicial();invm.close();render();toast(e?'Quantidade aumentada':'Item adicionado')}
 /* box: mesmo modelo de slot do time principal; 6 slots base + upgrades (quantidade vinda do items.json) */
 const BX_BASE=6,BX_MAX=120;let BX_MINI=2,BX_UP=5,BXL=0,BXSM='',BXSU='',BXCNT='',BXQ='';
 function bxQtd(it){if(!it)return 0;for(const k of ['slots','slot','box_slots','boxSlots','aumenta','aumento','quantidade','valor','value','amount','bonus']){const n=parseInt(it[k]);if(n>0)return n}
@@ -2132,14 +2134,14 @@ if(window.KPAdm){const _pzRd=()=>{try{if(document.getElementById('qi')&&LST)draw
 async function vFicha(slug,id){modo('F');document.title='Ficha | Kingdom Platinum';
  if(slug==='nova'){corLimpa();document.title='Nova ficha | Kingdom Platinum';if(!ses){render();lg.showModal();return}
   try{if(await atingiuLimite()){alert(LIM_MSG);go('/fichas',true);return}}catch{}
-  f={slug:'',player_id:ses.admin?'admin':ses.player_id,nome:'',d:{player:ses.admin?'':ses.nome,pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'1.000',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;render();return}
+  f={slug:'',player_id:ses.admin?'admin':ses.player_id,nome:'',d:{player:ses.admin?'':ses.nome,pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'0',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;render();return}
  render();app.innerHTML='<div class="wrap"><div class="lt">Carregando ficha...</div></div>';{const c=corLer();if(c&&c.slug===slug)setColors(c,true);else corLimpa()}
  if(slug===PZ){if(window.KPAdm)await Promise.race([KPAdm.ready,new Promise(r=>setTimeout(r,6000))]);if(id!==rid)return}
  const pzNo=slug===PZ&&!pzOk();
  try{const r=pzNo?[]:await lerFicha(slug).then(x=>x?[x]:[]);if(id!==rid)return;
   if(!r.length&&slug===PZ&&!pzNo){   /* ainda não existe: abre em branco para o ADM criar (o 1º salvar cria a ficha de testes) */
    if(!ses){corLimpa();render();lg.showModal();return}
-   f={slug:PZ,player_id:ses.admin?'admin':ses.player_id,nome:'PlayerZero',d:{player:'PlayerZero',pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'1.000',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;document.title='PlayerZero | Fichário';render();return}
+   f={slug:PZ,player_id:ses.admin?'admin':ses.player_id,nome:'PlayerZero',d:{player:'PlayerZero',pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'0',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;document.title='PlayerZero | Fichário';render();return}
   if(!r.length){app.innerHTML='<div class="wrap"><div class="lt">Ficha não encontrada. <a href="/fichas" data-r>← Voltar ao fichário</a></div></div>';return}f=r[0]}
  catch(e){if(id===rid)app.innerHTML='<div class="wrap"><div class="lt" style="color:#c00">Erro: '+esc(e.message)+'</div></div>';return}
  f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});f._bd=JSON.parse(JSON.stringify(f.d));document.title=(f.nome||'Ficha')+' | Fichário';render();fixStats()}
