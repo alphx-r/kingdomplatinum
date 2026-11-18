@@ -2476,6 +2476,57 @@ function carregarMoveDex(){
   });
   return window._moveDexPromise;
 }
+/* ===== Moveset restrito =====
+   Level Up / TM / Egg Move só aceitam golpes que a espécie aprende por aquela origem.
+   Livre (qualquer golpe) quando o Feature é Delta ou Modified, ou quando o select está em Pill. */
+const MV_ORI={'':'lv',tm:'tm',egg:'egg'},MV_TX={'':'Level Up',tm:'TM',egg:'Egg Move'};
+const MV_KEYS={lv:['moves_level','moves_lv','level_up','levelup','moves_levelup'],tm:['moves_tm','moves_tms','tm_moves','moves_machine'],egg:['moves_egg','moves_eggs','egg_moves','moves_ovo']};
+function _mvCol(v,o){if(v==null)return;if(typeof v==='string'){v.split(/[,;\n]/).forEach(t=>t.trim()&&o.add(_normNome(t)))}else if(Array.isArray(v))v.forEach(x=>_mvCol(x,o));else if(typeof v==='object'){const n=v.nome||v.name||(typeof v.move==='string'?v.move:v.move&&v.move.name);if(typeof n==='string')o.add(_normNome(n));else Object.values(v).forEach(x=>_mvCol(x,o))}}
+const _mvCache={};
+async function mvPermitidos(nome,tipo){
+  const key=_normNome(nome);if(!key)return null;
+  if(!(key in _mvCache)){
+    let by=null;
+    try{
+      const data=await lerPokemonJson();
+      const arr=Array.isArray(data)?data:(Array.isArray(data?.pokemons)?data.pokemons:(Array.isArray(data?.results)?data.results:[]));
+      const row=arr.find(p=>p&&(_normNome(p.name||p.nome)===key||_normNome(p.url_slug)===key));
+      if(row){by={};for(const k in MV_KEYS){const ks=MV_KEYS[k].filter(c=>row[c]!=null);if(ks.length){const t=new Set();ks.forEach(c=>_mvCol(row[c],t));by[k]=t}}}
+    }catch{}
+    _mvCache[key]=by;
+  }
+  const by=_mvCache[key];return (by&&by[tipo])||new Set();
+}
+function mvCtx(el){
+  const m=/^(.+)-(mv|mo)-(\d+)-(\d+)$/.exec(el&&el.id||'');if(!m)return null;
+  const pfx=m[1],j=m[3],i=m[4],g=id=>document.getElementById(id);
+  return{inp:g(`${pfx}-mv-${j}-${i}`),sel:g(`${pfx}-mo-${j}-${i}`),nome:(g(`${pfx}-nome-${i}`)?.value||'').trim(),feat:g(`${pfx}-feature-${i}`)?.value||'Normal'};
+}
+async function mvAllowN(c){
+  if(!c||!c.inp||!c.sel)return null;
+  const o=c.sel.value;if(o==='pilula'||c.feat==='Modified'||c.feat==='Delta')return null;
+  const t=MV_ORI[o];if(!t)return null;
+  return c.nome?await mvPermitidos(c.nome,t):new Set();
+}
+async function mvLista(c){
+  if(!c||!c.inp)return;
+  if(c.inp.dataset.dl0==null)c.inp.dataset.dl0=c.inp.getAttribute('list')||'dl-moves';
+  const al=await mvAllowN(c);
+  if(!al){c.inp.setAttribute('list',c.inp.dataset.dl0);return;}
+  const todos=await carregarMoveDex();
+  let dl=document.getElementById('dl-moves-dyn');
+  if(!dl){dl=document.createElement('datalist');dl.id='dl-moves-dyn';document.body.appendChild(dl);}
+  dl.innerHTML=todos.filter(n=>al.has(_normNome(n))).map(n=>`<option value="${escAttr(n)}">`).join('');
+  c.inp.setAttribute('list','dl-moves-dyn');
+}
+document.addEventListener('focusin',e=>{const c=mvCtx(e.target);if(c&&e.target===c.inp)mvLista(c)},true);
+document.addEventListener('change',async e=>{
+  const c=mvCtx(e.target);if(!c||!c.inp||!c.sel)return;
+  await mvLista(c);
+  const v=c.inp.value.trim();if(!v)return;
+  const al=await mvAllowN(c);
+  if(al&&!al.has(_normNome(v))){c.inp.value='';kpToast(c.nome?v+' não é aprendido por '+c.nome+' via '+MV_TX[c.sel.value]:'Escolha a espécie antes dos golpes');}
+});
 function pkLvIn(e){let v=e.value.replace(/\D/g,'').slice(0,3);if(v!==''&&+v>100)v='100';if(v!==e.value)e.value=v;}
 function pkLvFix(e){let v=e.value.replace(/\D/g,'');if(v!=='')v=String(Math.min(100,Math.max(1,parseInt(v,10))));e.value=v;}
 // troca de Feature: guarda o que já foi digitado e redesenha (Delta mostra os tipos; Modified/Delta mostram "Novo Sprite")
