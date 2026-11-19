@@ -1316,14 +1316,15 @@ const dcPct=x=>{const n=parseInt(x&&x.desconto);return n>0&&n<=100?n:0};
 const INFO_K=new Set(['map','oldmap','note','lostpaper','cd']);
 const infoNk=n=>INFO_K.has(nk(n));
 const psNk=n=>/^personalized./.test(nk(n));
-/* Pokéblock (exceto Rainbow): pergunta se foi Ganho ou Fabricado; fabricado = 3 berries (básica/intermédia/rara) do sabor dele */
+/* Pokéblock (exceto Rainbow): pergunta se foi Ganho ou Fabricado; fabricado = 3 berries (comum/incomum/rara/rarissima) do sabor dele */
 const bkNk=n=>{const k=nk(n);return/pokblock$/.test(k)&&!/^rainbow/.test(k)};
 const BK_SAB={bitter:'amarga',dry:'seca',sour:'azeda',spicy:'apimentada',sweet:'doce'};
 const BK_ESP=new Set(['enigmaberry','starfberry']);
 const bkSab=n=>BK_SAB[nk(n).replace(/pokblock$/,'')]||'';
-const bkTier=it=>{const r=nk(it&&it.flags&&it.flags.raridade);return r==='comum'?1:r==='incomum'?5:r==='rara'?10:0};
+const BK_T={comum:1,incomum:5,rara:10,rarissima:15,bonus:20};
+const bkTier=it=>BK_T[nk(it&&it.flags&&it.flags.raridade)]||0;
 let BK_VAL=new Map(),BK_PREV=[],BK_M=1;
-const bkVal=b=>BK_ESP.has(nk(b))?20:(BK_VAL.get(nk(b))||0);
+const bkVal=b=>BK_VAL.get(nk(b))||(BK_ESP.has(nk(b))?20:0);
 const bkSum=v=>v.reduce((t,b)=>t+(b?bkVal(b):0),0);
 const bkDesc=x=>x&&bkNk(x.nome)&&x.bko==='fab'&&x.bkb&&x.bkb.length?'Berries: '+x.bkb.join(', '):'';
 const bkHave=n=>(f.d.inventario||[]).reduce((t,x)=>x&&nk(x.nome)===nk(n)?t+(parseInt(x.qtd)||1):t,0);
@@ -1384,13 +1385,13 @@ function exOk(){const q=exPend;if(!q)return;let o={};
  if(q.k==='blk')bkApply([],o.bkb||[],1);
  render();toast(e?'Quantidade aumentada':'Item adicionado')}
 function exCancel(){exPend=null;exm.close()}
-/* Pokéblock: Ganho (informa o happiness) ou Fabricado (3 berries do sabor dele; cada uma vale +1 comum, +5 incomum, +10 rara; Enigma/Starf valem +20; as berries são debitadas da ficha) */
+/* Pokéblock: Ganho (informa o happiness) ou Fabricado (3 berries do sabor dele; cada uma vale +1 comum, +5 incomum, +10 rara, +15 rarissima; berries bonus (Enigma/Starf) valem +20; as berries são debitadas da ficha) */
 async function bkUi(nm,cur){
  const M=await ITL(),sb=bkSab(nm),bs=[...M.values()].filter(it=>it.flags&&it.flags.berry);
  if(!bs.length){toast('Lista de berries indisponível');exPend=null;return}
  const ds=it=>{const m=String(it.item_desc||'').match(/Essa Berry é[^.]*?\b(amarga|apimentada|azeda|doce|seca)\b/i);return m?m[1].toLowerCase():''};
- const srt=(a,b)=>a.name.localeCompare(b.name),esp=bs.filter(it=>BK_ESP.has(nk(it.name))).sort(srt);
- const l=bs.filter(it=>!BK_ESP.has(nk(it.name))&&bkTier(it)&&(!sb||ds(it)===sb)).sort(srt);
+ const srt=(a,b)=>a.name.localeCompare(b.name),bonus=it=>bkTier(it)===20||BK_ESP.has(nk(it.name)),esp=bs.filter(bonus).sort(srt);
+ const l=bs.filter(it=>!bonus(it)&&bkTier(it)&&(!sb||ds(it)===sb)).sort(srt);
  BK_VAL=new Map(bs.map(it=>[nk(it.name),bkTier(it)]));BK_M=cur.nome?(parseInt(cur.qtd)||1):1;BK_PREV=cur.bko==='fab'?(cur.bkb||[]).slice():[];
  const fab=cur.bko==='fab',sel=cur.bkb||[];
  const op=(it,j)=>{const av=bkAv(it.name);return av>=BK_M?`<option value="${esc(it.name)}" data-n="${esc(it.name)}" data-sp="${esc(it.sprite||'')}"${sel[j]===it.name?' selected':''}>${esc(it.name)} · tem ${av}</option>`:''};
