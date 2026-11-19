@@ -2038,7 +2038,7 @@ const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorizat
      NÃO há commit automático: o arquivo inteiro só é commitado no GitHub (rota /api/admin/backup-pokemon-now)
      quando o botão "Commit pokemon.json" é clicado (a pílula no canto inferior esquerdo só avisa que há alterações pendentes).
 ══════════════════════════════════════════ */
-const PKJ = { loaded: false, count: 0, dirty: false, timer: null, chain: Promise.resolve(), base: {} };
+const PKJ = { loaded: false, count: 0, dirty: false, timer: null, chain: Promise.resolve(), base: {}, preCommit: null, lastCommitAt: 0 };
 function pkjStatus(txt, tipo, temporario) {
   let el = document.getElementById('pkj-status');
   if (!el) {
@@ -2063,6 +2063,7 @@ async function _pkjLoadReal() {
   let rows;
   try { rows = await pkjFetchRemote(); }
   catch (e) { throw new Error('Não consegui ler o pokemon.json do GitHub (' + e.message + ')'); }
+  PKJ.preCommit = null;
   PKJ.base = pkjSnapshot(rows);          // BASE da mesclagem: exatamente o que está no GitHub agora (antes dos ajustes locais de sprite)
   S.pk.dbMap = {};
   rows.forEach(x => { kpFixSprites(x); S.pk.dbMap[x.id] = x; });
@@ -2078,7 +2079,7 @@ async function pkjGravar(force) {
   // 1) pokemon.json atual do GitHub — se não der pra conferir, NÃO grava (evita apagar o trabalho de outros admins)
   pkjStatus('🔄 Conferindo alterações de outros admins…', 'warn');
   let remote;
-  try { remote = await pkjFetchRemote(); }
+  try { remote = await pkjFetchRemoteSeguro(); }
   catch (e) { PKJ.dirty = true; pkjStatus('⚠️ Não consegui conferir o GitHub — nada foi gravado', 'err'); throw new Error('Não consegui conferir o pokemon.json atual no GitHub (' + e.message + '). Nada foi gravado, para não sobrescrever o trabalho de outros admins. Tente de novo.'); }
   // 2) mescla (3 vias) e aplica na memória — bloco síncrono, sem await no meio
   const res = pkjMesclarPerguntando(remote);
@@ -2092,6 +2093,7 @@ async function pkjGravar(force) {
   pkjStatus('💾 Commitando pokemon.json…', 'warn');
   try {
     const body = await kpCommitPokemonJson(rows);
+    PKJ.preCommit = pkjSnapshot(remote); PKJ.lastCommitAt = Date.now();   // como o GitHub estava ANTES deste commit (detecta cache velho depois)
     PKJ.base = baseNova; PKJ.count = rows.length;       // o que foi commitado vira a nova base
     pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok', PKJ.dirty);
     if (puxou) { pkjAtualizarTela(); if (body && typeof body === 'object') body.mesclado = pkjResumo(res); }
@@ -2120,12 +2122,12 @@ function pkjStable(v) {
 function pkjStrip(o) { return Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => !k.startsWith('_') && v !== undefined)); }
 function pkjSnapshot(rows) { const m = {}; (rows || []).forEach(x => { if (x && x.id != null) m[String(x.id)] = pkjStable(pkjStrip(x)); }); return m; }
 // Mescla BASE x MINHA x REMOTA. Pura (não mexe em nada). preferLocal: em conflito de campo, true = minha versão, false = a remota.
-function pkjMerge3(base, localMap, remoteRows, preferLocal) {
+function pkjMerge3(base, localMap, remoteRows, preferLocal, keep) {
   base = base || {};
   const remote = {}, ids = [];
   (remoteRows || []).forEach(r => { if (r && r.id != null) { const id = String(r.id); if (!(id in remote)) ids.push(id); remote[id] = r; } });
   Object.keys(localMap || {}).forEach(id => { if (!(id in remote)) ids.push(id); });
-  const rows = [], conflicts = [], notas = { puxados: [], apagadosHonrados: [], editadoVsApagado: [] };
+  const rows = [], conflicts = [], notas = { puxados: [], apagadosHonrados: [], editadoVsApagado: [], removidosMeus: [], revertidos: [] };
   const nome = o => (o && (o.name || o.nome)) || '';
   for (const id of ids) {
     const L = localMap && localMap[id] ? pkjStrip(localMap[id]) : undefined;
@@ -2134,7 +2136,10 @@ function pkjMerge3(base, localMap, remoteRows, preferLocal) {
     const Ls = L ? pkjStable(L) : undefined, Rs = R ? pkjStable(R) : undefined;
     if (L && R) {
       if (Ls === Rs) { rows.push(L); continue; }
-      if (Bs !== undefined && Ls === Bs) { rows.push(R); notas.puxados.push(id); continue; }      // só o outro mexeu
+      if (Bs !== undefined && Ls === Bs) {                                                         // só o outro mexeu
+        if (keep && keep.has(id)) { rows.push(L); continue; }
+        rows.push(R); notas.puxados.push(id); notas.revertidos.push({ id, nome: nome(R) || nome(L), aprovado: L.approved === true && R.approved !== true }); continue;
+      }
       if (Bs !== undefined && Rs === Bs) { rows.push(L); continue; }                              // só eu mexi
       const B = Bs !== undefined ? JSON.parse(Bs) : {};                                           // os dois mexeram → campo a campo
       const out = {};
@@ -2152,7 +2157,9 @@ function pkjMerge3(base, localMap, remoteRows, preferLocal) {
       rows.push(out); notas.puxados.push(id);
     } else if (L && !R) {
       if (Bs === undefined) rows.push(L);                                                          // criado por mim
-      else if (Ls === Bs) notas.apagadosHonrados.push(id);                                         // outro apagou, eu não mexi → some
+      else if (Ls === Bs) {                                                                        // outro apagou, eu não mexi → some
+        if (keep && keep.has(id)) rows.push(L); else { notas.apagadosHonrados.push(id); notas.removidosMeus.push({ id, nome: nome(L) }); }
+      }
       else { rows.push(L); notas.editadoVsApagado.push({ id, nome: nome(L) }); }                   // outro apagou, mas eu editei → mantém
     } else if (!L && R) {
       if (Bs === undefined) { rows.push(R); notas.puxados.push(id); }                              // criado por outro admin
@@ -2207,14 +2214,60 @@ async function pkjFetchRemote() {
     throw new Error('API HTTP ' + r.status);
   } catch (e) { throw new Error(`raw: ${erroRaw} · api: ${e.name === 'AbortError' ? 'demorou mais de 30s' : e.message}`); }
 }
+// Igualdade de duas fotos (snapshots) do pokemon.json
+function pkjSnapIgual(a, b) {
+  if (!a || !b) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (a[k] !== b[k]) return false;
+  return true;
+}
+// GitHub pelo endpoint da API (não passa pelo cache do CDN do raw.githubusercontent)
+async function pkjFetchRemoteApi() {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const r = await fetch(`https://api.github.com/repos/${KP_JSON_REPO}/contents/pokemon.json?ref=main&v=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' }, signal: ctl.signal });
+    if (!r.ok) throw new Error('API HTTP ' + r.status);
+    const rows = await r.json(); if (!Array.isArray(rows)) throw new Error('formato inesperado');
+    return rows;
+  } finally { clearTimeout(t); }
+}
+// Baixa o remoto E confere se não é uma versão VELHA (anterior ao seu último commit).
+// Bug real: logo depois de um commit o raw.githubusercontent pode devolver o arquivo antigo; a mesclagem então
+// achava que "outro admin" tinha desfeito/apagado o seu trabalho e gravava a versão antiga por cima.
+async function pkjFetchRemoteSeguro() {
+  let rows = await pkjFetchRemote();
+  const antigo = PKJ.preCommit;                                  // foto do GitHub ANTES do meu último commit
+  if (antigo && !pkjSnapIgual(PKJ.base, antigo) && pkjSnapIgual(pkjSnapshot(rows), antigo)) {
+    let ok = false;
+    try { rows = await pkjFetchRemoteApi(); ok = !pkjSnapIgual(pkjSnapshot(rows), antigo); } catch (e) {}
+    if (!ok) throw new Error('O GitHub ainda está devolvendo a versão ANTERIOR ao seu último commit (cache). Aguarde 1–2 minutos e tente de novo — nada foi gravado.');
+  }
+  return rows;
+}
+
 // Mescla com o remoto; se houver conflito de campo, pergunta quem prevalece.
 function pkjMesclarPerguntando(remoteRows) {
   let res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, true);
+  // Trava de segurança: o GitHub quer REMOVER Pokémon que estão no seu ADM ou DESFAZER aprovações suas.
+  const rem = res.notas.removidosMeus, rev = res.notas.revertidos.filter(x => x.aprovado);
+  if (rem.length || rev.length) {
+    const nomes = a => a.slice(0, 12).map(x => `• ${x.nome || x.id} (${x.id})`).join('\n') + (a.length > 12 ? `\n…e mais ${a.length - 12}.` : '');
+    let msg = '⚠️ O pokemon.json do GitHub é DIFERENTE do que você commitou/carregou:\n';
+    if (rem.length) msg += `\nSeriam REMOVIDOS (${rem.length}):\n${nomes(rem)}\n`;
+    if (rev.length) msg += `\nTeriam a APROVAÇÃO desfeita (${rev.length}):\n${nomes(rev)}\n`;
+    msg += '\nSe você NÃO sabe de outro admin que fez isso, pode ser o GitHub devolvendo uma versão velha (cache).\n\nOK = aceitar a versão do GitHub\nCancelar = MANTER o meu trabalho';
+    if (!confirm(msg)) {
+      const keep = new Set([...rem.map(x => x.id), ...res.notas.revertidos.map(x => x.id)]);
+      res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, true, keep);
+      res._keep = keep;
+    }
+  }
   if (res.conflicts.length) {
     const lista = res.conflicts.slice(0, 10).map(c => `• ${c.nome || c.id} — campo "${c.campo}"`).join('\n');
     const mais = res.conflicts.length > 10 ? `\n…e mais ${res.conflicts.length - 10}.` : '';
     const minha = confirm(`⚠️ Outro admin alterou os MESMOS campos que você (${res.conflicts.length}):\n\n${lista}${mais}\n\nOK = manter a MINHA versão nesses campos\nCancelar = manter a versão do OUTRO admin`);
-    if (!minha) res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, false);
+    if (!minha) res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, false, res._keep);
   }
   return res;
 }
@@ -2231,10 +2284,11 @@ async function pkjSincronizarClick() {
   const btn = document.getElementById('btn-sync-pk'), orig = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Sincronizando...'; }
   try {
-    const remote = await pkjFetchRemote();
+    const remote = await pkjFetchRemoteSeguro();
     const res = pkjMesclarPerguntando(remote);
     res.rows.forEach(kpFixSprites);
     pkjAplicarNaMemoria(res.rows);
+    PKJ.preCommit = null;
     PKJ.base = pkjSnapshot(remote);      // o remoto atual vira a nova base: dali em diante só o que EU mudar conta como minha alteração
     PKJ.count = remote.length;
     pkjAtualizarTela();
