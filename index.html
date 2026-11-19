@@ -1188,8 +1188,9 @@ body.edit-mode [data-editing="1"] :is(.ed-inserted-col,.ed-inserted-split-box)::
 .bry-tbl{width:100%;border-collapse:collapse;font-size:12px;color:#111}
 .bry-tbl th{background:#000;color:#fff;font-size:11px;padding:7px 8px;text-align:center;white-space:nowrap}
 .bry-tbl td{padding:6px 8px;border:1px solid rgba(255,255,255,.7);vertical-align:middle}
-.bry-ico{width:38px;text-align:center}.bry-ico img{width:28px;height:28px;object-fit:contain;image-rendering:pixelated}
-.bry-nome{text-align:center;font-weight:700;white-space:nowrap}
+.bry-nome{text-align:center;font-weight:700;white-space:nowrap;width:84px}
+.bry-nome img{display:block;margin:0 auto 2px;width:28px;height:28px;object-fit:contain;image-rendering:pixelated}
+.bry-nome span{display:block}
 .bry-ng{text-align:center}
 .bry-tipo{display:inline-block;color:#fff;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 6px;border-radius:4px;letter-spacing:.4px;text-shadow:0 1px 1px rgba(0,0,0,.35)}
 .bry-ef{min-width:240px;line-height:1.35}
@@ -5330,15 +5331,16 @@ window.calcSituSoma = function(){
 </div><!-- /page-subsistemas -->
 
 <div class="page" id="page-berries" style="padding:clamp(14px,4vw,28px);box-sizing:border-box;width:100%">
-  <div class="bry-head">
+  <div class="roller-header">
     <h2>Berries</h2>
-    <p>Lista de berries do RPG: efeito, tipo do Natural Gift, quantidade triturada (para Pokéblocks) e colheita.</p>
+    <p>Lista de berries do RPG.</p>
   </div>
   <div class="bry-aviso" id="bry-aviso" style="display:none">Exibindo a lista padrão do PDF (data/berries.json ainda não existe no repo). Abra “Gerenciar berries” e clique em Salvar para gravá-la.</div>
   <div class="bry-tools">
     <input type="search" id="bry-q" placeholder="Buscar berry, efeito ou tipo…" oninput="berriesSetFiltro('q',this.value)" style="flex:1;min-width:200px">
-    <select onchange="berriesSetFiltro('raridade',this.value)"><option value="">Todas as raridades</option><option value="comum">Comuns</option><option value="incomum">Incomuns</option><option value="rara">Raras</option><option value="rarissima">Raríssimas</option></select>
+    <select onchange="berriesSetFiltro('raridade',this.value)"><option value="">Todas as raridades</option><option value="comum">Comuns</option><option value="incomum">Incomuns</option><option value="rara">Raras</option><option value="rarissima">Raríssimas</option><option value="especial">Especiais</option></select>
     <select onchange="berriesSetFiltro('sabor',this.value)"><option value="">Todos os sabores</option><option value="apimentado">Apimentado</option><option value="seco">Seco</option><option value="doce">Doce</option><option value="amargo">Amargo</option><option value="azedo">Azedo</option><option value="_none">Sem sabor</option></select>
+    <button class="btn btn-sm" id="bry-btn-atualizar" onclick="berriesRecarregar(this)" title="Recarrega a lista de berries e os sprites se algo bugar">🔄 Atualizar</button>
     <button class="btn btn-sm btn-primary" id="bry-btn-editar" style="display:none" onclick="berriesAbrirEditor()">✏️ Gerenciar berries</button>
   </div>
   <div id="bry-body"></div>
@@ -5485,7 +5487,10 @@ window.calcSituSoma = function(){
     <div id="evento-historico-wrap" style="margin-top:32px;display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">Histórico do Evento</div>
-      <div style="font-size:12px;color:var(--muted)" id="evento-hist-label"></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button type="button" class="btn btn-sm" id="evento-hist-atualizar" onclick="recarregarHistoricoEvento(this)" title="Recarrega o histórico de rolagens deste evento se algo bugar" style="background:var(--surface);border:1.5px solid var(--border);color:var(--text)">🔄 Atualizar</button>
+        <div style="font-size:12px;color:var(--muted)" id="evento-hist-label"></div>
+      </div>
     </div>
     <div id="evento-historico-lista"></div>
     <div id="evento-hist-paginacao" style="display:flex;justify-content:center;gap:10px;margin-top:16px">
@@ -11901,23 +11906,27 @@ const _poolItens = { 'ev': [], 'edit-ev': [] };
 
 // _pools[prefix] = [{titulo, obs, itens:[], ativa:bool}]
 // A partir de agora, cada item de uma pool é um objeto:
-//   { nome, sabor: 'apimentado'|'seco'|'doce'|'amargo'|'azedo', raridade: 'basica'|'intermedia'|'rara'|'bonus', numeros:[62,92,...] }
+//   { nome, sabor: 'apimentado'|'seco'|'doce'|'amargo'|'azedo', raridade: 'comum'|'incomum'|'rara'|'rarissima'|'especial', numeros:[62,92,...] }
 // (formato legado — string pura — ainda é lido/rolado por índice, mas não é mais criado por aqui)
 const _pools = { 'ev': [], 'edit-ev': [] };
 let _poolAba = { 'ev': 0, 'edit-ev': 0 };
 
 const SABORES = [
-  {id:'apimentado', label:'Apimentado', cor:'#e05a3c', bgBasica:'#f0a08a', bgIntermedia:'#ea8a6e', bgRara:'#e8735c'},
-  {id:'seco',       label:'Seco',       cor:'#3b5fd9', bgBasica:'#c8d4f5', bgIntermedia:'#a8bcf0', bgRara:'#8fa5e8'},
-  {id:'doce',       label:'Doce',       cor:'#d94fb0', bgBasica:'#f8d6ea', bgIntermedia:'#f5c6e0', bgRara:'#ef9ed0'},
-  {id:'amargo',     label:'Amargo',     cor:'#3a9a3a', bgBasica:'#cceecc', bgIntermedia:'#b8e0b8', bgRara:'#8fd08f'},
-  {id:'azedo',      label:'Azedo',      cor:'#b89000', bgBasica:'#f5edc0', bgIntermedia:'#f0e0a0', bgRara:'#e8d060'}
+  {id:'apimentado', label:'Apimentado', cor:'#e05a3c', bgComum:'#f0a08a', bgIncomum:'#ea8a6e', bgRara:'#e8735c'},
+  {id:'seco',       label:'Seco',       cor:'#3b5fd9', bgComum:'#c8d4f5', bgIncomum:'#a8bcf0', bgRara:'#8fa5e8'},
+  {id:'doce',       label:'Doce',       cor:'#d94fb0', bgComum:'#f8d6ea', bgIncomum:'#f5c6e0', bgRara:'#ef9ed0'},
+  {id:'amargo',     label:'Amargo',     cor:'#3a9a3a', bgComum:'#cceecc', bgIncomum:'#b8e0b8', bgRara:'#8fd08f'},
+  {id:'azedo',      label:'Azedo',      cor:'#b89000', bgComum:'#f5edc0', bgIncomum:'#f0e0a0', bgRara:'#e8d060'}
 ];
 const RARIDADES = [
-  {id:'basica',     label:'Básica'},
-  {id:'intermedia', label:'Intermédia'},
-  {id:'rara',        label:'Rara'}
+  {id:'comum',     label:'Comum'},
+  {id:'incomum',   label:'Incomum'},
+  {id:'rara',      label:'Rara'},
+  {id:'rarissima', label:'Raríssima'},
+  {id:'especial',  label:'Especial'}
 ];
+// fundo das células da tabela por raridade (cor vem do sabor)
+function _bgSaborRaridade(s, rid){ return rid==='comum' ? s.bgComum : (rid==='incomum' ? s.bgIncomum : s.bgRara); }
 function _saborInfo(id){ return SABORES.find(s=>s.id===id) || null; }
 // Tipo da pool: 'itens' (nome simples, sorteado pelo nº do dado) ou 'berries' (sabor + raridade).
 // Pools antigas sem `tipo`: viram 'berries' só se já tiverem itens no formato de berry.
@@ -12010,7 +12019,6 @@ function _poolHtml(prefix){
         <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Raridade</label>
         <select id="${prefix}-item-raridade-${abaIdx}" style="width:100%;padding:6px 4px;border-radius:6px;border:1.5px solid var(--border);font-family:var(--font-body);font-size:12px">
           ${RARIDADES.map(r=>`<option value="${r.id}">${r.label}</option>`).join('')}
-          <option value="bonus">Especial</option>
         </select>
       </div>
       <div>
@@ -12066,16 +12074,15 @@ function _renderPoolItensInline(prefix, idx){
         </div>`;
       }
       const s = _saborInfo(item.sabor);
-      const raridadeAtual = _raridadeNorm(item.raridade) || 'basica';
+      const raridadeAtual = _raridadeNorm(item.raridade) || 'comum';
       const nums = (item.numeros||[]).join(', ') || '—';
       const saborSelect = `<select onchange="_poolItemSetCampo('${prefix}',${idx},${i},'sabor',this.value)" style="font-size:11px;font-weight:700;border:1px solid var(--border);border-radius:5px;padding:2px 4px;background:#fff;flex-shrink:0">
           ${SABORES.map(so=>`<option value="${so.id}"${so.id===item.sabor?' selected':''}>${so.label}</option>`).join('')}
         </select>`;
       const raridadeSelect = `<select onchange="_poolItemSetCampo('${prefix}',${idx},${i},'raridade',this.value)" style="font-size:10px;border:1px solid var(--border);border-radius:5px;padding:2px 4px;background:#fff;flex-shrink:0">
           ${RARIDADES.map(r=>`<option value="${r.id}"${r.id===raridadeAtual?' selected':''}>${r.label}</option>`).join('')}
-          <option value="bonus"${raridadeAtual==='bonus'?' selected':''}>Especial</option>
         </select>`;
-      return `<div class="pool-item-row" data-pi="${i}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:${s?s.bgBasica+'55':'var(--surface2)'};border:1px solid var(--border)">
+      return `<div class="pool-item-row" data-pi="${i}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:${s?s.bgComum+'55':'var(--surface2)'};border:1px solid var(--border)">
         ${handle}
         ${saborSelect}
         <span style="font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.nome}">${item.nome}</span>
@@ -12182,7 +12189,7 @@ function _poolConverterTodosLegado(prefix, idx){
   p.itens = p.itens.map(function(it){
     if(typeof it !== 'string' || _lootIsGroupHeader(it)) return it; // cabeçalho ou já convertido: mantém
     n++;
-    return { nome: it, sabor:'apimentado', raridade:'basica', numeros:[n] };
+    return { nome: it, sabor:'apimentado', raridade:'comum', numeros:[n] };
   });
   _renderPoolItensInline(prefix, idx);
 }
@@ -12240,7 +12247,7 @@ function _poolAdicionarItens(prefix, idx){
   _pools[prefix][idx].itens.push({
     nome,
     sabor: selSabor?.value || 'apimentado',
-    raridade: selRaridade?.value || 'basica',
+    raridade: selRaridade?.value || 'comum',
     numeros
   });
   if(inpNome) inpNome.value = '';
@@ -12613,17 +12620,19 @@ async function _fetchItemDexSprite(nome){
 }
 
 // Monta o card de um item de loot já com sprite (ItemDex > PokeAPI > fallback Unown)
-const RARIDADE_LABEL = {basica:'Comum', intermedia:'Incomum', rara:'Raro', bonus:'Especial'};
-const RARIDADE_COR = {basica:'#6b9e6b', intermedia:'#3b7fd9', rara:'#b0862e', bonus:'#9a4fd9'};
+const RARIDADE_LABEL = {comum:'Comum', incomum:'Incomum', rara:'Rara', rarissima:'Raríssima', especial:'Especial'};
+const RARIDADE_COR = {comum:'#6b9e6b', incomum:'#3b7fd9', rara:'#b0862e', rarissima:'#9a4fd9', especial:'#d94f6a'};
 // Aceita variações/sinônimos de raridade (ex.: dados antigos salvos como
 // "comum"/"incomum"/"raro", ou com espaços/maiúsculas) e normaliza pra uma
 // das chaves conhecidas de RARIDADE_LABEL/RARIDADE_COR, pra o badge nunca
 // sumir silenciosamente só por causa de um valor salvo fora do padrão.
+// Nomes antigos continuam valendo (rolagens/eventos já salvos): basica→comum, intermedia→incomum, bonus→rarissima.
 const RARIDADE_SINONIMOS = {
-  basica:'basica', básica:'basica', comum:'basica', common:'basica',
-  intermedia:'intermedia', intermédia:'intermedia', incomum:'intermedia', uncommon:'intermedia',
+  comum:'comum', basica:'comum', básica:'comum', common:'comum',
+  incomum:'incomum', intermedia:'incomum', intermédia:'incomum', uncommon:'incomum',
   rara:'rara', raro:'rara', rare:'rara',
-  bonus:'bonus', bônus:'bonus', especial:'bonus'
+  rarissima:'rarissima', raríssima:'rarissima', rarissimo:'rarissima', raríssimo:'rarissima', bonus:'rarissima', bônus:'rarissima',
+  especial:'especial', special:'especial'
 };
 function _raridadeNorm(raridade){
   if(!raridade) return null;
@@ -12711,54 +12720,52 @@ function _lootGridHtml(itens, pool, uso){
 function _berryTableHtml(itens){
   const objetos = itens.filter(function(it){ return it && typeof it==='object'; });
   const porCelula = {}; // `${sabor}|${raridade}` -> [itens]
-  const bonus = [];
+  const semSabor = {};  // raridade -> [itens] (especiais e qualquer item sem sabor válido): linha de largura total
   objetos.forEach(function(it){
-    const rKey = _raridadeNorm(it.raridade) || 'basica';
-    if(rKey==='bonus'){ bonus.push(it); return; }
+    const rKey = _raridadeNorm(it.raridade) || 'comum';
+    if(rKey==='especial' || !_saborInfo(it.sabor)){ (semSabor[rKey] = semSabor[rKey]||[]).push(it); return; }
     const k = it.sabor+'|'+rKey;
     (porCelula[k] = porCelula[k]||[]).push(it);
   });
+  const esc = function(v){ return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  const itemHtml = function(it, rKey){
+    return `<div class="berry-tbl-item">
+              <img class="loot-item-sprite-img" data-item="${esc(it.nome)}" src="${_itemSpriteUrl(it.nome)}" onerror="_lootItemImgError(this,'${String(it.nome).replace(/'/g,"\\'")}')"/>
+              <div class="berry-tbl-nome">${esc(it.nome)}</div>
+              <div class="berry-tbl-nums">${(it.numeros||[]).map(n=>'('+n+')').join('<br>')}</div>
+              <span class="loot-raridade-badge" style="background:${RARIDADE_COR[rKey]}">${RARIDADE_LABEL[rKey]}</span>
+            </div>`;
+  };
   const rotuloCol = '<div class="berry-tbl-cell berry-tbl-rotulo"></div>';
   let html = '<div class="berry-tbl">';
   // cabeçalho
   html += '<div class="berry-tbl-row">' + rotuloCol + SABORES.map(function(s){
     return `<div class="berry-tbl-cell berry-tbl-header">${s.label.toUpperCase()}</div>`;
   }).join('') + '</div>';
-  // linhas de raridade
-  RARIDADES.forEach(function(r){
+  // linhas de raridade (por sabor); especial não tem sabor, então só aparece na linha de largura total
+  RARIDADES.filter(function(r){ return r.id!=='especial'; }).forEach(function(r){
+    const temCelula = SABORES.some(function(s){ return (porCelula[s.id+'|'+r.id]||[]).length; });
+    if(!temCelula && ['rarissima'].includes(r.id)) return;   // não mostra a linha da raríssima se não há nenhuma com sabor
     html += '<div class="berry-tbl-row">'
       + `<div class="berry-tbl-cell berry-tbl-rotulo">${r.label.toUpperCase()}</div>`
       + SABORES.map(function(s){
         const lista = porCelula[s.id+'|'+r.id] || [];
-        const bg = r.id==='basica'?s.bgBasica:(r.id==='intermedia'?s.bgIntermedia:s.bgRara);
-        return `<div class="berry-tbl-cell berry-tbl-itens" style="background:${bg}">`
-          + lista.map(function(it){
-            return `<div class="berry-tbl-item">
-              <img class="loot-item-sprite-img" data-item="${String(it.nome).replace(/"/g,'&quot;')}" src="${_itemSpriteUrl(it.nome)}" onerror="_lootItemImgError(this,'${String(it.nome).replace(/'/g,"\\'")}')"/>
-              <div class="berry-tbl-nome">${String(it.nome).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
-          <div class="berry-tbl-nums">${(it.numeros||[]).map(n=>'('+n+')').join('<br>')}</div>
-              <span class="loot-raridade-badge" style="background:${RARIDADE_COR[_raridadeNorm(it.raridade)||'basica']}">${RARIDADE_LABEL[_raridadeNorm(it.raridade)||'basica']}</span>
-            </div>`;
-          }).join('')
+        return `<div class="berry-tbl-cell berry-tbl-itens" style="background:${_bgSaborRaridade(s, r.id)}">`
+          + lista.map(function(it){ return itemHtml(it, r.id); }).join('')
           + '</div>';
       }).join('')
       + '</div>';
   });
-  // linha de bônus (largura total, sem separar por sabor)
-  if(bonus.length){
+  // linhas de largura total: itens sem sabor (especiais e, se houver, outras raridades sem sabor)
+  RARIDADES.forEach(function(r){
+    const lista = semSabor[r.id] || [];
+    if(!lista.length) return;
     html += '<div class="berry-tbl-row">'
-      + '<div class="berry-tbl-cell berry-tbl-rotulo">ESPECIAL</div>'
+      + `<div class="berry-tbl-cell berry-tbl-rotulo">${r.label.toUpperCase()}</div>`
       + `<div class="berry-tbl-cell berry-tbl-itens" style="background:#dcdcdc;grid-column:span 5">`
-      + bonus.map(function(it){
-        return `<div class="berry-tbl-item">
-          <img class="loot-item-sprite-img" data-item="${String(it.nome).replace(/"/g,'&quot;')}" src="${_itemSpriteUrl(it.nome)}" onerror="_lootItemImgError(this,'${String(it.nome).replace(/'/g,"\\'")}')"/>
-          <div class="berry-tbl-nome">${String(it.nome).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
-          <div class="berry-tbl-nums">${(it.numeros||[]).map(n=>'('+n+')').join('<br>')}</div>
-          <span class="loot-raridade-badge" style="background:${RARIDADE_COR.bonus}">${RARIDADE_LABEL.bonus}</span>
-        </div>`;
-      }).join('')
+      + lista.map(function(it){ return itemHtml(it, r.id); }).join('')
       + '</div></div>';
-  }
+  });
   html += '</div>';
   return html;
 }
@@ -15592,10 +15599,10 @@ function imgDesenharDado(e,foto,sprites){
     let sx=PAD+4; const sy=y+SUM_H/2;
     c.font='800 26px Nunito,sans-serif'; c.fillStyle=T.text;
     const tot=qd+(temSabor?' berries':' itens'); c.fillText(tot,sx,sy); sx+=c.measureText(tot).width+22;
-    ['basica','intermedia','rara','bonus'].forEach(k=>{
+    ['comum','incomum','rara','rarissima','especial'].forEach(k=>{
       if(!cont[k]) return;
       c.beginPath(); c.arc(sx+7,sy,7,0,Math.PI*2); c.fillStyle=RARIDADE_COR[k]; c.fill();
-      const t=cont[k]+' '+RARIDADE_LABEL[k].toLowerCase()+(cont[k]>1&&k!=='bonus'?'s':''); c.font='700 20px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(t,sx+22,sy);
+      const _l=RARIDADE_LABEL[k].toLowerCase(), t=cont[k]+' '+(cont[k]>1?(_l.endsWith('m')?_l.slice(0,-1)+'ns':_l+'s'):_l); c.font='700 20px Nunito,sans-serif'; c.fillStyle=T.muted; c.fillText(t,sx+22,sy);
       sx+=22+c.measureText(t).width+22;
     });
     const GX=14, cardW=(W-PAD*2-GX)/2, top=y+SUM_H+10;
@@ -19903,6 +19910,35 @@ async function excluirRolagemEvento(id){
   _atualizarBonusCriadorUI();
 }
 
+async function recarregarHistoricoEvento(btn){
+  const slug = (typeof eventoAtual!=='undefined' && eventoAtual && eventoAtual.slug) || (location.pathname.match(/\/evento\/([^\/?#]+)/)||[])[1];
+  if(!slug){ alert('Não consegui identificar o evento.'); return; }
+  const txt = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando…'; }
+  try{
+    const [resEnc, resDado] = await Promise.all([
+      sb(`historico?evento_slug=eq.${slug}&order=criado_em.desc&limit=200`),
+      sb(`historico_dados?evento_slug=eq.${slug}&order=criado_em.desc&limit=200`)
+    ]);
+    const enc  = (resEnc||[]);
+    const dado = (resDado||[]).map(d=>({...d, tipo:'dado'}));
+    eventoHistorico = [...enc, ...dado].sort((a,b)=>{
+      const ta = new Date(`${a.data?.split('/').reverse().join('-')}T${a.hora||'00:00:00'}`);
+      const tb = new Date(`${b.data?.split('/').reverse().join('-')}T${b.hora||'00:00:00'}`);
+      return tb - ta;
+    });
+    try{ if(typeof _loadItemDex==='function') await _loadItemDex(); }catch(_){}
+    renderHistoricoEvento();
+    try{ if(loaded && loaded.rolagens) renderRolagens(); }catch(_){}
+    try{ _atualizarBonusTop3UI(); _atualizarBonusCriadorUI(); }catch(_){}
+  }catch(e){
+    console.error('[recarregarHistoricoEvento]', e);
+    alert('Não consegui atualizar o histórico: ' + (e && e.message || e));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = txt; }
+  }
+}
+
 function renderHistoricoEvento(){
   const wrap=document.getElementById('evento-historico-wrap');
   const lista=document.getElementById('evento-historico-lista');
@@ -21341,12 +21377,13 @@ document.addEventListener('change', e=>{
    Usada também pela importação nas pools de evento e, no futuro, pela fabricação de Pokéblocks.
    ══════════════════════════════════════ */
 (function(){
-  const PADRAO = [{"nome": "Cheri", "tipo": "electric", "sabor": "apimentado", "raridade": "comum", "efeito": "Cura Paralysis quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Figy", "tipo": "bug", "sabor": "apimentado", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for psychic, ice, steel ou poison.", "triturada": 60, "colheita": 3}, {"nome": "Pomeg", "tipo": "dark", "sabor": "apimentado", "raridade": "comum", "efeito": "Quando consumido em batalha, reduz 50% do HP máximo do pokémon, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Leppa", "tipo": "fighting", "sabor": "apimentado", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Fighting-type.", "triturada": 100, "colheita": 3}, {"nome": "Liechi", "tipo": "fire", "sabor": "apimentado", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Fire-type.", "triturada": 100, "colheita": 3}, {"nome": "Razz", "tipo": "fairy", "sabor": "apimentado", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Fairy-type.", "triturada": 100, "colheita": 3}, {"nome": "Chesto", "tipo": "water", "sabor": "seco", "raridade": "comum", "efeito": "Cura Sleep quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Bluk", "tipo": "fire", "sabor": "seco", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for water, grass ou bug.", "triturada": 60, "colheita": 3}, {"nome": "Kelpsy", "tipo": "normal", "sabor": "seco", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o ATK em -1, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Wiki", "tipo": "ice", "sabor": "seco", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Ice-type.", "triturada": 100, "colheita": 3}, {"nome": "Cornn", "tipo": "water", "sabor": "seco", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Water-type.", "triturada": 100, "colheita": 3}, {"nome": "Coba", "tipo": "flying", "sabor": "seco", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Flying-type.", "triturada": 100, "colheita": 3}, {"nome": "Aspear", "tipo": "ice", "sabor": "azedo", "raridade": "comum", "efeito": "Cura Freeze quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Iapapa", "tipo": "fighting", "sabor": "azedo", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for normal, flying ou ghost.", "triturada": 60, "colheita": 3}, {"nome": "Grepa", "tipo": "steel", "sabor": "azedo", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o sDEF em -1, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Wacan", "tipo": "electric", "sabor": "azedo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Electric-type.", "triturada": 100, "colheita": 3}, {"nome": "Charti", "tipo": "rock", "sabor": "azedo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Rock-type.", "triturada": 100, "colheita": 3}, {"nome": "Shuca", "tipo": "ground", "sabor": "azedo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Ground-type.", "triturada": 100, "colheita": 3}, {"nome": "Rawst", "tipo": "ice", "sabor": "amargo", "raridade": "comum", "efeito": "Cura Burn quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Aguav", "tipo": "flying", "sabor": "amargo", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for electric, ground ou dragon.", "triturada": 60, "colheita": 3}, {"nome": "Hondew", "tipo": "ground", "sabor": "amargo", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o sATK em -1, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Rindo", "tipo": "grass", "sabor": "amargo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Grass-type.", "triturada": 100, "colheita": 3}, {"nome": "Kebia", "tipo": "poison", "sabor": "amargo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Poison-type.", "triturada": 100, "colheita": 3}, {"nome": "Tanga", "tipo": "bug", "sabor": "amargo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Bug-type.", "triturada": 100, "colheita": 3}, {"nome": "Pecha", "tipo": "fairy", "sabor": "doce", "raridade": "comum", "efeito": "Cura Poison quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Mago", "tipo": "dragon", "sabor": "doce", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for fire, fighting, dark ou rock.", "triturada": 60, "colheita": 3}, {"nome": "Qualot", "tipo": "poison", "sabor": "doce", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o DEF em um estágio, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Payapa", "tipo": "psychic", "sabor": "doce", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Psychic-type.", "triturada": 100, "colheita": 3}, {"nome": "Colbur", "tipo": "dark", "sabor": "doce", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Dark-type.", "triturada": 100, "colheita": 3}, {"nome": "Kasib", "tipo": "ghost", "sabor": "doce", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Ghost-type.", "triturada": 100, "colheita": 3}, {"nome": "Spelon", "tipo": "flying", "sabor": "apimentado", "raridade": "incomum", "efeito": "Transforma todos os movimentos Cool Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Haban", "tipo": "dragon", "sabor": "apimentado", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Dragon-type.", "triturada": 300, "colheita": 2}, {"nome": "Roseli", "tipo": "fairy", "sabor": "apimentado", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for psychic, ice, steel ou poison.", "triturada": 300, "colheita": 2}, {"nome": "Occan", "tipo": "fire", "sabor": "apimentado", "raridade": "incomum", "efeito": "Aumenta o ATK em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Chople", "tipo": "fighting", "sabor": "apimentado", "raridade": "incomum", "efeito": "Cura um Move que esteja Disabled.", "triturada": 300, "colheita": 2}, {"nome": "Tamato", "tipo": "psychic", "sabor": "apimentado", "raridade": "incomum", "efeito": "Aumenta a chance de Evasão em +20% quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Pamtre", "tipo": "ice", "sabor": "seco", "raridade": "incomum", "efeito": "Transforma todos os movimentos Beauty Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Yache", "tipo": "bug", "sabor": "seco", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento Sound-based.", "triturada": 300, "colheita": 2}, {"nome": "Belue", "tipo": "rock", "sabor": "seco", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for water, grass ou bug.", "triturada": 300, "colheita": 2}, {"nome": "Apicot", "tipo": "ground", "sabor": "seco", "raridade": "incomum", "efeito": "Aumenta o sATK em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Oran", "tipo": "poison", "sabor": "seco", "raridade": "incomum", "efeito": "Cura um Pokémon de Heal Block quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Ganlon", "tipo": "flying", "sabor": "seco", "raridade": "incomum", "efeito": "Aumenta a precisão de um movimento em +20% quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Passho", "tipo": "ground", "sabor": "azedo", "raridade": "incomum", "efeito": "Transforma todos os movimentos Tough Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Chilan", "tipo": "normal", "sabor": "azedo", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento Normal-type.", "triturada": 300, "colheita": 2}, {"nome": "Nomel", "tipo": "dragon", "sabor": "azedo", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for normal, flying ou ghost.", "triturada": 300, "colheita": 2}, {"nome": "Micle", "tipo": "rock", "sabor": "azedo", "raridade": "incomum", "efeito": "Aumenta o DEF em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Sitrus", "tipo": "grass", "sabor": "azedo", "raridade": "incomum", "efeito": "Impede Leech Seed de afetar o Pokémon quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Pinap", "tipo": "dark", "sabor": "azedo", "raridade": "incomum", "efeito": "Aumenta a chance de sucesso da habilidade Pick Up em +20% após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Rabuta", "tipo": "ghost", "sabor": "amargo", "raridade": "incomum", "efeito": "Transforma todos os movimentos Clever Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Babiri", "tipo": "steel", "sabor": "amargo", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Steel-type.", "triturada": 300, "colheita": 2}, {"nome": "Wepear", "tipo": "psychic", "sabor": "amargo", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for electric, ground ou dragon.", "triturada": 300, "colheita": 2}, {"nome": "Salac", "tipo": "psychic", "sabor": "amargo", "raridade": "incomum", "efeito": "Aumenta o sDEF em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Durin", "tipo": "steel", "sabor": "amargo", "raridade": "incomum", "efeito": "Cura Infatuated quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Lum", "tipo": "grass", "sabor": "amargo", "raridade": "incomum", "efeito": "Dobra a recuperação de movimentos de cura e absorb quando o HP está abaixo de 50%.", "triturada": 300, "colheita": 2}, {"nome": "Watmel", "tipo": "normal", "sabor": "doce", "raridade": "incomum", "efeito": "Transforma todos os movimentos Cute Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Magost", "tipo": "poison", "sabor": "doce", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento crítico.", "triturada": 300, "colheita": 2}, {"nome": "Nanab", "tipo": "water", "sabor": "doce", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for fire, fighting, dark ou rock.", "triturada": 300, "colheita": 2}, {"nome": "Petaya", "tipo": "electric", "sabor": "doce", "raridade": "incomum", "efeito": "Aumenta o SPEED em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Persim", "tipo": "rock", "sabor": "doce", "raridade": "incomum", "efeito": "Cura Confusion quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Lansat", "tipo": "fighting", "sabor": "doce", "raridade": "incomum", "efeito": "Aumenta a chance de Critical Hit em +20% quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Custap", "tipo": "ghost", "sabor": "apimentado", "raridade": "rara", "efeito": "Faz o pokémon portador sempre agir primeiro (Priority) quando o HP máximo está abaixo de 25%.", "triturada": 700, "colheita": 1}, {"nome": "Rowap", "tipo": "dark", "sabor": "seco", "raridade": "rara", "efeito": "Causa 1/8 de dano no HP máx de um pokémon que atingir o portador da Berry com Special Move.", "triturada": 700, "colheita": 1}, {"nome": "Jaboca", "tipo": "dragon", "sabor": "azedo", "raridade": "rara", "efeito": "Causa 1/8 de dano no HP máx de um pokémon que atingir o portador da Berry com Physical Move.", "triturada": 700, "colheita": 1}, {"nome": "Maranga", "tipo": "fire", "sabor": "amargo", "raridade": "rara", "efeito": "Aumenta a sDEF em +2 se o pokémon for atingido por um Special Move.", "triturada": 700, "colheita": 1}, {"nome": "Kee", "tipo": "steel", "sabor": "doce", "raridade": "rara", "efeito": "Aumenta a DEF em +2 se o pokémon for atingido por um Physical Move.", "triturada": 700, "colheita": 1}, {"nome": "Starf", "tipo": "grass", "sabor": null, "raridade": "rarissima", "efeito": "Aumenta um Stat aleatório em +6 quando o HP está abaixo de 25%.", "triturada": 1000, "colheita": 1}, {"nome": "Enigma", "tipo": "bug", "sabor": null, "raridade": "rarissima", "efeito": "Restaura 25% do HP máximo do portador se for atingido por um movimento superefetivo.", "triturada": 1000, "colheita": 1}, {"nome": "Eggant", "tipo": "water", "sabor": null, "raridade": "rarissima", "efeito": "Torna o pokémon imune a ability adversário por duas rodadas.", "triturada": 1000, "colheita": 1}, {"nome": "Strib", "tipo": "electric", "sabor": null, "raridade": "rarissima", "efeito": "Reseta os usos de movimentos de defesa absoluta ao início depois de consumida.", "triturada": 1000, "colheita": 1}, {"nome": "Touga", "tipo": "normal", "sabor": null, "raridade": "rarissima", "efeito": "Impede a mitigação do movimento seguinte ao consumo.", "triturada": 1000, "colheita": 1}, {"nome": "Drash", "tipo": "fairy", "sabor": null, "raridade": "rarissima", "efeito": "Se a soma dos STATS for no máximo 250, aumenta todos os stats em +30 por uma batalha ou evento completo.", "triturada": 1000, "colheita": 1}, {"nome": "Pumkin", "tipo": "ghost", "sabor": null, "raridade": "rarissima", "efeito": "Cura Curse quando consumida.", "triturada": 1000, "colheita": 1}];
+  const PADRAO = [{"nome": "Cheri", "tipo": "electric", "sabor": "apimentado", "raridade": "comum", "efeito": "Cura Paralysis quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Figy", "tipo": "bug", "sabor": "apimentado", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for psychic, ice, steel ou poison.", "triturada": 60, "colheita": 3}, {"nome": "Pomeg", "tipo": "dark", "sabor": "apimentado", "raridade": "comum", "efeito": "Quando consumido em batalha, reduz 50% do HP máximo do pokémon, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Leppa", "tipo": "fighting", "sabor": "apimentado", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Fighting-type.", "triturada": 100, "colheita": 3}, {"nome": "Liechi", "tipo": "fire", "sabor": "apimentado", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Fire-type.", "triturada": 100, "colheita": 3}, {"nome": "Razz", "tipo": "fairy", "sabor": "apimentado", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Fairy-type.", "triturada": 100, "colheita": 3}, {"nome": "Chesto", "tipo": "water", "sabor": "seco", "raridade": "comum", "efeito": "Cura Sleep quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Bluk", "tipo": "fire", "sabor": "seco", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for water, grass ou bug.", "triturada": 60, "colheita": 3}, {"nome": "Kelpsy", "tipo": "normal", "sabor": "seco", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o ATK em -1, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Wiki", "tipo": "ice", "sabor": "seco", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Ice-type.", "triturada": 100, "colheita": 3}, {"nome": "Cornn", "tipo": "water", "sabor": "seco", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Water-type.", "triturada": 100, "colheita": 3}, {"nome": "Coba", "tipo": "flying", "sabor": "seco", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Flying-type.", "triturada": 100, "colheita": 3}, {"nome": "Aspear", "tipo": "ice", "sabor": "azedo", "raridade": "comum", "efeito": "Cura Freeze quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Iapapa", "tipo": "fighting", "sabor": "azedo", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for normal, flying ou ghost.", "triturada": 60, "colheita": 3}, {"nome": "Grepa", "tipo": "steel", "sabor": "azedo", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o sDEF em -1, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Wacan", "tipo": "electric", "sabor": "azedo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Electric-type.", "triturada": 100, "colheita": 3}, {"nome": "Charti", "tipo": "rock", "sabor": "azedo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Rock-type.", "triturada": 100, "colheita": 3}, {"nome": "Shuca", "tipo": "ground", "sabor": "azedo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Ground-type.", "triturada": 100, "colheita": 3}, {"nome": "Rawst", "tipo": "ice", "sabor": "amargo", "raridade": "comum", "efeito": "Cura Burn quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Aguav", "tipo": "flying", "sabor": "amargo", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for electric, ground ou dragon.", "triturada": 60, "colheita": 3}, {"nome": "Hondew", "tipo": "ground", "sabor": "amargo", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o sATK em -1, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Rindo", "tipo": "grass", "sabor": "amargo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Grass-type.", "triturada": 100, "colheita": 3}, {"nome": "Kebia", "tipo": "poison", "sabor": "amargo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Poison-type.", "triturada": 100, "colheita": 3}, {"nome": "Tanga", "tipo": "bug", "sabor": "amargo", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Bug-type.", "triturada": 100, "colheita": 3}, {"nome": "Pecha", "tipo": "fairy", "sabor": "doce", "raridade": "comum", "efeito": "Cura Poison quando consumida.", "triturada": 60, "colheita": 3}, {"nome": "Mago", "tipo": "dragon", "sabor": "doce", "raridade": "comum", "efeito": "Quando o HP do pokémon portador estiver menor que 25%, irá restaurar 50% do HP, porém irá causar Confusion se o pokémon for fire, fighting, dark ou rock.", "triturada": 60, "colheita": 3}, {"nome": "Qualot", "tipo": "poison", "sabor": "doce", "raridade": "comum", "efeito": "Quando consumido em batalha, diminui o DEF em um estágio, mas aumenta o ganho de pontos em +2 por turno de batalha.", "triturada": 60, "colheita": 3}, {"nome": "Payapa", "tipo": "psychic", "sabor": "doce", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Psychic-type.", "triturada": 100, "colheita": 3}, {"nome": "Colbur", "tipo": "dark", "sabor": "doce", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Dark-type.", "triturada": 100, "colheita": 3}, {"nome": "Kasib", "tipo": "ghost", "sabor": "doce", "raridade": "comum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Ghost-type.", "triturada": 100, "colheita": 3}, {"nome": "Spelon", "tipo": "flying", "sabor": "apimentado", "raridade": "incomum", "efeito": "Transforma todos os movimentos Cool Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Haban", "tipo": "dragon", "sabor": "apimentado", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Dragon-type.", "triturada": 300, "colheita": 2}, {"nome": "Roseli", "tipo": "fairy", "sabor": "apimentado", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for psychic, ice, steel ou poison.", "triturada": 300, "colheita": 2}, {"nome": "Occan", "tipo": "fire", "sabor": "apimentado", "raridade": "incomum", "efeito": "Aumenta o ATK em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Chople", "tipo": "fighting", "sabor": "apimentado", "raridade": "incomum", "efeito": "Cura um Move que esteja Disabled.", "triturada": 300, "colheita": 2}, {"nome": "Tamato", "tipo": "psychic", "sabor": "apimentado", "raridade": "incomum", "efeito": "Aumenta a chance de Evasão em +20% quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Pamtre", "tipo": "ice", "sabor": "seco", "raridade": "incomum", "efeito": "Transforma todos os movimentos Beauty Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Yache", "tipo": "bug", "sabor": "seco", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento Sound-based.", "triturada": 300, "colheita": 2}, {"nome": "Belue", "tipo": "rock", "sabor": "seco", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for water, grass ou bug.", "triturada": 300, "colheita": 2}, {"nome": "Apicot", "tipo": "ground", "sabor": "seco", "raridade": "incomum", "efeito": "Aumenta o sATK em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Oran", "tipo": "poison", "sabor": "seco", "raridade": "incomum", "efeito": "Cura um Pokémon de Heal Block quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Ganlon", "tipo": "flying", "sabor": "seco", "raridade": "incomum", "efeito": "Aumenta a precisão de um movimento em +20% quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Passho", "tipo": "ground", "sabor": "azedo", "raridade": "incomum", "efeito": "Transforma todos os movimentos Tough Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Chilan", "tipo": "normal", "sabor": "azedo", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento Normal-type.", "triturada": 300, "colheita": 2}, {"nome": "Nomel", "tipo": "dragon", "sabor": "azedo", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for normal, flying ou ghost.", "triturada": 300, "colheita": 2}, {"nome": "Micle", "tipo": "rock", "sabor": "azedo", "raridade": "incomum", "efeito": "Aumenta o DEF em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Sitrus", "tipo": "grass", "sabor": "azedo", "raridade": "incomum", "efeito": "Impede Leech Seed de afetar o Pokémon quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Pinap", "tipo": "dark", "sabor": "azedo", "raridade": "incomum", "efeito": "Aumenta a chance de sucesso da habilidade Pick Up em +20% após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Rabuta", "tipo": "ghost", "sabor": "amargo", "raridade": "incomum", "efeito": "Transforma todos os movimentos Clever Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Babiri", "tipo": "steel", "sabor": "amargo", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento superefetivo Steel-type.", "triturada": 300, "colheita": 2}, {"nome": "Wepear", "tipo": "psychic", "sabor": "amargo", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for electric, ground ou dragon.", "triturada": 300, "colheita": 2}, {"nome": "Salac", "tipo": "psychic", "sabor": "amargo", "raridade": "incomum", "efeito": "Aumenta o sDEF em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Durin", "tipo": "steel", "sabor": "amargo", "raridade": "incomum", "efeito": "Cura Infatuated quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Lum", "tipo": "grass", "sabor": "amargo", "raridade": "incomum", "efeito": "Dobra a recuperação de movimentos de cura e absorb quando o HP está abaixo de 50%.", "triturada": 300, "colheita": 2}, {"nome": "Watmel", "tipo": "normal", "sabor": "doce", "raridade": "incomum", "efeito": "Transforma todos os movimentos Cute Style em STAB após consumida.", "triturada": 300, "colheita": 2}, {"nome": "Magost", "tipo": "poison", "sabor": "doce", "raridade": "incomum", "efeito": "Diminui 50% do dano recebido de um movimento crítico.", "triturada": 300, "colheita": 2}, {"nome": "Nanab", "tipo": "water", "sabor": "doce", "raridade": "incomum", "efeito": "Se oferecido a um pokémon selvagem, confere +50 HAPP se o pokémon for fire, fighting, dark ou rock.", "triturada": 300, "colheita": 2}, {"nome": "Petaya", "tipo": "electric", "sabor": "doce", "raridade": "incomum", "efeito": "Aumenta o SPEED em +1 quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Persim", "tipo": "rock", "sabor": "doce", "raridade": "incomum", "efeito": "Cura Confusion quando consumida.", "triturada": 300, "colheita": 2}, {"nome": "Lansat", "tipo": "fighting", "sabor": "doce", "raridade": "incomum", "efeito": "Aumenta a chance de Critical Hit em +20% quando o HP está abaixo de 25%.", "triturada": 300, "colheita": 2}, {"nome": "Custap", "tipo": "ghost", "sabor": "apimentado", "raridade": "rara", "efeito": "Faz o pokémon portador sempre agir primeiro (Priority) quando o HP máximo está abaixo de 25%.", "triturada": 700, "colheita": 1}, {"nome": "Rowap", "tipo": "dark", "sabor": "seco", "raridade": "rara", "efeito": "Causa 1/8 de dano no HP máx de um pokémon que atingir o portador da Berry com Special Move.", "triturada": 700, "colheita": 1}, {"nome": "Jaboca", "tipo": "dragon", "sabor": "azedo", "raridade": "rara", "efeito": "Causa 1/8 de dano no HP máx de um pokémon que atingir o portador da Berry com Physical Move.", "triturada": 700, "colheita": 1}, {"nome": "Maranga", "tipo": "fire", "sabor": "amargo", "raridade": "rara", "efeito": "Aumenta a sDEF em +2 se o pokémon for atingido por um Special Move.", "triturada": 700, "colheita": 1}, {"nome": "Kee", "tipo": "steel", "sabor": "doce", "raridade": "rara", "efeito": "Aumenta a DEF em +2 se o pokémon for atingido por um Physical Move.", "triturada": 700, "colheita": 1}, {"nome": "Starf", "tipo": "grass", "sabor": null, "raridade": "especial", "efeito": "Aumenta um Stat aleatório em +6 quando o HP está abaixo de 25%.", "triturada": 1000, "colheita": 1}, {"nome": "Enigma", "tipo": "bug", "sabor": null, "raridade": "especial", "efeito": "Restaura 25% do HP máximo do portador se for atingido por um movimento superefetivo.", "triturada": 1000, "colheita": 1}, {"nome": "Eggant", "tipo": "water", "sabor": "seco", "raridade": "rarissima", "efeito": "Torna o pokémon imune a ability adversário por duas rodadas.", "triturada": 1000, "colheita": 1}, {"nome": "Strib", "tipo": "electric", "sabor": "amargo", "raridade": "rarissima", "efeito": "Reseta os usos de movimentos de defesa absoluta ao início depois de consumida.", "triturada": 1000, "colheita": 1}, {"nome": "Touga", "tipo": "normal", "sabor": "apimentado", "raridade": "rarissima", "efeito": "Impede a mitigação do movimento seguinte ao consumo.", "triturada": 1000, "colheita": 1}, {"nome": "Drash", "tipo": "fairy", "sabor": "doce", "raridade": "rarissima", "efeito": "Se a soma dos STATS for no máximo 250, aumenta todos os stats em +30 por uma batalha ou evento completo.", "triturada": 1000, "colheita": 1}, {"nome": "Pumkin", "tipo": "ghost", "sabor": "azedo", "raridade": "rarissima", "efeito": "Cura Curse quando consumida.", "triturada": 1000, "colheita": 1}];
   const RAR = [
-    {id:'comum',     label:'Comuns',      ev:'basica'},
-    {id:'incomum',   label:'Incomuns',    ev:'intermedia'},
-    {id:'rara',      label:'Raras',       ev:'rara'},
-    {id:'rarissima', label:'Raríssimas',  ev:'bonus'}
+    {id:'comum',     label:'Comuns',      ev:'comum', happ:1},
+    {id:'incomum',   label:'Incomuns',    ev:'incomum', happ:5},
+    {id:'rara',      label:'Raras',       ev:'rara', happ:10},
+    {id:'rarissima', label:'Raríssimas',  ev:'rarissima', happ:15, nota:'máx. 1 por Pokéblock'},
+    {id:'especial',  label:'Especiais',   ev:'especial', happ:20}
   ];
   const SAB = [
     {id:'apimentado', label:'Apimentado', bg:'#dd7b6a'},
@@ -21427,14 +21464,16 @@ document.addEventListener('change', e=>{
     });
   }
 
+  const happ = id => { const r = RAR.find(x=>x.id===id); return r ? r.happ : 0; };
+
   function linhaHtml(b){
     const bg = (sabInfo(b.sabor)||{bg:SEM_SABOR_BG}).bg;
     const img = '<img src="'+esc(spriteUrl(b.nome))+'" alt="" loading="lazy" onerror="this.onerror=null;this.style.opacity=.25">';
     return '<tr style="background:'+bg+'">'
-      +'<td class="bry-ico">'+img+'</td>'
-      +'<td class="bry-nome">'+esc(b.nome)+'</td>'
+      +'<td class="bry-nome">'+img+'<span>'+esc(b.nome)+'</span></td>'
       +'<td class="bry-ng"><span class="bry-tipo" style="background:'+TIPOS[b.tipo]+'">'+esc(b.tipo)+'</span></td>'
       +'<td class="bry-ef">'+esc(b.efeito)+'</td>'
+      +'<td class="bry-num">+'+happ(b.raridade)+'</td>'
       +'<td class="bry-num">'+fmtN(b.triturada)+'</td>'
       +'<td class="bry-num">'+fmtN(b.colheita)+'</td></tr>';
   }
@@ -21451,11 +21490,27 @@ document.addEventListener('change', e=>{
     RAR.forEach(r=>{
       const grupo = itens.filter(b=>b.raridade===r.id);
       if(!grupo.length) return;
-      html += '<div class="bry-grupo"><div class="bry-grupo-h">'+r.label+' <span>'+grupo.length+'</span></div>'
-        +'<div class="bry-scroll"><table class="bry-tbl"><thead><tr><th colspan="2">Berry</th><th>Natural Gift</th><th>Efeito</th><th>Triturada (un)</th><th>Colheita</th></tr></thead><tbody>'
+      html += '<div class="bry-grupo"><div class="bry-grupo-h">'+r.label+' <span>'+grupo.length+'</span>'+(r.nota?'<span>· '+r.nota+'</span>':'')+'</div>'
+        +'<div class="bry-scroll"><table class="bry-tbl"><thead><tr><th>Berry</th><th>Natural Gift</th><th>Efeito</th><th>HAPP</th><th>Triturada (un)</th><th>Colheita</th></tr></thead><tbody>'
         + grupo.map(linhaHtml).join('') + '</tbody></table></div></div>';
     });
     el.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--muted)">Nenhuma berry encontrada.</div>';
+  }
+
+  /* ── botão Atualizar: descarta o cache e recarrega lista + sprites ── */
+  async function recarregar(btn){
+    const txt = btn ? btn.textContent : '';
+    if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando…'; }
+    try{
+      lista = null;
+      try{ if(typeof _itemDexByName !== 'undefined') _itemDexByName = null; }catch(e){}
+      await carregar(true);
+    }catch(e){
+      console.warn('[berries] falha ao atualizar', e);
+      alert('Não consegui atualizar: ' + (e && e.message || e));
+    }finally{
+      if(btn){ btn.disabled = false; btn.textContent = txt; }
+    }
   }
 
   /* ── filtros públicos ── */
@@ -21582,7 +21637,7 @@ document.addEventListener('change', e=>{
       const nome = b.nome + ' Berry';
       if(jaTem.has(nome.toLowerCase())){ dup.push(nome); return; }
       const rar = RAR.find(r=>r.id===b.raridade);
-      pool.itens.push({nome, sabor: b.sabor || null, raridade: rar ? rar.ev : 'basica', numeros});
+      pool.itens.push({nome, sabor: b.sabor || null, raridade: rar ? rar.ev : 'comum', numeros});
       add++;
     });
     if(!add && !dup.length){ alert('Preencha os números de pelo menos uma berry.'); return; }
@@ -21594,6 +21649,7 @@ document.addEventListener('change', e=>{
 
   /* API pública */
   window.berriesCarregar = carregar;
+  window.berriesRecarregar = recarregar;
   window.berriesSetFiltro = setFiltro;
   window.berriesAbrirEditor = abrirEditor;
   window.berriesFecharEditor = fecharEditor;
@@ -21605,6 +21661,9 @@ document.addEventListener('change', e=>{
   window.KPBerries = {
     carregar: garantirLista,
     lista: () => clone(lista || normalizar(clone(PADRAO))),
+    // HAPP por raridade (comum +1, incomum +5, rara +10, raríssima +15, especial +20) e limite de uso por Pokéblock
+    happ: id => happ(id),
+    limitePorPokeblock: id => (id==='rarissima' ? 1 : null),
     porNome: n => (lista||[]).find(b=>b.nome.toLowerCase()===String(n||'').replace(/\s*berry$/i,'').trim().toLowerCase()) || null
   };
 })();
