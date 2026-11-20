@@ -279,6 +279,8 @@ html.v-ficha .header-photo-col img{width:100%;height:100%;object-fit:cover;displ
 html.v-ficha .header-photo-placeholder{font-size:12px;color:#aaa;font-family:var(--font-body);text-align:center;padding:10px;display:flex;align-items:center;justify-content:center;height:100%}
 html.v-ficha .header-photo-edit-btn{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:3px;font-size:11px;font-family:var(--font-body);padding:4px 10px;cursor:pointer;opacity:0;transition:opacity .2s;z-index:3}
 html.v-ficha .header-photo-col:hover .header-photo-edit-btn{opacity:1}
+html.v-ficha .header-photo-pos-btn{right:auto;left:8px}
+html.v-ficha .header-mobile-pos-btn{display:none;position:absolute;bottom:5px;left:50%;transform:translateX(-50%);z-index:4;margin:0;border:none;border-radius:10px;background:rgba(0,0,0,.8);color:#fff;font:700 9px var(--font-body);padding:2px 7px;cursor:pointer}
 html.v-ficha .ginimg-edit-btn{position:absolute;top:0;left:0;right:0;background:linear-gradient(180deg,rgba(0,0,0,.75),rgba(0,0,0,0));color:#fff;border:none;font-size:13px;font-weight:700;font-family:var(--font-body);padding:10px 12px 22px;cursor:pointer;text-align:left;z-index:3;letter-spacing:.2px}
 html.v-ficha .ginimg-edit-btn:hover{background:linear-gradient(180deg,rgba(0,0,0,.85),rgba(0,0,0,0))}
 html.v-ficha .header-mid{padding:22px 26px;position:relative;z-index:2;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0;pointer-events:none}
@@ -1055,6 +1057,7 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
     <div class="header-photo-col" id="header-photo-col">
       <div id="f-photo-placeholder" class="header-photo-placeholder">Sem foto</div>
       <button class="header-photo-edit-btn" id="btn-photo-edit" onclick="document.getElementById('photo-file-input').click()" style="display:none">Trocar foto</button>
+      <button class="header-photo-edit-btn header-photo-pos-btn" id="btn-photo-pos" onclick="abrirPosFoto()" style="display:none">Posição</button>
       <input type="file" id="photo-file-input" accept="image/*" style="display:none" onchange="onImgFile(this,'foto')"/>
     </div>
 
@@ -1063,6 +1066,7 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
         <div class="header-mobile-avatar" id="header-mobile-avatar">
           <div id="f-mobile-avatar-placeholder" class="header-mobile-avatar-placeholder">?</div>
           <button class="header-mobile-avatar-edit-btn" id="btn-mobile-photo-edit" onclick="document.getElementById('photo-file-input').click()" title="Trocar foto">Trocar</button>
+          <button class="header-mobile-pos-btn" id="btn-mobile-photo-pos" onclick="abrirPosFoto()" title="Posição da foto">Posição</button>
         </div>
         <div class="header-mid-toptext">
           <div class="header-eyebrow-row">
@@ -1322,6 +1326,24 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
 <!-- MODAL LOGIN ADM -->
 
 
+<!-- MODAL POSIÇÃO DA FOTO -->
+<div class="cores-modal-overlay" id="fpos-modal-overlay" style="display:none;z-index:9600">
+  <div class="cores-modal" style="max-width:340px;text-align:center">
+    <div class="cores-modal-title">Posição da foto</div>
+    <div id="fpos-circle" style="width:220px;height:220px;margin:6px auto 10px;border-radius:50%;overflow:hidden;background:#0c1a2c;cursor:grab;touch-action:none;box-shadow:0 0 0 3px rgba(63,232,255,.5)">
+      <img id="fpos-img" draggable="false" style="width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;user-select:none"/>
+    </div>
+    <div class="crop-hint">Arraste a foto para escolher o que aparece no círculo dos cards.</div>
+    <div class="cores-modal-btns" style="margin-top:12px;justify-content:space-between">
+      <button class="btn btn-sm" style="background:#eee;border:1px solid #ccc" onclick="fecharPosFoto()">Cancelar</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" style="background:#eee;border:1px solid #ccc" onclick="centralizarPosFoto()">Centralizar</button>
+        <button class="btn btn-primary btn-sm" onclick="salvarPosFoto()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CROP DE IMAGEM -->
 <div class="cores-modal-overlay" id="crop-modal-overlay" style="display:none;z-index:9600">
   <div class="cores-modal" style="max-width:560px">
@@ -1498,7 +1520,7 @@ function renderCards(){
     const col=CAT_COLOR[n.categoria]||CAT_COLOR.comum;
     return`<a class="npc-card${LISTA_DES?' inativo':''}" href="${BASE}/${encodeURIComponent(n.slug)}" style="animation-delay:${Math.min(i*0.03,.4)}s">
       <div class="npc-photo-ring">
-        ${n.foto?`<img class="npc-photo" src="${escL(n.foto)}" onerror="this.style.display='none'">`:`<div class="npc-photo-placeholder">${escL(String(n.nome||'?').trim().charAt(0).toUpperCase())}</div>`}
+        ${n.foto?(()=>{const fp=fotoParse(n.foto);return `<img class="npc-photo" src="${escL(fp.src)}" style="object-position:${fp.x}% ${fp.y}%" onerror="this.style.display='none'">`})():`<div class="npc-photo-placeholder">${escL(String(n.nome||'?').trim().charAt(0).toUpperCase())}</div>`}
       </div>
       <div class="npc-name">${escL(n.nome)}</div>
       <div class="npc-badge" style="background:${col.bg};color:${col.fg};border:1px solid ${col.bd}">${cat.label}</div>
@@ -2100,7 +2122,7 @@ function renderFicha(){
       photoPlaceholder.style.display='none';
       let img=photoCol.querySelector('img.photo-img');
       if(!img){img=document.createElement('img');img.className='photo-img';photoCol.insertBefore(img,photoCol.firstChild);}
-      img.src=n.foto;img.style.cssText='width:100%;height:100%;object-fit:cover;display:block';
+      const fp=fotoParse(n.foto);img.src=fp.src;img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;object-position:'+fp.x+'% '+fp.y+'%'
     } else {
       photoPlaceholder.style.display='';
       const img=photoCol.querySelector('img.photo-img');if(img)img.remove();
@@ -2112,7 +2134,7 @@ function renderFicha(){
       mAvatarPlaceholder.style.display='none';
       let img=mAvatar.querySelector('img.mobile-avatar-img');
       if(!img){img=document.createElement('img');img.className='mobile-avatar-img';mAvatar.insertBefore(img,mAvatar.firstChild);}
-      img.src=n.foto;
+      const fpm=fotoParse(n.foto);img.src=fpm.src;img.style.objectPosition=fpm.x+'% '+fpm.y+'%';
     } else {
       mAvatarPlaceholder.style.display='';
       const img=mAvatar.querySelector('img.mobile-avatar-img');if(img)img.remove();
@@ -2272,6 +2294,74 @@ async function salvarImagemCampo(campo,dataUrl){
   }
   if(npc.id){try{const j=await npcSalvarCampos(npc.slug,{[campo]:npc[campo]});npc[campo]=j[campo]}catch(e){alert('Erro ao salvar a imagem: '+e.message)}}
   if(btn){btn.textContent=prev;btn.disabled=false;}
+  renderFicha();
+}
+
+// ─── Posição da foto (enquadramento nos cards) ─────────
+// A posição é guardada junto da própria foto, como sufixo '#kp-pos=X,Y' (0–100).
+// Nenhuma coluna nova é necessária no Supabase; trocar a foto zera a posição.
+function fotoParse(v){
+  const s=String(v||'');
+  const m=s.match(/#kp-pos=(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$/);
+  return m?{src:s.slice(0,m.index),x:+m[1],y:+m[2]}:{src:s,x:50,y:50};
+}
+function fotoSerial(src,x,y){
+  x=Math.max(0,Math.min(100,Math.round(x)));y=Math.max(0,Math.min(100,Math.round(y)));
+  return (x===50&&y===50)?src:src+'#kp-pos='+x+','+y;
+}
+let _fpos=null; // {src,x,y,drag}
+function abrirPosFoto(){
+  if(!npc||!npc.foto){alert('Esse NPC ainda não tem foto.');return;}
+  const f=fotoParse(npc.foto);
+  _fpos={src:f.src,x:f.x,y:f.y,drag:null};
+  const img=document.getElementById('fpos-img');
+  img.src=f.src;
+  img.style.objectPosition=f.x+'% '+f.y+'%';
+  document.getElementById('fpos-modal-overlay').style.display='flex';
+}
+function fecharPosFoto(){document.getElementById('fpos-modal-overlay').style.display='none';_fpos=null;}
+function centralizarPosFoto(){
+  if(!_fpos)return;_fpos.x=50;_fpos.y=50;
+  document.getElementById('fpos-img').style.objectPosition='50% 50%';
+}
+(function(){
+  document.addEventListener('DOMContentLoaded',()=>{
+    const box=document.getElementById('fpos-circle'),img=document.getElementById('fpos-img');
+    if(!box||!img)return;
+    function start(ev){
+      if(!_fpos)return;ev.preventDefault();
+      const pt=ev.touches?ev.touches[0]:ev;
+      _fpos.drag={sx:pt.clientX,sy:pt.clientY,x0:_fpos.x,y0:_fpos.y};
+      const mm=e2=>{
+        if(!_fpos||!_fpos.drag)return;
+        const p=e2.touches?e2.touches[0]:e2;e2.preventDefault&&e2.preventDefault();
+        const cw=box.clientWidth,ch=box.clientHeight,iw=img.naturalWidth,ih=img.naturalHeight;
+        if(!iw||!ih)return;
+        const sc=Math.max(cw/iw,ch/ih);
+        const ox=iw*sc-cw, oy=ih*sc-ch; // sobra em cada eixo (px)
+        const d=_fpos.drag;
+        if(ox>0.5)_fpos.x=Math.max(0,Math.min(100,d.x0-(p.clientX-d.sx)/ox*100));
+        if(oy>0.5)_fpos.y=Math.max(0,Math.min(100,d.y0-(p.clientY-d.sy)/oy*100));
+        img.style.objectPosition=_fpos.x+'% '+_fpos.y+'%';
+      };
+      const mu=()=>{
+        window.removeEventListener('mousemove',mm);window.removeEventListener('mouseup',mu);
+        window.removeEventListener('touchmove',mm);window.removeEventListener('touchend',mu);
+        if(_fpos)_fpos.drag=null;
+      };
+      window.addEventListener('mousemove',mm);window.addEventListener('mouseup',mu);
+      window.addEventListener('touchmove',mm,{passive:false});window.addEventListener('touchend',mu);
+    }
+    box.addEventListener('mousedown',start);
+    box.addEventListener('touchstart',start,{passive:false});
+  });
+})();
+async function salvarPosFoto(){
+  if(!_fpos)return;
+  const novo=fotoSerial(_fpos.src,_fpos.x,_fpos.y);
+  fecharPosFoto();
+  npc.foto=novo;
+  if(npc.id){try{const j=await npcSalvarCampos(npc.slug,{foto:npc.foto});npc.foto=j.foto||npc.foto}catch(e){alert('Erro ao salvar a posição: '+e.message)}}
   renderFicha();
 }
 
@@ -2914,6 +3004,8 @@ function ativarEdicao(){
   document.getElementById('btn-banner-edit').style.display='block';
   document.getElementById('btn-photo-edit').style.display='block';
   document.getElementById('btn-mobile-photo-edit').style.display='flex';
+  document.getElementById('btn-photo-pos').style.display='block';
+  document.getElementById('btn-mobile-photo-pos').style.display='block';
   document.getElementById('btn-ginimg-edit').style.display='block';
   document.querySelectorAll('.view-content').forEach(el=>el.style.display='none');
   document.querySelectorAll('.edit-content').forEach(el=>el.style.display='block');
@@ -2937,6 +3029,8 @@ function cancelarEdicao(){
   document.getElementById('btn-banner-edit').style.display='none';
   document.getElementById('btn-photo-edit').style.display='none';
   document.getElementById('btn-mobile-photo-edit').style.display='none';
+  document.getElementById('btn-photo-pos').style.display='none';
+  document.getElementById('btn-mobile-photo-pos').style.display='none';
   document.getElementById('btn-ginimg-edit').style.display='none';
   document.querySelectorAll('.view-content').forEach(el=>el.style.display='');
   document.querySelectorAll('.edit-content').forEach(el=>el.style.display='none');
