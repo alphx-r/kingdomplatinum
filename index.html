@@ -5353,6 +5353,97 @@ window.calcSituSoma = function(){
   <!-- Conteúdo carregado do banco (config.page_subsistemas) -->
 </div><!-- /page-subsistemas -->
 
+<style id="pv-css">
+#page-provasdevalor{max-width:900px}
+#page-provasdevalor .pv-r{position:absolute;opacity:0;pointer-events:none}
+#page-provasdevalor .pv-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+#page-provasdevalor .pv-tabs label{flex:1 1 0;min-width:110px;text-align:center;padding:11px 14px;border-radius:8px;background:var(--surface);border:1.5px solid var(--border2);font-family:var(--font-title);font-weight:700;font-size:13px;letter-spacing:.8px;color:var(--brand);cursor:pointer;transition:background .15s,color .15s,border-color .15s;user-select:none}
+#page-provasdevalor .pv-tabs label:hover{border-color:var(--brand-mid)}
+#page-provasdevalor .pv-tabs label.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+#page-provasdevalor .pv-panel{display:none}
+#page-provasdevalor .pv-r:checked+.pv-panel{display:block}
+#page-provasdevalor .pv-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+#page-provasdevalor .pv-head{background:var(--brand);color:#fff;padding:14px 20px;font-family:var(--font-title);font-weight:700;font-size:18px;letter-spacing:1px}
+#page-provasdevalor .pv-body{padding:20px}
+#page-provasdevalor .pv-body p{margin:0 0 14px;font-size:15px;line-height:1.6}
+#page-provasdevalor .pv-body p:last-child{margin-bottom:0}
+#page-provasdevalor .pv-publico{display:inline-block;margin-bottom:14px;padding:3px 12px;border-radius:99px;background:var(--accent-light);border:1px solid var(--accent);color:var(--brand);font-size:12.5px;font-weight:700}
+#page-provasdevalor .pv-itens{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:18px}
+#page-provasdevalor .pv-item{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface2)}
+#page-provasdevalor .pv-item img{display:block;width:100%;aspect-ratio:16/10;object-fit:contain;background:#fff}
+#page-provasdevalor .pv-item h3{margin:0;padding:10px 14px 2px;font-family:var(--font-title);font-size:14px;color:var(--brand)}
+#page-provasdevalor .pv-item p{margin:0;padding:0 14px 12px;font-size:13.5px;color:var(--muted)}
+#page-provasdevalor .pv-vazio{margin-top:18px;padding:18px;border:1.5px dashed var(--border2);border-radius:8px;color:var(--muted);font-size:14px;text-align:center}
+#page-provasdevalor .pv-atalhos{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}
+#page-provasdevalor .pv-atalhos button{padding:12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--surface2);text-align:center;color:var(--brand);font-family:var(--font-title);font-weight:700;font-size:13px;cursor:pointer}
+#page-provasdevalor .pv-atalhos button small{display:block;font-family:var(--font-body);font-weight:600;color:var(--muted);font-size:12px;margin-top:2px}
+#page-provasdevalor .pv-atalhos button:hover{border-color:var(--brand-mid)}
+@media(max-width:520px){#page-provasdevalor .pv-atalhos{grid-template-columns:1fr}}
+#page-provasdevalor .pv-r:focus-visible+.pv-panel{outline:none}
+</style>
+<div class="page" id="page-provasdevalor" style="padding:clamp(14px,4vw,28px);box-sizing:border-box;width:100%">
+  <!-- Conteúdo carregado de provasdevalor.json (repo kpfichas_db) -->
+</div><!-- /page-provasdevalor -->
+<script>
+// ── Provas de Valor: página embutida, dados em provasdevalor.json (kpfichas_db) ──
+const PV_PADRAO={intro:{titulo:'Provas de Valor',paragrafos:[]},abas:[
+  {id:'gyms',titulo:'GYMS',publico:'Especialistas',descricao:[],itens:[]},
+  {id:'houses',titulo:'HOUSES',publico:'Coordenadores',descricao:[],itens:[]},
+  {id:'stations',titulo:'STATIONS',publico:'Criadores',descricao:[],itens:[]}]};
+let _pvDados=null;
+function _pvEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function _pvParas(a){return (Array.isArray(a)?a:(a?[a]:[])).map(t=>'<p>'+_pvEsc(t)+'</p>').join('');}
+function _pvSlug(t){return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+async function pvCarregar(){
+  const root=document.getElementById('page-provasdevalor'); if(!root) return;
+  if(!_pvDados){ _pvDados=(await dbJson('data/provasdevalor.json'))||PV_PADRAO; }
+  const d=_pvDados, intro=d.intro||PV_PADRAO.intro, abas=(d.abas&&d.abas.length)?d.abas:PV_PADRAO.abas;
+  const ids=abas.map(a=>_pvSlug(a.id||a.titulo));
+  let h='<div class="pv-tabs" role="tablist"><label for="pv-t-intro">'+_pvEsc(intro.titulo||'Provas de Valor')+'</label>'
+    +abas.map((a,i)=>'<label for="pv-t-'+ids[i]+'">'+_pvEsc(a.titulo)+'</label>').join('')+'</div>';
+  h+='<input class="pv-r" type="radio" name="pv-tab" id="pv-t-intro" checked><section class="pv-panel"><div class="pv-card"><div class="pv-head">'+_pvEsc(intro.titulo||'Provas de Valor')+'</div><div class="pv-body">'
+    +_pvParas(intro.paragrafos)
+    +'<div class="pv-atalhos">'+abas.map((a,i)=>'<button type="button" onclick="pvAbrirAba(\''+ids[i]+'\')">'+_pvEsc(a.titulo)+(a.publico?'<small>'+_pvEsc(a.publico)+'</small>':'')+'</button>').join('')+'</div></div></div></section>';
+  abas.forEach((a,i)=>{
+    h+='<input class="pv-r" type="radio" name="pv-tab" id="pv-t-'+ids[i]+'"><section class="pv-panel"><div class="pv-card"><div class="pv-head">'+_pvEsc(a.titulo)+'</div><div class="pv-body">'
+      +(a.publico?'<span class="pv-publico">'+_pvEsc(a.publico)+'</span>':'')+_pvParas(a.descricao);
+    if(a.itens&&a.itens.length){
+      h+='<div class="pv-itens">'+a.itens.map(it=>'<article class="pv-item">'
+        +(it.imagem?'<img loading="lazy" src="'+_pvEsc(/^https?:/.test(it.imagem)?it.imagem:DB_RAW+it.imagem)+'" alt="'+_pvEsc(it.nome)+'">':'')
+        +'<h3>'+_pvEsc(it.nome)+'</h3>'+(it.descricao?'<p>'+_pvEsc(it.descricao)+'</p>':'')+'</article>').join('')+'</div>';
+    } else h+='<div class="pv-vazio">Nenhuma prova cadastrada ainda.</div>';
+    h+='</div></div></section>';
+  });
+  root.innerHTML=h;
+  pvAplicarHash();
+}
+function pvMarcarAtiva(){
+  const root=document.getElementById('page-provasdevalor'); if(!root) return;
+  root.querySelectorAll('.pv-tabs label').forEach(l=>{
+    const r=document.getElementById(l.getAttribute('for')); l.classList.toggle('on',!!(r&&r.checked));
+  });
+}
+function pvAbrirAba(id){
+  const r=document.getElementById('pv-t-'+id); if(!r) return;
+  r.checked=true; r.dispatchEvent(new Event('change',{bubbles:true}));
+}
+function pvAplicarHash(){
+  const w=_pvSlug(decodeURIComponent((location.hash||'').slice(1)));
+  const r=document.getElementById('pv-t-'+(w||'intro'))||document.getElementById('pv-t-intro');
+  if(r) r.checked=true;
+  pvMarcarAtiva();
+}
+document.addEventListener('change',e=>{
+  const r=e.target;
+  if(!r||!r.matches||!r.matches('input.pv-r')||!r.checked) return;
+  pvMarcarAtiva();
+  if(typeof currentPage!=='undefined'&&currentPage!=='provasdevalor') return;
+  const s=r.id.replace(/^pv-t-/,'');
+  history.replaceState(history.state,'',location.pathname+location.search+(s==='intro'?'':'#'+s));
+});
+</script>
+
+
 <div class="page" id="page-berries" style="padding:clamp(14px,4vw,28px);box-sizing:border-box;width:100%">
   <div class="roller-header">
     <h2>Berries</h2>
@@ -7353,7 +7444,7 @@ async function init(){
     }
 
     if(pathPage==='fichario'){ location.replace('/fichas'); return; }   // Fichário antigo foi substituído por /fichas
-    const validPages = ['roller','bioma','adm','npcs','nature','ganhos','sistemas','subsistemas','batalhas','tramas','berries'];
+    const validPages = ['roller','bioma','adm','npcs','nature','ganhos','sistemas','subsistemas','batalhas','tramas','berries','provasdevalor'];
     const pageMap = {calendario:'eventos-hub', dados:'roller', porlocal:'bioma'}; // /dados (legado) abre o Rolador no modo Dados
     let hash = pageMap[pathPage] || (validPages.includes(pathPage) ? pathPage : 'roller');
 
@@ -7484,6 +7575,9 @@ async function carregarAba(page){
       if(!pokemonDB.length){ loaded['bioma']=false; console.warn('[carregarAba] local: Pokémon não carregaram'); }
       syncBiomaSelect();
     }
+    else if(page==='provasdevalor'){
+      await pvCarregar();
+    }
     else if(page==='ganhos'){
       // ganhos é estático — sem dados do Supabase
     }
@@ -7550,7 +7644,7 @@ async function carregarAba(page){
 // ══════════════════════════════════════
 // NAVEGAÇÃO COM HASH
 // ══════════════════════════════════════
-const KP_NOMES_PAGINA = {bioma:'Local', npcs:'NPCs', sistemas:'Sistemas', subsistemas:'Subsistemas', ganhos:'Ganhos', berries:'Berries', nature:'Natures', batalhas:'Batalhas', 'eventos-hub':'Calendário', tramas:'Tramas', adm:'Adm'};
+const KP_NOMES_PAGINA = {bioma:'Local', npcs:'NPCs', sistemas:'Sistemas', subsistemas:'Subsistemas', provasdevalor:'Provas de Valor', ganhos:'Ganhos', berries:'Berries', nature:'Natures', batalhas:'Batalhas', 'eventos-hub':'Calendário', tramas:'Tramas', adm:'Adm'};
 function kpTituloAba(page, nome){
   if(page==='roller'){ document.title = 'PKMN Kingdom Platinum'; return; }
   document.title = (nome || KP_NOMES_PAGINA[page] || 'Página') + ' | KPRPG';
@@ -7583,6 +7677,7 @@ async function navegarPara(page, replace=false){
   if(page==='npcs') renderNpcs();
   if(page==='berries' && typeof berriesCarregar==='function') berriesCarregar();
   currentPage = page;
+  if(page==='provasdevalor' && typeof pvAplicarHash==='function') pvAplicarHash();
   showEditBtnIfAdm();
   if(EDITABLE_PAGES.includes(page)) carregarPaginaEditavel(page).then(()=>{
     if(page==='batalhas') _ensureCalcDano();
@@ -7590,10 +7685,10 @@ async function navegarPara(page, replace=false){
   });
   // Highlight Guias dropdown btn when on a guias page
   const dropBtn = document.getElementById('nav-drop-btn');
-  if(dropBtn) dropBtn.classList.toggle('active', ['sistemas','subsistemas','ganhos','nature','batalhas','berries'].includes(page));
+  if(dropBtn) dropBtn.classList.toggle('active', ['sistemas','subsistemas','provasdevalor','ganhos','nature','batalhas','berries'].includes(page));
   const path = page==='roller' ? (rollerEncontroTravado ? '/dados' : '/') : page==='eventos-hub' ? '/calendario' : page==='bioma' ? '/porlocal' : '/'+page;
   // Sistemas/Subsistemas: mantém o #aba da URL ao abrir direto por link / voltar do navegador
-  const _sisHash = (replace && (page==='sistemas'||page==='subsistemas')) ? location.hash : '';
+  const _sisHash = (replace && (page==='sistemas'||page==='subsistemas'||page==='provasdevalor')) ? location.hash : '';
   if(replace) history.replaceState(null,'', path + _sisHash);
   else history.pushState(null,'', path);
   // Checa manutenção específica desta aba (admins logados nunca são bloqueados)
@@ -8656,6 +8751,7 @@ const MANUTENCAO_ABAS_DISPONIVEIS = [
   {key:'eventos-hub',  label:'Calendário'},
   {key:'sistemas',     label:'Sistemas'},
   {key:'subsistemas',  label:'Subsistemas'},
+  {key:'provasdevalor', label:'Provas de Valor'},
   {key:'berries',      label:'Berries'},
   {key:'ganhos',       label:'Ganhos'},
   {key:'nature',       label:'Natures'},
@@ -20697,7 +20793,7 @@ window.addEventListener('popstate', async ()=>{
     carregarTramas().then(()=>iniciarPaginaTrama(tramaMatch[1]));
     return;
   }
-  const validPages = ['roller','bioma','adm','npcs','nature','ganhos','sistemas','subsistemas','batalhas','tramas','berries'];
+  const validPages = ['roller','bioma','adm','npcs','nature','ganhos','sistemas','subsistemas','batalhas','tramas','berries','provasdevalor'];
   const page = pathPage==='porlocal' ? 'bioma' : (validPages.includes(pathPage) ? pathPage : 'roller');
   rollerTravarEncontro(pathPage==='dados');
   carregarAba(page).then(()=>navegarPara(page, true));
