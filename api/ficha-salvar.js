@@ -11,6 +11,7 @@ const T = require('./_torneios');   // torneios (arquivo com "_" não conta como
 const ST = require('./_staff');     // lista de acesso (chefe/ADM/MOD) — config.kp_staff
 const NP = require('./_npcs');       // NPCs do npcdex em JSON (data/npcs/...)
 const BR = require('./_berries');    // berries do RPG em JSON (data/berries.json)
+const PV = require('./_provas');     // Provas de Valor (página editável) em JSON (data/provasdevalor.json)
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
 //   GET  /api/ficha-salvar?lista=1      -> data/index.json
 //   GET  /api/ficha-salvar?slug=zach    -> data/fichas/zach.json
@@ -252,6 +253,7 @@ module.exports = async (req, res) => {
       }
       if (q.npcmigrar) { res.setHeader('Cache-Control', 'no-store'); return await NP.migrar(q, res); }
       if (q.berries) return await BR.obter(res);
+      if (q.provas) return await PV.obter(res);
       if (q.npcs) return await NP.lista(res);
       if (q.npc) return await NP.obter(q.npc, res);
       if (q.npchist) return await NP.historico(q.npchist, res);
@@ -278,6 +280,7 @@ module.exports = async (req, res) => {
     if (action === 'staff_salvar') return await ST.salvar(b, res);   // chefe/ADM editam a equipe (nome+senha do player)
     if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
     if (/^berries_/.test(action)) return await BR.acao(action, b, res);   // ADM edita as berries com nome+senha do player
+    if (/^provas_/.test(action)) return await PV.acao(action, b, res);   // ADM edita as Provas de Valor com nome+senha do player
     if (/^npc_/.test(action)) return await NP.acao(action, b, res);   // ADM edita NPC com nome+senha do player
     if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
