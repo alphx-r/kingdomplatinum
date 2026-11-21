@@ -120,7 +120,6 @@ html.v-ficha .ptag.auto{background:#b4532a}
 html.v-ficha .pc-lbl{margin-bottom:-4px}
 html.v-ficha .pc-txt{font:13px/1.5 var(--fb);color:var(--tx);white-space:pre-wrap;overflow-wrap:anywhere}
 html.v-ficha .pc-mv1{display:flex;align-items:center;gap:6px;font:600 13px var(--fb);width:100%}
-html.v-ficha .pc-mv .mvb{font-size:8.5px;padding:2px 5px}
 html.v-ficha .mvb{display:inline-block;white-space:nowrap;font:800 7.5px var(--fb);letter-spacing:.4px;padding:1px 4px;border-radius:3px;vertical-align:1px;color:#fff;background:#555}
 html.v-ficha .mvb-tm{background:#2f6fb0}html.v-ficha .mvb-pilula{background:#b8467e}html.v-ficha .mvb-egg{background:#c28a1a}
 html.v-ficha .pc-ath{display:grid;grid-template-columns:repeat(5,1fr);background:var(--s2);border-top:1px solid var(--bd)}
@@ -383,9 +382,15 @@ html.v-ficha .pc-facts{display:flex;flex-wrap:wrap;gap:8px 26px}
 html.v-ficha .pc-fact{display:flex;flex-direction:column;gap:1px;min-width:90px}
 html.v-ficha .pc-fact span,html.v-ficha .pc-lbl{font:800 9.5px var(--fb);letter-spacing:.6px;text-transform:uppercase;color:var(--mu)}
 html.v-ficha .pc-fact b{font:600 14px var(--fb);color:var(--tx)}
-html.v-ficha .pc-moves{display:grid;grid-template-columns:1fr 1fr;grid-auto-flow:column;grid-template-rows:repeat(4,auto);gap:6px}
-html.v-ficha .pc-mv{display:flex;align-items:center;background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:5px 9px;color:var(--tx);min-width:0;font:600 13px var(--fb)}
-html.v-ficha .pc-mn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+html.v-ficha .pc-moves{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+html.v-ficha .pc-mv{display:flex;align-items:center;gap:12px;background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;color:var(--tx);min-width:0}
+html.v-ficha .pc-mv .mv-ti{flex:none;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}
+html.v-ficha .pc-mv .mv-ti img{width:26px;height:26px;object-fit:contain}
+html.v-ficha .pc-mv .mv-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+html.v-ficha .pc-mv .mv-n{font:700 15px/1.2 var(--fb);color:var(--tx);overflow-wrap:anywhere}
+html.v-ficha .pc-mv .mv-m{font:700 12px/1.25 var(--fb);color:var(--mu)}
+html.v-ficha .pc-mv .mv-m .c-physical{color:#c0602a}html.v-ficha .pc-mv .mv-m .c-special{color:#3a6fb0}html.v-ficha .pc-mv .mv-m .c-status{color:var(--mu)}
+html.v-ficha .pc-mv .mvb{flex:none;margin-left:auto;font:800 10px var(--fb);letter-spacing:.5px;padding:4px 9px;border-radius:4px;vertical-align:baseline}
 html.v-ficha .mvempty{color:var(--mu)}
 html.v-ficha .pc-stats{display:grid;grid-template-columns:repeat(6,1fr);background:var(--s2);border-top:1.5px solid var(--bd)}
 html.v-ficha .pc-st{display:flex;flex-direction:column;align-items:center;padding:4px 2px;border-right:1px solid var(--bd)}
@@ -2559,6 +2564,8 @@ function carregarMoveDex(){
   window._moveDexPromise=lerJsonRepo(kpUrls('movedex/moves.json','/datadex/movedex/moves.json')).then(rows=>{
     const nomes=rows.map(v=>{if(v&&v.approved===false)return'';const n=typeof v==='string'?v:(v&&(v.nome||v.name||v.title||v.move));return n?nomeBonito(String(n).trim()):''}).filter(Boolean);
     window._moveDex=[...new Set(nomes)].sort((a,b)=>a.localeCompare(b,'pt',{sensitivity:'base'}));
+    const info={};rows.forEach(v=>{if(!v||typeof v!=='object'||v.approved===false)return;const n=v.name||v.nome;if(n)info[_normNome(n)]={type:v.type||'',cat:String(v.damage_class||'').toLowerCase(),pow:v.power,acc:v.accuracy,contest:v.contest_style||''};});
+    window._moveInfo=info;
     let dl=document.getElementById('dl-moves');
     if(!dl){dl=document.createElement('datalist');dl.id='dl-moves';document.body.appendChild(dl);}
     dl.innerHTML=window._moveDex.map(n=>`<option value="${escAttr(n)}">`).join('');
@@ -2668,6 +2675,14 @@ function selSlotTime(i){
 const _GEN_TXT={'♂':'Male','♀':'Female','—':'Genderless',male:'Male',female:'Female',genderless:'Genderless'};
 const _genW=g=>g==='♂'?'male':g==='♀'?'female':g==='—'?'genderless':(g||'');
 function _genIco(g,cor){g=_genW(g);g=g==='male'?'♂':g==='female'?'♀':g==='genderless'?'—':'';return g==='♂'?`<span class="poke-slot-gender" style="color:${cor?'#9fd0ff':'#4a90d9'}">♂</span>`:g==='♀'?`<span class="poke-slot-gender" style="color:${cor?'#ffb0d6':'#d94a90'}">♀</span>`:g==='—'?'<span class="poke-slot-gender">⚲</span>':'';}
+// card de golpe: ícone do tipo, nome e "Categoria · Pow · Acc · Contest" (dados do movedex)
+const _cap=t=>t?t.charAt(0).toUpperCase()+t.slice(1):'';
+function mvCard(m){
+  const mi=(window._moveInfo||{})[_normNome(m.n)];
+  const ico=mi&&mi.type?`<img src="${tipoImg(mi.type)}" title="${escAttr(_cap(mi.type))}" alt="" onerror="this.style.display='none'"/>`:'';
+  const meta=mi?[`<span class="c-${escAttr(mi.cat||'status')}">${escAttr(_cap(mi.cat)||'—')}</span>`,'Pow '+(mi.pow==null?'—':mi.pow),'Acc '+(mi.acc==null?'—':mi.acc),mi.contest?_cap(mi.contest):''].filter(Boolean).join(' · '):'';
+  return `<div class="pc-mv"><span class="mv-ti">${ico}</span><div class="mv-b"><div class="mv-n">${escAttr(m.n)}</div>${meta?`<div class="mv-m">${meta}</div>`:''}</div>${PK_BD[m.o]?`<span class="mvb mvb-${m.o}">${PK_BD[m.o]}</span>`:''}</div>`;
+}
 function renderTime(){
   const time=npc.time||[{},{},{},{},{},{}];
   while(time.length<6)time.push({});
@@ -2703,7 +2718,7 @@ function renderTime(){
           <div class="pc-head"><img class="pc-ball" src="${ballImg(pk.ball||'pokeball')}" alt="" onerror="this.style.display='none'"/><span class="pc-name">${escAttr(nomeDe(pk)||'(POKÉMON)')}${_genIco(pk.gender,false)}${pkMarks(pk)}</span><span class="pc-tipos">${tipos.map(t=>`<img src="${tipoImg(t)}" title="${escAttr(t)}"/>`).join('')}</span></div>
           <div class="pc-facts">${fact('Level',pk.level)}${fact('Ability',pk.ability)}${fact('Gender',_GEN_TXT[pk.gender]||'')}${fact('Feature',pkFeat(pk))}${fact('Ball',bl)}${fact('Hold item',pk.item)}${fact('Nature',pk.nature)}${fact('Happiness',pk.happ)}</div>
           <div class="pc-lbl">Moveset</div>
-          ${mv.length?`<div class="pc-moves">${mv.map(m=>`<div class="pc-mv"><div class="pc-mv1"><span class="pc-mn">${escAttr(m.n)}</span>${PK_BD[m.o]?`<span class="mvb mvb-${m.o}">${PK_BD[m.o]}</span>`:''}</div></div>`).join('')}</div>`:'<div class="mvempty">—</div>'}
+          ${mv.length?`<div class="pc-moves">${mv.map(m=>mvCard(m)).join('')}</div>`:'<div class="mvempty">—</div>'}
           ${String(pk.combo||'').trim()?`<div class="pc-lbl">Combo</div><div class="pc-txt">${escAttr(pk.combo)}</div>`:''}
         </div>
         <div class="pc-stats">${STAT_KEYS.map(k=>{const v=k==='hp'?st[k]:(pkStatLv(st[k],pk.level)??st[k]);return `<div class="pc-st"><span>${statLbl[k]}</span><b>${v??'—'}</b></div>`}).join('')}</div>
@@ -2711,6 +2726,7 @@ function renderTime(){
       </div>`;
     }).join('');
     grid.innerHTML=`<div class="pks">${strip}</div>${cards}`;
+    if(!window._moveInfo) carregarMoveDex().then(()=>{ if(!modoEdicao&&window._moveInfo) renderTime(); });
   }
   if(modoEdicao){
     carregarItemDex().then(atualizarItemSelects);carregarMoveDex();
