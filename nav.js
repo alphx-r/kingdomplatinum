@@ -78,7 +78,10 @@
   }
 
   var st = document.createElement('style');
-  st.id = 'kp-nav-css'; st.textContent = 'a.nav-drop-item,a.nav-drop-item:hover{text-decoration:none}';
+  st.id = 'kp-nav-css';
+  /* faixa do título (.pmh): mesma altura da divisória sob o hambúrguer (58px) no desktop */
+  var BAND = "/* faixa do título (.pmh): no desktop tem a mesma altura (58px) da divisória sob o hambúrguer do menu */@media(min-width:769px){ .pmh,.pmh.sm{height:58px!important;padding:0 12px!important;display:flex!important;align-items:center!important;transition:none!important} .pmh .pmw{width:100%}.pmh .pmht{flex-wrap:nowrap!important} .pmh .pmb b,.pmh.sm .pmb b{font-size:24px!important;line-height:1!important} .pmh .pmb span{line-height:1.1} .pmh .pmq,.pmh.sm .pmq{padding:9px 18px!important} .pmh .pmcart,.pmh.sm .pmcart{height:38px!important} .pmh .pmlg,.pmh.sm .pmlg{width:40px!important;height:40px!important}}";
+  st.textContent = 'a.nav-drop-item,a.nav-drop-item:hover{text-decoration:none}' + BAND;
 
   if (legacyBox) {
     /* página antiga: só a lista de links (o resto do menu é da própria página) */
