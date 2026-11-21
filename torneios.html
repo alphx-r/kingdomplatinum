@@ -44,6 +44,10 @@ h1{font-size:26px;margin-bottom:4px}
 .st.f{background:var(--accent-light);color:#a56a00}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .in{padding:9px 12px;border:1.5px solid var(--border2);border-radius:8px;background:#fff;color:var(--text);min-width:0}
+/* card Sortear/Iniciar: select e botão com a mesma altura e fonte */
+.row>#sd,.row>#sd~.btn{height:40px;font-size:13.5px;line-height:1.2;padding-top:0;padding-bottom:0}
+.row>#sd{padding-left:12px;padding-right:12px;min-width:min(240px,100%)}
+.row>#sd~.btn{padding-left:20px;padding-right:20px;display:inline-flex;align-items:center;justify-content:center}
 .in:focus{outline:2px solid var(--brand-mid);outline-offset:1px}
 .btn{padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--brand);font-weight:700;font-size:13px;cursor:pointer}
 .btn:hover{background:var(--brand-light)}
@@ -162,6 +166,12 @@ dialog.qm .qg{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:60v
  .lh .lhx{grid-column:1/-1;grid-row:2}.lh .lhx .btn{flex:1;min-height:40px}
  .lh .lhm{grid-column:1/-1;grid-row:3}
 }
+.hd{position:relative}
+.hist-img-btn{display:inline-flex;align-items:center;gap:6px;background:var(--brand-light);color:var(--brand-mid);border:1px solid var(--border2);border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap}
+.hist-img-btn:hover{background:var(--border)}
+.hist-img-btn.ico{padding:7px 9px;gap:0}.hist-img-btn.ico svg{width:16px;height:16px}
+.hd .shr{position:absolute;top:14px;right:16px}
+.hd:has(.shr) h1{padding-right:48px}
 .hd .bkl{border:none;background:none;color:var(--brand-mid);font-weight:700;font-size:13px;cursor:pointer;padding:0;margin-bottom:8px}.hd .bkl:hover{text-decoration:underline}
 .hd .adm{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
 .hd .adm-g{display:flex;flex-wrap:wrap;gap:8px}.hd .adm-g:empty{display:none}.hd .adm-g.r{margin-left:auto}
@@ -570,7 +580,8 @@ function detail(t){
   const g2=[ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn" onclick="mudarTipo()">Alterar tipo</button>':'',
     ed&&realAdmin()?'<button class="btn" onclick="modsTorneio()">Moderadores</button><button class="btn d" onclick="excluir()">Excluir</button>':''].join('');
   const aviso=t.status==='rascunho'?'<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)"><p class="msg" style="margin:0"><b>Rascunho.</b> Só organizadores veem este evento. Publique quando estiver pronto.</p></div>':'';
-  return`${aviso}${fichaBar(t)}<div class="hd"><button class="bkl" onclick="voltar()">← Todos os torneios</button>
+  const shr=!ehInsc(t)?`<button type="button" class="hist-img-btn ico shr" onclick="compartilharTorneio()" title="Compartilhar resultado" aria-label="Compartilhar resultado">${SVG_COMPARTILHAR}</button>`:'';
+  return`${aviso}${fichaBar(t)}<div class="hd">${shr}<button class="bkl" onclick="voltar()">← Todos os torneios</button>
     <h1>${esc(t.nome)}</h1><p class="sub" style="margin-bottom:0">${esc(info)}</p>${t.desc?`<p class="msg" style="white-space:pre-wrap;margin-top:8px">${esc(t.desc)}</p>`:''}
     ${g1||g2?`<div class="adm"><div class="adm-g">${g1}</div><div class="adm-g r">${g2}</div></div>`:''}</div>
     ${ehInsc(t)||livre?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
@@ -817,6 +828,238 @@ function gerenciar(){
   <label class="btn" style="text-align:center">Importar backup<input type="file" accept=".json,application/json" hidden onchange="importar(this.files[0])"></label>
   ${realAdmin()?'<button class="btn" onclick="organizadores()">Moderadores de torneios</button>':''}<button class="btn" onclick="recarregar()">Recarregar do servidor</button><button class="btn" onclick="$('#dlg').close()">Fechar</button></div>`;
   d.showModal();
+}
+/* ───── Compartilhar resultado (imagem) — mesmo sistema do "Compartilhar rolagem" do index ───── */
+const SVG_COMPARTILHAR='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.83 3.98"/></svg>';
+function imgHexRgb(h){h=String(h||'').trim();let m=/^#([0-9a-f]{3})$/i.exec(h);if(m)h='#'+m[1].split('').map(x=>x+x).join('');m=/^#([0-9a-f]{6})$/i.exec(h);if(!m)return null;const n=parseInt(m[1],16);return[(n>>16)&255,(n>>8)&255,n&255]}
+function imgMix(a,b,t){const A=imgHexRgb(a),B=imgHexRgb(b);if(!A||!B)return a;return'#'+[0,1,2].map(i=>Math.round(A[i]+(B[i]-A[i])*t).toString(16).padStart(2,'0')).join('')}
+function imgLum(h){const A=imgHexRgb(h);if(!A)return 0;return(0.2126*A[0]+0.7152*A[1]+0.0722*A[2])/255}
+function imgRR(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+/* cores da estação ativa (as variáveis do tema já são trocadas por aplicaTema) */
+function imgTema(){
+  const cs=getComputedStyle(document.documentElement),v=n=>cs.getPropertyValue(n).trim();
+  const T={brand:v('--brand')||'#1a3a5c',mid:v('--brand-mid')||'#2563a8',accent:v('--accent')||'#e8a020',bg:v('--bg')||'#f4f6fa',surface:v('--surface')||'#ffffff',
+           text:v('--text')||'#1a1f2e',surface2:v('--surface2')||'#f0f3f8',border:v('--border')||'#dde3ee',muted:v('--muted')||'#6b7a99'};
+  T.lvBg=imgMix(T.mid,'#ffffff',.85);T.hl=imgMix(T.accent,'#ffffff',.8);T.line=imgMix(T.mid,'#ffffff',.55);
+  return T;
+}
+function imgToast(msg){
+  let t=document.getElementById('img-toast');if(t)t.remove();
+  t=document.createElement('div');t.id='img-toast';t.textContent=msg;t.setAttribute('role','status');
+  t.style.cssText='position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100003;background:rgba(20,20,20,.92);color:#fff;font:700 13px var(--font-body,Nunito,sans-serif);padding:8px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.3);pointer-events:none;max-width:90vw;text-align:center;opacity:0;transition:opacity .2s';
+  document.body.appendChild(t);requestAnimationFrame(()=>{t.style.opacity='1'});
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),250)},1800);
+}
+function imgMostrarModal(blob,nome,titulo){
+  const url=URL.createObjectURL(blob),file=new File([blob],nome,{type:'image/png'});
+  const canShare=!!(navigator.canShare&&navigator.canShare({files:[file]}));
+  const canCopy=!!(navigator.clipboard&&window.ClipboardItem);
+  const bs='display:flex;align-items:center;justify-content:center;text-align:center;width:100%;min-height:42px;';
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100001;display:flex;align-items:center;justify-content:center;padding:12px';
+  ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:94dvh;max-height:94vh;display:flex;flex-direction:column;gap:10px;padding:12px;overflow:hidden">
+    <div style="flex:1 1 auto;min-height:0;overflow:auto;border-radius:10px;border:1px solid #dde3ee"><img src="${url}" alt="" style="display:block;width:100%;height:auto"/></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:0 0 auto">
+      <button class="btn" data-a="dl" style="${bs}${canCopy?'':'grid-column:1/-1'}">Baixar</button>
+      ${canCopy?`<button class="btn" data-a="copy" style="${bs}">Copiar</button>`:''}
+      ${canShare?`<button class="btn p" data-a="share" style="${bs}grid-column:1/-1">Compartilhar</button>`:''}
+      <button class="btn" data-a="x" style="${bs}grid-column:1/-1">Fechar</button>
+    </div></div>`;
+  const close=()=>{URL.revokeObjectURL(url);ov.remove()};
+  ov.addEventListener('click',ev=>{
+    const a=ev.target.dataset&&ev.target.dataset.a;
+    if(ev.target===ov||a==='x')return close();
+    if(a==='share')navigator.share({files:[file],title:titulo||'Torneio'}).catch(()=>{});
+    if(a==='dl'){const l=document.createElement('a');l.href=url;l.download=nome;l.click()}
+    if(a==='copy')navigator.clipboard.write([new ClipboardItem({'image/png':blob})]).then(()=>imgToast('Imagem copiada!')).catch(()=>imgToast('Não foi possível copiar.'));
+  });
+  document.body.appendChild(ov);
+}
+const imgLoad=src=>new Promise(res=>{if(!src)return res(null);const im=new Image();im.crossOrigin='anonymous';im.onload=()=>res(im);im.onerror=()=>res(null);im.src=src;setTimeout(()=>res(null),8000)});
+async function imgFotos(list){const m=new Map();await Promise.all(list.slice(0,80).map(async p=>{if(p&&p.foto)m.set(p.id,await imgLoad(p.foto))}));return m}
+function imgFit(c,txt,maxW){txt=String(txt??'');if(c.measureText(txt).width<=maxW)return txt;while(txt.length>1&&c.measureText(txt+'…').width>maxW)txt=txt.slice(0,-1);return txt+'…'}
+function imgAv(c,T,p,cx,cy,r,foto){
+  c.save();c.beginPath();c.arc(cx,cy,r,0,Math.PI*2);c.fillStyle=p.cor||T.mid;c.fill();c.clip();
+  if(foto&&foto.width){const sc=Math.max(2*r/foto.width,2*r/foto.height),dw=foto.width*sc,dh=foto.height*sc;c.drawImage(foto,cx-dw/2,cy-r-(dh-2*r)*0.2,dw,dh)}
+  else{c.fillStyle='#fff';c.font='800 '+Math.round(r*0.95)+'px Nunito,sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(String(p.ab||(p.nome||'?')[0]).toUpperCase().slice(0,3),cx,cy+1)}
+  c.restore();
+}
+const IMG_HEAD=190;
+function imgCabecalho(c,T,W,t){
+  const BAND=IMG_HEAD-20,ay=BAND/2,tx=48,maxW=W-tx-48;
+  c.fillStyle=T.bg;c.fillRect(0,0,W,c.canvas.height);
+  const g=c.createLinearGradient(0,0,W,BAND);g.addColorStop(0,T.brand);g.addColorStop(1,imgMix(T.brand,'#000000',.35));
+  c.fillStyle=g;c.fillRect(0,0,W,BAND);c.fillStyle=T.accent;c.fillRect(0,BAND,W,6);
+  c.textAlign='left';c.textBaseline='middle';c.fillStyle=imgLum(T.brand)>0.6?'#1a1f2e':'#ffffff';
+  c.globalAlpha=.85;c.font='600 22px Cinzel,serif';c.fillText('KINGDOM PLATINUM · TORNEIO',tx,ay-52);c.globalAlpha=1;
+  let fs=54;c.font='700 '+fs+'px Cinzel,serif';while(c.measureText(t.nome||'').width>maxW&&fs>26){fs--;c.font='700 '+fs+'px Cinzel,serif'}
+  c.fillText(t.nome||'',tx,ay+2);
+  const info=[fmtLabel(t),t.nEquipes?t.nEquipes+' equipes':'',aguardaIni(t)?'Equipes sorteadas':stLabel(t),t.md>1?'Melhor de '+t.md:'',fmtData(t.data)].filter(Boolean).join('  •  ');
+  c.globalAlpha=.9;c.font='600 24px Nunito,sans-serif';c.fillText(imgFit(c,info,maxW),tx,ay+52);c.globalAlpha=1;
+}
+function imgRodape(c,T,W,H){c.textAlign='center';c.textBaseline='middle';c.fillStyle=T.muted;c.font='600 18px Nunito,sans-serif';c.fillText('PKMN Kingdom Platinum · Região Nendo',W/2,H-24)}
+const IMG_CH=110;
+function imgCampeao(c,T,W,y,p,foto){
+  const PAD=40,x=PAD,w=W-PAD*2;
+  const g=c.createLinearGradient(x,y,x+w,y+IMG_CH);g.addColorStop(0,T.accent);g.addColorStop(1,imgMix(T.accent,'#ffffff',.45));
+  imgRR(c,x,y,w,IMG_CH,16);c.fillStyle=g;c.fill();
+  const cy=y+IMG_CH/2;
+  c.beginPath();c.arc(x+28+40,cy,44,0,Math.PI*2);c.fillStyle='#ffffff';c.fill();
+  imgAv(c,T,p,x+28+40,cy,38,foto);
+  const tx=x+28+40+44+24,maxW=w-(tx-x)-28;
+  c.textAlign='left';c.textBaseline='middle';c.fillStyle=T.brand;
+  c.globalAlpha=.8;c.font='800 16px Nunito,sans-serif';c.fillText('CAMPEÃO',tx,cy-30);c.globalAlpha=1;
+  let fs=40;c.font='700 '+fs+'px Cinzel,serif';while(c.measureText(p.nome||'').width>maxW&&fs>22){fs--;c.font='700 '+fs+'px Cinzel,serif'}
+  c.fillText(p.nome||'',tx,cy+2);
+  if(p.player){c.globalAlpha=.85;c.font='600 19px Nunito,sans-serif';c.fillText(imgFit(c,p.player,maxW),tx,cy+34);c.globalAlpha=1}
+}
+/* Sorteio de equipes (ou equipes sorteadas aguardando a competição) */
+function imgDesenharEquipes(t,T,fotos){
+  const W=1400,PAD=40,GAP=24,eq=t.eq||[],COLS=eq.length>=3?3:Math.max(1,eq.length);
+  const CW=Math.floor((W-PAD*2-GAP*(COLS-1))/COLS),RH=58,CHH=64;
+  const cards=eq.map(e=>({e,L:e.membros.map(id=>PP(t,id)).filter(Boolean)}));
+  const rows=[];for(let i=0;i<cards.length;i+=COLS)rows.push(Math.max(...cards.slice(i,i+COLS).map(k=>CHH+Math.max(1,k.L.length)*RH+14)));
+  const H=IMG_HEAD+28+rows.reduce((a,b)=>a+b+GAP,0)+40;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+  imgCabecalho(c,T,W,t);
+  let y=IMG_HEAD+28;
+  rows.forEach((rh,ri)=>{
+    cards.slice(ri*COLS,ri*COLS+COLS).forEach((k,j)=>{
+      const x=PAD+j*(CW+GAP);
+      c.save();c.shadowColor='rgba(0,0,0,.16)';c.shadowBlur=14;c.shadowOffsetY=3;imgRR(c,x,y,CW,rh,12);c.fillStyle=T.surface;c.fill();c.restore();
+      c.save();imgRR(c,x,y,CW,rh,12);c.clip();c.fillStyle=T.brand;c.fillRect(x,y,CW,CHH);c.restore();
+      imgRR(c,x,y,CW,rh,12);c.strokeStyle=T.border;c.lineWidth=2;c.stroke();
+      c.textAlign='center';c.textBaseline='middle';c.fillStyle=imgLum(T.brand)>0.6?'#1a1f2e':'#ffffff';c.font='700 25px Cinzel,serif';
+      c.fillText(imgFit(c,k.e.nome+' ('+k.L.length+')',CW-30),x+CW/2,y+CHH/2+1);
+      k.L.forEach((p,i)=>{
+        const ry=y+CHH+i*RH+RH/2+4;
+        imgAv(c,T,p,x+22+20,ry,20,fotos.get(p.id));
+        c.textAlign='left';c.textBaseline='middle';c.fillStyle=T.text;c.font='700 21px Nunito,sans-serif';
+        const mx=CW-(22+40+16)-16;
+        if(p.player){c.fillText(imgFit(c,p.nome,mx),x+22+40+16,ry-9);c.fillStyle=T.muted;c.font='600 15px Nunito,sans-serif';c.fillText(imgFit(c,p.player,mx),x+22+40+16,ry+13)}
+        else c.fillText(imgFit(c,p.nome,mx),x+22+40+16,ry);
+      });
+      if(!k.L.length){c.textAlign='center';c.fillStyle=T.muted;c.font='600 18px Nunito,sans-serif';c.fillText('Sem membros',x+CW/2,y+CHH+RH/2+4)}
+    });
+    y+=rh+GAP;
+  });
+  imgRodape(c,T,W,H);return cv;
+}
+/* Tabela: pontuação (acúmulo de pontos) e classificação (todos contra todos) */
+function imgDesenharTabela(t,T,fotos,cols,linhas,champ,fChamp){
+  const W=1400,PAD=40,RHt=66,HH=54,GAP=24;
+  const fixo=cols.reduce((a,k)=>a+(k.w||0),0),flex=W-PAD*2-fixo;
+  const H=IMG_HEAD+28+(champ?IMG_CH+GAP:0)+HH+linhas.length*RHt+GAP+40;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+  imgCabecalho(c,T,W,t);
+  let y=IMG_HEAD+28;
+  if(champ){imgCampeao(c,T,W,y,champ,fChamp);y+=IMG_CH+GAP}
+  const x0=PAD,w0=W-PAD*2,th=HH+linhas.length*RHt;
+  c.save();c.shadowColor='rgba(0,0,0,.16)';c.shadowBlur=14;c.shadowOffsetY=3;imgRR(c,x0,y,w0,th,12);c.fillStyle=T.surface;c.fill();c.restore();
+  c.save();imgRR(c,x0,y,w0,th,12);c.clip();
+  c.fillStyle=T.lvBg;c.fillRect(x0,y,w0,HH);
+  const xs=[];let cx=x0;cols.forEach(k=>{const w=k.w||flex;xs.push([cx,w]);cx+=w});
+  c.textBaseline='middle';c.fillStyle=T.muted;c.font='800 15px Nunito,sans-serif';
+  cols.forEach((k,i)=>{const[x,w]=xs[i];if(k.al==='l'){c.textAlign='left';c.fillText(k.h.toUpperCase(),x+20,y+HH/2)}else{c.textAlign='center';c.fillText(k.h.toUpperCase(),x+w/2,y+HH/2)}});
+  linhas.forEach((ln,ri)=>{
+    const ry=y+HH+ri*RHt;
+    if(ln.hl){c.fillStyle=T.hl;c.fillRect(x0,ry,w0,RHt)}
+    c.fillStyle=T.border;c.fillRect(x0,ry,w0,1);
+    cols.forEach((k,i)=>{
+      const[x,w]=xs[i],cy=ry+RHt/2;
+      if(k.part){
+        imgAv(c,T,ln.p,x+20+22,cy,22,fotos.get(ln.p.id));
+        const tx=x+20+44+16,mx=w-(tx-x)-16;
+        c.textAlign='left';c.fillStyle=T.text;c.font='700 22px Nunito,sans-serif';
+        if(ln.p.player){c.fillText(imgFit(c,ln.p.nome,mx),tx,cy-10);c.fillStyle=T.muted;c.font='600 15px Nunito,sans-serif';c.fillText(imgFit(c,ln.p.player,mx),tx,cy+14)}
+        else c.fillText(imgFit(c,ln.p.nome,mx),tx,cy);
+      }else{
+        c.textAlign='center';
+        const forte=k.b||(k.rank&&ri===0);
+        c.fillStyle=forte?T.brand:T.text;c.font=(forte?'800 ':'600 ')+(k.rank?'24':'21')+'px Nunito,sans-serif';
+        c.fillText(String(k.rank?ri+1:ln.v[i]),x+w/2,cy+1);
+      }
+    });
+  });
+  c.restore();
+  imgRR(c,x0,y,w0,th,12);c.strokeStyle=T.border;c.lineWidth=2;c.stroke();
+  imgRodape(c,T,W,H);return cv;
+}
+/* Eliminatória simples: chave completa */
+function imgDesenharChave(t,T,fotos,champ,fChamp){
+  const n=t.m.length,PAD=40,CWb=300,GAPc=56,MH=84,VG=20,TT=48,GAP=24;
+  const need=PAD*2+n*CWb+(n-1)*GAPc,W=Math.max(1400,need),sx=(W-(n*CWb+(n-1)*GAPc))/2;
+  const ys=[t.m[0].map((_,i)=>i*(MH+VG))];
+  for(let r=1;r<n;r++)ys.push(t.m[r].map((_,i)=>(ys[r-1][2*i]+ys[r-1][2*i+1])/2));
+  const bodyH=t.m[0].length*(MH+VG)-VG;
+  const H=IMG_HEAD+28+(champ?IMG_CH+GAP:0)+TT+bodyH+GAP+40;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');
+  imgCabecalho(c,T,W,t);
+  let y=IMG_HEAD+28;
+  if(champ){imgCampeao(c,T,W,y,champ,fChamp);y+=IMG_CH+GAP}
+  const top=y+TT;
+  for(let r=0;r<n;r++){
+    const x=sx+r*(CWb+GAPc);
+    c.textAlign='center';c.textBaseline='middle';c.fillStyle=T.brand;c.font='700 21px Cinzel,serif';
+    c.fillText(n-r===1?'Final':n-r===2?'Semifinal':n-r===3?'Quartas de final':'Rodada '+(r+1),x+CWb/2,y+TT/2-4);
+    t.m[r].forEach((m,i)=>{
+      const my=top+ys[r][i],w=win(m,r),bye=r===0&&(m.a==null)!==(m.b==null);
+      // conectores até a próxima rodada
+      if(r<n-1){
+        const j=Math.floor(i/2),ny=top+ys[r+1][j]+MH/2,xr=x+CWb,xm=xr+GAPc/2;
+        c.strokeStyle=T.line;c.lineWidth=3;c.beginPath();c.moveTo(xr,my+MH/2);c.lineTo(xm,my+MH/2);c.lineTo(xm,ny);c.lineTo(xr+GAPc,ny);c.stroke();
+      }
+      c.save();c.shadowColor='rgba(0,0,0,.14)';c.shadowBlur=10;c.shadowOffsetY=2;imgRR(c,x,my,CWb,MH,10);c.fillStyle=T.surface;c.fill();c.restore();
+      [[m.a,m.sa],[m.b,m.sb]].forEach(([id,sc],k)=>{
+        const ry=my+k*MH/2,p=id&&P(t,id),venc=w&&w===id;
+        c.save();imgRR(c,x,my,CWb,MH,10);c.clip();
+        if(venc){c.fillStyle=T.hl;c.fillRect(x,ry,CWb,MH/2)}
+        c.restore();
+        const cy=ry+MH/4;
+        if(p){
+          imgAv(c,T,p,x+24,cy,14,fotos.get(p.id));
+          c.textAlign='left';c.textBaseline='middle';c.fillStyle=venc?T.brand:(w?T.muted:T.text);c.font=(venc?'800 ':'700 ')+'18px Nunito,sans-serif';
+          c.fillText(imgFit(c,p.nome,CWb-24-14-12-52),x+24+14+10,cy+1);
+          c.textAlign='right';c.font='800 21px Nunito,sans-serif';c.fillText(sc==null?'':String(sc),x+CWb-16,cy+1);
+        }else{
+          c.textAlign='left';c.textBaseline='middle';c.fillStyle=T.muted;c.font='italic 600 17px Nunito,sans-serif';c.fillText(bye?'BYE':'A definir',x+16,cy+1);
+        }
+      });
+      c.fillStyle=T.border;c.fillRect(x+1,my+MH/2-1,CWb-2,2);
+      imgRR(c,x,my,CWb,MH,10);c.strokeStyle=T.border;c.lineWidth=2;c.stroke();
+    });
+  }
+  imgRodape(c,T,W,H);return cv;
+}
+async function compartilharTorneio(){
+  const t=S.cur;if(!t)return;
+  const soEq=t.formato==='sorteio'||aguardaIni(t);
+  if(soEq&&!(t.eq&&t.eq.length)){imgToast('As equipes ainda não foram sorteadas.');return}
+  if(!soEq&&t.formato==='single'&&!(t.m&&t.m.length)){imgToast('A chave ainda não foi gerada.');return}
+  try{await Promise.all(['700 26px Cinzel','600 16px Nunito','800 16px Nunito','italic 600 17px Nunito'].map(f=>document.fonts.load(f)))}catch(_){}
+  const T=imgTema(),cs=comps(t),champ=!soEq&&t.champ?P(t,t.champ):null;
+  const fotos=await imgFotos(soEq?t.part:cs);
+  const desenhar=f=>{
+    if(soEq)return imgDesenharEquipes(t,T,f);
+    const fc=champ?f.get(champ.id):null;
+    if(t.formato==='pontos'){
+      const rod=t.rod||[],tot=ptsTot(t),showR=rod.length>0&&rod.length<=8,wr=Math.min(120,Math.floor(560/Math.max(1,rod.length)));
+      const cols=[{h:'#',w:80,rank:true},{h:'Participante',part:true,al:'l'},...(showR?rod.map((r,i)=>({h:String(r.nome||'R'+(i+1)).slice(0,10),w:wr})):[]),{h:'Total',w:130,b:true}];
+      const linhas=tot.map((x,i)=>({p:x.p,hl:i===0&&!!champ,v:[null,null,...(showR?x.v.map(fmtN):[]),fmtN(x.tot)]}));
+      return imgDesenharTabela(t,T,f,cols,linhas,champ,fc);
+    }
+    if(t.formato==='rr'){
+      const cols=[{h:'#',w:80,rank:true},{h:'Participante',part:true,al:'l'},{h:'J',w:90},{h:'V',w:90},{h:'E',w:90},{h:'D',w:90},{h:'SG',w:100},{h:'Pts',w:120,b:true}];
+      const linhas=standings(t).map((s,i)=>({p:s.p,hl:i===0&&!!champ,v:[null,null,s.j,s.v,s.e,s.d,(s.sg>0?'+':'')+s.sg,s.pts]}));
+      return imgDesenharTabela(t,T,f,cols,linhas,champ,fc);
+    }
+    return imgDesenharChave(t,T,f,champ,fc);
+  };
+  const toBlob=cv=>new Promise((ok,no)=>{try{cv.toBlob(b=>b?ok(b):no(new Error('vazio')),'image/png')}catch(err){no(err)}});
+  let blob;
+  try{blob=await toBlob(desenhar(fotos))}
+  catch(_){try{blob=await toBlob(desenhar(new Map()))}catch(err){imgToast('Não foi possível gerar a imagem.');return}}   /* foto bloqueada por CORS → sem fotos */
+  imgMostrarModal(blob,'torneio-'+(slug(t.nome)||'resultado')+'.png',t.nome);
 }
 async function exportar(){
   const L=S.online?(await Promise.all(S.list.map(x=>loadFull(x.id)))).filter(Boolean):S.list;
