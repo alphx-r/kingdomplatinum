@@ -2076,34 +2076,43 @@ function pkjSujo() {
 async function pkjGravar(force) {
   if (!PKJ.dirty && !force) return;
   if (!PKJ.loaded || !Object.keys(S.pk.dbMap || {}).length) throw new Error('A lista de Pokémon não está carregada — recarregue a página antes de gravar.');
-  // 1) pokemon.json atual do GitHub — se não der pra conferir, NÃO grava (evita apagar o trabalho de outros admins)
-  pkjStatus('🔄 Conferindo alterações de outros admins…', 'warn');
-  let remote;
-  try { remote = await pkjFetchRemoteSeguro(); }
-  catch (e) { PKJ.dirty = true; pkjStatus('⚠️ Não consegui conferir o GitHub — nada foi gravado', 'err'); throw new Error('Não consegui conferir o pokemon.json atual no GitHub (' + e.message + '). Nada foi gravado, para não sobrescrever o trabalho de outros admins. Tente de novo.'); }
-  // 2) mescla (3 vias) e aplica na memória — bloco síncrono, sem await no meio
-  let res;
-  try { res = await pkjMesclarPerguntando(remote); }
-  catch (e) { pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '', 'warn'); throw e; }   // cancelou nos conflitos: nada muda
-  const rows = res.rows;
-  rows.forEach(kpFixSprites);
-  if (rows.length < remote.length - 25) { PKJ.dirty = true; throw new Error(`Segurança: o resultado teria ${rows.length} Pokémon, mas o pokemon.json no GitHub tem ${remote.length}. Recarregue a página antes de gravar para não apagar dados.`); }
-  pkjAplicarNaMemoria(rows);
-  const baseNova = pkjSnapshot(rows);
-  const puxou = res.notas.puxados.length || res.notas.apagadosHonrados.length;
-  PKJ.dirty = false;
-  pkjStatus('💾 Commitando pokemon.json…', 'warn');
-  try {
-    const body = await kpCommitPokemonJson(rows);
-    PKJ.preCommit = pkjSnapshot(remote); PKJ.lastCommitAt = Date.now();   // como o GitHub estava ANTES deste commit (detecta cache velho depois)
-    PKJ.base = baseNova; PKJ.count = rows.length;       // o que foi commitado vira a nova base
-    pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok', PKJ.dirty);
-    if (puxou) { pkjAtualizarTela(); if (body && typeof body === 'object') body.mesclado = pkjResumo(res); }
-    return body;
-  } catch (e) {
-    PKJ.dirty = true; pkjStatus('⚠️ Falha no commit do pokemon.json — clique em “Commit pokemon.json” para tentar de novo', 'err');
-    if (puxou) pkjAtualizarTela();
-    throw new Error('Falha ao commitar o pokemon.json: ' + e.message);
+  // Repete (até 4x) se outro admin commitar entre a minha conferência e o meu commit: o servidor só grava se o GitHub
+  // ainda estiver exatamente como eu mesclei (ifMatch); senão devolve 'remoto_mudou' e eu mesclo de novo com a versão nova.
+  const resumos = []; let puxou = false;
+  for (let tentativa = 0; ; tentativa++) {
+    // 1) pokemon.json atual do GitHub — se não der pra conferir, NÃO grava (evita apagar o trabalho de outros admins)
+    pkjStatus(tentativa ? '🔄 Outro admin commitou agora — mesclando de novo…' : '🔄 Conferindo alterações de outros admins…', 'warn');
+    let remote;
+    try { remote = tentativa ? await pkjFetchRemoteApi() : await pkjFetchRemoteSeguro(); }   // nas repetições: direto pela API (sem cache de CDN)
+    catch (e) { PKJ.dirty = true; pkjStatus('⚠️ Não consegui conferir o GitHub — nada foi gravado', 'err'); throw new Error('Não consegui conferir o pokemon.json atual no GitHub (' + e.message + '). Nada foi gravado, para não sobrescrever o trabalho de outros admins. Tente de novo.'); }
+    const hashRemoto = await pkjHashRows(remote), snapRemoto = pkjSnapshot(remote);   // ANTES de mesclar (a mescla mexe em objetos aninhados)
+    // 2) mescla (3 vias; conflitos reais abrem a janela de escolha) e aplica na memória
+    let res;
+    try { res = await pkjMesclarPerguntando(remote); }
+    catch (e) { pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '', 'warn'); throw e; }   // cancelou nos conflitos: nada muda
+    const rows = res.rows;
+    rows.forEach(kpFixSprites);
+    if (rows.length < remote.length - 25) { PKJ.dirty = true; throw new Error(`Segurança: o resultado teria ${rows.length} Pokémon, mas o pokemon.json no GitHub tem ${remote.length}. Recarregue a página antes de gravar para não apagar dados.`); }
+    pkjAplicarNaMemoria(rows);
+    PKJ.base = snapRemoto; PKJ.count = remote.length;   // já estou em dia com este remoto: se o commit falhar ou repetir, só o que EU mudei conta
+    const baseNova = pkjSnapshot(rows);
+    if (res.notas.puxados.length || res.notas.apagadosHonrados.length) { puxou = true; const t = pkjResumo(res); if (t) resumos.push(t); }
+    PKJ.dirty = false;
+    pkjStatus('💾 Commitando pokemon.json…', 'warn');
+    try {
+      const body = await kpCommitPokemonJson(rows, hashRemoto);
+      PKJ.preCommit = snapRemoto; PKJ.lastCommitAt = Date.now();   // como o GitHub estava ANTES deste commit (detecta cache velho depois)
+      PKJ.base = baseNova; PKJ.count = rows.length;       // o que foi commitado vira a nova base
+      pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok', PKJ.dirty);
+      if (puxou) { pkjAtualizarTela(); if (body && typeof body === 'object') body.mesclado = resumos.join(' · '); }
+      return body;
+    } catch (e) {
+      PKJ.dirty = true;
+      if (e.code === 'remoto_mudou' && tentativa < 3) continue;   // outro admin entrou no meio: mescla de novo e tenta outra vez
+      pkjStatus('⚠️ Falha no commit do pokemon.json — clique em “Commit pokemon.json” para tentar de novo', 'err');
+      if (puxou) pkjAtualizarTela();
+      throw new Error('Falha ao commitar o pokemon.json: ' + e.message);
+    }
   }
 }
 
@@ -7926,15 +7935,24 @@ async function kpGhPut(path, b64, message){
   return body;
 }
 // Commita o pokemon.json pela rota que o botão "Commit pokemon.json" já usa (gzip, p/ caber no limite da Vercel).
-async function kpCommitPokemonJson(rows){
+// ifMatch (opcional) = impressão digital do pokemon.json que foi mesclado: o servidor só grava se o GitHub ainda estiver igual
+// a isso; se outro admin commitou no meio, devolve HTTP 409 com code 'remoto_mudou' (nada é gravado).
+async function pkjHashRows(rows){
+  try {
+    if (!(globalThis.crypto && crypto.subtle)) return null;
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(rows)));
+    return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return null; }
+}
+async function kpCommitPokemonJson(rows, ifMatch){
   const gz = await new Response(
-    new Blob([JSON.stringify(rows)]).stream().pipeThrough(new CompressionStream('gzip'))
+    new Blob([JSON.stringify(ifMatch ? { rows, ifMatch } : rows)]).stream().pipeThrough(new CompressionStream('gzip'))
   ).arrayBuffer();
   const res = await fetch('/api/admin/backup-pokemon-now', {
     method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: gz,
   });
   const body = await kpApiJson(res);
-  if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (body.error || ''));
+  if (!res.ok) { const err = new Error('HTTP ' + res.status + ': ' + (body.error || '')); err.code = body.code; throw err; }
   return body;
 }
 
