@@ -377,7 +377,9 @@ html.v-ficha .pc-ball{width:24px;height:24px;object-fit:contain}
 html.v-ficha .pc-name{font:700 18px var(--ft);text-transform:uppercase;letter-spacing:.4px;color:var(--tx)}
 html.v-ficha .pc-name .poke-slot-gender{font-size:1em;font-weight:inherit;margin-left:8px;opacity:1}
 html.v-ficha .pc-tipos{display:flex;gap:6px;flex-wrap:wrap}
-html.v-ficha .pc-tipos img{width:50px;height:22px;object-fit:contain}
+html.v-ficha .pc-tipos .pc-tp{display:inline-flex;align-items:center;gap:6px;background:#f0f0f0;border:1px solid #d0d0d0;border-radius:999px;padding:2px 11px 2px 3px;font:700 11.5px var(--fb);color:#222}
+html.v-ficha .pc-tipos .pc-tp img{width:20px;height:20px;object-fit:contain}
+@media(min-width:701px){html.v-ficha .pc-tipos .pc-tp>span{display:none}html.v-ficha .pc-tipos .pc-tp{padding:0;background:none;border:0;border-radius:0}html.v-ficha .pc-tipos .pc-tp img{width:18px;height:18px}}
 html.v-ficha .pc-facts{display:flex;flex-wrap:wrap;gap:8px 26px}
 html.v-ficha .pc-fact{display:flex;flex-direction:column;gap:1px;min-width:90px}
 html.v-ficha .pc-fact span,html.v-ficha .pc-lbl{font:800 9.5px var(--fb);letter-spacing:.6px;text-transform:uppercase;color:var(--mu)}
@@ -1709,11 +1711,14 @@ async function carregarPokeDex(){
     }
   }catch{}
   const dex=[];
+  // fonte principal = pokemon.json (os mesmos sprites do fichas); o Supabase só entra para o que não existir no json
+  const jsonNomes=new Set(oficiais.map(p=>p.nome.toLowerCase()));
+  oficiais.forEach(p=>dex.push({...p,source:'oficial'}));
   customList.forEach(p=>{
+    if(jsonNomes.has(String(p.nome).toLowerCase())) return;
     const tipos=[p.tipo1,p.tipo2].filter(Boolean);
     dex.push({nome:p.nome,tipos,sprite:p.sprite||FALLBACK,sh:npcShRow(p)||npcShFrom(p.sprite),source:'custom',id:null});
   });
-  oficiais.forEach(p=>{ if(!customNomes.has(p.nome.toLowerCase())) dex.push({...p,source:'oficial'}); });
   window._pokeDex=dex;
 }
 
@@ -2727,9 +2732,11 @@ const _genW=g=>g==='♂'?'male':g==='♀'?'female':g==='—'?'genderless':(g||''
 function _genIco(g,cor){g=_genW(g);g=g==='male'?'♂':g==='female'?'♀':g==='genderless'?'—':'';return g==='♂'?`<span class="poke-slot-gender" style="color:${cor?'#9fd0ff':'#4a90d9'}">♂</span>`:g==='♀'?`<span class="poke-slot-gender" style="color:${cor?'#ffb0d6':'#d94a90'}">♀</span>`:g==='—'?'<span class="poke-slot-gender">⚲</span>':'';}
 // card de golpe (mesmo formato do fichas): ícones do tipo, nome, origem e "Categoria · Pow · Acc · Contest"
 const _cap=t=>t?String(t).charAt(0).toUpperCase()+String(t).slice(1):'';
-const _TIPOS_OFC=new Set(TIPOS_POKE),_TIPO_FAKE_BASE=DB_RAW+'sprites/types';
+const _TIPOS_OFC=new Set(TIPOS_POKE),_TIPO_FAKE_BASE=DB_RAW+'sprites/types',_TIPO_COL_BASE='https://cdn.jsdelivr.net/gh/partywhale/pokemon-type-icons@main/icons';
+// ícone de tipo no cabeçalho do Pokémon (colorido, como no fichas)
+function tipoIcCol(t){t=String(t||'').toLowerCase().trim();if(!t)return'';const ofc=_TIPOS_OFC.has(t),en=encodeURIComponent(t),u=(ofc?_TIPO_COL_BASE:_TIPO_FAKE_BASE)+'/'+en+'.svg';return `<span class="pc-tp" title="${escAttr(_cap(t))}"><img class="poke-slot-tipo-img" src="${u}" alt="${escAttr(_cap(t))}"${ofc?'':` onerror="this.onerror=null;this.src='/sprites/types/${en}.svg'"`}><span>${escAttr(_cap(t))}</span></span>`;}
 const _CST={smart:'clever',beauty:'beautiful',beautify:'beautiful'};
-function mvTipoIc(t){t=String(t||'').toLowerCase().trim();if(!t)return'';const ofc=_TIPOS_OFC.has(t),en=encodeURIComponent(t),u=(ofc?TIPO_SVG_BASE:_TIPO_FAKE_BASE)+'/'+en+'.svg';
+function mvTipoIc(t){t=String(t||'').toLowerCase().trim();if(!t)return'';const ofc=_TIPOS_OFC.has(t),en=encodeURIComponent(t),u=(ofc?_TIPO_COL_BASE:_TIPO_FAKE_BASE)+'/'+en+'.svg';
   return `<img class="pc-mti" src="${u}" title="${escAttr(_cap(t))}" alt="${escAttr(_cap(t))}"${ofc?'':` onerror="this.onerror=null;this.src='/sprites/types/${en}.svg'"`}>`;}
 function mvCard(m){
   const mx=(window._moveInfo||{})[_normNome(m.n)];
@@ -2755,7 +2762,7 @@ function renderTime(){
     grid.innerHTML=time.slice(0,6).map((pk,i)=>slotEdit(i,pk||{},i===ab)).join('');
   }else{
     const statLbl={hp:'HP',atk:'ATK',def:'DEF',satk:'SATK',sdef:'SDEF',spd:'SPD'};
-    const tiposDe=pk=>pkIsDel(pk)?[pk.tipo1,pk.tipo2].filter(Boolean):(pk.tipos||[]).filter(Boolean);
+    const tiposDe=pk=>{if(pkIsDel(pk))return [pk.tipo1,pk.tipo2].filter(Boolean);const t=(pk.tipos||[]).filter(Boolean);if(t.length||!pk.nome)return t;const d=(window._pokeDex||[]).find(x=>x&&_normNome(x.nome)===_normNome(pk.nome));return d?(d.tipos||[]).filter(Boolean):t;};
     const nomeDe=pk=>pk.apelido&&pk.nome?pk.apelido+' ('+pk.nome+')':(pk.nome||pk.apelido||'');
     const strip=time.slice(0,6).map((pk,i)=>{
       pk=pkNorm(pk);const ok=!!(pk.nome||'').trim();
@@ -2775,7 +2782,7 @@ function renderTime(){
       const st=pk.stats||{},at=pk.ath||{};
       return `<div class="pc${ok?'':' vazio'}" data-pi="${i}"${pkSelT===i?'':' hidden'}>
         <div class="pc-main">
-          <div class="pc-head"><img class="pc-ball" src="${ballImg(pk.ball||'pokeball')}" alt="" onerror="this.style.display='none'"/><span class="pc-name">${escAttr(nomeDe(pk)||'(POKÉMON)')}${_genIco(pk.gender,false)}${pkMarks(pk)}</span><span class="pc-tipos">${tipos.map(t=>`<img src="${tipoImg(t)}" title="${escAttr(t)}"/>`).join('')}</span></div>
+          <div class="pc-head"><img class="pc-ball" src="${ballImg(pk.ball||'pokeball')}" alt="" onerror="this.style.display='none'"/><span class="pc-name">${escAttr(nomeDe(pk)||'(POKÉMON)')}${_genIco(pk.gender,false)}${pkMarks(pk)}</span><span class="pc-tipos">${tipos.map(tipoIcCol).join('')}</span></div>
           <div class="pc-facts">${fact('Level',pk.level)}${fact('Ability',pk.ability)}${fact('Gender',_GEN_TXT[pk.gender]||'')}${fact('Feature',pkFeat(pk))}${fact('Ball',bl)}${fact('Hold item',pk.item)}${fact('Nature',pk.nature)}${fact('Happiness',pk.happ)}</div>
           <div class="pc-lbl">Moveset</div>
           ${mv.length?`<div class="pc-moves">${mv.map(m=>mvCard(m)).join('')}</div>`:'<div class="mvempty">—</div>'}
