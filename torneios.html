@@ -99,7 +99,7 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 .nf-act{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:22px;padding-top:16px;border-top:1px solid var(--border)}
 @media(max-width:600px){.nf-act .btn{flex:1}}
 /* tipo de evento: mostra só os campos do tipo escolhido */
-#nf[data-eq=n] .ft-s{display:none}#nf[data-fmt=nenhuma] .ft-c{display:none}#nf[data-fmt=pontos] .ft-m{display:none}
+#nf[data-eq=n] .ft-s{display:none}#nf[data-fmt=nenhuma] .ft-c{display:none}#nf[data-fmt=pontos] .ft-m,#nf[data-fmt=gincana] .ft-m{display:none}#nf:not([data-fmt=rr]):not([data-fmt=liga]) .ft-r{display:none}
 .eqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;align-items:stretch}
 .card.eq{padding:0;overflow:hidden;display:flex;flex-direction:column}
 .eq .eqh{display:flex;align-items:center;gap:10px;background:var(--brand);color:#fff;padding:12px 14px}
@@ -291,7 +291,7 @@ const KA='kp_torneio_adm';
 const nP=t=>t.nPart??t.part?.length??0;
 const champNome=t=>t.champNome||(t.part&&P(t,t.champ)?.nome)||'';
 const numPts=v=>{const x=Number(String(v??'').replace(/\./g,'').replace(',','.'));return Number.isFinite(x)?x:0};
-const FMT={single:'Eliminatória simples',rr:'Todos contra todos',pontos:'Acúmulo de pontos',sorteio:'Sorteio de equipes'};
+const FMT={single:'Eliminatória simples',rr:'Todos contra todos',pontos:'Acúmulo de pontos',sorteio:'Sorteio de equipes',liga:'Liga + playoffs',gincana:'Gincana'};
 const fmtLabel=t=>(t.nEquipes&&t.formato!=='sorteio'?'Equipes + ':'')+(FMT[t.formato]||'');
 
 /* tema sazonal: mesma lógica do Fichário (config.estacao_ativa + configuracoes.estilo; sem config usa o mês) */
@@ -472,24 +472,27 @@ const P=(t,id)=>comps(t).find(p=>p.id===id);
 const ehInsc=t=>t.status==='inscricao'||t.status==='rascunho';
 const visivel=t=>!t||t.status!=='rascunho'||canEdit();
 /* equipes sorteadas, competição ainda não iniciada */
-const aguardaIni=t=>t.status==='andamento'&&!!t.nEquipes&&t.formato!=='sorteio'&&!t.m?.length&&!Array.isArray(t.rod);
+const aguardaIni=t=>t.status==='andamento'&&!!t.nEquipes&&t.formato!=='sorteio'&&t.formato!=='liga'&&!t.m?.length&&!Array.isArray(t.rod);
 function seedOrder(n){let a=[1,2];while(a.length<n)a=a.flatMap(x=>[x,a.length*2+1-x]);return a}
 function start(t){
   let ps=[...comps(t)];
   if(t.seed==='ranking')ps.sort((a,b)=>(b.ranking||0)-(a.ranking||0));
   else if(t.seed==='aleatorio')for(let i=ps.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ps[i],ps[j]]=[ps[j],ps[i]]}
-  if(t.formato==='pontos'){t.m=[];t.rod=[]}
+  if(ehPts(t)){t.m=[];t.rod=[]}
+  else if(t.formato==='liga'){t.m=[];t.jogos=[];t.fase='liga'}
   else if(t.formato==='rr'){
     t.m=[];for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++)t.m.push({a:ps[i].id,b:ps[j].id,sa:null,sb:null});
-  }else{
-    let size=2;while(size<ps.length)size*=2;
-    const slots=seedOrder(size).map(s=>ps[s-1]?.id??null),rounds=[];
-    let r0=[];for(let i=0;i<size;i+=2)r0.push({a:slots[i],b:slots[i+1],sa:null,sb:null});
-    rounds.push(r0);
-    for(let n=size/2;n>1;n/=2)rounds.push(Array.from({length:n/2},()=>({a:null,b:null,sa:null,sb:null})));
-    t.m=rounds;sync(t);
-  }
+  }else montaChave(t,ps);
   t.status='andamento';
+}
+/* chave eliminatória: ps já vem na ordem de seed */
+function montaChave(t,ps){
+  let size=2;while(size<ps.length)size*=2;
+  const slots=seedOrder(size).map(s=>ps[s-1]?.id??null),rounds=[];
+  let r0=[];for(let i=0;i<size;i+=2)r0.push({a:slots[i],b:slots[i+1],sa:null,sb:null});
+  rounds.push(r0);
+  for(let n=size/2;n>1;n/=2)rounds.push(Array.from({length:n/2},()=>({a:null,b:null,sa:null,sb:null})));
+  t.m=rounds;sync(t);
 }
 function win(m,r){
   if(r===0&&(m.a==null)!==(m.b==null))return m.a??m.b;
@@ -497,7 +500,7 @@ function win(m,r){
   return m.sa>m.sb?m.a:m.b;
 }
 function sync(t){
-  if(t.formato!=='single')return;
+  if(t.formato!=='single'&&!(t.formato==='liga'&&t.fase==='playoffs'))return;
   for(let r=1;r<t.m.length;r++)t.m[r].forEach((m,i)=>{
     const a=win(t.m[r-1][2*i],r-1),b=win(t.m[r-1][2*i+1],r-1);
     if(m.a!==a||m.b!==b){m.a=a;m.b=b;m.sa=m.sb=null}
@@ -505,12 +508,79 @@ function sync(t){
   const f=t.m[t.m.length-1][0];t.champ=win(f,t.m.length-1);
   t.status=t.champ?'fim':'andamento';
 }
+const ptsR=t=>({v:Number.isFinite(+t.pv)&&t.pv!=null?+t.pv:3,e:Number.isFinite(+t.pe)&&t.pe!=null?+t.pe:1,d:Number.isFinite(+t.pd)&&t.pd!=null?+t.pd:0});   /* sem config (torneios antigos) = 3/1/0 */
 function standings(t){
-  const s={};comps(t).forEach(p=>s[p.id]={p,j:0,v:0,e:0,d:0,pts:0,sg:0});
-  t.m.forEach(m=>{if(m.sa==null||m.sb==null)return;const A=s[m.a],B=s[m.b];A.j++;B.j++;A.sg+=m.sa-m.sb;B.sg+=m.sb-m.sa;
-    if(m.sa>m.sb){A.v++;B.d++;A.pts+=3}else if(m.sa<m.sb){B.v++;A.d++;B.pts+=3}else{A.e++;B.e++;A.pts++;B.pts++}});
+  const PR=ptsR(t),s={};comps(t).forEach(p=>s[p.id]={p,j:0,v:0,e:0,d:0,pts:0,sg:0});
+  (t.formato==='liga'?(t.jogos||[]):t.m).forEach(m=>{if(m.sa==null||m.sb==null)return;const A=s[m.a],B=s[m.b];if(!A||!B)return;A.j++;B.j++;A.sg+=m.sa-m.sb;B.sg+=m.sb-m.sa;
+    if(m.sa>m.sb){A.v++;B.d++;A.pts+=PR.v;B.pts+=PR.d}else if(m.sa<m.sb){B.v++;A.d++;B.pts+=PR.v;A.pts+=PR.d}else{A.e++;B.e++;A.pts+=PR.e;B.pts+=PR.e}});
   return Object.values(s).sort((x,y)=>y.pts-x.pts||y.sg-x.sg||(y.p.ranking||0)-(x.p.ranking||0));
 }
+function editarPtsRR(){
+  if(!podeEditar(S.cur))return;const p=ptsR(S.cur);
+  const r=prompt('Pontos por vitória, empate e derrota (separados por vírgula):\nEx.: 3,1,0',p.v+','+p.e+','+p.d);if(r==null)return;
+  const n=r.split(/[,;\s]+/).filter(Boolean).map(Number);
+  if(n.length!==3||n.some(x=>!Number.isFinite(x)||!Number.isInteger(x)||Math.abs(x)>99))return toast('Use três números inteiros, como 3,1,0');
+  mut(t=>{t.pv=n[0];t.pe=n[1];t.pd=n[2];if(t.formato==='rr'&&t.status==='fim'&&t.m.every(m=>m.sa!=null))t.champ=standings(t)[0].p.id})
+}
+/* ───── Liga + playoffs ───── */
+function ligaView(t,ed){
+  const J=(t.jogos||[]).slice().reverse(),fd=ts=>ts?new Date(ts).toLocaleDateString('pt-BR'):'';
+  const card=j=>{const A=P(t,j.a),B=P(t,j.b);if(!A||!B)return'';const pend=j.sa==null||j.sb==null,w=pend?'':j.sa>j.sb?j.a:j.sa<j.sb?j.b:'';
+    const bt=(f,l,c)=>`<button type="button" class="btn${c||''}" style="padding:2px 10px;font-size:12px" onclick="${f}">${l}</button>`;
+    return`<div class="m"><div class="sl ${w===j.a?'w':''}">${av(A)}${who(A,false)}<b>${pend?'':j.sa}</b></div><div class="sl ${w===j.b?'w':''}">${av(B)}${who(B,false)}<b>${pend?'':j.sb}</b></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 10px;font-size:12px;color:var(--muted)"><span>${pend?'Aguardando resultado':w?'':'Empate'}${pend?'':' · '+fd(j.at)}</span>${ed?`<span style="display:flex;gap:6px">${bt(`novaPartida('${esc(j.id)}')`,pend?'Lançar resultado':'Editar',pend?' p':'')}${bt(`delPartida('${esc(j.id)}')`,'Remover',' d')}</span>`:''}</div></div>`};
+  const pend=J.filter(j=>j.sa==null||j.sb==null),feitas=J.filter(j=>!(j.sa==null||j.sb==null));
+  const bloco=(tt,L)=>L.length?`<div class="card" style="margin-top:14px"><h3>${tt} (${L.length})</h3><div class="rrm">${L.map(card).join('')}</div></div>`:'';
+  const lista=bloco('Aguardando resultado',pend)+bloco('Partidas jogadas',feitas)||'<p class="msg" style="margin-top:14px">Nenhuma partida lançada ainda.</p>';
+  const n=comps(t).length,fs=ligaFases(n),sg=fs.find(f=>f[0]===ligaSug(n)),nota=n>=2?`<p class="msg" style="margin:0 0 10px"><b>Playoffs no fim da liga:</b> ${sg?sg[1]+' ('+sg[2]+')':''} · também possível: ${fs.filter(f=>f!==sg).map(f=>f[1]).join(', ')||'—'}</p>`:'';
+  return`<div class="card"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="margin:0">Classificação</h3>${ed?'<button class="btn p" onclick="novaPartida()">+ Lançar partida</button>':''}</div>${nota}${classTable(t)}</div>${lista}`;
+}
+function novaPartida(id){
+  if(!podeEditar(S.cur))return;const t=S.cur,L=comps(t),d=$('#dlg'),j=id?(t.jogos||[]).find(x=>x.id===id):null;
+  if(id&&!j)return;
+  const opt=L.map(p=>`<option value="${esc(p.id)}">${esc(p.nome)}${p.player?' ('+esc(p.player)+')':''}</option>`).join('');
+  d.innerHTML=`<h3>${j?'Editar partida':'Lançar partida'}</h3>
+    <div class="ds" style="flex-wrap:wrap;gap:8px"><select class="in" id="ja" style="flex:1;min-width:140px" onchange="jNome()">${opt}</select><b>×</b><select class="in" id="jb" style="flex:1;min-width:140px">${opt}</select></div>
+    <label class="fl" style="margin-top:12px">Resultado <small style="font-weight:500">(opcional — pode lançar depois)</small></label>
+    <div id="jr" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button type="button" class="btn" data-r="v" onclick="setR('v')">Ganhou</button><button type="button" class="btn" data-r="e" onclick="setR('e')">Empatou</button><button type="button" class="btn" data-r="d" onclick="setR('d')">Perdeu</button></div>
+    <p class="msg" id="jn" style="margin:6px 0 0"></p><p class="msg" id="em"></p>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvarPartida(${j?`'${esc(j.id)}'`:''})">Salvar</button></div>`;
+  $('#ja').value=j?j.a:(L[0]?L[0].id:'');$('#jb').value=j?j.b:(L[1]?L[1].id:'');
+  window._jr=j&&j.sa!=null&&j.sb!=null?(j.sa>j.sb?'v':j.sa<j.sb?'d':'e'):'';
+  setR(window._jr);d.showModal();
+}
+function jNome(){const e=$('#jn');if(!e)return;const p=P(S.cur,$('#ja').value);e.textContent=window._jr&&p?'Resultado de '+p.nome+' na partida.':''}
+function setR(r){window._jr=window._jr===r&&r?'':r;document.querySelectorAll('#jr button').forEach(b=>b.classList.toggle('p',b.dataset.r===window._jr));jNome()}
+function salvarPartida(id){
+  const a=$('#ja').value,b=$('#jb').value,r=window._jr;
+  if(a===b){$('#em').textContent='Escolha dois participantes diferentes.';return}
+  const sa=r?(r==='v'?1:0):null,sb=r?(r==='d'?1:0):null;
+  $('#dlg').close();
+  mut(t=>{t.jogos=t.jogos||[];if(id){const j=t.jogos.find(x=>x.id===id);if(!j)return false;Object.assign(j,{a,b,sa,sb});if(r)j.at=Date.now()}
+    else t.jogos.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,5),a,b,sa,sb,at:Date.now()})});
+}
+function delPartida(id){if(!confirm('Remover esta partida? Se já tinha resultado, os pontos dela saem da classificação.'))return;mut(t=>{t.jogos=(t.jogos||[]).filter(j=>j.id!==id)})}
+const ligaFases=n=>[[2,'Final direta','os 2 melhores'],[4,'Semifinais','os 4 melhores'],[8,'Quartas de final','os 8 melhores']].filter(f=>f[0]<=n);
+const ligaSug=n=>n>=6?4:2;
+function encerrarLiga(){
+  if(!podeEditar(S.cur))return;const t=S.cur,n=comps(t).length;
+  if(!(t.jogos||[]).length){toast('Lance ao menos uma partida antes de encerrar a liga.');return}
+  if(n<2){toast('Precisa de pelo menos 2 participantes.');return}
+  const sug=ligaSug(n),d=$('#dlg');
+  d.innerHTML=`<h3>Iniciar playoffs</h3>
+    <label class="fl">Fase de playoffs<select class="in" id="lq">${ligaFases(n).map(([q,l,sub])=>`<option value="${q}" ${q===sug?'selected':''}>${l} — ${sub}${q===sug?' (sugerido)':''}</option>`).join('')}</select></label>
+    <label class="fl" style="margin-top:10px">Cruzamentos<select class="in" id="lc"><option value="rank">Por classificação (1º × último, 2º × penúltimo)</option><option value="sort">Sorteio entre os classificados</option></select></label>
+    <p class="msg">${n} participantes. Os classificados saem da tabela de pontos atual.</p>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="iniciarPlayoffs()">Iniciar playoffs</button></div>`;
+  d.showModal();
+}
+function iniciarPlayoffs(){
+  const q=parseInt($('#lq').value,10),sorteio=$('#lc').value==='sort';$('#dlg').close();
+  mut(t=>{let top=standings(t).slice(0,q).map(s=>s.p);
+    if(sorteio)for(let i=top.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[top[i],top[j]]=[top[j],top[i]]}
+    t.fase='playoffs';t.champ=null;montaChave(t,top);t.status='andamento'});
+}
+function voltarLiga(){if(!podeEditar(S.cur))return;if(!confirm('Voltar para a fase de pontos? A chave dos playoffs será apagada.'))return;mut(t=>{t.m=[];t.fase='liga';t.champ=null;t.status='andamento'})}
 function finishRR(t){t.status=t.m.every(m=>m.sa!=null)?'fim':'andamento';if(t.status==='fim')t.champ=standings(t)[0].p.id}
 
 /* ───── Render ───── */
@@ -587,7 +657,7 @@ function list(){
 }
 function detail(t){
   const ed=podeEditar(t),eqm=!!t.nEquipes,sortOnly=t.formato==='sorteio',aguarda=aguardaIni(t),livre=(sortOnly&&!ehInsc(t))||aguarda;
-  const tabs=[['chave',t.formato==='pontos'?'Pontuação':t.formato==='rr'?'Jogos':'Chave'],...(t.formato==='rr'?[['class','Classificação']]:[]),...(eqm?[['eq','Equipes']]:[]),['part','Participantes']];
+  const tabs=[['chave',t.formato==='gincana'?'Provas':t.formato==='pontos'?'Pontuação':t.formato==='rr'?'Jogos':t.formato==='liga'?(t.fase==='playoffs'?'Playoffs':'Liga'):'Chave'],...(t.formato==='rr'||t.formato==='liga'?[['class','Classificação']]:[]),...(eqm?[['eq','Equipes']]:[]),['part','Participantes']];
   if(ehInsc(t)&&S.tab!=='part')S.tab='part';
   else if(!tabs.some(x=>x[0]===S.tab))S.tab='chave';
   const champ=t.champ&&P(t,t.champ)?`<div class="champ">${av(P(t,t.champ))}<div>Campeão: ${esc(P(t,t.champ).nome)}</div></div>`:'';
@@ -598,15 +668,18 @@ function detail(t){
   else if(S.tab==='part')body=parts(t,ed);
   else if(S.tab==='class')body=`<div class="card">${classTable(t)}</div>`;
   else if(S.tab==='eq')body=equipes(t,false);
-  else body=t.formato==='pontos'?pontosView(t,ed):t.formato==='rr'?rrGames(t,ed):bracket(t,ed);
-  const info=[fmtLabel(t),eqm?t.nEquipes+' equipes':'',aguarda?'Equipes sorteadas':stLabel(t),t.md>1?'Melhor de '+t.md:'',periodo(t),t.vagas?t.part.length+'/'+t.vagas+' vagas':''].filter(Boolean).join(' · ');
+  else body=t.formato==='gincana'?gincanaView(t,ed):t.formato==='pontos'?pontosView(t,ed):t.formato==='rr'?rrGames(t,ed):t.formato==='liga'&&t.fase!=='playoffs'?ligaView(t,ed):bracket(t,ed);
+  const info=[fmtLabel(t),t.formato==='rr'||t.formato==='liga'?(p=>'V '+(p.v>0?'+':'')+p.v+' · E '+(p.e>0?'+':'')+p.e+' · D '+(p.d>0?'+':'')+p.d)(ptsR(t)):'',eqm?t.nEquipes+' equipes':'',aguarda?'Equipes sorteadas':stLabel(t),t.md>1?'Melhor de '+t.md:'',periodo(t),t.vagas?t.part.length+'/'+t.vagas+' vagas':''].filter(Boolean).join(' · ');
   const g1=[ed&&t.status==='rascunho'?'<button class="btn p" onclick="publicar()">Publicar evento</button>':'',
+    ed&&(t.formato==='rr'||t.formato==='liga')?'<button class="btn" onclick="editarPtsRR()">Pontos da partida</button>':'',
+    ed&&t.formato==='liga'&&t.status==='andamento'&&t.fase!=='playoffs'?'<button class="btn a" onclick="encerrarLiga()">Encerrar liga e iniciar playoffs</button>':'',
+    ed&&t.formato==='liga'&&t.fase==='playoffs'?'<button class="btn" onclick="voltarLiga()">Voltar para a liga</button>':'',
     ed&&t.status==='inscricao'?`<button class="btn p" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições</button>`:'',
     ed&&!ehInsc(t)?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':'',
-    ed&&t.status==='inscricao'?'<button class="btn" onclick="despublicar()">Voltar para rascunho</button>':'',
+    ed&&t.status!=='rascunho'?'<button class="btn" onclick="despublicar()">Voltar para rascunho</button>':'',
     ed&&eqm&&!ehInsc(t)?'<button class="btn a" onclick="resortear()">Sortear novamente</button>':'',
-    ed&&t.formato==='pontos'&&t.status==='andamento'&&!aguarda?'<button class="btn a" onclick="encerrarPts()">Encerrar e declarar campeão</button>':'',
-    ed&&t.formato==='pontos'&&t.status==='fim'?'<button class="btn" onclick="retomarPts()">Retomar pontuação</button>':''].join('');
+    ed&&ehPts(t)&&t.status==='andamento'&&!aguarda?'<button class="btn a" onclick="encerrarPts()">Encerrar e declarar campeão</button>':'',
+    ed&&ehPts(t)&&t.status==='fim'?'<button class="btn" onclick="retomarPts()">Retomar pontuação</button>':''].join('');
   const g2=[ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn" onclick="mudarTipo()">Alterar tipo</button>':'',
     ed&&realAdmin()?'<button class="btn" onclick="modsTorneio()">Moderadores</button><button class="btn d" onclick="excluir()">Excluir</button>':''].join('');
   const aviso=t.status==='rascunho'?'<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)"><p class="msg" style="margin:0"><b>Rascunho.</b> Só organizadores veem este evento. Publique quando estiver pronto.</p></div>':'';
@@ -628,7 +701,7 @@ function parts(t,ed){
     <div class="pl" id="avl">${avList(av2)}</div>
     ${S.chars.length?'':'<p class="msg">Fichas indisponíveis nesta página; adicione participantes avulsos.</p>'}</div>
     <div class="card" style="margin-top:14px"><h3>${t.nEquipes?'Sortear equipes':'Iniciar'}</h3><div class="row">${t.nEquipes?`<select class="in" id="sd" onchange="t_seed(this.value)"><option value="aleatorio" ${crit!=='ranking'?'selected':''}>Totalmente aleatório</option><option value="ranking" ${crit==='ranking'?'selected':''}>Equilibrar por ranking da ficha</option></select>`:t.formato==='pontos'?'':`<select class="in" id="sd" onchange="t_seedC(this.value)">${seedOpts(t)}</select>`}
-    <button class="btn a" onclick="iniciar()">${t.nEquipes?'Sortear '+t.nEquipes+' equipes':t.formato==='pontos'?'Iniciar pontuação':'Gerar chaves e iniciar'}</button></div></div>`;
+    <button class="btn a" onclick="iniciar()">${t.nEquipes?'Sortear '+t.nEquipes+' equipes':t.formato==='gincana'?'Iniciar gincana':t.formato==='pontos'?'Iniciar pontuação':t.formato==='liga'?'Iniciar liga':'Gerar chaves e iniciar'}</button></div></div>`;
   return`<div class="card"><h3>Inscritos (${t.part.length}${t.vagas?'/'+t.vagas:''})</h3><div class="pl">${inscritos}</div></div>${ed?'':selfCard(t)}${add}`;
 }
 function selfCard(t){
@@ -719,7 +792,7 @@ function novoForm(){
     <div class="nf-sub">Participantes</div>
     <div class="opts">${e('n','Individuais','Cada personagem participa por conta própria.')}${e('s','Equipes sorteadas','Os inscritos são sorteados em X equipes, que podem competir entre si.')}</div>
     <div class="nf-sub">Competição</div>
-    <div class="opts">${o('single','Eliminatória simples','Perdeu, está fora. Byes automáticos.')}${o('rr','Todos contra todos','Cada um enfrenta todos. Vence quem somar mais pontos.')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada pelo organizador.')}${o('nenhuma','Só o sorteio','Apenas sorteia as equipes, sem competição.','ft-s')}</div></div>
+    <div class="opts">${o('single','Eliminatória simples','Perdeu, está fora. Byes automáticos.')}${o('rr','Todos contra todos','Cada um enfrenta todos. Vitória, empate e derrota valem pontos que você define (padrão 3 · 1 · 0).')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada pelo organizador.')}${o('liga','Liga + playoffs','Partidas ao longo da temporada somam pontos; no fim, os melhores disputam semifinal e final.')}${o('gincana','Gincana','Várias provas, cada uma com sua pontuação (por colocação ou livre). Vence quem somar mais.')}${o('nenhuma','Só o sorteio','Apenas sorteia as equipes, sem competição.','ft-s')}</div></div>
   <div class="nf-sec"><div class="nf-t">Quando <i>o término é opcional</i></div>
     <div class="fg nf-2"><label class="fl">Início<input class="in" id="nd" type="datetime-local"></label>
     <label class="fl">Término<input class="in" id="nf2" type="datetime-local"></label></div></div>
@@ -729,6 +802,9 @@ function novoForm(){
      <label class="fl">Personagens por player<input class="in" id="np" type="number" min="1" value="1"></label>
      <label class="fl ft-s">Quantidade de equipes<input class="in" id="ne" type="number" min="2" value="2"></label>
      <label class="fl ft-s">Critério do sorteio<select class="in" id="nsq"><option value="aleatorio">Totalmente aleatório</option><option value="ranking">Equilibrar por ranking da ficha</option></select></label>
+     <label class="fl ft-r">Pontos por vitória<input class="in" id="npv" type="number" step="1" value="3"></label>
+     <label class="fl ft-r">Pontos por empate<input class="in" id="npe" type="number" step="1" value="1"></label>
+     <label class="fl ft-r">Pontos por derrota<input class="in" id="npd" type="number" step="1" value="0"></label>
      <label class="fl ft-c ft-m">Melhor de<select class="in" id="nm"><option value="1">1 partida</option><option value="3">3 partidas</option><option value="5">5 partidas</option></select></label>
      <label class="fl ft-c ft-m">Seeds <small style="font-weight:500">(posição na chave)</small><select class="in" id="ns"><option value="ranking">Ranking da ficha</option><option value="aleatorio">Sorteio aleatório</option><option value="ordem">Ordem de inscrição</option></select></label>
     </div></div>
@@ -743,13 +819,14 @@ function setEqp(k){S.eqp=k==='s';if(!S.eqp&&S.fmt==='nenhuma')S.fmt='single';con
 function aplicaTipo(x,eqp,fmt,ne,crit){
   const old=x.formato,novo=eqp&&fmt==='nenhuma'?'sorteio':fmt,cOld=old==='sorteio'?x.seed:x.seedEq;
   x.formato=novo;
+  if(novo==='rr'||novo==='liga'){if(x.pv==null)x.pv=3;if(x.pe==null)x.pe=1;if(x.pd==null)x.pd=0}else{delete x.pv;delete x.pe;delete x.pd}
   if(eqp){
     x.nEquipes=ne;x.eq=[];const c=(crit||cOld)==='ranking'?'ranking':'aleatorio';
     if(novo==='sorteio'){x.seed=c;delete x.seedEq}
     else{x.seedEq=c;if(old==='sorteio'||!['ranking','aleatorio','ordem'].includes(x.seed))x.seed='ranking'}
   }else{delete x.nEquipes;delete x.eq;delete x.seedEq;if(old==='sorteio'||!['ranking','aleatorio','ordem'].includes(x.seed))x.seed='ranking'}
-  x.md=(novo==='sorteio'||novo==='pontos')?1:(x.md||1);
-  x.status=x.status==='rascunho'?'rascunho':'inscricao';x.m=[];x.champ=null;delete x.rod;
+  x.md=(novo==='sorteio'||novo==='pontos'||novo==='gincana')?1:(x.md||1);
+  x.status=x.status==='rascunho'?'rascunho':'inscricao';x.m=[];x.champ=null;delete x.rod;delete x.jogos;delete x.fase;
 }
 const seedOpts=t=>[['ranking','Seed por ranking da ficha'],['aleatorio','Sorteio aleatório'],['ordem','Ordem de inscrição']].map(([v,l])=>`<option value="${v}" ${t.seed===v?'selected':''}>${l}</option>`).join('');
 function lk(){const e=$('#lk');if(e)e.textContent='Link: '+location.href.split('#')[0].split('?')[0]+'#'+(slug($('#nn')?.value||'')||'nomedoevento')}
@@ -757,8 +834,10 @@ function lk(){const e=$('#lk');if(e)e.textContent='Link: '+location.href.split('
 /* ───── Ações ───── */
 async function criar(){
   const nome=$('#nn').value.trim();if(!nome)return toast('Dê um nome ao evento');
+  if(S.online){try{await loadList()}catch{}}   /* ids vêm da lista atual do servidor, não de uma cópia velha */
   const n=parseInt($('#nv').value,10);
   const t={id:uid(nome),nome,formato:S.fmt==='nenhuma'?'sorteio':S.fmt,status:'inscricao',seed:$('#ns').value,desc:$('#ndc').value.trim(),data:$('#nd').value,fim:$('#nf2').value,vagas:n>1?n:0,porPlayer:Math.max(1,parseInt($('#np').value,10)||1),md:parseInt($('#nm').value,10),aberta:$('#na').checked,part:[],m:[],champ:null,at:Date.now()};
+  if(t.formato==='rr'||t.formato==='liga'){const g=(id,d)=>{const v=parseInt($(id).value,10);return Number.isFinite(v)?v:d};t.pv=g('#npv',3);t.pe=g('#npe',1);t.pd=g('#npd',0)}
   if(t.fim&&!t.data)return toast('Informe o início para definir o término');
   if(t.fim&&t.data&&new Date(t.fim)<=new Date(t.data))return toast('O término precisa ser depois do início');
   let ne=0;
@@ -776,7 +855,7 @@ async function renomear(){
   if(!podeEditar(S.cur))return;
   const t=S.cur,n=prompt('Novo nome do torneio:',t.nome);if(!n||!n.trim())return;
   const old=t.id;
-  try{if(S.online){const f=await loadFull(old);if(f)setCur(f)}t.nome=n.trim();t.id=uid(t.nome,old);await persist(t,{de:old});S.list=S.list.filter(x=>x.id!==old)}
+  try{if(S.online){try{await loadList()}catch{}const f=await loadFull(old);if(f)setCur(f)}t.nome=n.trim();t.id=uid(t.nome,old);await persist(t,{de:old});S.list=S.list.filter(x=>x.id!==old)}
   catch(e){t.id=old;return toast(e.message)}
   location.hash=t.id;render();
 }
@@ -791,7 +870,7 @@ function mudarTipo(){
   <label class="fl" style="margin-bottom:6px">Participantes</label>
   <div class="opts" style="grid-template-columns:1fr 1fr">${e('n','Individuais','Cada personagem por conta própria.')}${e('s','Equipes sorteadas','Inscritos sorteados em equipes.')}</div>
   <label class="fl" style="margin:14px 0 6px">Competição</label>
-  <div class="opts" style="grid-template-columns:1fr">${o('single','Eliminatória simples','Perdeu, está fora.')}${o('rr','Todos contra todos','Vence quem somar mais pontos.')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada.')}${o('nenhuma','Só o sorteio','Sem competição.')}</div>
+  <div class="opts" style="grid-template-columns:1fr">${o('single','Eliminatória simples','Perdeu, está fora.')}${o('rr','Todos contra todos','Vence quem somar mais pontos.')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada.')}${o('liga','Liga + playoffs','Partidas lançadas ao longo da temporada; os melhores vão aos playoffs.')}${o('gincana','Gincana','Provas com pontuação específica.')}${o('nenhuma','Só o sorteio','Sem competição.')}</div>
   <label class="fl" id="mtne" style="margin-top:12px;${MT.eqp?'':'display:none'}">Quantidade de equipes<input class="in" id="mtn" type="number" min="2" value="${t.nEquipes||2}" style="width:100%;text-align:left"></label>
   <p class="msg" style="margin:12px 0 0">${ehInsc(t)?'Os inscritos são mantidos.':'Atenção: resultados e equipes serão apagados e as inscrições reabertas. Os inscritos são mantidos.'}</p>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaTipo()">Salvar</button></div>`;
@@ -811,12 +890,51 @@ function salvaTipo(){
 }
 /* ───── acúmulo de pontos ───── */
 const fmtN=n=>Number.isInteger(n)?String(n):String(+n.toFixed(2));
+const ehPts=t=>t.formato==='pontos'||t.formato==='gincana';
 function ptsTot(t){return comps(t).map(p=>{const v=(t.rod||[]).map(r=>Number(r.pts?.[p.id])||0);return{p,v,tot:v.reduce((a,b)=>a+b,0)}}).sort((a,b)=>b.tot-a.tot||(b.p.ranking||0)-(a.p.ranking||0))}
 function pontosView(t,ed){
   const rod=t.rod||[],aberto=t.status==='andamento'&&ed;
   const th=rod.map((r,i)=>`<th ${aberto?`style="cursor:pointer" title="Editar rodada" onclick="rodada(${i})"`:''}>${esc(r.nome||'R'+(i+1))}</th>`).join('');
   const rows=ptsTot(t).map((x,i)=>`<tr><td>${i+1}</td><td><div class="row" style="flex-wrap:nowrap">${av(x.p)}${who(x.p)}</div></td>${x.v.map(v=>`<td>${fmtN(v)}</td>`).join('')}<td><b>${fmtN(x.tot)}</b></td></tr>`).join('');
   return`<div class="card">${aberto?'<div class="row" style="margin-bottom:12px"><button class="btn p" onclick="rodada(-1)">+ Nova rodada</button></div>':''}${rod.length?'':'<p class="msg" style="margin:0 0 10px">Nenhuma rodada lançada ainda.</p>'}<div style="overflow-x:auto"><table><tr><th>#</th><th>Participante</th>${th}<th>Total</th></tr>${rows}</table></div></div>`;
+}
+/* ───── Gincana: provas com pontuação específica ───── */
+const ord=n=>n+'º';
+function tabTxt(r){const T=r.tab||[];return r.modo==='livre'?'Pontos livres':(T.length?T.map((v,i)=>ord(i+1)+' '+fmtN(v)).join(' · '):'')+(r.base?(T.length?' · ':'')+'demais '+fmtN(r.base):'')||'Sem tabela'}
+function gincanaView(t,ed){
+  const rod=t.rod||[],aberto=t.status==='andamento'&&ed,fez=r=>Object.keys(r.pts||{}).length>0;
+  const th=rod.map(r=>`<th>${esc(r.nome)}</th>`).join('');
+  const rows=ptsTot(t).map((x,i)=>`<tr><td>${i+1}</td><td><div class="row" style="flex-wrap:nowrap">${av(x.p)}${who(x.p)}</div></td>${x.v.map(v=>`<td>${fmtN(v)}</td>`).join('')}<td><b>${fmtN(x.tot)}</b></td></tr>`).join('');
+  const provas=rod.length?`<div class="card" style="margin-top:14px"><h3>Provas (${rod.length})</h3>${rod.map((r,i)=>`<div class="ds" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><div class="dn" style="flex:1;min-width:200px"><b>${esc(r.nome)}</b>${r.desc?`<div class="msg" style="margin:2px 0 0;white-space:pre-wrap">${esc(r.desc)}</div>`:''}<div class="msg" style="margin:2px 0 0;font-size:12.5px">${esc(tabTxt(r))} · ${fez(r)?'Resultado lançado':'Aguardando resultado'}</div></div>${aberto?`<span style="display:flex;gap:6px"><button type="button" class="btn${fez(r)?'':' p'}" style="padding:4px 12px;font-size:13px" onclick="prova(${i})">${fez(r)?'Editar':'Lançar resultado'}</button><button type="button" class="btn d" style="padding:4px 12px;font-size:13px" onclick="delRodada(${i})">Excluir</button></span>`:''}</div>`).join('')}</div>`:'';
+  return`<div class="card">${aberto?'<div class="row" style="margin-bottom:12px"><button class="btn p" onclick="prova(-1)">+ Nova prova</button></div>':''}${rod.length?'':'<p class="msg" style="margin:0 0 10px">Nenhuma prova cadastrada ainda.</p>'}<div style="overflow-x:auto"><table><tr><th>#</th><th>Participante</th>${th}<th>Total</th></tr>${rows}</table></div></div>${provas}`;
+}
+function prova(i){
+  if(!podeEditar(S.cur))return;
+  const t=S.cur,L=comps(t),r=i>=0?t.rod[i]:{nome:'Prova '+((t.rod||[]).length+1),desc:'',modo:'colocacao',tab:[10,7,5,3],base:1,plac:{},pts:{}},d=$('#dlg');
+  const nplac=L.length;
+  d.innerHTML=`<h3>${i>=0?'Editar prova':'Nova prova'}</h3>
+  <label class="fl">Nome da prova<input class="in" id="pn" value="${esc(r.nome)}" style="text-align:left"></label>
+  <label class="fl" style="margin-top:8px">Descrição <small style="font-weight:500">(opcional)</small><textarea class="in" id="pd" rows="2">${esc(r.desc||'')}</textarea></label>
+  <label class="fl" style="margin-top:8px">Pontuação<select class="in" id="pm" onchange="provaModo()"><option value="colocacao" ${r.modo!=='livre'?'selected':''}>Por colocação (tabela de pontos)</option><option value="livre" ${r.modo==='livre'?'selected':''}>Pontos livres para cada participante</option></select></label>
+  <div id="pcol"><div class="fg" style="margin-top:8px"><label class="fl">Pontos por colocação <small style="font-weight:500">(1º, 2º, 3º…)</small><input class="in" id="pt" value="${esc((r.tab||[]).join(', '))}" placeholder="10, 7, 5, 3" style="text-align:left"></label><label class="fl">Demais colocações<input class="in" id="pb" type="number" step="any" value="${r.base??0}"></label></div></div>
+  <div class="nf-sub" style="margin-top:12px">Resultado <small style="font-weight:500">(opcional — pode lançar depois)</small></div>
+  <div style="max-height:40vh;overflow-y:auto;margin-top:6px">${L.map(p=>{const pl=r.plac?.[p.id]||'',pv=r.pts?.[p.id]??'';return`<div class="ds">${av(p)}<div class="dn"><span>${esc(p.nome)}</span></div>
+    <select class="in pl-c" data-pid="${esc(p.id)}" style="max-width:110px"><option value="">—</option>${Array.from({length:nplac},(_,k)=>`<option value="${k+1}" ${+pl===k+1?'selected':''}>${ord(k+1)}</option>`).join('')}</select>
+    <input class="in pl-l" type="number" step="any" data-pid="${esc(p.id)}" value="${pv}" placeholder="0" style="max-width:110px;display:none"></div>`}).join('')}</div>
+  <p class="msg" id="em"></p>
+  <div class="row" style="margin-top:10px;justify-content:flex-end">${i>=0?`<button class="btn d" onclick="delRodada(${i})">Excluir</button>`:''}<button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaProva(${i})">Salvar</button></div>`;
+  d.showModal();provaModo();
+}
+function provaModo(){const l=$('#pm').value==='livre';$('#pcol').style.display=l?'none':'';document.querySelectorAll('#dlg .pl-c').forEach(x=>x.style.display=l?'none':'');document.querySelectorAll('#dlg .pl-l').forEach(x=>x.style.display=l?'':'none')}
+function salvaProva(i){
+  const nome=$('#pn').value.trim(),desc=$('#pd').value.trim(),modo=$('#pm').value;
+  const tab=$('#pt').value.split(/[,;\s]+/).filter(Boolean).map(Number);
+  if(modo==='colocacao'&&tab.some(x=>!Number.isFinite(x))){$('#em').textContent='A tabela deve ter só números, como 10, 7, 5, 3.';return}
+  const base=Number($('#pb').value)||0,pts={},plac={};
+  if(modo==='livre')document.querySelectorAll('#dlg .pl-l').forEach(x=>{if(x.value!=='')pts[x.dataset.pid]=Number(x.value)||0});
+  else document.querySelectorAll('#dlg .pl-c').forEach(x=>{if(x.value==='')return;const k=+x.value;plac[x.dataset.pid]=k;pts[x.dataset.pid]=k<=tab.length?tab[k-1]:base});
+  $('#dlg').close();
+  mut(t=>{t.rod=t.rod||[];const r={nome:nome||'Prova '+(i<0?t.rod.length+1:i+1),desc,modo,tab:modo==='colocacao'?tab:[],base:modo==='colocacao'?base:0,plac,pts};if(i<0)t.rod.push(r);else t.rod[i]=r});
 }
 function rodada(i){
   if(!podeEditar(S.cur))return;
@@ -832,12 +950,12 @@ function salvaRodada(i){
   $('#dlg').close();
   mut(t=>{t.rod=t.rod||[];const r={nome:nome||'Rodada '+(i<0?t.rod.length+1:i+1),pts};if(i<0)t.rod.push(r);else t.rod[i]=r});
 }
-function delRodada(i){if(!confirm('Excluir esta rodada?'))return;$('#dlg').close();mut(t=>{t.rod.splice(i,1)})}
-function encerrarPts(){if(!podeEditar(S.cur))return;if(!confirm('Encerrar a pontuação e declarar o campeão?'))return;mut(t=>{const s=ptsTot(t);if(!s.length||!(t.rod||[]).length){toast('Lance ao menos uma rodada');return false}t.champ=s[0].p.id;t.status='fim'})}
+function delRodada(i){if(!confirm(S.cur&&S.cur.formato==='gincana'?'Excluir esta prova?':'Excluir esta rodada?'))return;$('#dlg').close();mut(t=>{t.rod.splice(i,1)})}
+function encerrarPts(){if(!podeEditar(S.cur))return;if(!confirm(S.cur&&S.cur.formato==='gincana'?'Encerrar a gincana e declarar o campeão?':'Encerrar a pontuação e declarar o campeão?'))return;mut(t=>{const s=ptsTot(t);if(!s.length||!(t.rod||[]).length){toast(t.formato==='gincana'?'Cadastre ao menos uma prova':'Lance ao menos uma rodada');return false}t.champ=s[0].p.id;t.status='fim'})}
 function retomarPts(){mut(t=>{t.status='andamento';t.champ=null})}
 function renEq(id){mut(t=>{const e=(t.eq||[]).find(x=>x.id===id);if(!e)return false;const n=prompt('Nome da equipe:',e.nome);if(!n||!n.trim())return false;e.nome=n.trim()})}
 function iniComp(t){
-  const pt=t.formato==='pontos';
+  const pt=ehPts(t);
   return`<div class="card" style="margin-top:14px"><h3>Iniciar competição</h3><div class="row">${pt?'':`<select class="in" onchange="t_seedC(this.value)">${seedOpts(t)}</select>`}<button class="btn a" onclick="iniciar()">${pt?'Iniciar pontuação':'Gerar chaves e iniciar'}</button></div></div>`;
 }
 function modsTorneio(){
@@ -851,7 +969,10 @@ function modsTorneio(){
 }
 function salvaModsT(){const ids=[...document.querySelectorAll('#dlg input[type=checkbox]:checked')].map(x=>x.value);$('#dlg').close();mut(t=>{t.mods=ids})}
 function publicar(){mut(t=>{t.status='inscricao'});toast('Evento publicado')}
-function despublicar(){if(!confirm('Voltar para rascunho? Os players deixam de ver este evento.'))return;mut(t=>{if(t.status!=='inscricao')return false;t.status='rascunho'})}
+function despublicar(){
+  const c=S.cur,jogo=!!c&&c.status!=='inscricao'&&c.status!=='rascunho';
+  if(!confirm(jogo?'Voltar para rascunho? Os players deixam de ver este evento e a chave/resultados atuais serão apagados (as inscrições e equipes ficam).':'Voltar para rascunho? Os players deixam de ver este evento.'))return;
+  mut(t=>{if(t.status==='rascunho')return false;if(t.status!=='inscricao'){Object.assign(t,{m:[],champ:null});delete t.rod;delete t.jogos;delete t.fase}t.status='rascunho'})}
 function togInsc(){mut(t=>{t.aberta=!t.aberta})}
 async function abrir(id){
   const t=await loadFull(id);if(!t||!visivel(t))return toast('Torneio não encontrado.');
@@ -1082,13 +1203,13 @@ async function compartilharTorneio(){
   const desenhar=f=>{
     if(soEq)return imgDesenharEquipes(t,T,f);
     const fc=champ?f.get(champ.id):null;
-    if(t.formato==='pontos'){
+    if(ehPts(t)){
       const rod=t.rod||[],tot=ptsTot(t),showR=rod.length>0&&rod.length<=8,wr=Math.min(120,Math.floor(560/Math.max(1,rod.length)));
       const cols=[{h:'#',w:80,rank:true},{h:'Participante',part:true,al:'l'},...(showR?rod.map((r,i)=>({h:String(r.nome||'R'+(i+1)).slice(0,10),w:wr})):[]),{h:'Total',w:130,b:true}];
       const linhas=tot.map((x,i)=>({p:x.p,hl:i===0&&!!champ,v:[null,null,...(showR?x.v.map(fmtN):[]),fmtN(x.tot)]}));
       return imgDesenharTabela(t,T,f,cols,linhas,champ,fc);
     }
-    if(t.formato==='rr'){
+    if(t.formato==='rr'||(t.formato==='liga'&&t.fase!=='playoffs'&&t.status!=='fim')){
       const cols=[{h:'#',w:80,rank:true},{h:'Participante',part:true,al:'l'},{h:'J',w:90},{h:'V',w:90},{h:'E',w:90},{h:'D',w:90},{h:'SG',w:100},{h:'Pts',w:120,b:true}];
       const linhas=standings(t).map((s,i)=>({p:s.p,hl:i===0&&!!champ,v:[null,null,s.j,s.v,s.e,s.d,(s.sg>0?'+':'')+s.sg,s.pts]}));
       return imgDesenharTabela(t,T,f,cols,linhas,champ,fc);
@@ -1152,7 +1273,7 @@ function sortear(t){
 function resortear(){if(!podeEditar(S.cur)||!S.cur.nEquipes)return;if(!confirm('Sortear as equipes novamente? As equipes atuais serão substituídas'+(S.cur.formato!=='sorteio'?' e a competição será zerada.':'.')))return;mut(t=>{sortear(t)},()=>{S.tab='chave'})}
 function moverMembro(pid,eid){mut(t=>{const dest=(t.eq||[]).find(e=>e.id===eid);if(!dest||dest.membros.includes(pid))return false;t.eq.forEach(e=>{e.membros=e.membros.filter(x=>x!==pid)});dest.membros.push(pid)})}
 function iniciar(){mut(t=>{if(t.nEquipes&&ehInsc(t)){if(t.part.length<t.nEquipes){toast('Precisa de pelo menos '+t.nEquipes+' participantes (1 por equipe)');return false}sortear(t);return}if(comps(t).length<2){toast(t.nEquipes?'Precisa de pelo menos 2 equipes com membros':'Precisa de pelo menos 2 participantes');return false}start(t)},()=>{S.tab='chave'})}
-function reiniciar(){if(!podeEditar(S.cur))return;if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null,...(t.nEquipes?{eq:[]}:{})});delete t.rod},()=>{S.tab='part'})}
+function reiniciar(){if(!podeEditar(S.cur))return;if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null,...(t.nEquipes?{eq:[]}:{})});delete t.rod;delete t.jogos;delete t.fase},()=>{S.tab='part'})}
 async function excluir(){if(!realAdmin()||!podeEditar(S.cur))return;if(!confirm('Excluir este torneio?'))return;try{await remove(S.cur)}catch(e){return toast(e.message)}voltar()}
 function placar(r,i){
   if(!podeEditar(S.cur))return;
@@ -1160,7 +1281,7 @@ function placar(r,i){
   d.innerHTML=`<h3>Lançar resultado</h3>
     <div class="ds">${av(A)}<div class="dn"><span>${esc(A.nome)}</span><div class="wl"><button type="button" data-s="a" data-k="v" onclick="setW('a')">Venceu</button><button type="button" data-s="a" data-k="p" onclick="setW('b')">Perdeu</button></div></div><input class="in" id="sa" type="number" min="0" value="${m.sa??''}" oninput="markW()"></div>
     <div class="ds">${av(B)}<div class="dn"><span>${esc(B.nome)}</span><div class="wl"><button type="button" data-s="b" data-k="v" onclick="setW('b')">Venceu</button><button type="button" data-s="b" data-k="p" onclick="setW('a')">Perdeu</button></div></div><input class="in" id="sb" type="number" min="0" value="${m.sb??''}" oninput="markW()"></div>
-    <p class="msg" id="em">${t.formato==='single'?'Empates não são permitidos na chave.':''}</p>
+    <p class="msg" id="em">${t.formato==='single'||t.formato==='liga'?'Empates não são permitidos na chave.':''}</p>
     <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn d" onclick="salvarM(${r},${i},true)">Limpar</button><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvarM(${r},${i})">Salvar</button></div>`;
   d.showModal();markW();
 }
@@ -1179,10 +1300,10 @@ function salvarM(r,i,clear){
   if(!clear){
     a=parseInt($('#sa').value,10);b=parseInt($('#sb').value,10);
     if(isNaN(a)||isNaN(b)){$('#em').textContent='Preencha os dois placares.';return}
-    if(S.cur.formato==='single'&&a===b){$('#em').textContent='A chave não aceita empate.';return}
+    if((S.cur.formato==='single'||S.cur.formato==='liga')&&a===b){$('#em').textContent='A chave não aceita empate.';return}
   }
   $('#dlg').close();
-  mut(t=>{const m=t.m[r][i];if(!m)return false;if(clear){m.sa=m.sb=null}else{m.sa=a;m.sb=b}if(t.formato==='single')sync(t);else finishRR(t)});
+  mut(t=>{const m=t.m[r][i];if(!m)return false;if(clear){m.sa=m.sb=null}else{m.sa=a;m.sb=b}if(t.formato==='single'||t.formato==='liga')sync(t);else finishRR(t)});
 }
 addEventListener('hashchange',async()=>{const id=location.hash.slice(1);if(id===(S.cur&&S.cur.id))return;S.cur=id?await loadFull(id):null;if(!visivel(S.cur))S.cur=null;render()});
 boot();
