@@ -1,8 +1,8 @@
 // Torneios no GitHub, junto com as fichas (arquivo com "_" não conta como função na Vercel).
-//   data/torneios/<id>.json   -> torneio completo (participantes, chaves, placares)
+//   data/torneios/<id>.json   -> torneio completo (participantes, equipes, chaves, placares, rodadas)
 //   data/torneios/index.json  -> resumo de todos (lista, busca e filtros)
 //
-// Ligado ao /api/ficha-salvar (ver LEIA-ME no fim deste arquivo):
+// Ligado ao /api/ficha-salvar:
 //   GET  ?torneios=1                      -> índice
 //   GET  ?torneio=xmascup                 -> torneio completo
 //   POST { action:'torneio_salvar',  adm_nome, adm_senha, torneio, base?, novo?, de? }   (ADM) cria/edita/renomeia
@@ -12,18 +12,18 @@
 //   POST { action:'torneio_sair',      token, slug, torneio, por }   (dono da ficha ou ADM)
 //
 // Permissões:
-//  - ADM: nome + senha conferidos em admin_login (mesmo projeto/variáveis do 'atribuir').
-//  - Moderador: player listado em config.torneio_organizadores (projeto do index, INDEX_SUPA_URL/KEY).
-//    Entra com o token da ficha + o slug de uma ficha DELE; o Supabase confere o token e o dono da ficha
-//    (player_id) é procurado na lista de moderadores. Moderador cria/edita torneios, mas não exclui.
-//  - Player: o token da ficha é conferido pelo Supabase (ficha_salvar), igual ao 'consumir' do ficha-salvar.
-//    Os dados do participante (nome, foto, cor, pontos) vêm SEMPRE da ficha no GitHub, nunca do navegador.
+//  - ADM: nome + senha conferidos em admin_login. Edita qualquer torneio, define `mods` e exclui.
+//  - Moderador: player listado em config.torneio_organizadores. Cria torneios (vira o `criador`) e
+//    edita apenas os que criou ou em que o ADM o colocou em `mods`. Não exclui nem altera `mods`.
+//  - Player: token da ficha conferido pelo Supabase. Dados do participante vêm SEMPRE da ficha no GitHub.
 const { readFile, commit } = require('./_gh');
 
 const DIR = 'data/torneios/';
 const IDX = DIR + 'index.json';
 const ID = /^[a-z0-9]{1,60}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
+const FORMATOS = ['single', 'rr', 'pontos', 'sorteio'];
+const STATUS = ['rascunho', 'inscricao', 'andamento', 'fim'];
 
 const err = (status, msg, code) => Object.assign(new Error(msg), { status, code });
 const parse = t => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
@@ -44,15 +44,30 @@ function cleanPart(p) {
 }
 const sc = v => (v === null || v === undefined || v === '') ? null : I(v, 0, 999, null);
 const cm = m => ({ a: m && m.a ? S(m.a, 80) : null, b: m && m.b ? S(m.b, 80) : null, sa: sc(m && m.sa), sb: sc(m && m.sb) });
-function limpar(t, id, at) {
-  const formato = t.formato === 'rr' ? 'rr' : 'single';
+const cleanEq = e => (e && typeof e === 'object' && e.id) ? {
+  id: S(e.id, 40), nome: S(e.nome, 60) || S(e.id, 40),
+  membros: (Array.isArray(e.membros) ? e.membros : []).slice(0, 256).map(x => S(x, 80)),
+} : null;
+const cleanRod = (r, i) => {
+  const pts = {};
+  if (r && r.pts && typeof r.pts === 'object')
+    for (const k of Object.keys(r.pts).slice(0, 300)) { const v = Number(r.pts[k]); if (Number.isFinite(v)) pts[S(k, 80)] = Math.max(-1e9, Math.min(1e9, v)); }
+  return { nome: S(r && r.nome, 60) || 'Rodada ' + (i + 1), pts };
+};
+
+// cur = versão atual gravada (ou null); podeMods = só o ADM altera a lista de moderadores do torneio
+function limpar(t, id, at, cur, podeMods, criadorNovo) {
+  const formato = FORMATOS.includes(t.formato) ? t.formato : 'single';
   const arr = Array.isArray(t.m) ? t.m : [];
   const m = formato === 'rr'
     ? arr.slice(0, 4000).map(cm)
-    : arr.slice(0, 10).map(r => (Array.isArray(r) ? r : []).slice(0, 128).map(cm));
-  return {
+    : formato === 'single'
+      ? arr.slice(0, 10).map(r => (Array.isArray(r) ? r : []).slice(0, 128).map(cm))
+      : [];
+  const nEq = I(t.nEquipes, 0, 64, 0);
+  const o = {
     id, nome: S(t.nome, 80).trim() || id, formato,
-    status: ['inscricao', 'andamento', 'fim'].includes(t.status) ? t.status : 'inscricao',
+    status: STATUS.includes(t.status) ? t.status : 'inscricao',
     seed: ['ranking', 'aleatorio', 'ordem'].includes(t.seed) ? t.seed : 'ranking',
     desc: S(t.desc, 2000), data: S(t.data, 32),
     vagas: I(t.vagas, 0, 256, 0), porPlayer: I(t.porPlayer, 1, 10, 1),
@@ -60,12 +75,26 @@ function limpar(t, id, at) {
     part: (Array.isArray(t.part) ? t.part : []).slice(0, 256).map(cleanPart).filter(Boolean),
     m, champ: t.champ ? S(t.champ, 80) : null, at,
   };
+  if (nEq >= 2) {
+    o.nEquipes = nEq;
+    o.eq = (Array.isArray(t.eq) ? t.eq : []).slice(0, 64).map(cleanEq).filter(Boolean);
+    if (formato !== 'sorteio') o.seedEq = t.seedEq === 'ranking' ? 'ranking' : 'aleatorio';
+  }
+  if (formato === 'pontos') o.rod = (Array.isArray(t.rod) ? t.rod : []).slice(0, 200).map(cleanRod);
+  // criador (quem criou) fica fixo; mods só o ADM altera
+  const criador = cur && cur.criador != null ? cur.criador : criadorNovo;
+  if (criador != null) o.criador = S(criador, 40);
+  const mods = podeMods && Array.isArray(t.mods) ? t.mods : (cur && cur.mods) || [];
+  if (mods.length) o.mods = mods.slice(0, 50).map(x => S(x, 40));
+  return o;
 }
 function resumo(t) {
-  const c = t.part.find(p => p.id === t.champ);
+  const c = (t.part || []).find(p => p.id === t.champ) || (t.eq || []).find(e => e.id === t.champ);
   return {
-    id: t.id, nome: t.nome, formato: t.formato, status: t.status, desc: t.desc.slice(0, 200), data: t.data,
-    vagas: t.vagas, aberta: t.aberta, nPart: t.part.length, champ: t.champ, champNome: c ? c.nome : '',
+    id: t.id, nome: t.nome, formato: t.formato, nEquipes: t.nEquipes || undefined, status: t.status,
+    desc: t.desc.slice(0, 200), data: t.data, vagas: t.vagas, aberta: t.aberta,
+    nPart: t.part.length, avs: t.part.slice(0, 4).map(p => ({ nome: p.nome, foto: p.foto, cor: p.cor })),
+    champ: t.champ, champNome: c ? c.nome : '',
     nomes: t.part.map(p => p.nome + ' ' + p.player).join(' ').slice(0, 3000), at: t.at,
   };
 }
@@ -96,7 +125,6 @@ async function donoDoToken(b, sbRpc) {
   if (!SLUG.test(slug || '')) throw err(400, 'Ficha inválida.');
   const f = parse(await readFile(`data/fichas/${slug}.json`));
   if (!f) throw err(404, 'Ficha não encontrada.');
-  // o Supabase confere se o token pode mexer nesta ficha (dono ou ADM); regrava os mesmos dados, sem mudar nada
   await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f.nome, p_foto: f.foto ?? null, p_banner: f.banner ?? null, p_d: f.d || {} });
   return f;
 }
@@ -106,9 +134,10 @@ async function fichaDoToken(b, sbRpc) {
 }
 
 // ---------- ADM (nome+senha) OU moderador liberado em config.torneio_organizadores ----------
+// devolve { adm:true } ou { adm:false, pid } para o moderador
 async function orgOk(b, sbRpc) {
-  if (b.adm_nome || b.adm_senha) return admOk(b);
-  const f = await donoDoToken(b, sbRpc);   // o Supabase confere que o token é dono desta ficha
+  if (b.adm_nome || b.adm_senha) { const a = await admOk(b); return { adm: true, nome: a.nome }; }
+  const f = await donoDoToken(b, sbRpc);
   const pid = f.player_id;
   if (pid == null || pid === 'admin') throw err(403, 'Você não tem permissão de organizador.');
   const IU = process.env.INDEX_SUPA_URL, IK = process.env.INDEX_SUPA_KEY;
@@ -118,10 +147,10 @@ async function orgOk(b, sbRpc) {
   });
   const j = r.ok ? await r.json().catch(() => []) : [];
   let v = j && j[0] && j[0].valor;
-  if (typeof v === 'string') v = parse(v);   // a coluna guarda o JSON como texto
+  if (typeof v === 'string') v = parse(v);
   const L = Array.isArray(v) ? v : [];
   if (!L.some(o => o && String(o.id) === String(pid))) throw err(403, 'Você não tem permissão de organizador.');
-  return { nome: b.por || (f.d && f.d.player) || '' };
+  return { adm: false, pid: String(pid), nome: b.por || (f.d && f.d.player) || '' };
 }
 
 // ---------- leitura ----------
@@ -140,7 +169,7 @@ async function obter(id, res) {
 
 // ---------- ADM / moderador: criar / editar / renomear ----------
 async function salvar(b, res, sbRpc) {
-  await orgOk(b, sbRpc);
+  const org = await orgOk(b, sbRpc);
   const t0 = b.torneio && typeof b.torneio === 'object' ? b.torneio : {};
   const id = String(t0.id || ''), de = b.de ? String(b.de) : null;
   if (!ID.test(id) || (de && !ID.test(de))) throw err(400, 'Id de torneio inválido.');
@@ -152,16 +181,19 @@ async function salvar(b, res, sbRpc) {
     if (!b.novo && !cur) throw err(404, 'Torneio não encontrado.');
     if (cur && b.base != null && String(cur.at) !== String(b.base))
       throw err(409, 'Este torneio foi alterado por outra pessoa (por exemplo, uma inscrição). Recarregue e tente de novo.', 'conflito');
+    // moderador só edita o que criou ou o que o ADM atribuiu a ele
+    if (cur && !org.adm && String(cur.criador) !== org.pid && !(cur.mods || []).map(String).includes(org.pid))
+      throw err(403, 'Você não tem permissão para editar este torneio.');
     fin = id;
     if (!cur || fin !== cur.id) { let n = 2; while (idx.some(x => x.id === fin && x.id !== (cur && cur.id))) fin = id + n++; }
-    const t = limpar(t0, fin, Date.now());
+    const t = limpar(t0, fin, Date.now(), cur, org.adm, org.adm ? null : org.pid);
     const ch = [{ path: DIR + fin + '.json', content: JSON.stringify(t) }];
     if (cur && cur.id !== fin) { ch.push({ path: DIR + cur.id + '.json', content: null }); idx.splice(0, idx.length, ...idx.filter(x => x.id !== cur.id)); }
     ch.push(gravar(idx, t));
     b._saida = t;
     return ch;
   }, `torneio: ${b.novo ? 'criar' : 'salvar'} ${id}`);
-  return res.json({ ok: true, id: fin, at: b._saida.at });
+  return res.json({ ok: true, id: fin, at: b._saida.at, criador: b._saida.criador, mods: b._saida.mods || [] });
 }
 
 // exclusão: só ADM (nome+senha)
@@ -186,7 +218,8 @@ async function inscrever(b, res, sbRpc) {
     const t = parse(await readFile(DIR + id + '.json', parent));
     if (!t) throw err(404, 'Torneio não encontrado.');
     saida = t;
-    if (t.part.some(p => p.id === f.slug)) return [];                       // já inscrito: não repete
+    if (t.status === 'rascunho') throw err(404, 'Torneio não encontrado.');   // rascunho é invisível para players
+    if (t.part.some(p => p.id === f.slug)) return [];
     if (t.status !== 'inscricao') throw err(409, 'As inscrições deste torneio já foram encerradas.');
     if (!t.aberta) throw err(403, 'As inscrições deste torneio estão fechadas.');
     if (t.vagas && t.part.length >= t.vagas) throw err(409, 'Torneio cheio.');
@@ -224,13 +257,3 @@ async function acao(nome, b, res, sbRpc) {
   throw err(400, 'Ação desconhecida.');
 }
 module.exports = { lista, obter, acao };
-
-/* LEIA-ME — 3 linhas no api/ficha-salvar.js (nenhuma função nova na Vercel):
-   1) no topo, junto dos outros require:
-        const T = require('./_torneios');
-   2) no bloco GET (dentro do try, antes de `if (q.lista)`):
-        if (q.torneios) { res.setHeader('Cache-Control', 'no-store'); return await T.lista(res); }
-        if (q.torneio)  { res.setHeader('Cache-Control', 'no-store'); return await T.obter(q.torneio, res); }
-   3) no bloco POST, logo abaixo da linha do 'atribuir':
-        if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
-*/
