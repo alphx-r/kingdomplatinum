@@ -1667,16 +1667,19 @@ const FALLBACK='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites
 // ─── PokéDex (autocomplete) ───────────────────────────
 window._pokeDex=[];
 window._pokeDexLoaded=false;
-const shRow=r=>{const k=Object.keys(r||{}).find(k=>/shiny/i.test(k)&&typeof r[k]==='string'&&/^(https?:|\/|data:)/i.test(r[k].trim()));return k?r[k].trim():''};
-const shFrom=u=>{u=String(u||'');if(/\/shiny\//.test(u))return u;if(/\/official-artwork\/[^/]+$/.test(u))return u.replace('/official-artwork/','/official-artwork/shiny/');if(/\/sprites\/pokemon\/\d+\.png$/.test(u))return u.replace('/sprites/pokemon/','/sprites/pokemon/shiny/');return''};
+const npcShRow=r=>{const k=Object.keys(r||{}).find(k=>/shiny/i.test(k)&&typeof r[k]==='string'&&/^(https?:|\/|data:)/i.test(r[k].trim()));return k?r[k].trim():''};
+const npcShFrom=u=>{u=String(u||'');if(/\/shiny\//.test(u))return u;if(/\/official-artwork\/[^/]+$/.test(u))return u.replace('/official-artwork/','/official-artwork/shiny/');if(/\/sprites\/pokemon\/\d+\.png$/.test(u))return u.replace('/sprites/pokemon/','/sprites/pokemon/shiny/');return''};
 // sprite certo do Pokémon conforme o Feature: Shiny → sprite shiny; Modified/Delta → o próprio; senão o da espécie
 function pkImg(pk){
   if(!pk)return '';
   const f=String(pk.feature||'').trim().toLowerCase();
   if(f==='modified'||f==='delta')return pk.img||'';
-  const d=pk.nome&&(window._pokeDex||[]).find(x=>x.nome.toLowerCase()===String(pk.nome).toLowerCase());
-  if(!d)return pk.img||'';
-  return f==='shiny'?(d.sh||d.sprite||pk.img||''):(d.sprite||pk.img||'');
+  try{
+    const alvo=String(pk.nome||'').toLowerCase();
+    const d=alvo&&(window._pokeDex||[]).find(x=>x&&String(x.nome||'').toLowerCase()===alvo);
+    if(!d)return pk.img||'';
+    return f==='shiny'?(d.sh||d.sprite||pk.img||''):(d.sprite||pk.img||'');
+  }catch(_){return pk.img||'';}
 }
 async function carregarPokeDex(){
   if(window._pokeDexLoaded) return;
@@ -1701,14 +1704,14 @@ async function carregarPokeDex(){
         const tipos=[p.tipo1,p.tipo2].filter(Boolean);
         if(!tipos.length && Array.isArray(p.types)) tipos.push(...p.types.filter(Boolean));
         const sprite=p.sprite||p.image||(p.id?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:FALLBACK);
-        return {nome,tipos,sprite,sh:p.sprite_shiny||shRow(p)||shFrom(sprite),id:p.id||null};
+        return {nome,tipos,sprite,sh:p.sprite_shiny||npcShRow(p)||npcShFrom(sprite),id:p.id||null};
       }).filter(Boolean);
     }
   }catch{}
   const dex=[];
   customList.forEach(p=>{
     const tipos=[p.tipo1,p.tipo2].filter(Boolean);
-    dex.push({nome:p.nome,tipos,sprite:p.sprite||FALLBACK,sh:shRow(p)||shFrom(p.sprite),source:'custom',id:null});
+    dex.push({nome:p.nome,tipos,sprite:p.sprite||FALLBACK,sh:npcShRow(p)||npcShFrom(p.sprite),source:'custom',id:null});
   });
   oficiais.forEach(p=>{ if(!customNomes.has(p.nome.toLowerCase())) dex.push({...p,source:'oficial'}); });
   window._pokeDex=dex;
@@ -3390,6 +3393,7 @@ async function init(){
     });
     if(typeof npc.pokemon_ghs==='string'){try{npc.pokemon_ghs=JSON.parse(npc.pokemon_ghs);}catch{npc.pokemon_ghs=pokeEspecialVazio();}}
     if(!npc.pokemon_ghs||Array.isArray(npc.pokemon_ghs)) npc.pokemon_ghs=pokeEspecialVazio();
+    if(Array.isArray(npc.time)) npc.time=npc.time.map(x=>{if(!x||typeof x!=='object')return {};if(Array.isArray(x.moves))x.moves=x.moves.filter(m=>m&&typeof m==='object');return x;});
     npc.rel_total=parseInt(npc.rel_total)||6;
     if(typeof npc.cores==='string'){try{npc.cores=JSON.parse(npc.cores);}catch{npc.cores=null;}}
     aplicarCoresFicha(npc.cores||CORES_DEFAULT);
