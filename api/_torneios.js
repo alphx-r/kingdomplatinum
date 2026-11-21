@@ -22,7 +22,7 @@ const DIR = 'data/torneios/';
 const IDX = DIR + 'index.json';
 const ID = /^[a-z0-9]{1,60}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
-const FORMATOS = ['single', 'rr', 'pontos', 'sorteio'];
+const FORMATOS = ['single', 'rr', 'pontos', 'sorteio', 'liga', 'gincana'];
 const STATUS = ['rascunho', 'inscricao', 'andamento', 'fim'];
 
 const err = (status, msg, code) => Object.assign(new Error(msg), { status, code });
@@ -52,7 +52,18 @@ const cleanRod = (r, i) => {
   const pts = {};
   if (r && r.pts && typeof r.pts === 'object')
     for (const k of Object.keys(r.pts).slice(0, 300)) { const v = Number(r.pts[k]); if (Number.isFinite(v)) pts[S(k, 80)] = Math.max(-1e9, Math.min(1e9, v)); }
-  return { nome: S(r && r.nome, 60) || 'Rodada ' + (i + 1), pts };
+  const o = { nome: S(r && r.nome, 60) || 'Rodada ' + (i + 1), pts };
+  // gincana: cada prova tem descrição, modo (colocação | livre), tabela de pontos por colocação e as colocações lançadas
+  if (r && (r.modo || r.tab || r.plac || r.desc)) {
+    o.desc = S(r.desc, 300);
+    o.modo = r.modo === 'livre' ? 'livre' : 'colocacao';
+    o.tab = (Array.isArray(r.tab) ? r.tab : []).slice(0, 64).map(Number).filter(Number.isFinite).map(v => Math.max(-1e6, Math.min(1e6, v)));
+    o.base = Number.isFinite(Number(r.base)) ? Math.max(-1e6, Math.min(1e6, Number(r.base))) : 0;
+    const plac = {};
+    if (r.plac && typeof r.plac === 'object') for (const k of Object.keys(r.plac).slice(0, 300)) { const v = Math.floor(Number(r.plac[k])); if (v >= 1 && v <= 999) plac[S(k, 80)] = v; }
+    o.plac = plac;
+  }
+  return o;
 };
 
 // cur = versão atual gravada (ou null); podeMods = só o ADM altera a lista de moderadores do torneio
@@ -61,7 +72,7 @@ function limpar(t, id, at, cur, podeMods, criadorNovo) {
   const arr = Array.isArray(t.m) ? t.m : [];
   const m = formato === 'rr'
     ? arr.slice(0, 4000).map(cm)
-    : formato === 'single'
+    : formato === 'single' || formato === 'liga'
       ? arr.slice(0, 10).map(r => (Array.isArray(r) ? r : []).slice(0, 128).map(cm))
       : [];
   const nEq = I(t.nEquipes, 0, 64, 0);
@@ -69,7 +80,7 @@ function limpar(t, id, at, cur, podeMods, criadorNovo) {
     id, nome: S(t.nome, 80).trim() || id, formato,
     status: STATUS.includes(t.status) ? t.status : 'inscricao',
     seed: ['ranking', 'aleatorio', 'ordem'].includes(t.seed) ? t.seed : 'ranking',
-    desc: S(t.desc, 2000), data: S(t.data, 32),
+    desc: S(t.desc, 2000), data: S(t.data, 32), fim: S(t.fim, 32),
     vagas: I(t.vagas, 0, 256, 0), porPlayer: I(t.porPlayer, 1, 10, 1),
     md: [1, 3, 5].includes(+t.md) ? +t.md : 1, aberta: !!t.aberta,
     part: (Array.isArray(t.part) ? t.part : []).slice(0, 256).map(cleanPart).filter(Boolean),
@@ -80,7 +91,13 @@ function limpar(t, id, at, cur, podeMods, criadorNovo) {
     o.eq = (Array.isArray(t.eq) ? t.eq : []).slice(0, 64).map(cleanEq).filter(Boolean);
     if (formato !== 'sorteio') o.seedEq = t.seedEq === 'ranking' ? 'ranking' : 'aleatorio';
   }
-  if (formato === 'pontos') o.rod = (Array.isArray(t.rod) ? t.rod : []).slice(0, 200).map(cleanRod);
+  if (formato === 'rr' || formato === 'liga') { o.pv = I(t.pv, -99, 99, 3); o.pe = I(t.pe, -99, 99, 1); o.pd = I(t.pd, -99, 99, 0); }   // pontos por vitória / empate / derrota
+  if (formato === 'liga') {
+    // liga: partidas lançadas ao longo da temporada (a x b, placar) + fase (liga | playoffs); os playoffs ficam em `m`
+    o.fase = t.fase === 'playoffs' ? 'playoffs' : 'liga';
+    o.jogos = (Array.isArray(t.jogos) ? t.jogos : []).slice(0, 5000).map(j => ({ id: S(j && j.id, 24), ...cm(j), at: I(j && j.at, 0, 9e15, 0) })).filter(j => j.id && j.a && j.b);   // sa/sb nulos = partida criada, ainda sem resultado
+  }
+  if (formato === 'pontos' || formato === 'gincana') o.rod = (Array.isArray(t.rod) ? t.rod : []).slice(0, 200).map(cleanRod);
   // criador (quem criou) fica fixo; mods só o ADM altera
   const criador = cur && cur.criador != null ? cur.criador : criadorNovo;
   if (criador != null) o.criador = S(criador, 40);
@@ -92,7 +109,7 @@ function resumo(t) {
   const c = (t.part || []).find(p => p.id === t.champ) || (t.eq || []).find(e => e.id === t.champ);
   return {
     id: t.id, nome: t.nome, formato: t.formato, nEquipes: t.nEquipes || undefined, status: t.status,
-    desc: t.desc.slice(0, 200), data: t.data, vagas: t.vagas, aberta: t.aberta,
+    desc: t.desc.slice(0, 200), data: t.data, fim: t.fim || '', vagas: t.vagas, aberta: t.aberta,
     nPart: t.part.length, avs: t.part.slice(0, 4).map(p => ({ nome: p.nome, foto: p.foto, cor: p.cor })),
     champ: t.champ, champNome: c ? c.nome : '',
     nomes: t.part.map(p => p.nome + ' ' + p.player).join(' ').slice(0, 3000), at: t.at,
