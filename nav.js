@@ -155,8 +155,9 @@
     var b = g('nav-player-badge'), n = g('nav-player-name'), ic = g('nav-player-ico'); if (!b || !n) return;
     var nome = '';   /* reconhece localStorage e sessionStorage; Fichário (kp_ficha_sessao) e login do index (player_session) */
     ['kp_ficha_sessao', 'player_session'].some(function (k) { return [localStorage, sessionStorage].some(function (S) { try { var s = JSON.parse(S.getItem(k)); if (s && s.nome) { nome = s.nome; return true; } } catch (e) {} return false; }); });
-    if (nome) { if (n.textContent !== nome) n.textContent = nome; if (ic && !ic.firstChild) ic.innerHTML = ICO_PAD; b.style.display = 'flex'; }
-    else { b.style.display = 'none'; }
+    var en = g('btn-entrar');   /* com sessão: esconde o Entrar e mostra o nome */
+    if (nome) { if (n.textContent !== nome) n.textContent = nome; if (ic && !ic.firstChild) ic.innerHTML = ICO_PAD; b.style.display = 'flex'; if (en) en.style.display = 'none'; }
+    else { b.style.display = 'none'; if (en) en.style.display = ''; }
   }
   if (AUTO && !legacyBox) {
     badgeAuto();
