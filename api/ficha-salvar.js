@@ -26,7 +26,7 @@ const PV = require('./_provas');     // Provas de Valor (página editável) em J
 const SB_URL = process.env.SUPABASE_URL || 'https://whomhpxzkhsdhsxlccvl.supabase.co';
 const SB_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indob21ocHh6a2hzZGhzeGxjY3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzcxMzQsImV4cCI6MjEwNjU1MzEzNH0.bgHV3aR3PMSgN6ZvWtC3HICHZWC_xWLmKpY7sf2UFSQ';
 const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${REPO}/${BRANCH}`).replace(/\/$/, '');
-const MAX_IMG = 1.5 * 1024 * 1024;
+const MAX_IMG = 3 * 1024 * 1024;   // teto real: corpo da requisição na Vercel = 4,5 MB (base64 pesa ~33% a mais)
 const LIM_ATIVAS = 2;   // máximo de fichas ativas por player
 
 // MERGE 3-WAY DO INVENTÁRIO (Bag): em vez de tratar a Bag inteira como um campo só (e recusar o save quando
