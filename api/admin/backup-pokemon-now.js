@@ -13,11 +13,14 @@
 // mesmo caminho que o lib/backupPokemon.js escreve).
 
 import { gunzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { commit, readFile } from '../_gh.js';
 import { handleUploadSprite } from '../_upload-sprite.js';
 import { backupPokemonToGithub } from '../../lib/backupPokemon.js';
 
 const JSON_PATH = process.env.POKEMON_JSON_PATH || 'pokemon.json';
+// Impressão digital do pokemon.json: o navegador calcula a mesma coisa (SHA-256 de JSON.stringify da lista já lida)
+const hashRows = rows => createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 
 async function readBody(req) {
   if (Buffer.isBuffer(req.body)) return req.body;
@@ -45,9 +48,13 @@ export default async function handler(req, res) {
     const raw = await readBody(req);
     if (!raw.length) return res.status(400).json({ error: 'Corpo vazio.' });
 
-    let rows;
+    // Corpo = lista de Pokémon (formato antigo) OU { rows, ifMatch } (formato novo).
+    // ifMatch = impressão digital do pokemon.json que o ADM conferiu/mesclou: só grava se o GitHub AINDA estiver assim.
+    let rows, ifMatch = null;
     try {
-      rows = JSON.parse(gunzipSync(raw).toString('utf8'));
+      const parsed = JSON.parse(gunzipSync(raw).toString('utf8'));
+      if (Array.isArray(parsed)) rows = parsed;
+      else { rows = parsed && parsed.rows; ifMatch = typeof (parsed && parsed.ifMatch) === 'string' ? parsed.ifMatch : null; }
     } catch {
       return res.status(400).json({ error: 'Corpo inválido (esperado JSON em gzip).' });
     }
@@ -57,13 +64,20 @@ export default async function handler(req, res) {
     }
 
     const content = JSON.stringify(rows);
-    let unchanged = false;
-    const sha = await commit(async () => {
-      const atual = await readFile(JSON_PATH);
+    let unchanged = false, remotoMudou = false;
+    const sha = await commit(async parent => {
+      unchanged = false; remotoMudou = false;   // o commit() refaz este bloco se outro commit entrar no meio
+      const atual = await readFile(JSON_PATH, parent);   // lê o commit-PAI exato (nunca uma leitura atrasada do ramo)
+      if (ifMatch && atual != null) {
+        let h = null;
+        try { h = hashRows(JSON.parse(atual)); } catch {}
+        if (h !== ifMatch) { remotoMudou = true; return []; }   // alguém commitou depois que o ADM mesclou: não grava; o ADM mescla de novo
+      }
       if (atual === content) { unchanged = true; return []; }
       return [{ path: JSON_PATH, content }];
     }, `chore: atualiza pokemon.json (${rows.length} Pokémon) via ADM [skip ci]`);
 
+    if (remotoMudou) return res.status(409).json({ code: 'remoto_mudou', error: 'O pokemon.json mudou no GitHub desde que você conferiu (outro admin commitou agora). Nada foi gravado.' });
     if (unchanged || !sha) return res.status(200).json({ unchanged: true, total: rows.length });
     return res.status(200).json({ ok: true, commit: sha, total: rows.length });
   } catch (e) {
