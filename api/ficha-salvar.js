@@ -59,6 +59,39 @@ function mesclaInventario(base, mine, theirs) {
   return out;
 }
 
+// MERGE 3-WAY POR SLOT (time / box): cada posição é independente. Só há conflito se o MESMO slot mudou dos dois lados
+// com valores diferentes (ex.: captura no index caiu no slot 3 enquanto o player também mexeu no slot 3).
+// Mudar slots diferentes (captura no slot vazio + edição de outro Pokémon) junta sem perguntar.
+const slotJ = x => JSON.stringify(x && typeof x === 'object' && Object.keys(x).length ? x : {});
+function mesclaSlots(base, mine, theirs, nome) {
+  const B = Array.isArray(base) ? base : [], M = Array.isArray(mine) ? mine : [], T = Array.isArray(theirs) ? theirs : [];
+  const n = Math.max(B.length, M.length, T.length), out = [], conf = [];
+  for (let i = 0; i < n; i++) {
+    const b = slotJ(B[i]), m = slotJ(M[i]), t = slotJ(T[i]);
+    let v;
+    if (m === b) v = T[i];            // só o outro mexeu (ou ninguém)
+    else if (t === b || t === m) v = M[i];   // só eu mexi (ou chegamos no mesmo resultado)
+    else { conf.push(nome + '[' + (i + 1) + ']'); v = M[i]; }
+    out.push(v && typeof v === 'object' ? v : {});
+  }
+  return { v: out, conf };
+}
+// DINHEIRO: se os dois lados mudaram, soma as diferenças (mine + theirs - base, mínimo 0), como na Bag.
+// Só vale quando os três valores são inteiros; qualquer outro formato continua sendo conflito.
+function mesclaDinheiro(base, mine, theirs) {
+  const ok = v => /^-?\d+$/.test(String(v ?? '').trim());
+  if (!ok(base) || !ok(mine) || !ok(theirs)) return null;
+  const v = Math.max(0, parseInt(mine, 10) + parseInt(theirs, 10) - parseInt(base, 10));
+  return { v: typeof mine === 'number' ? v : String(v), conf: [] };
+}
+// escolhe o mesclador do campo (null = campo sem mescla própria → conflito se os dois mexeram)
+function mesclaCampo(k, base, mine, theirs) {
+  if (k === 'inventario' && Array.isArray(mine) && Array.isArray(theirs)) return { v: mesclaInventario(base, mine, theirs), conf: [] };
+  if (k === 'time' || k === 'box') return mesclaSlots(base, mine, theirs, k);
+  if (k === 'dinheiro') return mesclaDinheiro(base, mine, theirs);
+  return null;
+}
+
 async function sbRpc(nome, body) {
   const r = await fetch(SB_URL + '/rest/v1/rpc/' + nome, {
     method: 'POST',
@@ -487,10 +520,9 @@ module.exports = async (req, res) => {
           const juntados = [];   // campos unificados item a item (o navegador precisa receber o resultado)
           for (const k of mud) {
             if (J(sd[k]) !== J(bd[k]) && J(sd[k]) !== J(b.d[k])) {   // mudou no servidor E no navegador, com valores diferentes
-              if (k === 'inventario' && Array.isArray(b.d[k]) && Array.isArray(sd[k])) {   // Bag: junta item por item em vez de recusar
-                nd[k] = mesclaInventario(bd[k], b.d[k], sd[k]); juntados.push(k); continue;
-              }
-              conf.push(k);
+              const m = mesclaCampo(k, bd[k], b.d[k], sd[k]);   // Bag item a item · time/box slot a slot · dinheiro por diferença
+              if (m && !m.conf.length) { nd[k] = m.v; juntados.push(k); continue; }
+              conf.push(...(m ? m.conf : [k])); continue;
             }
             if (b.d[k] === undefined) delete nd[k]; else nd[k] = b.d[k];
           }
@@ -517,9 +549,12 @@ module.exports = async (req, res) => {
       for (const [kind, n] of Object.entries(novas)) {
         ch.push({ path: n.path, content: n.buf });
       }
+      // fotos de Pokémon em uso = as do resultado FINAL (inclui as que vieram de outra pessoa na mescla), não só as do navegador
+      const pkFin = [];
+      for (const K of ['time', 'box']) (Array.isArray(fin.d?.[K]) ? fin.d[K] : []).forEach(x => { if (x && typeof x === 'object' && typeof x.foto === 'string' && x.foto) pkFin.push(x.foto); });
       for (const f of existentes) {
         const kind = f.name.split('-')[0];
-        const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path)) || pkEmUso.some(u => u.endsWith('/' + f.path));
+        const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path)) || pkEmUso.some(u => u.endsWith('/' + f.path)) || pkFin.some(u => u.endsWith('/' + f.path));
         if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb', 'pk'].includes(kind)) ch.push({ path: f.path, content: null });
       }
       const idx = parseIdx(idxTxt).filter(x => x.slug !== slug);
