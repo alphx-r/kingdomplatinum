@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Torneios | Kingdom Platinum</title>
+<title>Torneios | KPRPG</title>
 <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
 <meta name="theme-color" content="#1a3a5c">
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -531,7 +531,7 @@ function detail(t){
   const g1=[ed&&t.status==='inscricao'?`<button class="btn p" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições</button>`:'',
     ed&&t.status!=='inscricao'?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':'',
     ed&&t.formato==='sorteio'&&t.status!=='inscricao'?'<button class="btn a" onclick="resortear()">Sortear novamente</button>':''].join('');
-  const g2=[ed?'<button class="btn" onclick="renomear()">Renomear</button>':'',
+  const g2=[ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn" onclick="mudarTipo()">Alterar tipo</button>':'',
     ed&&realAdmin()?'<button class="btn" onclick="modsTorneio()">Moderadores</button><button class="btn d" onclick="excluir()">Excluir</button>':''].join('');
   return`${fichaBar(t)}<div class="hd"><button class="bkl" onclick="voltar()">← Todos os torneios</button>
     <h1>${esc(t.nome)}</h1><p class="sub" style="margin-bottom:0">${esc(info)}</p>${t.desc?`<p class="msg" style="white-space:pre-wrap;margin-top:8px">${esc(t.desc)}</p>`:''}
@@ -674,6 +674,33 @@ async function renomear(){
   try{if(S.online){const f=await loadFull(old);if(f)setCur(f)}t.nome=n.trim();t.id=uid(t.nome,old);await persist(t,{de:old});S.list=S.list.filter(x=>x.id!==old)}
   catch(e){t.id=old;return toast(e.message)}
   location.hash=t.id;render();
+}
+/* alterar tipo do evento (torneio chave / todos contra todos / sorteio de equipes) */
+const MT={fmt:'single',ne:2};
+function mudarTipo(){
+  if(!podeEditar(S.cur))return;
+  const t=S.cur,d=$('#dlg');MT.fmt=t.formato;MT.ne=t.nEquipes||2;
+  const o=(k,n,ds)=>`<button type="button" class="opt ${MT.fmt===k?'on':''}" data-k="${k}" onclick="mtSel('${k}')"><b>${n}</b><small>${ds}</small></button>`;
+  d.innerHTML=`<h3>Alterar tipo do evento</h3>
+  <div class="opts" style="grid-template-columns:1fr">${o('single','Torneio · Eliminatória simples','Perdeu, está fora. Byes automáticos.')}${o('rr','Torneio · Todos contra todos','Vence quem somar mais pontos.')}${o('sorteio','Sorteio de equipes','Os inscritos são sorteados em X equipes.')}</div>
+  <label class="fl" id="mtne" style="margin-top:12px;${MT.fmt==='sorteio'?'':'display:none'}">Quantidade de equipes<input class="in" id="mtn" type="number" min="2" value="${MT.ne}" style="width:100%;text-align:left"></label>
+  <p class="msg" style="margin:12px 0 0">${t.status==='inscricao'?'Os inscritos são mantidos.':'Atenção: resultados/equipes serão apagados e as inscrições serão reabertas. Os inscritos são mantidos.'}</p>
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaTipo()">Salvar</button></div>`;
+  d.showModal();
+}
+function mtSel(k){MT.fmt=k;document.querySelectorAll('#dlg .opt').forEach(b=>b.classList.toggle('on',b.dataset.k===k));$('#mtne').style.display=k==='sorteio'?'':'none'}
+function salvaTipo(){
+  const t=S.cur,k=MT.fmt;
+  if(k===t.formato&&(k!=='sorteio'||parseInt($('#mtn').value,10)===t.nEquipes)){$('#dlg').close();return}
+  let ne=0;
+  if(k==='sorteio'){ne=parseInt($('#mtn').value,10);if(!(ne>=2))return toast('Informe ao menos 2 equipes');if(t.vagas&&t.vagas<ne)return toast('As vagas precisam ser pelo menos o número de equipes')}
+  if(t.status!=='inscricao'&&!confirm('Mudar o tipo apaga resultados e equipes e reabre as inscrições. Continuar?'))return;
+  $('#dlg').close();
+  mut(x=>{
+    x.formato=k;x.status='inscricao';x.m=[];x.champ=null;
+    if(k==='sorteio'){x.nEquipes=ne;x.eq=[];x.md=1;if(x.seed==='ordem')x.seed='aleatorio'}
+    else{delete x.nEquipes;delete x.eq;x.md=x.md||1}
+  },()=>{S.tab='part'});
 }
 function modsTorneio(){
   if(!realAdmin()||!podeEditar(S.cur))return;
