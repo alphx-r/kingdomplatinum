@@ -1667,6 +1667,17 @@ const FALLBACK='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites
 // ─── PokéDex (autocomplete) ───────────────────────────
 window._pokeDex=[];
 window._pokeDexLoaded=false;
+const shRow=r=>{const k=Object.keys(r||{}).find(k=>/shiny/i.test(k)&&typeof r[k]==='string'&&/^(https?:|\/|data:)/i.test(r[k].trim()));return k?r[k].trim():''};
+const shFrom=u=>{u=String(u||'');if(/\/shiny\//.test(u))return u;if(/\/official-artwork\/[^/]+$/.test(u))return u.replace('/official-artwork/','/official-artwork/shiny/');if(/\/sprites\/pokemon\/\d+\.png$/.test(u))return u.replace('/sprites/pokemon/','/sprites/pokemon/shiny/');return''};
+// sprite certo do Pokémon conforme o Feature: Shiny → sprite shiny; Modified/Delta → o próprio; senão o da espécie
+function pkImg(pk){
+  if(!pk)return '';
+  const f=String(pk.feature||'').trim().toLowerCase();
+  if(f==='modified'||f==='delta')return pk.img||'';
+  const d=pk.nome&&(window._pokeDex||[]).find(x=>x.nome.toLowerCase()===String(pk.nome).toLowerCase());
+  if(!d)return pk.img||'';
+  return f==='shiny'?(d.sh||d.sprite||pk.img||''):(d.sprite||pk.img||'');
+}
 async function carregarPokeDex(){
   if(window._pokeDexLoaded) return;
   window._pokeDexLoaded=true;
@@ -1690,14 +1701,14 @@ async function carregarPokeDex(){
         const tipos=[p.tipo1,p.tipo2].filter(Boolean);
         if(!tipos.length && Array.isArray(p.types)) tipos.push(...p.types.filter(Boolean));
         const sprite=p.sprite||p.image||(p.id?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.id}.png`:FALLBACK);
-        return {nome,tipos,sprite,id:p.id||null};
+        return {nome,tipos,sprite,sh:p.sprite_shiny||shRow(p)||shFrom(sprite),id:p.id||null};
       }).filter(Boolean);
     }
   }catch{}
   const dex=[];
   customList.forEach(p=>{
     const tipos=[p.tipo1,p.tipo2].filter(Boolean);
-    dex.push({nome:p.nome,tipos,sprite:p.sprite||FALLBACK,source:'custom',id:null});
+    dex.push({nome:p.nome,tipos,sprite:p.sprite||FALLBACK,sh:shRow(p)||shFrom(p.sprite),source:'custom',id:null});
   });
   oficiais.forEach(p=>{ if(!customNomes.has(p.nome.toLowerCase())) dex.push({...p,source:'oficial'}); });
   window._pokeDex=dex;
@@ -1728,14 +1739,16 @@ function criarAutoComplete(inputId,prefix,slotIndex){
     if(t1&&(item.tipos[1]||hid)) t1.value=(item.tipos[1]||'').toLowerCase();
     const fileInput=document.getElementById(`${prefix}-img-file-${slotIndex}`);
     const hasManualUpload=fileInput&&fileInput.dataset.hasUpload==='1';
+    const _ftSel=document.getElementById(`${prefix}-feature-${slotIndex}`);
+    const spr=(_ftSel&&_ftSel.value==='Shiny'&&item.sh)?item.sh:item.sprite;
     if(!hasManualUpload){
       const prev=document.getElementById(`${prefix}-img-prev-${slotIndex}`);
-      if(prev&&item.sprite){prev.src=item.sprite;prev.style.display='block';}
+      if(prev&&spr){prev.src=spr;prev.style.display='block';}
       if(!window._pokeImgs) window._pokeImgs={};
       if(!window._pokeImgs[grupo]) window._pokeImgs[grupo]={};
-      window._pokeImgs[grupo][slotIndex]=item.sprite;
+      window._pokeImgs[grupo][slotIndex]=spr;
     }
-    sincronizarCabecalhoSlot(prefix,slotIndex,item.nome,hasManualUpload?null:item.sprite);
+    sincronizarCabecalhoSlot(prefix,slotIndex,item.nome,hasManualUpload?null:spr);
     ajustarAlturaPorSlot(prefix,slotIndex);
     carregarAbilitiesSlot(prefix,slotIndex,item.nome,true);
     // Busca stats (HP/ATK/DEF/SATK/SDEF/SPD) no Supabase e, se faltar, na PokéAPI — só no Time Principal
@@ -2647,9 +2660,10 @@ function pkFeatChange(i){
   const eraMod=pkIsMod((npc.time||[])[i]||{});   // Feature anterior
   _pkAbertoT=i;npc.time=coletarTimeForm();
   const pk=npc.time[i];
-  if(pk&&pk.nome&&eraMod&&!pkIsMod(pk)){   // saiu de Modified/Delta: volta ao sprite da espécie (senão o sprite próprio ficava preso)
+  if(pk&&pk.nome&&!pkIsMod(pk)){   // Normal ↔ Shiny troca o sprite; saindo de Modified/Delta volta ao da espécie
     const d=(window._pokeDex||[]).find(x=>x.nome.toLowerCase()===String(pk.nome).toLowerCase());
-    if(d&&d.sprite){pk.img=d.sprite;(window._pokeImgs=window._pokeImgs||{}).time=window._pokeImgs.time||{};window._pokeImgs.time[i]=d.sprite;}
+    const alvo=d&&(pkFeat(pk)==='Shiny'?(d.sh||d.sprite):d.sprite);
+    if(alvo&&(eraMod||!pkTemUpload(pk))){pk.img=alvo;(window._pokeImgs=window._pokeImgs||{}).time=window._pokeImgs.time||{};window._pokeImgs.time[i]=alvo;}
   }
   renderTime();
   // o corpo da seção tem max-height fixo (overflow:hidden): sem recalcular, o conteúdo novo (Novo Sprite, tipos) era cortado
@@ -2660,7 +2674,7 @@ function pkTemUpload(pk){
   if(!pkIsMod(pk)||!pk.img)return false;
   if(/^data:/.test(pk.img))return true;
   const d=(window._pokeDex||[]).find(x=>x.nome.toLowerCase()===String(pk.nome||'').toLowerCase());
-  return !(d&&d.sprite===pk.img);
+  return !(d&&(d.sprite===pk.img||d.sh===pk.img));
 }
 // lê o formulário do Time Principal (usado ao salvar e ao trocar a Feature)
 function coletarTimeForm(){
@@ -2745,7 +2759,7 @@ function renderTime(){
       const tipos=tiposDe(pk);
       return `<div class="pks-c${ok?' ok':''}${pkSelT===i?' on':''}" data-i="${i}"${ok?` onclick="pkSelTime(${i})"`:''}>
         <div class="pks-top"><img class="pks-ball" src="${ballImg(pk.ball||'pokeball')}" onerror="this.style.display='none'"/><span class="pks-t">${tipos.map(t=>`<img src="${tipoImg(t)}" title="${escAttr(t)}"/>`).join('')}</span></div>
-        <div class="pks-img">${ok?`<img src="${escAttr(pk.img||FALLBACK)}" alt="${escAttr(pk.nome)}" onerror="this.src='${FALLBACK}'"/>`:''}</div>
+        <div class="pks-img">${ok?`<img src="${escAttr(pkImg(pk)||FALLBACK)}" alt="${escAttr(pk.nome)}" onerror="this.src='${FALLBACK}'"/>`:''}</div>
         <div class="pks-name"><span>${ok?escAttr(nomeDe(pk))+_genIco(pk.gender,true)+pkMarks(pk):'(POKÉMON)'}</span></div>
       </div>`;
     }).join('');
@@ -2812,7 +2826,7 @@ function slotEditHeader(pfx,i,pk){
   const wrapId=`${pfx}-wrap-${i}`;
   const nomeAtual=(pk.nome||'').trim();
   return`<div class="poke-slot-edit-header" onclick="togglePokeSlotEdit('${wrapId}')">
-    <img class="poke-slot-edit-header-img" src="${pk.img||FALLBACK}" id="${pfx}-header-img-${i}" onerror="this.src='${FALLBACK}'"/>
+    <img class="poke-slot-edit-header-img" src="${pkImg(pk)||FALLBACK}" id="${pfx}-header-img-${i}" onerror="this.src='${FALLBACK}'"/>
     <span class="poke-slot-edit-header-name${nomeAtual?'':' vazio'}" id="${pfx}-header-name-${i}">${nomeAtual||'Slot vazio'}</span>
     <span class="poke-slot-edit-header-arrow">▾</span>
   </div>`;
@@ -2831,7 +2845,7 @@ function slotEdit(i,pk0,aberto){
   const ta=(l,k,ph)=>`<div class="fld s3"><span class="fl">${l}</span><textarea rows="3" maxlength="1000" id="${pfx}-${k}-${i}" placeholder="${ph}" style="min-height:64px" oninput="this.nextElementSibling.textContent=this.value.length+'/1000'">${escAttr(pk[k]||'')}</textarea><div class="cc">${String(pk[k]||'').length}/1000</div></div>`;
   return`<div class="pse${aberto?' aberto':''}" id="${wrapId}" data-i="${i}">
     <div class="psh" onclick="selSlotTime(${i})">
-      <img src="${escAttr(pk.img||FALLBACK)}" id="${pfx}-header-img-${i}" onerror="this.src='${FALLBACK}'"/>
+      <img src="${escAttr(pkImg(pk)||FALLBACK)}" id="${pfx}-header-img-${i}" onerror="this.src='${FALLBACK}'"/>
       <span class="psn${nomeAtual?'':' vazio'}" id="${pfx}-header-name-${i}">${escAttr(nomeAtual)||'Slot vazio'}</span>
       <i>▾</i>
     </div>
@@ -2848,7 +2862,7 @@ function slotEdit(i,pk0,aberto){
       <div class="fld"><span class="fl">Ability</span>${abilityFieldHtml(pfx,i,pk.ability)}</div>
       <label class="fld"><span class="fl">Feature</span><select id="${pfx}-feature-${i}" onchange="pkFeatChange(${i})">${PK_FEATS.map(v=>`<option value="${v}"${feat===v?' selected':''}>${v}</option>`).join('')}</select></label>
       ${modif?`<div class="fld"><span class="fl">Novo Sprite</span>
-        <img class="poke-slot-edit-img-preview" src="${escAttr(pk.img||'')}" id="${pfx}-img-prev-${i}" onload="ajustarAlturaPorSlot('${pfx}',${i})"${pk.img?'':' style="display:none"'}/>
+        <img class="poke-slot-edit-img-preview" src="${escAttr(pkImg(pk)||'')}" id="${pfx}-img-prev-${i}" onload="ajustarAlturaPorSlot('${pfx}',${i})"${pk.img?'':' style="display:none"'}/>
         <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">Escolher imagem própria</button>
         <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this)"${pkTemUpload(pk)?' data-has-upload="1"':''}/>
       </div>`:''}
@@ -2952,7 +2966,7 @@ function resolverTiposEsp(){
 }
 function slotEspecialView(pk){
   const ball=ballImg(pk.ball||'pokeball');
-  const imgSrc=pk.img||FALLBACK;
+  const imgSrc=pkImg(pk)||FALLBACK;
   let tipos=(pk.tipos||[]).filter(Boolean);
   if(!tipos.length&&pk.nome){
     const d=(window._pokeDex||[]).find(x=>_normNome(x.nome)===_normNome(pk.nome));
