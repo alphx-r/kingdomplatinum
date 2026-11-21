@@ -2284,9 +2284,9 @@ function ginLbSwipe(){
   },{passive:true});
 }
 
-/* A imagem passa pelo servidor antes de ir ao GitHub, e o servidor recusa mais de 1,5 MB.
-   Por isso ela é reduzida/recomprimida aqui no navegador (WebP, ou JPEG se o WebP não existir) até caber. */
-async function comprimirImagem(dataUrl,limite=1.4*1024*1024){
+/* A imagem vai pelo servidor (Vercel) até o GitHub, e uma requisição aceita no máximo 4,5 MB (base64 pesa ~33% a mais).
+   Imagens até ~2,9 MB seguem originais, sem perda; só as maiores são recomprimidas (WebP, ou JPEG) até caber. */
+async function comprimirImagem(dataUrl,limite=2.9*1024*1024){
   const bytes=u=>Math.floor((u.length-u.indexOf(',')-1)*0.75);
   if(/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)&&bytes(dataUrl)<=limite)return dataUrl;
   const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('Não foi possível ler a imagem.'));i.src=dataUrl});
@@ -2869,7 +2869,7 @@ function onPokeImg(i,input,grupo='time'){
   const reader=new FileReader();
   reader.onload=async e=>{
     let url=e.target.result;
-    try{url=await comprimirImagem(url,300*1024)}catch(_){}   // sprite fica dentro do JSON do NPC: mantém leve
+    try{url=await comprimirImagem(url,600*1024)}catch(_){}   // até 6 sprites vão na mesma requisição do time
     const prev=document.getElementById(`${pfx}-img-prev-${i}`);
     if(prev){prev.src=url;prev.style.display='block';}
     if(!window._pokeImgs) window._pokeImgs={};
