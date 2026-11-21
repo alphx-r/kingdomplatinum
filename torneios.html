@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Torneios | KPRPG</title>
 <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
-<meta name="theme-color" content="#1a3a5c">
+<meta name="theme-color" content="#000000">
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -86,7 +86,7 @@ th{font-family:var(--font-title);color:var(--brand);font-size:12px}
 td:nth-child(2),th:nth-child(2){text-align:left}
 .rrm{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:14px}
 /* tipo de evento: mostra só os campos do tipo escolhido */
-#nf[data-tipo=sorteio] .ft-t{display:none}#nf[data-tipo=torneio] .ft-s{display:none}
+#nf[data-eq=n] .ft-s{display:none}#nf[data-fmt=nenhuma] .ft-c{display:none}#nf[data-fmt=pontos] .ft-m{display:none}
 .eqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;align-items:start}
 .eq .pi{margin-bottom:8px}.eq .pi:last-child{margin-bottom:0}
 .eq h3 small{font-weight:500;opacity:.8}
@@ -202,6 +202,8 @@ dialog.qm .qg{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:60v
  .pmh .pmq,.pmh.sm .pmq{padding:9px 18px}
  .pmh .pmcart,.pmh.sm .pmcart{height:38px}
 }
+/* nome do player visível também no celular */
+html body .nav #nav-player-badge #nav-player-name,html body .nav.expanded #nav-player-badge #nav-player-name{display:block!important;max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 <script src="/admin-player.js" data-site="torneios"></script>
 </head>
@@ -213,12 +215,23 @@ dialog.qm .qg{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:60v
 
 <script>
 document.addEventListener('click',e=>{const n=document.getElementById('main-nav');if(!n||!n.classList.contains('expanded'))return;if(e.target.closest('.nav-link,.nav-drop-item'))closeSidenav()});
+/* menu: com player logado, mostra o nome (e esconde "Entrar"); o nav.js sozinho deixava o botão Entrar visível nesta página */
+function navSessao(){
+  let nome='';
+  ['kp_ficha_sessao','player_session'].some(k=>[localStorage,sessionStorage].some(st=>{try{const x=JSON.parse(st.getItem(k));if(x&&x.nome){nome=x.nome;return true}}catch{}return false}));
+  document.querySelectorAll('.nav-login').forEach(e=>{if(!e.closest('#nav-player-badge'))e.style.display=nome?'none':''});
+  const b=document.getElementById('nav-player-badge'),n=document.getElementById('nav-player-name');
+  if(b&&n){if(nome){if(n.textContent!==nome)n.textContent=nome;b.style.display='flex'}else b.style.display='none'}
+}
+navSessao();addEventListener('DOMContentLoaded',navSessao);addEventListener('storage',navSessao);
+{let i=0;const iv=setInterval(()=>{navSessao();if(++i>40)clearInterval(iv)},250)}
+try{KPAdm.ready.then(navSessao)}catch{}
 function navEntrar(){location.href='/'}   /* botão Entrar do nav.js: o login fica no index */
 /* ───── Config (mesmos bancos do index.html / fichas.html) ───── */
 const SU='https://ucbkodkjlbatttiuqjtv.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 const LS='kp_torneios';
-const S={orgs:[],preview:false,ses:null,list:[],cur:null,chars:[],players:[],online:false,tab:'chave',q:'',hq:'',hf:'t',me:null,fmt:'single',tipo:'torneio',criando:false};
+const S={orgs:[],preview:false,ses:null,list:[],cur:null,chars:[],players:[],online:false,tab:'chave',q:'',hq:'',hf:'t',me:null,fmt:'single',eqp:false,criando:false};
 const slug=s=>String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 function uid(nome,ign){const b=slug(nome)||'torneio';let i=b,n=2;while(S.list.some(t=>t.id===i&&t.id!==ign))i=b+n++;return i}
 const fmtData=d=>d?new Date(d).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'';
@@ -238,7 +251,8 @@ const KA='kp_torneio_adm';
 const nP=t=>t.nPart??t.part?.length??0;
 const champNome=t=>t.champNome||(t.part&&P(t,t.champ)?.nome)||'';
 const numPts=v=>{const x=Number(String(v??'').replace(/\./g,'').replace(',','.'));return Number.isFinite(x)?x:0};
-const FMT={single:'Eliminatória simples',rr:'Todos contra todos',sorteio:'Sorteio de equipes'};
+const FMT={single:'Eliminatória simples',rr:'Todos contra todos',pontos:'Acúmulo de pontos',sorteio:'Sorteio de equipes'};
+const fmtLabel=t=>(t.nEquipes&&t.formato!=='sorteio'?'Equipes + ':'')+(FMT[t.formato]||'');
 
 /* tema sazonal: mesma lógica do Fichário (config.estacao_ativa + configuracoes.estilo; sem config usa o mês) */
 const TEMAS_SAZ={
@@ -407,13 +421,22 @@ async function remove(t){
   S.list=S.list.filter(x=>x.id!==t.id);try{if(!S.online)localStorage.setItem(LS,JSON.stringify(S.list))}catch{}
 }
 /* ───── Lógica do torneio ───── */
-const P=(t,id)=>t.part.find(p=>p.id===id);
+/* competidores: os participantes, ou as equipes sorteadas quando o evento tem equipes + competição */
+const PP=(t,id)=>t.part.find(p=>p.id===id);
+function comps(t){
+  if(!(t.nEquipes&&t.formato!=='sorteio'))return t.part;
+  return(t.eq||[]).map((e,i)=>{const L=e.membros.map(id=>PP(t,id)).filter(Boolean);return{id:e.id,nome:e.nome,ab:String(i+1),foto:'',cor:'',player:L.map(x=>x.nome).join(', '),ranking:L.reduce((a,x)=>a+(x.ranking||0),0),n:L.length}}).filter(e=>e.n>0);
+}
+const P=(t,id)=>comps(t).find(p=>p.id===id);
+/* equipes sorteadas, competição ainda não iniciada */
+const aguardaIni=t=>t.status==='andamento'&&!!t.nEquipes&&t.formato!=='sorteio'&&!t.m?.length&&!Array.isArray(t.rod);
 function seedOrder(n){let a=[1,2];while(a.length<n)a=a.flatMap(x=>[x,a.length*2+1-x]);return a}
 function start(t){
-  let ps=[...t.part];
+  let ps=[...comps(t)];
   if(t.seed==='ranking')ps.sort((a,b)=>(b.ranking||0)-(a.ranking||0));
   else if(t.seed==='aleatorio')for(let i=ps.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ps[i],ps[j]]=[ps[j],ps[i]]}
-  if(t.formato==='rr'){
+  if(t.formato==='pontos'){t.m=[];t.rod=[]}
+  else if(t.formato==='rr'){
     t.m=[];for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++)t.m.push({a:ps[i].id,b:ps[j].id,sa:null,sb:null});
   }else{
     let size=2;while(size<ps.length)size*=2;
@@ -440,7 +463,7 @@ function sync(t){
   t.status=t.champ?'fim':'andamento';
 }
 function standings(t){
-  const s={};t.part.forEach(p=>s[p.id]={p,j:0,v:0,e:0,d:0,pts:0,sg:0});
+  const s={};comps(t).forEach(p=>s[p.id]={p,j:0,v:0,e:0,d:0,pts:0,sg:0});
   t.m.forEach(m=>{if(m.sa==null||m.sb==null)return;const A=s[m.a],B=s[m.b];A.j++;B.j++;A.sg+=m.sa-m.sb;B.sg+=m.sb-m.sa;
     if(m.sa>m.sb){A.v++;B.d++;A.pts+=3}else if(m.sa<m.sb){B.v++;A.d++;B.pts+=3}else{A.e++;B.e++;A.pts++;B.pts++}});
   return Object.values(s).sort((x,y)=>y.pts-x.pts||y.sg-x.sg||(y.p.ranking||0)-(x.p.ranking||0));
@@ -448,7 +471,7 @@ function standings(t){
 function finishRR(t){t.status=t.m.every(m=>m.sa!=null)?'fim':'andamento';if(t.status==='fim')t.champ=standings(t)[0].p.id}
 
 /* ───── Render ───── */
-const av=p=>`<span class="av" style="${p.cor?'background:'+p.cor:''}">${esc((p.nome||'?')[0].toUpperCase())}${p.foto?`<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.remove()">`:''}</span>`;
+const av=p=>`<span class="av" style="${p.cor?'background:'+p.cor:''}">${esc((p.ab||(p.nome||'?')[0]).toUpperCase())}${p.foto?`<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.remove()">`:''}</span>`;
 const who=(p,sub=true)=>`<span class="nm">${esc(p.nome)}${sub&&p.player?`<small>${esc(p.player)}</small>`:''}</span>`;
 const stLabel=t=>t.status==='fim'?(t.formato==='sorteio'?'Sorteio realizado':'Finalizado'):t.status==='andamento'?'Em andamento':'Inscrições abertas';
 
@@ -464,7 +487,7 @@ function hub(){
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
     
     ${ed?`${adm?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button>`:`<button type="button" class="pmcart" onclick="recarregar()" title="Recarregar do servidor" aria-label="Recarregar do servidor">${refresh}</button>`}<button type="button" class="pmcart" onclick="novo()" title="Novo evento" aria-label="Novo evento">${plus}</button>`:''}
-  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':ed?'Modo organizador':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
+  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
 }
 function render(){
   hub();
@@ -488,7 +511,7 @@ function cardHtml(t){
   const n=nP(t),pct=t.vagas?Math.min(100,Math.round(n/t.vagas*100)):0,cs=stCls(t),sorteio=t.formato==='sorteio';
   const avs=(t.avs||(t.part||[]).slice(0,4)).slice(0,4),resto=n-avs.length;
   const q=t.status!=='fim'?quando(t.data):'',ch=champNome(t);
-  const meta=`<span>${qi(sorteio?'equipes':'chave')}${esc(FMT[t.formato]||'')}${sorteio&&t.nEquipes?' · '+t.nEquipes+' equipes':''}</span>${t.data?`<span>${qi('cal')}${fmtData(t.data)}${q?`<em>${q}</em>`:''}</span>`:''}`;
+  const meta=`<span>${qi(t.nEquipes?'equipes':'chave')}${esc(fmtLabel(t))}${t.nEquipes?' · '+t.nEquipes+' equipes':''}</span>${t.data?`<span>${qi('cal')}${fmtData(t.data)}${q?`<em>${q}</em>`:''}</span>`:''}`;
   const foot=t.status==='fim'
     ?(ch?`<div class="tc-ch">${qi('trofeu')}<span>Campeão</span><b>${esc(ch)}</b></div>`:sorteio?`<div class="tc-ch">${qi('equipes')}<span>${t.nEquipes||''} equipes sorteadas</span></div>`:'')
     :'';
@@ -520,25 +543,34 @@ function list(){
   return`<div class="pmtabs">${tabs}</div><div id="cards">${cardsHtml()}</div>`;
 }
 function detail(t){
-  const ed=podeEditar(t),tabs=[['chave',t.formato==='sorteio'?'Equipes':t.formato==='rr'?'Jogos':'Chave'],...(t.formato==='rr'&&t.status!=='inscricao'?[['class','Classificação']]:[]),['part','Participantes']];
+  const ed=podeEditar(t),eqm=!!t.nEquipes,sortOnly=t.formato==='sorteio',aguarda=aguardaIni(t),livre=(sortOnly&&t.status!=='inscricao')||aguarda;
+  const tabs=[['chave',t.formato==='pontos'?'Pontuação':t.formato==='rr'?'Jogos':'Chave'],...(t.formato==='rr'?[['class','Classificação']]:[]),...(eqm?[['eq','Equipes']]:[]),['part','Participantes']];
   if(t.status==='inscricao'&&S.tab!=='part')S.tab='part';
+  else if(!tabs.some(x=>x[0]===S.tab))S.tab='chave';
   const champ=t.champ&&P(t,t.champ)?`<div class="champ">${av(P(t,t.champ))}<div>Campeão: ${esc(P(t,t.champ).nome)}</div></div>`:'';
   let body='';
-  if(S.tab==='part')body=parts(t,ed);
+  if(t.status==='inscricao')body=parts(t,ed);
+  else if(sortOnly)body=equipes(t,ed);   /* só sorteio: equipes sempre expostas, sem abas */
+  else if(aguarda)body=equipes(t,ed)+(ed?iniComp(t):'<div class="card" style="margin-top:14px"><p class="msg" style="margin:0">Equipes sorteadas. A competição ainda não começou.</p></div>');
+  else if(S.tab==='part')body=parts(t,ed);
   else if(S.tab==='class')body=`<div class="card">${classTable(t)}</div>`;
-  else body=t.formato==='sorteio'?equipes(t,ed):t.formato==='rr'?rrGames(t,ed):bracket(t,ed);
-  const info=[FMT[t.formato],t.formato==='sorteio'&&t.nEquipes?t.nEquipes+' equipes':'',stLabel(t),t.md>1?'Melhor de '+t.md:'',fmtData(t.data),t.vagas?t.part.length+'/'+t.vagas+' vagas':''].filter(Boolean).join(' · ');
+  else if(S.tab==='eq')body=equipes(t,false);
+  else body=t.formato==='pontos'?pontosView(t,ed):t.formato==='rr'?rrGames(t,ed):bracket(t,ed);
+  const info=[fmtLabel(t),eqm?t.nEquipes+' equipes':'',aguarda?'Equipes sorteadas':stLabel(t),t.md>1?'Melhor de '+t.md:'',fmtData(t.data),t.vagas?t.part.length+'/'+t.vagas+' vagas':''].filter(Boolean).join(' · ');
   const g1=[ed&&t.status==='inscricao'?`<button class="btn p" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições</button>`:'',
     ed&&t.status!=='inscricao'?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':'',
-    ed&&t.formato==='sorteio'&&t.status!=='inscricao'?'<button class="btn a" onclick="resortear()">Sortear novamente</button>':''].join('');
+    ed&&eqm&&t.status!=='inscricao'?'<button class="btn a" onclick="resortear()">Sortear novamente</button>':'',
+    ed&&t.formato==='pontos'&&t.status==='andamento'&&!aguarda?'<button class="btn a" onclick="encerrarPts()">Encerrar e declarar campeão</button>':'',
+    ed&&t.formato==='pontos'&&t.status==='fim'?'<button class="btn" onclick="retomarPts()">Retomar pontuação</button>':''].join('');
   const g2=[ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn" onclick="mudarTipo()">Alterar tipo</button>':'',
     ed&&realAdmin()?'<button class="btn" onclick="modsTorneio()">Moderadores</button><button class="btn d" onclick="excluir()">Excluir</button>':''].join('');
   return`${fichaBar(t)}<div class="hd"><button class="bkl" onclick="voltar()">← Todos os torneios</button>
     <h1>${esc(t.nome)}</h1><p class="sub" style="margin-bottom:0">${esc(info)}</p>${t.desc?`<p class="msg" style="white-space:pre-wrap;margin-top:8px">${esc(t.desc)}</p>`:''}
     ${g1||g2?`<div class="adm"><div class="adm-g">${g1}</div><div class="adm-g r">${g2}</div></div>`:''}</div>
-    ${t.status==='inscricao'?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
+    ${t.status==='inscricao'||livre?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
 }
 function parts(t,ed){
+  const crit=t.formato==='sorteio'?t.seed:t.seedEq;
   const open=t.status==='inscricao',ids=new Set(t.part.map(p=>p.id));
   const q=S.q.toLowerCase(),av2=S.chars.filter(c=>!ids.has(c.id)&&(c.nome+' '+c.player).toLowerCase().includes(q));
   const inscritos=t.part.map(p=>`<div class="pi ${open&&ed?'x':''}">${av(p)}${who(p)}${open&&ed?`<button title="Remover" onclick="sairTorneio('${esc(p.id)}')">×</button>`:''}</div>`).join('')||'<p class="msg">Ninguém inscrito ainda.</p>';
@@ -548,9 +580,8 @@ function parts(t,ed){
     <input class="in" id="mn" placeholder="Participante avulso" onkeydown="if(event.key==='Enter')avulso()"><button class="btn" onclick="avulso()">Adicionar</button></div>
     <div class="pl" id="avl">${avList(av2)}</div>
     ${S.chars.length?'':'<p class="msg">Fichas indisponíveis nesta página; adicione participantes avulsos.</p>'}</div>
-    <div class="card" style="margin-top:14px"><h3>${t.formato==='sorteio'?'Sortear equipes':'Iniciar'}</h3><div class="row"><select class="in" id="sd" onchange="t_seed(this.value)">
-    ${t.formato==='sorteio'?`<option value="aleatorio" ${t.seed!=='ranking'?'selected':''}>Totalmente aleatório</option><option value="ranking" ${t.seed==='ranking'?'selected':''}>Equilibrar por ranking da ficha</option>`:`<option value="ranking" ${t.seed==='ranking'?'selected':''}>Seed por ranking da ficha</option><option value="aleatorio" ${t.seed==='aleatorio'?'selected':''}>Sorteio aleatório</option><option value="ordem" ${t.seed==='ordem'?'selected':''}>Ordem de inscrição</option>`}</select>
-    <button class="btn a" onclick="iniciar()">${t.formato==='sorteio'?'Sortear '+t.nEquipes+' equipes':'Gerar chaves e iniciar'}</button></div></div>`;
+    <div class="card" style="margin-top:14px"><h3>${t.nEquipes?'Sortear equipes':'Iniciar'}</h3><div class="row">${t.nEquipes?`<select class="in" id="sd" onchange="t_seed(this.value)"><option value="aleatorio" ${crit!=='ranking'?'selected':''}>Totalmente aleatório</option><option value="ranking" ${crit==='ranking'?'selected':''}>Equilibrar por ranking da ficha</option></select>`:t.formato==='pontos'?'':`<select class="in" id="sd" onchange="t_seedC(this.value)">${seedOpts(t)}</select>`}
+    <button class="btn a" onclick="iniciar()">${t.nEquipes?'Sortear '+t.nEquipes+' equipes':t.formato==='pontos'?'Iniciar pontuação':'Gerar chaves e iniciar'}</button></div></div>`;
   return`<div class="card"><h3>Inscritos (${t.part.length}${t.vagas?'/'+t.vagas:''})</h3><div class="pl">${inscritos}</div></div>${ed?'':selfCard(t)}${add}`;
 }
 function selfCard(t){
@@ -620,28 +651,29 @@ function rrGames(t,ed){
 function equipes(t,ed){
   if(!t.eq||!t.eq.length)return'<div class="card"><p class="msg" style="margin:0">As equipes ainda não foram sorteadas.</p></div>';
   const mv=(p,e)=>ed?`<select class="in mv" onchange="moverMembro('${esc(p.id)}',this.value)" title="Mover para outra equipe" aria-label="Mover ${esc(p.nome)} para outra equipe"><option value="" selected disabled>⇄</option>${t.eq.filter(x=>x.id!==e.id).map(x=>`<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join('')}</select>`:'';
-  return`<div class="eqs">${t.eq.map(e=>{const L=e.membros.map(id=>P(t,id)).filter(Boolean);
-    return`<div class="card eq"><h3>${esc(e.nome)} <small>(${L.length})</small></h3>${L.map(p=>`<div class="pi">${av(p)}${who(p)}${mv(p,e)}</div>`).join('')||'<p class="msg" style="margin:0">Sem membros.</p>'}</div>`}).join('')}</div>`;
+  return`<div class="eqs">${t.eq.map(e=>{const L=e.membros.map(id=>PP(t,id)).filter(Boolean);
+    return`<div class="card eq"><h3>${esc(e.nome)} <small>(${L.length})</small>${ed?` <button type="button" class="btn" style="font-size:11px;padding:3px 9px;margin-left:6px" onclick="renEq('${esc(e.id)}')">Renomear</button>`:''}</h3>${L.map(p=>`<div class="pi">${av(p)}${who(p)}${mv(p,e)}</div>`).join('')||'<p class="msg" style="margin:0">Sem membros.</p>'}</div>`}).join('')}</div>`;
 }
 function classTable(t){
   return`<table><tr><th>#</th><th>Participante</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th><th>Pts</th></tr>${standings(t).map((s,i)=>`<tr><td>${i+1}</td><td><div class="row" style="flex-wrap:nowrap">${av(s.p)}${who(s.p)}</div></td><td>${s.j}</td><td>${s.v}</td><td>${s.e}</td><td>${s.d}</td><td>${s.sg>0?'+':''}${s.sg}</td><td><b>${s.pts}</b></td></tr>`).join('')}</table>`;
 }
 
 function novoForm(){
-  const tp=(k,t,d)=>`<button type="button" class="opt ${S.tipo===k?'on':''}" data-g="t" data-k="${k}" onclick="setTipo('${k}')"><b>${t}</b><small>${d}</small></button>`;
-  const o=(k,t,d)=>`<button type="button" class="opt ${S.fmt===k?'on':''}" data-g="f" data-k="${k}" onclick="setFmt('${k}')"><b>${t}</b><small>${d}</small></button>`;
-  return`<div class="card" id="nf" data-tipo="${S.tipo}" style="margin-bottom:16px"><h3>Novo evento</h3>
-  <label class="fl" style="margin-bottom:6px">Tipo de evento</label>
-  <div class="opts" style="margin-bottom:14px">${tp('torneio','Torneio','Chaves ou todos contra todos, com resultados e campeão.')}${tp('sorteio','Sorteio de equipes','Os inscritos são sorteados em X equipes.')}</div>
+  const e=(k,t,d)=>`<button type="button" class="opt ${(S.eqp?'s':'n')===k?'on':''}" data-g="e" data-k="${k}" onclick="setEqp('${k}')"><b>${t}</b><small>${d}</small></button>`;
+  const o=(k,t,d,c)=>`<button type="button" class="opt ${c||''} ${S.fmt===k?'on':''}" data-g="f" data-k="${k}" onclick="setFmt('${k}')"><b>${t}</b><small>${d}</small></button>`;
+  return`<div class="card" id="nf" data-eq="${S.eqp?'s':'n'}" data-fmt="${S.fmt}" style="margin-bottom:16px"><h3>Novo evento</h3>
+  <label class="fl" style="margin-bottom:6px">Participantes</label>
+  <div class="opts" style="margin-bottom:14px">${e('n','Individuais','Cada personagem participa por conta própria.')}${e('s','Equipes sorteadas','Os inscritos são sorteados em X equipes, que podem competir entre si.')}</div>
   <label class="fl">Nome do evento<input class="in" id="nn" placeholder="Ex.: Xmas Cup" oninput="lk()"></label>
   <div class="lk" id="lk"></div>
-  <div class="opts ft-t" style="margin-top:14px">${o('single','Eliminatória simples','Perdeu, está fora. Byes automáticos.')}${o('rr','Todos contra todos','Cada um enfrenta todos. Vence quem somar mais pontos.')}</div>
+  <label class="fl" style="margin:14px 0 6px">Competição</label>
+  <div class="opts">${o('single','Eliminatória simples','Perdeu, está fora. Byes automáticos.')}${o('rr','Todos contra todos','Cada um enfrenta todos. Vence quem somar mais pontos.')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada pelo organizador. Vence quem somar mais.')}${o('nenhuma','Só o sorteio','Apenas sorteia as equipes, sem competição.','ft-s')}</div>
   <div class="fg">
    <label class="fl">Data e hora<input class="in" id="nd" type="datetime-local"></label>
    <label class="fl">Vagas (vazio = sem limite)<input class="in" id="nv" type="number" min="2" placeholder="Ilimitado"></label>
    <label class="fl">Personagens por player<input class="in" id="np" type="number" min="1" value="1"></label>
-   <label class="fl ft-t">Melhor de<select class="in" id="nm"><option value="1">1 partida</option><option value="3">3 partidas</option><option value="5">5 partidas</option></select></label>
-   <label class="fl ft-t">Seeds<select class="in" id="ns"><option value="ranking">Ranking da ficha</option><option value="aleatorio">Sorteio aleatório</option><option value="ordem">Ordem de inscrição</option></select></label>
+   <label class="fl ft-c ft-m">Melhor de<select class="in" id="nm"><option value="1">1 partida</option><option value="3">3 partidas</option><option value="5">5 partidas</option></select></label>
+   <label class="fl ft-c ft-m">Seeds<select class="in" id="ns"><option value="ranking">Ranking da ficha</option><option value="aleatorio">Sorteio aleatório</option><option value="ordem">Ordem de inscrição</option></select></label>
   <label class="fl ft-s">Quantidade de equipes<input class="in" id="ne" type="number" min="2" value="2"></label>
    <label class="fl ft-s">Critério do sorteio<select class="in" id="nsq"><option value="aleatorio">Totalmente aleatório</option><option value="ranking">Equilibrar por ranking da ficha</option></select></label>
   </div>
@@ -649,21 +681,35 @@ function novoForm(){
   <label class="chk" style="margin-top:12px"><input type="checkbox" id="na" checked> Players podem se inscrever sozinhos</label>
   <div class="row" style="margin-top:14px"><button class="btn p" onclick="criar()">Criar evento</button><button class="btn" onclick="S.criando=false;render()">Cancelar</button></div></div>`;
 }
-function setFmt(k){S.fmt=k;document.querySelectorAll('.opt[data-g=f]').forEach(b=>b.classList.toggle('on',b.dataset.k===k))}
-function setTipo(k){S.tipo=k;const f=$('#nf');if(f)f.dataset.tipo=k;document.querySelectorAll('.opt[data-g=t]').forEach(b=>b.classList.toggle('on',b.dataset.k===k))}
+function setFmt(k){S.fmt=k;const f=$('#nf');if(f)f.dataset.fmt=k;document.querySelectorAll('#nf .opt[data-g=f]').forEach(b=>b.classList.toggle('on',b.dataset.k===k))}
+function setEqp(k){S.eqp=k==='s';if(!S.eqp&&S.fmt==='nenhuma')S.fmt='single';const f=$('#nf');if(f){f.dataset.eq=k;f.dataset.fmt=S.fmt}document.querySelectorAll('#nf .opt[data-g=e]').forEach(b=>b.classList.toggle('on',b.dataset.k===k));document.querySelectorAll('#nf .opt[data-g=f]').forEach(b=>b.classList.toggle('on',b.dataset.k===S.fmt))}
+/* aplica participantes (individual/equipes) + competição a um evento; zera resultados e equipes */
+function aplicaTipo(x,eqp,fmt,ne,crit){
+  const old=x.formato,novo=eqp&&fmt==='nenhuma'?'sorteio':fmt,cOld=old==='sorteio'?x.seed:x.seedEq;
+  x.formato=novo;
+  if(eqp){
+    x.nEquipes=ne;x.eq=[];const c=(crit||cOld)==='ranking'?'ranking':'aleatorio';
+    if(novo==='sorteio'){x.seed=c;delete x.seedEq}
+    else{x.seedEq=c;if(old==='sorteio'||!['ranking','aleatorio','ordem'].includes(x.seed))x.seed='ranking'}
+  }else{delete x.nEquipes;delete x.eq;delete x.seedEq;if(old==='sorteio'||!['ranking','aleatorio','ordem'].includes(x.seed))x.seed='ranking'}
+  x.md=(novo==='sorteio'||novo==='pontos')?1:(x.md||1);
+  x.status='inscricao';x.m=[];x.champ=null;delete x.rod;
+}
+const seedOpts=t=>[['ranking','Seed por ranking da ficha'],['aleatorio','Sorteio aleatório'],['ordem','Ordem de inscrição']].map(([v,l])=>`<option value="${v}" ${t.seed===v?'selected':''}>${l}</option>`).join('');
 function lk(){const e=$('#lk');if(e)e.textContent='Link: '+location.href.split('#')[0].split('?')[0]+'#'+(slug($('#nn')?.value||'')||'nomedoevento')}
 
 /* ───── Ações ───── */
 async function criar(){
   const nome=$('#nn').value.trim();if(!nome)return toast('Dê um nome ao evento');
   const n=parseInt($('#nv').value,10);
-  const t={id:uid(nome),nome,formato:S.fmt,status:'inscricao',seed:$('#ns').value,desc:$('#ndc').value.trim(),data:$('#nd').value,vagas:n>1?n:0,porPlayer:Math.max(1,parseInt($('#np').value,10)||1),md:parseInt($('#nm').value,10),aberta:$('#na').checked,part:[],m:[],champ:null,at:Date.now()};
-  if(S.tipo==='sorteio'){
-    const ne=parseInt($('#ne').value,10);
+  const t={id:uid(nome),nome,formato:S.fmt==='nenhuma'?'sorteio':S.fmt,status:'inscricao',seed:$('#ns').value,desc:$('#ndc').value.trim(),data:$('#nd').value,vagas:n>1?n:0,porPlayer:Math.max(1,parseInt($('#np').value,10)||1),md:parseInt($('#nm').value,10),aberta:$('#na').checked,part:[],m:[],champ:null,at:Date.now()};
+  let ne=0;
+  if(S.eqp){
+    ne=parseInt($('#ne').value,10);
     if(!(ne>=2))return toast('Informe ao menos 2 equipes');
     if(t.vagas&&t.vagas<ne)return toast('As vagas precisam ser pelo menos o número de equipes');
-    Object.assign(t,{formato:'sorteio',nEquipes:ne,seed:$('#nsq').value,md:1,eq:[]});
   }
+  aplicaTipo(t,S.eqp,S.fmt,ne,S.eqp?$('#nsq').value:null);
   try{await persist(t,{novo:true})}catch(e){return toast(e.message)}
   S.cur=t;S.criando=false;S.tab='part';location.hash=t.id;render();
 }
@@ -675,32 +721,65 @@ async function renomear(){
   catch(e){t.id=old;return toast(e.message)}
   location.hash=t.id;render();
 }
-/* alterar tipo do evento (torneio chave / todos contra todos / sorteio de equipes) */
-const MT={fmt:'single',ne:2};
+/* alterar tipo do evento: participantes (individuais/equipes) + competição (eliminatória, todos contra todos, pontos, só sorteio) */
+const MT={eqp:false,fmt:'single'};
 function mudarTipo(){
   if(!podeEditar(S.cur))return;
-  const t=S.cur,d=$('#dlg');MT.fmt=t.formato;MT.ne=t.nEquipes||2;
-  const o=(k,n,ds)=>`<button type="button" class="opt ${MT.fmt===k?'on':''}" data-k="${k}" onclick="mtSel('${k}')"><b>${n}</b><small>${ds}</small></button>`;
+  const t=S.cur,d=$('#dlg');MT.eqp=!!t.nEquipes;MT.fmt=t.formato==='sorteio'?'nenhuma':t.formato;
+  const e=(k,n,ds)=>`<button type="button" class="opt ${(MT.eqp?'s':'n')===k?'on':''}" data-g="me" data-k="${k}" onclick="mtEqp('${k}')"><b>${n}</b><small>${ds}</small></button>`;
+  const o=(k,n,ds)=>`<button type="button" class="opt ${MT.fmt===k?'on':''}" data-g="mf" data-k="${k}" ${k==='nenhuma'?'id="mtnone"':''} style="${k==='nenhuma'&&!MT.eqp?'display:none':''}" onclick="mtFmt('${k}')"><b>${n}</b><small>${ds}</small></button>`;
   d.innerHTML=`<h3>Alterar tipo do evento</h3>
-  <div class="opts" style="grid-template-columns:1fr">${o('single','Torneio · Eliminatória simples','Perdeu, está fora. Byes automáticos.')}${o('rr','Torneio · Todos contra todos','Vence quem somar mais pontos.')}${o('sorteio','Sorteio de equipes','Os inscritos são sorteados em X equipes.')}</div>
-  <label class="fl" id="mtne" style="margin-top:12px;${MT.fmt==='sorteio'?'':'display:none'}">Quantidade de equipes<input class="in" id="mtn" type="number" min="2" value="${MT.ne}" style="width:100%;text-align:left"></label>
-  <p class="msg" style="margin:12px 0 0">${t.status==='inscricao'?'Os inscritos são mantidos.':'Atenção: resultados/equipes serão apagados e as inscrições serão reabertas. Os inscritos são mantidos.'}</p>
+  <label class="fl" style="margin-bottom:6px">Participantes</label>
+  <div class="opts" style="grid-template-columns:1fr 1fr">${e('n','Individuais','Cada personagem por conta própria.')}${e('s','Equipes sorteadas','Inscritos sorteados em equipes.')}</div>
+  <label class="fl" style="margin:14px 0 6px">Competição</label>
+  <div class="opts" style="grid-template-columns:1fr">${o('single','Eliminatória simples','Perdeu, está fora.')}${o('rr','Todos contra todos','Vence quem somar mais pontos.')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada.')}${o('nenhuma','Só o sorteio','Sem competição.')}</div>
+  <label class="fl" id="mtne" style="margin-top:12px;${MT.eqp?'':'display:none'}">Quantidade de equipes<input class="in" id="mtn" type="number" min="2" value="${t.nEquipes||2}" style="width:100%;text-align:left"></label>
+  <p class="msg" style="margin:12px 0 0">${t.status==='inscricao'?'Os inscritos são mantidos.':'Atenção: resultados e equipes serão apagados e as inscrições reabertas. Os inscritos são mantidos.'}</p>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaTipo()">Salvar</button></div>`;
   d.showModal();
 }
-function mtSel(k){MT.fmt=k;document.querySelectorAll('#dlg .opt').forEach(b=>b.classList.toggle('on',b.dataset.k===k));$('#mtne').style.display=k==='sorteio'?'':'none'}
+function mtMark(){document.querySelectorAll('#dlg .opt[data-g=me]').forEach(b=>b.classList.toggle('on',b.dataset.k===(MT.eqp?'s':'n')));document.querySelectorAll('#dlg .opt[data-g=mf]').forEach(b=>b.classList.toggle('on',b.dataset.k===MT.fmt));$('#mtne').style.display=MT.eqp?'':'none';$('#mtnone').style.display=MT.eqp?'':'none'}
+function mtEqp(k){MT.eqp=k==='s';if(!MT.eqp&&MT.fmt==='nenhuma')MT.fmt='single';mtMark()}
+function mtFmt(k){MT.fmt=k;mtMark()}
 function salvaTipo(){
-  const t=S.cur,k=MT.fmt;
-  if(k===t.formato&&(k!=='sorteio'||parseInt($('#mtn').value,10)===t.nEquipes)){$('#dlg').close();return}
+  const t=S.cur,novo=MT.eqp&&MT.fmt==='nenhuma'?'sorteio':MT.fmt;
   let ne=0;
-  if(k==='sorteio'){ne=parseInt($('#mtn').value,10);if(!(ne>=2))return toast('Informe ao menos 2 equipes');if(t.vagas&&t.vagas<ne)return toast('As vagas precisam ser pelo menos o número de equipes')}
+  if(MT.eqp){ne=parseInt($('#mtn').value,10);if(!(ne>=2))return toast('Informe ao menos 2 equipes');if(t.vagas&&t.vagas<ne)return toast('As vagas precisam ser pelo menos o número de equipes')}
+  if(novo===t.formato&&ne===(t.nEquipes||0)){$('#dlg').close();return}
   if(t.status!=='inscricao'&&!confirm('Mudar o tipo apaga resultados e equipes e reabre as inscrições. Continuar?'))return;
+  const eqp=MT.eqp;$('#dlg').close();
+  mut(x=>{aplicaTipo(x,eqp,novo==='sorteio'?'nenhuma':novo,ne)},()=>{S.tab='part'});
+}
+/* ───── acúmulo de pontos ───── */
+const fmtN=n=>Number.isInteger(n)?String(n):String(+n.toFixed(2));
+function ptsTot(t){return comps(t).map(p=>{const v=(t.rod||[]).map(r=>Number(r.pts?.[p.id])||0);return{p,v,tot:v.reduce((a,b)=>a+b,0)}}).sort((a,b)=>b.tot-a.tot||(b.p.ranking||0)-(a.p.ranking||0))}
+function pontosView(t,ed){
+  const rod=t.rod||[],aberto=t.status==='andamento'&&ed;
+  const th=rod.map((r,i)=>`<th ${aberto?`style="cursor:pointer" title="Editar rodada" onclick="rodada(${i})"`:''}>${esc(r.nome||'R'+(i+1))}</th>`).join('');
+  const rows=ptsTot(t).map((x,i)=>`<tr><td>${i+1}</td><td><div class="row" style="flex-wrap:nowrap">${av(x.p)}${who(x.p)}</div></td>${x.v.map(v=>`<td>${fmtN(v)}</td>`).join('')}<td><b>${fmtN(x.tot)}</b></td></tr>`).join('');
+  return`<div class="card">${aberto?'<div class="row" style="margin-bottom:12px"><button class="btn p" onclick="rodada(-1)">+ Nova rodada</button></div>':''}${rod.length?'':'<p class="msg" style="margin:0 0 10px">Nenhuma rodada lançada ainda.</p>'}<div style="overflow-x:auto"><table><tr><th>#</th><th>Participante</th>${th}<th>Total</th></tr>${rows}</table></div></div>`;
+}
+function rodada(i){
+  if(!podeEditar(S.cur))return;
+  const t=S.cur,r=i>=0?t.rod[i]:{nome:'Rodada '+((t.rod||[]).length+1),pts:{}},d=$('#dlg');
+  d.innerHTML=`<h3>${i>=0?'Editar rodada':'Nova rodada'}</h3><label class="fl">Nome da rodada<input class="in" id="rn" value="${esc(r.nome)}" style="text-align:left"></label>
+  <div style="max-height:50vh;overflow-y:auto;margin-top:10px">${comps(t).map(p=>`<div class="ds">${av(p)}<div class="dn"><span>${esc(p.nome)}</span></div><input class="in" type="number" step="any" data-pid="${esc(p.id)}" value="${r.pts?.[p.id]??''}" placeholder="0"></div>`).join('')}</div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">${i>=0?`<button class="btn d" onclick="delRodada(${i})">Excluir</button>`:''}<button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaRodada(${i})">Salvar</button></div>`;
+  d.showModal();
+}
+function salvaRodada(i){
+  const nome=$('#rn').value.trim(),pts={};
+  document.querySelectorAll('#dlg input[data-pid]').forEach(x=>{if(x.value!=='')pts[x.dataset.pid]=Number(x.value)||0});
   $('#dlg').close();
-  mut(x=>{
-    x.formato=k;x.status='inscricao';x.m=[];x.champ=null;
-    if(k==='sorteio'){x.nEquipes=ne;x.eq=[];x.md=1;if(x.seed==='ordem')x.seed='aleatorio'}
-    else{delete x.nEquipes;delete x.eq;x.md=x.md||1}
-  },()=>{S.tab='part'});
+  mut(t=>{t.rod=t.rod||[];const r={nome:nome||'Rodada '+(i<0?t.rod.length+1:i+1),pts};if(i<0)t.rod.push(r);else t.rod[i]=r});
+}
+function delRodada(i){if(!confirm('Excluir esta rodada?'))return;$('#dlg').close();mut(t=>{t.rod.splice(i,1)})}
+function encerrarPts(){if(!podeEditar(S.cur))return;if(!confirm('Encerrar a pontuação e declarar o campeão?'))return;mut(t=>{const s=ptsTot(t);if(!s.length||!(t.rod||[]).length){toast('Lance ao menos uma rodada');return false}t.champ=s[0].p.id;t.status='fim'})}
+function retomarPts(){mut(t=>{t.status='andamento';t.champ=null})}
+function renEq(id){mut(t=>{const e=(t.eq||[]).find(x=>x.id===id);if(!e)return false;const n=prompt('Nome da equipe:',e.nome);if(!n||!n.trim())return false;e.nome=n.trim()})}
+function iniComp(t){
+  const pt=t.formato==='pontos';
+  return`<div class="card" style="margin-top:14px"><h3>Iniciar competição</h3><div class="row">${pt?'':`<select class="in" onchange="t_seedC(this.value)">${seedOpts(t)}</select>`}<button class="btn a" onclick="iniciar()">${pt?'Iniciar pontuação':'Gerar chaves e iniciar'}</button></div></div>`;
 }
 function modsTorneio(){
   if(!realAdmin()||!podeEditar(S.cur))return;
@@ -766,19 +845,21 @@ function sairTorneio(id){
   mut(t=>{if(t.status!=='inscricao')return false;t.part=t.part.filter(x=>x.id!==id)});
 }
 function buscar(){const ids=new Set(S.cur.part.map(p=>p.id)),q=S.q.toLowerCase();$('#avl').innerHTML=avList(S.chars.filter(c=>!ids.has(c.id)&&(c.nome+' '+c.player).toLowerCase().includes(q)))}
-function t_seed(v){mut(t=>{t.seed=v})}
+function t_seed(v){mut(t=>{if(t.nEquipes&&t.formato!=='sorteio')t.seedEq=v;else t.seed=v})}
+function t_seedC(v){mut(t=>{t.seed=v})}
 function sortear(t){
   const n=t.nEquipes,ps=[...t.part];
   for(let i=ps.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ps[i],ps[j]]=[ps[j],ps[i]]}
-  if(t.seed==='ranking')ps.sort((a,b)=>(b.ranking||0)-(a.ranking||0));   /* empate no ranking continua aleatório */
+  const crit=t.formato==='sorteio'?t.seed:t.seedEq;
+  if(crit==='ranking')ps.sort((a,b)=>(b.ranking||0)-(a.ranking||0));   /* empate no ranking continua aleatório */
   t.eq=Array.from({length:n},(_,i)=>({id:'e'+(i+1),nome:'Equipe '+(i+1),membros:[]}));
-  ps.forEach((p,i)=>{const r=Math.floor(i/n),k=i%n;t.eq[t.seed==='ranking'&&r%2?n-1-k:k].membros.push(p.id)});   /* ranking: distribuição em "cobrinha" p/ equilibrar */
-  t.m=[];t.champ=null;t.status='fim';
+  ps.forEach((p,i)=>{const r=Math.floor(i/n),k=i%n;t.eq[crit==='ranking'&&r%2?n-1-k:k].membros.push(p.id)});   /* ranking: distribuição em "cobrinha" p/ equilibrar */
+  t.m=[];delete t.rod;t.champ=null;t.status=t.formato==='sorteio'?'fim':'andamento';   /* com competição: andamento sem partidas = equipes sorteadas, aguardando início */
 }
-function resortear(){if(!podeEditar(S.cur)||S.cur.formato!=='sorteio')return;if(!confirm('Sortear as equipes novamente? As equipes atuais serão substituídas.'))return;mut(t=>{sortear(t)})}
+function resortear(){if(!podeEditar(S.cur)||!S.cur.nEquipes)return;if(!confirm('Sortear as equipes novamente? As equipes atuais serão substituídas'+(S.cur.formato!=='sorteio'?' e a competição será zerada.':'.')))return;mut(t=>{sortear(t)},()=>{S.tab='chave'})}
 function moverMembro(pid,eid){mut(t=>{const dest=(t.eq||[]).find(e=>e.id===eid);if(!dest||dest.membros.includes(pid))return false;t.eq.forEach(e=>{e.membros=e.membros.filter(x=>x!==pid)});dest.membros.push(pid)})}
-function iniciar(){mut(t=>{if(t.formato==='sorteio'){if(t.part.length<t.nEquipes){toast('Precisa de pelo menos '+t.nEquipes+' participantes (1 por equipe)');return false}sortear(t);return}if(t.part.length<2){toast('Precisa de pelo menos 2 participantes');return false}start(t)},()=>{S.tab='chave'})}
-function reiniciar(){if(!podeEditar(S.cur))return;if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null,...(t.formato==='sorteio'?{eq:[]}:{})})},()=>{S.tab='part'})}
+function iniciar(){mut(t=>{if(t.nEquipes&&t.status==='inscricao'){if(t.part.length<t.nEquipes){toast('Precisa de pelo menos '+t.nEquipes+' participantes (1 por equipe)');return false}sortear(t);return}if(comps(t).length<2){toast(t.nEquipes?'Precisa de pelo menos 2 equipes com membros':'Precisa de pelo menos 2 participantes');return false}start(t)},()=>{S.tab='chave'})}
+function reiniciar(){if(!podeEditar(S.cur))return;if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null,...(t.nEquipes?{eq:[]}:{})});delete t.rod},()=>{S.tab='part'})}
 async function excluir(){if(!realAdmin()||!podeEditar(S.cur))return;if(!confirm('Excluir este torneio?'))return;try{await remove(S.cur)}catch(e){return toast(e.message)}voltar()}
 function placar(r,i){
   if(!podeEditar(S.cur))return;
