@@ -174,7 +174,7 @@ dialog.qm .qg{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:60v
 .pmtabs .cn{display:inline-block;margin-left:7px;min-width:20px;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:800;background:var(--brand-light);color:var(--brand-mid)}
 .pmtabs button.on .cn{background:rgba(255,255,255,.25);color:#fff}
 .card.tc{--c:var(--accent);display:flex;flex-direction:column;gap:10px;padding:16px 16px 14px;border-top:4px solid var(--c);border-radius:12px;position:relative;overflow:hidden}
-.tc.s-o{--c:var(--green)}.tc.s-a{--c:var(--brand-mid)}.tc.s-f{--c:var(--accent)}.tc.s-c{--c:#8a93a6}
+.tc.s-o{--c:var(--green)}.tc.s-a{--c:var(--brand-mid)}.tc.s-f{--c:var(--accent)}.tc.s-c,.tc.s-d{--c:#8a93a6}.tc.s-d{border-top-style:dashed;opacity:.9}
 .tc:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.2)}
 .tc svg{width:15px;height:15px;flex:none}
 .tc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -378,7 +378,7 @@ async function boot(){
     const o=S.players.find(p=>String(p.id)===String(e.player_id));
     return{id:e.slug,pid:e.player_id,nome:e.nome,foto:e.foto||'',cor:/^#[0-9a-f]{3,8}$/i.test(e.cor||'')?e.cor:'',ranking:0,player:o?o.nome:(String(e.player_id)==='admin'?'':(e.player||''))}
   });
-  const id=location.hash.slice(1);if(id)S.cur=await loadFull(id);
+  const id=location.hash.slice(1);if(id){S.cur=await loadFull(id);if(!visivel(S.cur))S.cur=null}
   render();
 }
 async function persist(t,o={}){
@@ -428,6 +428,9 @@ function comps(t){
   return(t.eq||[]).map((e,i)=>{const L=e.membros.map(id=>PP(t,id)).filter(Boolean);return{id:e.id,nome:e.nome,ab:String(i+1),foto:'',cor:'',player:L.map(x=>x.nome).join(', '),ranking:L.reduce((a,x)=>a+(x.ranking||0),0),n:L.length}}).filter(e=>e.n>0);
 }
 const P=(t,id)=>comps(t).find(p=>p.id===id);
+/* rascunho = evento "fantasma": só organizadores veem; nas demais regras funciona como inscrição */
+const ehInsc=t=>t.status==='inscricao'||t.status==='rascunho';
+const visivel=t=>!t||t.status!=='rascunho'||canEdit();
 /* equipes sorteadas, competição ainda não iniciada */
 const aguardaIni=t=>t.status==='andamento'&&!!t.nEquipes&&t.formato!=='sorteio'&&!t.m?.length&&!Array.isArray(t.rod);
 function seedOrder(n){let a=[1,2];while(a.length<n)a=a.flatMap(x=>[x,a.length*2+1-x]);return a}
@@ -473,7 +476,7 @@ function finishRR(t){t.status=t.m.every(m=>m.sa!=null)?'fim':'andamento';if(t.st
 /* ───── Render ───── */
 const av=p=>`<span class="av" style="${p.cor?'background:'+p.cor:''}">${esc((p.ab||(p.nome||'?')[0]).toUpperCase())}${p.foto?`<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.remove()">`:''}</span>`;
 const who=(p,sub=true)=>`<span class="nm">${esc(p.nome)}${sub&&p.player?`<small>${esc(p.player)}</small>`:''}</span>`;
-const stLabel=t=>t.status==='fim'?(t.formato==='sorteio'?'Sorteio realizado':'Finalizado'):t.status==='andamento'?'Em andamento':'Inscrições abertas';
+const stLabel=t=>t.status==='rascunho'?'Rascunho':t.status==='fim'?(t.formato==='sorteio'?'Sorteio realizado':'Finalizado'):t.status==='andamento'?'Em andamento':'Inscrições abertas';
 
 const ICO=p=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 let hubKey='';
@@ -487,7 +490,7 @@ function hub(){
     :`<input class="pmq" id="hq" type="search" autocomplete="off" placeholder="Buscar torneio ou participante..." value="${esc(S.hq)}" oninput="S.hq=this.value;drawCards()">`}
     
     ${ed?`${adm?`<button type="button" class="pmcart" onclick="gerenciar()" title="Gerenciar" aria-label="Gerenciar">${gear}</button>`:`<button type="button" class="pmcart" onclick="recarregar()" title="Recarregar do servidor" aria-label="Recarregar do servidor">${refresh}</button>`}<button type="button" class="pmcart" onclick="novo()" title="Novo evento" aria-label="Novo evento">${plus}</button>`:''}
-  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':'Chaves, inscrições e resultados do Kingdom Platinum'}</div></div>`;
+  </div></div><div class="sh-sub"><div>${S.preview?'Modo player: você é tratado como um player comum, sem permissões de organizador':(modListado()&&!isMod())?'Você é moderador, mas sua sessão não está ativa. <a href="/fichas" style="color:inherit;text-decoration:underline">Entre no Fichário</a> e volte aqui.':'Participe, acompanhe e dispute os eventos de Nendo'}</div></div>`;
 }
 function render(){
   hub();
@@ -505,8 +508,8 @@ const QI={
 const qi=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QI[k]}</svg>`;
 const quando=d=>{if(!d)return'';const x=new Date(d);if(isNaN(x))return'';const dia=v=>{const y=new Date(v);y.setHours(0,0,0,0);return y.getTime()};const n=Math.round((dia(x)-dia(new Date()))/864e5);
   return n===0?'Hoje':n===1?'Amanhã':n>1?'em '+n+' dias':n===-1?'Ontem':'há '+(-n)+' dias'};
-const stCls=t=>t.status==='fim'?'f':t.status==='andamento'?'a':t.aberta===false?'c':'o';
-const stTxt=t=>t.status==='inscricao'&&t.aberta===false?'Inscrições fechadas':stLabel(t);
+const stCls=t=>t.status==='rascunho'?'d':t.status==='fim'?'f':t.status==='andamento'?'a':t.aberta===false?'c':'o';
+const stTxt=t=>t.status==='rascunho'?'Rascunho':ehInsc(t)&&t.aberta===false?'Inscrições fechadas':stLabel(t);
 function cardHtml(t){
   const n=nP(t),pct=t.vagas?Math.min(100,Math.round(n/t.vagas*100)):0,cs=stCls(t),sorteio=t.formato==='sorteio';
   const avs=(t.avs||(t.part||[]).slice(0,4)).slice(0,4),resto=n-avs.length;
@@ -523,33 +526,33 @@ function cardHtml(t){
       <div class="tc-n"><b>${n}</b>${t.vagas?'/'+t.vagas+' vagas':n===1?' inscrito':' inscritos'}${t.vagas?`<div class="bar"><i style="width:${pct}%"></i></div>`:''}</div></div>
     ${foot}</div>`;
 }
-const stOrd=t=>({inscricao:0,andamento:1,fim:2}[t.status]??3);
+const stOrd=t=>({rascunho:-1,inscricao:0,andamento:1,fim:2}[t.status]??3);
 const dataOrd=(a,b)=>(a.data?new Date(a.data).getTime():9e15)-(b.data?new Date(b.data).getTime():9e15);
 function cardsHtml(){
   const q=slug(S.hq||'');
-  const L=S.list.filter(t=>(S.hf==='t'||t.status===S.hf)&&(!q||slug(t.nome+' '+(t.desc||'')+' '+(t.nomes??(t.part||[]).map(p=>p.nome+' '+(p.player||'')).join(' '))).includes(q)))
+  const L=S.list.filter(visivel).filter(t=>(S.hf==='t'||t.status===S.hf)&&(!q||slug(t.nome+' '+(t.desc||'')+' '+(t.nomes??(t.part||[]).map(p=>p.nome+' '+(p.player||'')).join(' '))).includes(q)))
     .sort((a,b)=>stOrd(a)-stOrd(b)||(a.status==='fim'?(b.at||0)-(a.at||0):dataOrd(a,b)));
-  if(!L.length)return`<div class="card tc-empty">${qi('trofeu')}<b>${S.list.length?'Nenhum torneio encontrado':'Nenhum torneio disponível'}</b><span>${S.list.length?'Tente outra busca ou outro filtro.':'Quando algum evento estiver disponível, ele aparecerá aqui.'}</span></div>`;
+  if(!L.length)return`<div class="card tc-empty">${qi('trofeu')}<b>${S.list.filter(visivel).length?'Nenhum torneio encontrado':'Nenhum torneio disponível'}</b><span>${S.list.filter(visivel).length?'Tente outra busca ou outro filtro.':'Quando algum evento estiver disponível, ele aparecerá aqui.'}</span></div>`;
   if(S.hf!=='t'||q)return`<div class="grid">${L.map(cardHtml).join('')}</div>`;
-  const SEC=[['inscricao','Inscrições abertas'],['andamento','Em andamento'],['fim','Finalizados']];
+  const SEC=[['rascunho','Rascunhos (só organizadores veem)'],['inscricao','Inscrições abertas'],['andamento','Em andamento'],['fim','Finalizados']];
   return SEC.map(([k,l])=>{const g=L.filter(t=>t.status===k);return g.length?`<div class="sec"><span>${l}</span><i>${g.length}</i></div><div class="grid">${g.map(cardHtml).join('')}</div>`:''}).join('');
 }
 function drawCards(){const e=$('#cards');if(e)e.innerHTML=cardsHtml()}
 function setHF(k){S.hf=k;render()}
 function list(){
-  const cnt=v=>v==='t'?S.list.length:S.list.filter(t=>t.status===v).length;
+  const vis=S.list.filter(visivel),cnt=v=>v==='t'?vis.length:vis.filter(t=>t.status===v).length;
   const tabs=[['t','Todos'],['i','Abertos'],['a','Em andamento'],['f','Finalizados']].map(([k,l])=>{const v={i:'inscricao',a:'andamento',f:'fim'}[k]||'t';return`<button type="button" class="${S.hf===v?'on':''}" onclick="setHF('${v}')">${l}<span class="cn">${cnt(v)}</span></button>`}).join('');
   if(canEdit()&&S.criando)return novoForm();   /* criando evento: some a lista (abas e cards) */
   return`<div class="pmtabs">${tabs}</div><div id="cards">${cardsHtml()}</div>`;
 }
 function detail(t){
-  const ed=podeEditar(t),eqm=!!t.nEquipes,sortOnly=t.formato==='sorteio',aguarda=aguardaIni(t),livre=(sortOnly&&t.status!=='inscricao')||aguarda;
+  const ed=podeEditar(t),eqm=!!t.nEquipes,sortOnly=t.formato==='sorteio',aguarda=aguardaIni(t),livre=(sortOnly&&!ehInsc(t))||aguarda;
   const tabs=[['chave',t.formato==='pontos'?'Pontuação':t.formato==='rr'?'Jogos':'Chave'],...(t.formato==='rr'?[['class','Classificação']]:[]),...(eqm?[['eq','Equipes']]:[]),['part','Participantes']];
-  if(t.status==='inscricao'&&S.tab!=='part')S.tab='part';
+  if(ehInsc(t)&&S.tab!=='part')S.tab='part';
   else if(!tabs.some(x=>x[0]===S.tab))S.tab='chave';
   const champ=t.champ&&P(t,t.champ)?`<div class="champ">${av(P(t,t.champ))}<div>Campeão: ${esc(P(t,t.champ).nome)}</div></div>`:'';
   let body='';
-  if(t.status==='inscricao')body=parts(t,ed);
+  if(ehInsc(t))body=parts(t,ed);
   else if(sortOnly)body=equipes(t,ed);   /* só sorteio: equipes sempre expostas, sem abas */
   else if(aguarda)body=equipes(t,ed)+(ed?iniComp(t):'<div class="card" style="margin-top:14px"><p class="msg" style="margin:0">Equipes sorteadas. A competição ainda não começou.</p></div>');
   else if(S.tab==='part')body=parts(t,ed);
@@ -557,21 +560,24 @@ function detail(t){
   else if(S.tab==='eq')body=equipes(t,false);
   else body=t.formato==='pontos'?pontosView(t,ed):t.formato==='rr'?rrGames(t,ed):bracket(t,ed);
   const info=[fmtLabel(t),eqm?t.nEquipes+' equipes':'',aguarda?'Equipes sorteadas':stLabel(t),t.md>1?'Melhor de '+t.md:'',fmtData(t.data),t.vagas?t.part.length+'/'+t.vagas+' vagas':''].filter(Boolean).join(' · ');
-  const g1=[ed&&t.status==='inscricao'?`<button class="btn p" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições</button>`:'',
-    ed&&t.status!=='inscricao'?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':'',
-    ed&&eqm&&t.status!=='inscricao'?'<button class="btn a" onclick="resortear()">Sortear novamente</button>':'',
+  const g1=[ed&&t.status==='rascunho'?'<button class="btn p" onclick="publicar()">Publicar evento</button>':'',
+    ed&&t.status==='inscricao'?`<button class="btn p" onclick="togInsc()">${t.aberta?'Fechar':'Abrir'} inscrições</button>`:'',
+    ed&&!ehInsc(t)?'<button class="btn" onclick="reiniciar()">Reabrir inscrições</button>':'',
+    ed&&t.status==='inscricao'?'<button class="btn" onclick="despublicar()">Voltar para rascunho</button>':'',
+    ed&&eqm&&!ehInsc(t)?'<button class="btn a" onclick="resortear()">Sortear novamente</button>':'',
     ed&&t.formato==='pontos'&&t.status==='andamento'&&!aguarda?'<button class="btn a" onclick="encerrarPts()">Encerrar e declarar campeão</button>':'',
     ed&&t.formato==='pontos'&&t.status==='fim'?'<button class="btn" onclick="retomarPts()">Retomar pontuação</button>':''].join('');
   const g2=[ed?'<button class="btn" onclick="renomear()">Renomear</button><button class="btn" onclick="mudarTipo()">Alterar tipo</button>':'',
     ed&&realAdmin()?'<button class="btn" onclick="modsTorneio()">Moderadores</button><button class="btn d" onclick="excluir()">Excluir</button>':''].join('');
-  return`${fichaBar(t)}<div class="hd"><button class="bkl" onclick="voltar()">← Todos os torneios</button>
+  const aviso=t.status==='rascunho'?'<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)"><p class="msg" style="margin:0"><b>Rascunho.</b> Só organizadores veem este evento. Publique quando estiver pronto.</p></div>':'';
+  return`${aviso}${fichaBar(t)}<div class="hd"><button class="bkl" onclick="voltar()">← Todos os torneios</button>
     <h1>${esc(t.nome)}</h1><p class="sub" style="margin-bottom:0">${esc(info)}</p>${t.desc?`<p class="msg" style="white-space:pre-wrap;margin-top:8px">${esc(t.desc)}</p>`:''}
     ${g1||g2?`<div class="adm"><div class="adm-g">${g1}</div><div class="adm-g r">${g2}</div></div>`:''}</div>
-    ${t.status==='inscricao'||livre?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
+    ${ehInsc(t)||livre?'':`<div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${l}</button>`).join('')}</div>`}${champ}${body}`;
 }
 function parts(t,ed){
   const crit=t.formato==='sorteio'?t.seed:t.seedEq;
-  const open=t.status==='inscricao',ids=new Set(t.part.map(p=>p.id));
+  const open=ehInsc(t),ids=new Set(t.part.map(p=>p.id));
   const q=S.q.toLowerCase(),av2=S.chars.filter(c=>!ids.has(c.id)&&(c.nome+' '+c.player).toLowerCase().includes(q));
   const inscritos=t.part.map(p=>`<div class="pi ${open&&ed?'x':''}">${av(p)}${who(p)}${open&&ed?`<button title="Remover" onclick="sairTorneio('${esc(p.id)}')">×</button>`:''}</div>`).join('')||'<p class="msg">Ninguém inscrito ainda.</p>';
   let add='';
@@ -585,7 +591,7 @@ function parts(t,ed){
   return`<div class="card"><h3>Inscritos (${t.part.length}${t.vagas?'/'+t.vagas:''})</h3><div class="pl">${inscritos}</div></div>${ed?'':selfCard(t)}${add}`;
 }
 function selfCard(t){
-  if(t.status!=='inscricao')return'';
+  if(!ehInsc(t))return'';
   const wrap=h=>`<div class="card" style="margin-top:14px"><h3>Inscrição</h3>${h}</div>`;
   if(!t.aberta)return wrap('<p class="msg" style="margin:0">As inscrições deste torneio estão fechadas.</p>');
   const me=S.me;
@@ -608,19 +614,19 @@ function fichaBar(t){
   if(podeEditar(t)||!S.me||!S.ses?.token)return'';
   const L=minhasF();if(!L.length)return'';
   const ids=new Set(t.part.map(p=>p.id)),insc=L.filter(c=>ids.has(c.id));
-  if(t.status!=='inscricao'&&!insc.length)return'';
+  if(!ehInsc(t)&&!insc.length)return'';
   const a=fichaAtiva(),multi=L.length>1,ja=!!a&&ids.has(a.id);
   const usados=t.part.filter(p=>String(p.pid)===String(S.me.id)).length,lim=t.porPlayer||1,cheio=t.vagas&&t.part.length>=t.vagas;
   let lbl='Inscrição',val='—';
   if(a){
-    const eq=t.status!=='inscricao'&&ja&&(t.eq||[]).find(e=>e.membros.includes(a.id));
+    const eq=!ehInsc(t)&&ja&&(t.eq||[]).find(e=>e.membros.includes(a.id));
     if(eq){lbl='Equipe';val=eq.nome}
-    else val=ja?'Inscrito':(t.status==='inscricao'&&!t.aberta?'Fechada':'Não inscrito');
+    else val=ja?'Inscrito':(ehInsc(t)&&!t.aberta?'Fechada':'Não inscrito');
   }
   let btns='';
   if(multi)btns+=`<button type="button" class="btn tr" onclick="trocarFicha()">${a?'Trocar ficha':'Escolher ficha'}</button>`;
-  if(t.status==='inscricao'&&t.aberta&&a)btns+=ja?`<button type="button" class="btn d" onclick="sairTorneio('${esc(a.id)}')">Cancelar inscrição</button>`:`<button type="button" class="btn p" ${usados>=lim||cheio?'disabled':''} onclick="add('${esc(a.id)}')">Inscrever</button>`;
-  const info=t.status==='inscricao'&&t.aberta?`${esc(S.me.nome)}, você pode inscrever até ${lim} personagem(ns) (${usados}/${lim} usado${usados===1?'':'s'})${cheio?'. Torneio cheio.':'.'}`:'';
+  if(ehInsc(t)&&t.aberta&&a)btns+=ja?`<button type="button" class="btn d" onclick="sairTorneio('${esc(a.id)}')">Cancelar inscrição</button>`:`<button type="button" class="btn p" ${usados>=lim||cheio?'disabled':''} onclick="add('${esc(a.id)}')">Inscrever</button>`;
+  const info=ehInsc(t)&&t.aberta?`${esc(S.me.nome)}, você pode inscrever até ${lim} personagem(ns) (${usados}/${lim} usado${usados===1?'':'s'})${cheio?'. Torneio cheio.':'.'}`:'';
   return`<div class="card lh"><div class="lhf">${a?lav(a):'<span class="lav">?</span>'}<div style="min-width:0"><div class="lhn">${a?esc(a.nome):'Nenhuma ficha escolhida'}</div><div class="lhu">${a?esc(a.player||S.me.nome||''):'Escolha com qual personagem você vai participar'}</div></div></div>
     ${btns?`<div class="lhx">${btns}</div>`:''}<div class="lhs"><span>${lbl}</span><b>${esc(val)}</b></div>${info?`<div class="lhm">${info}</div>`:''}</div>`;
 }
@@ -679,6 +685,7 @@ function novoForm(){
   </div>
   <label class="fl">Descrição e regras<textarea class="in" id="ndc" rows="3" placeholder="Regras, premiação, observações..."></textarea></label>
   <label class="chk" style="margin-top:12px"><input type="checkbox" id="na" checked> Players podem se inscrever sozinhos</label>
+  <label class="chk" style="margin-top:8px"><input type="checkbox" id="nr"> Criar como rascunho (só organizadores veem; publique depois)</label>
   <div class="row" style="margin-top:14px"><button class="btn p" onclick="criar()">Criar evento</button><button class="btn" onclick="S.criando=false;render()">Cancelar</button></div></div>`;
 }
 function setFmt(k){S.fmt=k;const f=$('#nf');if(f)f.dataset.fmt=k;document.querySelectorAll('#nf .opt[data-g=f]').forEach(b=>b.classList.toggle('on',b.dataset.k===k))}
@@ -693,7 +700,7 @@ function aplicaTipo(x,eqp,fmt,ne,crit){
     else{x.seedEq=c;if(old==='sorteio'||!['ranking','aleatorio','ordem'].includes(x.seed))x.seed='ranking'}
   }else{delete x.nEquipes;delete x.eq;delete x.seedEq;if(old==='sorteio'||!['ranking','aleatorio','ordem'].includes(x.seed))x.seed='ranking'}
   x.md=(novo==='sorteio'||novo==='pontos')?1:(x.md||1);
-  x.status='inscricao';x.m=[];x.champ=null;delete x.rod;
+  x.status=x.status==='rascunho'?'rascunho':'inscricao';x.m=[];x.champ=null;delete x.rod;
 }
 const seedOpts=t=>[['ranking','Seed por ranking da ficha'],['aleatorio','Sorteio aleatório'],['ordem','Ordem de inscrição']].map(([v,l])=>`<option value="${v}" ${t.seed===v?'selected':''}>${l}</option>`).join('');
 function lk(){const e=$('#lk');if(e)e.textContent='Link: '+location.href.split('#')[0].split('?')[0]+'#'+(slug($('#nn')?.value||'')||'nomedoevento')}
@@ -710,6 +717,7 @@ async function criar(){
     if(t.vagas&&t.vagas<ne)return toast('As vagas precisam ser pelo menos o número de equipes');
   }
   aplicaTipo(t,S.eqp,S.fmt,ne,S.eqp?$('#nsq').value:null);
+  if($('#nr').checked)t.status='rascunho';
   try{await persist(t,{novo:true})}catch(e){return toast(e.message)}
   S.cur=t;S.criando=false;S.tab='part';location.hash=t.id;render();
 }
@@ -734,7 +742,7 @@ function mudarTipo(){
   <label class="fl" style="margin:14px 0 6px">Competição</label>
   <div class="opts" style="grid-template-columns:1fr">${o('single','Eliminatória simples','Perdeu, está fora.')}${o('rr','Todos contra todos','Vence quem somar mais pontos.')}${o('pontos','Acúmulo de pontos','Rodadas com pontuação lançada.')}${o('nenhuma','Só o sorteio','Sem competição.')}</div>
   <label class="fl" id="mtne" style="margin-top:12px;${MT.eqp?'':'display:none'}">Quantidade de equipes<input class="in" id="mtn" type="number" min="2" value="${t.nEquipes||2}" style="width:100%;text-align:left"></label>
-  <p class="msg" style="margin:12px 0 0">${t.status==='inscricao'?'Os inscritos são mantidos.':'Atenção: resultados e equipes serão apagados e as inscrições reabertas. Os inscritos são mantidos.'}</p>
+  <p class="msg" style="margin:12px 0 0">${ehInsc(t)?'Os inscritos são mantidos.':'Atenção: resultados e equipes serão apagados e as inscrições reabertas. Os inscritos são mantidos.'}</p>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="$('#dlg').close()">Cancelar</button><button class="btn p" onclick="salvaTipo()">Salvar</button></div>`;
   d.showModal();
 }
@@ -746,7 +754,7 @@ function salvaTipo(){
   let ne=0;
   if(MT.eqp){ne=parseInt($('#mtn').value,10);if(!(ne>=2))return toast('Informe ao menos 2 equipes');if(t.vagas&&t.vagas<ne)return toast('As vagas precisam ser pelo menos o número de equipes')}
   if(novo===t.formato&&ne===(t.nEquipes||0)){$('#dlg').close();return}
-  if(t.status!=='inscricao'&&!confirm('Mudar o tipo apaga resultados e equipes e reabre as inscrições. Continuar?'))return;
+  if(!ehInsc(t)&&!confirm('Mudar o tipo apaga resultados e equipes e reabre as inscrições. Continuar?'))return;
   const eqp=MT.eqp;$('#dlg').close();
   mut(x=>{aplicaTipo(x,eqp,novo==='sorteio'?'nenhuma':novo,ne)},()=>{S.tab='part'});
 }
@@ -791,9 +799,11 @@ function modsTorneio(){
   d.showModal();
 }
 function salvaModsT(){const ids=[...document.querySelectorAll('#dlg input[type=checkbox]:checked')].map(x=>x.value);$('#dlg').close();mut(t=>{t.mods=ids})}
+function publicar(){mut(t=>{t.status='inscricao'});toast('Evento publicado')}
+function despublicar(){if(!confirm('Voltar para rascunho? Os players deixam de ver este evento.'))return;mut(t=>{if(t.status!=='inscricao')return false;t.status='rascunho'})}
 function togInsc(){mut(t=>{t.aberta=!t.aberta})}
 async function abrir(id){
-  const t=await loadFull(id);if(!t)return toast('Torneio não encontrado.');
+  const t=await loadFull(id);if(!t||!visivel(t))return toast('Torneio não encontrado.');
   S.cur=t;S.tab='chave';S.q='';location.hash=id;render();scrollTo(0,0);
 }
 function voltar(){S.cur=null;S.criando=false;history.replaceState(null,'',location.pathname+location.search);render();scrollTo(0,0)}
@@ -830,7 +840,7 @@ async function add(id){
   if(!podeEditar(S.cur))return playerOp('torneio_inscrever',id);
   let rk=0;
   try{const j=await fetch('/api/ficha-salvar?slug='+encodeURIComponent(id)).then(r=>r.ok?r.json():null);if(j?.d)rk=numPts(j.d.pts_ranking)}catch{}
-  mut(t=>{if(t.status!=='inscricao'||t.part.some(p=>p.id===id))return false;t.part.push({...c,ranking:rk})});
+  mut(t=>{if(!ehInsc(t)||t.part.some(p=>p.id===id))return false;t.part.push({...c,ranking:rk})});
 }
 async function playerOp(action,slug){
   const ses=sesF();
@@ -842,7 +852,7 @@ async function playerOp(action,slug){
 function avulso(){const v=$('#mn').value.trim();if(!v)return;mut(t=>{t.part.push({id:'x'+Date.now().toString(36),nome:v,foto:'',cor:'',ranking:0,player:''})})}
 function sairTorneio(id){
   if(!podeEditar(S.cur))return playerOp('torneio_sair',id);
-  mut(t=>{if(t.status!=='inscricao')return false;t.part=t.part.filter(x=>x.id!==id)});
+  mut(t=>{if(!ehInsc(t))return false;t.part=t.part.filter(x=>x.id!==id)});
 }
 function buscar(){const ids=new Set(S.cur.part.map(p=>p.id)),q=S.q.toLowerCase();$('#avl').innerHTML=avList(S.chars.filter(c=>!ids.has(c.id)&&(c.nome+' '+c.player).toLowerCase().includes(q)))}
 function t_seed(v){mut(t=>{if(t.nEquipes&&t.formato!=='sorteio')t.seedEq=v;else t.seed=v})}
@@ -858,7 +868,7 @@ function sortear(t){
 }
 function resortear(){if(!podeEditar(S.cur)||!S.cur.nEquipes)return;if(!confirm('Sortear as equipes novamente? As equipes atuais serão substituídas'+(S.cur.formato!=='sorteio'?' e a competição será zerada.':'.')))return;mut(t=>{sortear(t)},()=>{S.tab='chave'})}
 function moverMembro(pid,eid){mut(t=>{const dest=(t.eq||[]).find(e=>e.id===eid);if(!dest||dest.membros.includes(pid))return false;t.eq.forEach(e=>{e.membros=e.membros.filter(x=>x!==pid)});dest.membros.push(pid)})}
-function iniciar(){mut(t=>{if(t.nEquipes&&t.status==='inscricao'){if(t.part.length<t.nEquipes){toast('Precisa de pelo menos '+t.nEquipes+' participantes (1 por equipe)');return false}sortear(t);return}if(comps(t).length<2){toast(t.nEquipes?'Precisa de pelo menos 2 equipes com membros':'Precisa de pelo menos 2 participantes');return false}start(t)},()=>{S.tab='chave'})}
+function iniciar(){mut(t=>{if(t.nEquipes&&ehInsc(t)){if(t.part.length<t.nEquipes){toast('Precisa de pelo menos '+t.nEquipes+' participantes (1 por equipe)');return false}sortear(t);return}if(comps(t).length<2){toast(t.nEquipes?'Precisa de pelo menos 2 equipes com membros':'Precisa de pelo menos 2 participantes');return false}start(t)},()=>{S.tab='chave'})}
 function reiniciar(){if(!podeEditar(S.cur))return;if(!confirm('Reabrir inscrições? Todos os resultados serão apagados.'))return;mut(t=>{Object.assign(t,{status:'inscricao',m:[],champ:null,...(t.nEquipes?{eq:[]}:{})});delete t.rod},()=>{S.tab='part'})}
 async function excluir(){if(!realAdmin()||!podeEditar(S.cur))return;if(!confirm('Excluir este torneio?'))return;try{await remove(S.cur)}catch(e){return toast(e.message)}voltar()}
 function placar(r,i){
@@ -891,7 +901,7 @@ function salvarM(r,i,clear){
   $('#dlg').close();
   mut(t=>{const m=t.m[r][i];if(!m)return false;if(clear){m.sa=m.sb=null}else{m.sa=a;m.sb=b}if(t.formato==='single')sync(t);else finishRR(t)});
 }
-addEventListener('hashchange',async()=>{const id=location.hash.slice(1);if(id===(S.cur&&S.cur.id))return;S.cur=id?await loadFull(id):null;render()});
+addEventListener('hashchange',async()=>{const id=location.hash.slice(1);if(id===(S.cur&&S.cur.id))return;S.cur=id?await loadFull(id):null;if(!visivel(S.cur))S.cur=null;render()});
 boot();
 $('#dlg').addEventListener('close',()=>{$('#dlg').className=''});
 </script>
