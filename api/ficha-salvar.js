@@ -502,8 +502,9 @@ module.exports = async (req, res) => {
     // 2) um único commit no GitHub: JSON + imagens novas + índice (+ apaga imagens antigas)
     const ficha = { slug, nome, player_id: b.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d: b.d, atualizado_em };
     let mesclado = null;   // {d, outros} quando houve merge com mudanças de outra pessoa
+    let urlsFinal = urls, imagens = { mantidas: [], descartadas: [] };   // imagens que valem de fato depois da regra "nunca sobrescrever"
     await commit(async parent => {
-      let fin = ficha; mesclado = null;
+      let fin = ficha; mesclado = null; urlsFinal = urls; imagens = { mantidas: [], descartadas: [] };
       // DONO: salvar nunca troca o dono de uma ficha que já existe (quem troca é a ação 'atribuir').
       // Vale o que está gravado no commit-pai; o player_id/d.player que o navegador mandou só vale para ficha NOVA.
       const tCur = await readFile(`data/fichas/${slug}.json`, parent);
@@ -533,6 +534,27 @@ module.exports = async (req, res) => {
           mesclado = { d: nd, outros };
         }
       }
+      // IMAGENS (foto/banner/thumb) NUNCA sobrescrevem uma imagem trocada em outro lugar: se a ficha mudou desde que o navegador a
+      // carregou E a imagem gravada é diferente da que o navegador conhecia (b.bi), vale a gravada. O navegador recebe o motivo em
+      // `imagens` e avisa na tela. `mantidas` = ele só reenviou a versão velha; `descartadas` = ele tinha enviado uma imagem NOVA.
+      let nv = novas, uf = urls;
+      if (cur0 && b.base && cur0.atualizado_em && cur0.atualizado_em !== b.base) {
+        nv = { ...novas }; uf = { ...urls };
+        const bi = b.bi && typeof b.bi === 'object' ? b.bi : null, mantem = new Set();
+        for (const kind of ['foto', 'banner', 'thumb']) {
+          const gravada = cur0[kind] ?? null, minha = uf[kind] ?? null;
+          const fora = bi && kind in bi ? gravada !== (bi[kind] ?? null)   // mudou em outro lugar desde que eu carreguei
+                                        : !nv[kind] && minha !== gravada;   // sem `bi`: URL diferente da gravada = versão velha reenviada
+          if (fora && minha !== gravada) mantem.add(kind);
+        }
+        if (mantem.has('foto') || mantem.has('thumb')) { mantem.add('foto'); mantem.add('thumb'); }   // thumb é derivada da foto: andam juntas
+        for (const kind of mantem) {
+          if (nv[kind]) { delete nv[kind]; imagens.descartadas.push(kind); } else imagens.mantidas.push(kind);
+          uf[kind] = cur0[kind] ?? null;
+        }
+        if (mantem.size) fin = { ...fin, foto: uf.foto, banner: uf.banner, thumb: uf.thumb };
+      }
+      urlsFinal = uf;
       const ch = [{ path: `data/fichas/${slug}.json`, content: JSON.stringify(fin) }];
       // as 3 leituras são independentes: disparam juntas (antes eram em fila)
       const pExist = listDir(`img/fichas/${slug}`, parent);
@@ -545,8 +567,8 @@ module.exports = async (req, res) => {
       })();
       const [hist, existentes, idxTxt] = await Promise.all([pHist, pExist, pIdx]);
       if (hist) ch.push(hist);
-      const manter = new Set(Object.values(novas).map(n => n.path));
-      for (const [kind, n] of Object.entries(novas)) {
+      const manter = new Set(Object.values(nv).map(n => n.path));
+      for (const [kind, n] of Object.entries(nv)) {
         ch.push({ path: n.path, content: n.buf });
       }
       // fotos de Pokémon em uso = as do resultado FINAL (inclui as que vieram de outra pessoa na mescla), não só as do navegador
@@ -554,7 +576,7 @@ module.exports = async (req, res) => {
       for (const K of ['time', 'box']) (Array.isArray(fin.d?.[K]) ? fin.d[K] : []).forEach(x => { if (x && typeof x === 'object' && typeof x.foto === 'string' && x.foto) pkFin.push(x.foto); });
       for (const f of existentes) {
         const kind = f.name.split('-')[0];
-        const emUso = Object.values(urls).some(u => u && u.endsWith('/' + f.path)) || pkEmUso.some(u => u.endsWith('/' + f.path)) || pkFin.some(u => u.endsWith('/' + f.path));
+        const emUso = Object.values(uf).some(u => u && u.endsWith('/' + f.path)) || pkEmUso.some(u => u.endsWith('/' + f.path)) || pkFin.some(u => u.endsWith('/' + f.path));
         if (!manter.has(f.path) && !emUso && ['foto', 'banner', 'thumb', 'pk'].includes(kind)) ch.push({ path: f.path, content: null });
       }
       const idx = parseIdx(idxTxt).filter(x => x.slug !== slug);
@@ -563,10 +585,10 @@ module.exports = async (req, res) => {
       return ch;
     }, `ficha: ${slug}`);
 
-    try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: mesclado ? mesclado.d : b.d }); }
+    try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urlsFinal.foto, p_banner: urlsFinal.banner, p_d: mesclado ? mesclado.d : b.d }); }
     catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }   // o GitHub é a fonte da verdade
 
-    return res.json({ ok: true, slug, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, pk: pkUrls, atualizado_em, outros: mesclado ? mesclado.outros : undefined, player_id: ficha.player_id, player: (mesclado ? mesclado.d : b.d).player ?? '' });
+    return res.json({ ok: true, slug, foto: urlsFinal.foto, banner: urlsFinal.banner, thumb: urlsFinal.thumb, imagens, pk: pkUrls, atualizado_em, outros: mesclado ? mesclado.outros : undefined, player_id: ficha.player_id, player: (mesclado ? mesclado.d : b.d).player ?? '' });
   } catch (e) {
     return res.status(e.status || 500).json({ error: e.message || 'Erro ao salvar.', code: e.code, campos: e.campos });
   }
