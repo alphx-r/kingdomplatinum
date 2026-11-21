@@ -1587,17 +1587,16 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
 /* o título agora fica só na faixa: some o cabeçalho (título + descrição) de dentro das páginas */
 .page .roller-header,.kp-dup{display:none!important}
 .kp-pagebar h1{flex:0 1 auto;max-width:55%}
-.kp-search{position:relative;flex:1 1 auto;max-width:420px;min-width:0;margin-left:auto}
-.kp-search input{width:100%;height:38px;border:0;border-radius:22px;padding:0 16px 0 40px;color:var(--text);font:600 14px var(--font-body,sans-serif);outline:0;
+/* busca de Pokémon: só aparece na página Por Local */
+.kp-pbusca{display:none;position:relative;flex:1 1 auto;max-width:420px;min-width:0;margin-left:auto}
+.kp-pagebar.kp-bioma .kp-pbusca{display:block}
+.kp-pbusca input{width:100%;height:38px;border:0;border-radius:22px;padding:0 40px 0 40px;color:var(--text);font:600 14px var(--font-body,sans-serif);outline:0;
   background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a99' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 14px center/16px}
-.kp-search input:focus{box-shadow:0 0 0 2px var(--accent)}
-.kp-sr{display:none;position:absolute;top:calc(100% + 8px);left:0;right:0;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);max-height:60vh;overflow:auto;padding:6px;z-index:8600}
-.kp-sr.open{display:block}
-.kp-sr button{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:8px;font:700 13.5px var(--font-body,sans-serif);color:var(--text);cursor:pointer}
-.kp-sr button:hover,.kp-sr button.on{background:var(--brand-light)}
-.kp-sr small{font-size:11px;font-weight:700;color:var(--muted)}
-.kp-sr .vazio{padding:12px;color:var(--muted);font-size:13px}
-@media(max-width:768px){.kp-search input{height:32px;font-size:13px}.kp-pagebar h1{max-width:42%}}
+.kp-pbusca input:focus{box-shadow:0 0 0 2px var(--accent)}
+.kp-pbusca input::-webkit-search-cancel-button{display:none}
+.kp-pbusca .bioma-busca-x{right:5px}
+.kp-pbusca.tem-texto .bioma-busca-x{display:block}
+@media(max-width:768px){.kp-pbusca input{height:32px;font-size:13px}.kp-pbusca .bioma-busca-x{width:26px;height:26px}.kp-pagebar h1{max-width:42%}}
 /* elementos sticky das páginas passam a ficar abaixo da faixa */
 .adm-sidebar{top:calc(var(--kp-bar-h) + 20px)!important;max-height:calc(100vh - var(--kp-bar-h) - 40px)!important}
 .rol-sticky-header{top:var(--kp-bar-h)!important}
@@ -2106,7 +2105,7 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
 </div>
 
 <!-- FAIXA DE TÍTULO DA PÁGINA -->
-<div class="kp-pagebar" id="kp-pagebar"><h1 id="kp-pagebar-title">Rolador</h1><div class="kp-search"><input type="search" id="kp-search" placeholder="Pesquisar página ou local…" autocomplete="off" aria-label="Pesquisar"><div class="kp-sr" id="kp-search-res" role="listbox"></div></div></div>
+<div class="kp-pagebar" id="kp-pagebar"><h1 id="kp-pagebar-title">Rolador</h1><div class="kp-pbusca" id="bioma-busca-wrap"><input type="search" id="bioma-busca" placeholder="Procure por Pokémon" autocomplete="off" oninput="bioBuscaInput(this.value)" aria-label="Pesquisar Pokémon"><button type="button" class="bioma-busca-x" onclick="bioBuscaLimpar()" title="Limpar busca" aria-label="Limpar busca">×</button></div></div>
 
 <!-- BOTÃO EDITAR -->
 <button class="page-edit-btn" id="page-edit-btn" onclick="toggleEditMode()" title="Editar página">✎</button>
@@ -5229,13 +5228,6 @@ window.calcSituSoma = function(){
 <!-- ADM -->
 <!-- POR BIOMA -->
 <div class="page" id="page-bioma">
-  <div style="padding-top:8px;margin-bottom:20px">
-    <h2 style="font-family:var(--font-title);font-size:20px;color:var(--text);font-weight:700;margin-bottom:16px">Pokémon por Local</h2>
-  </div>
-  <div class="bioma-busca" id="bioma-busca-wrap">
-    <input type="search" id="bioma-busca" placeholder="Procure por Pokémon" autocomplete="off" oninput="bioBuscaInput(this.value)" aria-label="Pesquisar Pokémon">
-    <button type="button" class="bioma-busca-x" onclick="bioBuscaLimpar()" title="Limpar busca" aria-label="Limpar busca">×</button>
-  </div>
   <div id="bioma-busca-res" class="bb-res" style="display:none"></div>
   <div id="bioma-tabs" class="loc-picker"></div>
   <div id="bioma-content"></div>
@@ -7652,63 +7644,10 @@ function kpDedupTitulo(){
   if(t && t.textContent.trim().toLowerCase()===bar) t.classList.add('kp-dup');
 }
 
-// ── Pesquisa da faixa: páginas do site + locais (Por Local) ──
-const KP_BUSCA_PAGINAS = [
-  {t:'Rolador',k:'roller'},{t:'Por Local',k:'bioma'},{t:'NPCs',k:'npcs'},{t:'Calendário',k:'eventos-hub'},{t:'Tramas',k:'tramas'},
-  {t:'Sistemas',k:'sistemas'},{t:'Subsistemas',k:'subsistemas'},{t:'Provas de Valor',k:'provasdevalor'},{t:'Ganhos',k:'ganhos'},
-  {t:'Natures',k:'nature'},{t:'Batalhas',k:'batalhas'},{t:'Berries',k:'berries'},
-  {t:'Fichário',fn:()=>abrirFichas({preventDefault(){}})},
-  {t:'Stores',href:'/stores'},{t:'Quests Guild',href:'/missoes'},{t:'Datadex',href:'/datadex'}
-];
-const _kpNorm = s => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-function kpBuscaItens(q){
-  q = _kpNorm((q||'').trim()); if(!q) return [];
-  const out = KP_BUSCA_PAGINAS.filter(i=>_kpNorm(i.t).includes(q)).map(i=>({...i,tipo:'Página'}));
-  try{
-    const locais = locaisEncontroNomes(Object.keys(ENC_LOCAL_TAB||{}).filter(n=>n && Object.keys(ENC_LOCAL_TAB[n]||{}).length));
-    locais.filter(n=>_kpNorm(n).includes(q)).slice(0,8).forEach(n=>out.push({t:n,tipo:'Local',local:n}));
-  }catch(e){}
-  return out.slice(0,12);
-}
-(function kpBuscaInit(){
-  const inp = document.getElementById('kp-search'), box = document.getElementById('kp-search-res');
-  if(!inp || !box) return;
-  let itens = [], sel = 0;
-  const fechar = () => { box.classList.remove('open'); box.innerHTML=''; itens=[]; };
-  const marcar = () => [...box.querySelectorAll('button')].forEach((b,i)=>b.classList.toggle('on',i===sel));
-  const ir = i => {
-    fechar(); inp.value=''; inp.blur();
-    if(i.local){ biomaAtivo = i.local; try{ sessionStorage.setItem('kp_bioma_local', i.local); }catch(e){} goTo('bioma',null); }
-    else if(i.k) goTo(i.k,null);
-    else if(i.fn) i.fn();
-    else if(i.href) location.href = i.href;
-  };
-  const abrir = () => {
-    itens = kpBuscaItens(inp.value); sel = 0; box.innerHTML='';
-    if(!inp.value.trim()){ box.classList.remove('open'); return; }
-    if(!itens.length){ const d=document.createElement('div'); d.className='vazio'; d.textContent='Nada encontrado.'; box.appendChild(d); }
-    itens.forEach((it,n)=>{
-      const b=document.createElement('button'); b.type='button'; b.setAttribute('role','option');
-      const a=document.createElement('span'); a.textContent=it.t;
-      const c=document.createElement('small'); c.textContent=it.tipo;
-      b.append(a,c); b.addEventListener('mousedown',e=>{e.preventDefault(); ir(it);});
-      box.appendChild(b);
-    });
-    box.classList.add('open'); marcar();
-  };
-  inp.addEventListener('input',abrir);
-  inp.addEventListener('focus',()=>{ if(inp.value.trim()) abrir(); });
-  inp.addEventListener('keydown',e=>{
-    if(e.key==='ArrowDown'){ e.preventDefault(); if(itens.length){ sel=(sel+1)%itens.length; marcar(); } }
-    else if(e.key==='ArrowUp'){ e.preventDefault(); if(itens.length){ sel=(sel-1+itens.length)%itens.length; marcar(); } }
-    else if(e.key==='Enter'){ if(itens[sel]){ e.preventDefault(); ir(itens[sel]); } }
-    else if(e.key==='Escape'){ inp.value=''; fechar(); inp.blur(); }
-  });
-  document.addEventListener('click',e=>{ if(!e.target.closest('.kp-search')) fechar(); });
-})();
 function kpTituloAba(page, nome){
   const _t = nome || KP_NOMES_PAGINA[page] || 'Página';
   document.title = _t + ' | KPRPG';
+  document.getElementById('kp-pagebar')?.classList.toggle('kp-bioma', page==='bioma');   // busca de Pokémon só em Por Local
   const _h = document.getElementById('kp-pagebar-title');
   if(_h) _h.textContent = nome ? nome : (KP_TITULO_BARRA[page] || _t);
   [50,600,1800].forEach(ms=>setTimeout(kpDedupTitulo,ms));
