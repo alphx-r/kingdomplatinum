@@ -382,15 +382,13 @@ html.v-ficha .pc-facts{display:flex;flex-wrap:wrap;gap:8px 26px}
 html.v-ficha .pc-fact{display:flex;flex-direction:column;gap:1px;min-width:90px}
 html.v-ficha .pc-fact span,html.v-ficha .pc-lbl{font:800 9.5px var(--fb);letter-spacing:.6px;text-transform:uppercase;color:var(--mu)}
 html.v-ficha .pc-fact b{font:600 14px var(--fb);color:var(--tx)}
-html.v-ficha .pc-moves{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
-html.v-ficha .pc-mv{display:flex;align-items:center;gap:12px;background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;color:var(--tx);min-width:0}
-html.v-ficha .pc-mv .mv-ti{flex:none;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}
-html.v-ficha .pc-mv .mv-ti img{width:26px;height:26px;object-fit:contain}
-html.v-ficha .pc-mv .mv-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-html.v-ficha .pc-mv .mv-n{font:700 15px/1.2 var(--fb);color:var(--tx);overflow-wrap:anywhere}
-html.v-ficha .pc-mv .mv-m{font:700 12px/1.25 var(--fb);color:var(--mu)}
-html.v-ficha .pc-mv .mv-m .c-physical{color:#c0602a}html.v-ficha .pc-mv .mv-m .c-special{color:#3a6fb0}html.v-ficha .pc-mv .mv-m .c-status{color:var(--mu)}
-html.v-ficha .pc-mv .mvb{flex:none;margin-left:auto;font:800 10px var(--fb);letter-spacing:.5px;padding:4px 9px;border-radius:4px;vertical-align:baseline}
+html.v-ficha .pc-moves{display:grid;grid-template-columns:1fr 1fr;grid-auto-flow:column;grid-template-rows:repeat(4,auto);gap:6px}
+html.v-ficha .pc-mv{display:flex;flex-direction:column;gap:2px;background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:5px 9px;color:var(--tx);min-width:0}
+html.v-ficha .pc-mv1{display:flex;align-items:center;gap:6px;font:600 13px var(--fb)}html.v-ficha .pc-mn{flex:1;min-width:0}html.v-ficha .pc-mv .mvb{font-size:8.5px;padding:2px 5px}
+html.v-ficha .pc-mi{display:inline-flex;gap:2px}html.v-ficha .pc-mi:empty{display:none}html.v-ficha .pc-mti{width:16px;height:16px;object-fit:contain}
+html.v-ficha .pc-mm{font:600 10.5px var(--fb);color:var(--mu)}html.v-ficha .pc-mm:empty{display:none}
+html.v-ficha .pc-dc{font-weight:800}html.v-ficha .pc-dc-physical{color:#c0562b}html.v-ficha .pc-dc-special{color:#3a6fb0}html.v-ficha .pc-dc-status{color:#7a7f87}
+@media(max-width:700px){html.v-ficha .pc-moves{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:none!important;grid-auto-flow:row!important}}
 html.v-ficha .mvempty{color:var(--mu)}
 html.v-ficha .pc-stats{display:grid;grid-template-columns:repeat(6,1fr);background:var(--s2);border-top:1.5px solid var(--bd)}
 html.v-ficha .pc-st{display:flex;flex-direction:column;align-items:center;padding:4px 2px;border-right:1px solid var(--bd)}
@@ -2286,9 +2284,26 @@ function ginLbSwipe(){
   },{passive:true});
 }
 
+/* A imagem passa pelo servidor antes de ir ao GitHub, e o servidor recusa mais de 1,5 MB.
+   Por isso ela é reduzida/recomprimida aqui no navegador (WebP, ou JPEG se o WebP não existir) até caber. */
+async function comprimirImagem(dataUrl,limite=1.4*1024*1024){
+  const bytes=u=>Math.floor((u.length-u.indexOf(',')-1)*0.75);
+  if(/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)&&bytes(dataUrl)<=limite)return dataUrl;
+  const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('Não foi possível ler a imagem.'));i.src=dataUrl});
+  const webp=document.createElement('canvas').toDataURL('image/webp').startsWith('data:image/webp'),tipo=webp?'image/webp':'image/jpeg';
+  for(const max of [2000,1600,1280,1024,800]){
+    const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(img.naturalWidth*k));c.height=Math.max(1,Math.round(img.naturalHeight*k));
+    const x=c.getContext('2d');if(!webp){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
+    x.drawImage(img,0,0,c.width,c.height);
+    for(const q of [.9,.8,.7,.6]){const u=c.toDataURL(tipo,q);if(bytes(u)<=limite)return u}
+  }
+  throw new Error('A imagem é grande demais mesmo depois de comprimida. Use uma imagem menor.');
+}
 async function salvarImagemCampo(campo,dataUrl){
   const btn=document.getElementById(IMG_BTN_IDS[campo]||'btn-photo-edit');
   const prev=btn?btn.textContent:'';if(btn){btn.textContent='Salvando...';btn.disabled=true;}
+  try{dataUrl=await comprimirImagem(dataUrl)}catch(e){alert('Erro ao preparar a imagem: '+e.message);if(btn){btn.textContent=prev;btn.disabled=false;}return}
   if(campo==='gym_imagem'){
     // cenário: adiciona à galeria em vez de substituir
     const lista=gymImgs(npc.gym_imagem);lista.push(dataUrl);
@@ -2564,7 +2579,7 @@ function carregarMoveDex(){
   window._moveDexPromise=lerJsonRepo(kpUrls('movedex/moves.json','/datadex/movedex/moves.json')).then(rows=>{
     const nomes=rows.map(v=>{if(v&&v.approved===false)return'';const n=typeof v==='string'?v:(v&&(v.nome||v.name||v.title||v.move));return n?nomeBonito(String(n).trim()):''}).filter(Boolean);
     window._moveDex=[...new Set(nomes)].sort((a,b)=>a.localeCompare(b,'pt',{sensitivity:'base'}));
-    const info={};rows.forEach(v=>{if(!v||typeof v!=='object'||v.approved===false)return;const n=v.name||v.nome;if(n)info[_normNome(n)]={type:v.type||'',cat:String(v.damage_class||'').toLowerCase(),pow:v.power,acc:v.accuracy,contest:v.contest_style||''};});
+    const info={};rows.forEach(v=>{if(!v||typeof v!=='object'||v.approved===false)return;const n=v.name||v.nome;if(n)info[_normNome(n)]={type:v.type||'',type2:v.type2||'',cat:String(v.damage_class||'').toLowerCase(),pow:v.power,acc:v.accuracy,contest:v.contest_style||'',desc:v.descricao||''};});
     window._moveInfo=info;
     let dl=document.getElementById('dl-moves');
     if(!dl){dl=document.createElement('datalist');dl.id='dl-moves';document.body.appendChild(dl);}
@@ -2628,7 +2643,25 @@ function pkLvIn(e){let v=e.value.replace(/\D/g,'').slice(0,3);if(v!==''&&+v>100)
 function pkLvFix(e){let v=e.value.replace(/\D/g,'');if(v!=='')v=String(Math.min(100,Math.max(1,parseInt(v,10))));e.value=v;}
 // troca de Feature: guarda o que já foi digitado e redesenha (Delta mostra os tipos; Modified/Delta mostram "Novo Sprite")
 let _pkAbertoT=-1;
-function pkFeatChange(i){_pkAbertoT=i;npc.time=coletarTimeForm();renderTime();}
+function pkFeatChange(i){
+  const eraMod=pkIsMod((npc.time||[])[i]||{});   // Feature anterior
+  _pkAbertoT=i;npc.time=coletarTimeForm();
+  const pk=npc.time[i];
+  if(pk&&pk.nome&&eraMod&&!pkIsMod(pk)){   // saiu de Modified/Delta: volta ao sprite da espécie (senão o sprite próprio ficava preso)
+    const d=(window._pokeDex||[]).find(x=>x.nome.toLowerCase()===String(pk.nome).toLowerCase());
+    if(d&&d.sprite){pk.img=d.sprite;(window._pokeImgs=window._pokeImgs||{}).time=window._pokeImgs.time||{};window._pokeImgs.time[i]=d.sprite;}
+  }
+  renderTime();
+  // o corpo da seção tem max-height fixo (overflow:hidden): sem recalcular, o conteúdo novo (Novo Sprite, tipos) era cortado
+  const g=document.getElementById('time-grid');if(g){ajustarAlturaSecaoPai(g);setTimeout(()=>ajustarAlturaSecaoPai(g),350);}
+}
+// sprite próprio enviado pelo usuário (data URL, ou URL diferente do sprite da espécie)
+function pkTemUpload(pk){
+  if(!pkIsMod(pk)||!pk.img)return false;
+  if(/^data:/.test(pk.img))return true;
+  const d=(window._pokeDex||[]).find(x=>x.nome.toLowerCase()===String(pk.nome||'').toLowerCase());
+  return !(d&&d.sprite===pk.img);
+}
 // lê o formulário do Time Principal (usado ao salvar e ao trocar a Feature)
 function coletarTimeForm(){
   const arr=[];
@@ -2675,13 +2708,23 @@ function selSlotTime(i){
 const _GEN_TXT={'♂':'Male','♀':'Female','—':'Genderless',male:'Male',female:'Female',genderless:'Genderless'};
 const _genW=g=>g==='♂'?'male':g==='♀'?'female':g==='—'?'genderless':(g||'');
 function _genIco(g,cor){g=_genW(g);g=g==='male'?'♂':g==='female'?'♀':g==='genderless'?'—':'';return g==='♂'?`<span class="poke-slot-gender" style="color:${cor?'#9fd0ff':'#4a90d9'}">♂</span>`:g==='♀'?`<span class="poke-slot-gender" style="color:${cor?'#ffb0d6':'#d94a90'}">♀</span>`:g==='—'?'<span class="poke-slot-gender">⚲</span>':'';}
-// card de golpe: ícone do tipo, nome e "Categoria · Pow · Acc · Contest" (dados do movedex)
-const _cap=t=>t?t.charAt(0).toUpperCase()+t.slice(1):'';
+// card de golpe (mesmo formato do fichas): ícones do tipo, nome, origem e "Categoria · Pow · Acc · Contest"
+const _cap=t=>t?String(t).charAt(0).toUpperCase()+String(t).slice(1):'';
+const _TIPOS_OFC=new Set(TIPOS_POKE),_TIPO_FAKE_BASE=DB_RAW+'sprites/types';
+const _CST={smart:'clever',beauty:'beautiful',beautify:'beautiful'};
+function mvTipoIc(t){t=String(t||'').toLowerCase().trim();if(!t)return'';const ofc=_TIPOS_OFC.has(t),en=encodeURIComponent(t),u=(ofc?TIPO_SVG_BASE:_TIPO_FAKE_BASE)+'/'+en+'.svg';
+  return `<img class="pc-mti" src="${u}" title="${escAttr(_cap(t))}" alt="${escAttr(_cap(t))}"${ofc?'':` onerror="this.onerror=null;this.src='/sprites/types/${en}.svg'"`}>`;}
 function mvCard(m){
-  const mi=(window._moveInfo||{})[_normNome(m.n)];
-  const ico=mi&&mi.type?`<img src="${tipoImg(mi.type)}" title="${escAttr(_cap(mi.type))}" alt="" onerror="this.style.display='none'"/>`:'';
-  const meta=mi?[`<span class="c-${escAttr(mi.cat||'status')}">${escAttr(_cap(mi.cat)||'—')}</span>`,'Pow '+(mi.pow==null?'—':mi.pow),'Acc '+(mi.acc==null?'—':mi.acc),mi.contest?_cap(mi.contest):''].filter(Boolean).join(' · '):'';
-  return `<div class="pc-mv"><span class="mv-ti">${ico}</span><div class="mv-b"><div class="mv-n">${escAttr(m.n)}</div>${meta?`<div class="mv-m">${meta}</div>`:''}</div>${PK_BD[m.o]?`<span class="mvb mvb-${m.o}">${PK_BD[m.o]}</span>`:''}</div>`;
+  const mx=(window._moveInfo||{})[_normNome(m.n)];
+  let mi='',mm='',tt='';
+  if(mx){
+    mi=mvTipoIc(mx.type)+mvTipoIc(mx.type2);
+    const cs=String(mx.contest||'').toLowerCase(),p=[];
+    if(mx.cat)p.push(`<span class="pc-dc pc-dc-${escAttr(mx.cat)}">${escAttr(_cap(mx.cat))}</span>`);
+    p.push('Pow '+(mx.pow??'—'));p.push('Acc '+(mx.acc??'—'));if(cs)p.push(escAttr(_cap(_CST[cs]||cs)));
+    mm=p.join(' · ');if(mx.desc)tt=` title="${escAttr(mx.desc)}"`;
+  }
+  return `<div class="pc-mv"${tt}><div class="pc-mv1"><span class="pc-mi">${mi}</span><span class="pc-mn">${escAttr(m.n)}</span>${PK_BD[m.o]?`<span class="mvb mvb-${m.o}">${PK_BD[m.o]}</span>`:''}</div><div class="pc-mm">${mm}</div></div>`;
 }
 function renderTime(){
   const time=npc.time||[{},{},{},{},{},{}];
@@ -2805,9 +2848,9 @@ function slotEdit(i,pk0,aberto){
       <div class="fld"><span class="fl">Ability</span>${abilityFieldHtml(pfx,i,pk.ability)}</div>
       <label class="fld"><span class="fl">Feature</span><select id="${pfx}-feature-${i}" onchange="pkFeatChange(${i})">${PK_FEATS.map(v=>`<option value="${v}"${feat===v?' selected':''}>${v}</option>`).join('')}</select></label>
       ${modif?`<div class="fld"><span class="fl">Novo Sprite</span>
-        <img class="poke-slot-edit-img-preview" src="${escAttr(pk.img||'')}" id="${pfx}-img-prev-${i}"${pk.img?'':' style="display:none"'}/>
+        <img class="poke-slot-edit-img-preview" src="${escAttr(pk.img||'')}" id="${pfx}-img-prev-${i}" onload="ajustarAlturaPorSlot('${pfx}',${i})"${pk.img?'':' style="display:none"'}/>
         <button class="poke-slot-edit-img-btn" type="button" onclick="document.getElementById('${pfx}-img-file-${i}').click()">Escolher imagem própria</button>
-        <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this)"/>
+        <input type="file" id="${pfx}-img-file-${i}" accept="image/*" style="display:none" onchange="onPokeImg(${i},this)"${pkTemUpload(pk)?' data-has-upload="1"':''}/>
       </div>`:''}
       ${delta?tipoSel(0,t0,'Tipo primário')+tipoSel(1,t1,'Tipo secundário'):`<input type="hidden" id="${pfx}-tipo0-${i}" value="${escAttr(t0)}"/><input type="hidden" id="${pfx}-tipo1-${i}" value="${escAttr(t1)}"/>`}
       <label class="fld"><span class="fl">Nature</span><select id="${pfx}-nature-${i}">${natureOptsHtml(pk.nature)}</select></label>
@@ -2824,14 +2867,16 @@ function onPokeImg(i,input,grupo='time'){
   const file=input.files[0];if(!file)return;
   const pfx=grupo==='time'?'time-pk':grupo;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
+    let url=e.target.result;
+    try{url=await comprimirImagem(url,300*1024)}catch(_){}   // sprite fica dentro do JSON do NPC: mantém leve
     const prev=document.getElementById(`${pfx}-img-prev-${i}`);
-    if(prev){prev.src=e.target.result;prev.style.display='block';}
+    if(prev){prev.src=url;prev.style.display='block';}
     if(!window._pokeImgs) window._pokeImgs={};
     if(!window._pokeImgs[grupo]) window._pokeImgs[grupo]={};
-    window._pokeImgs[grupo][i]=e.target.result;
+    window._pokeImgs[grupo][i]=url;
     input.dataset.hasUpload='1';
-    sincronizarCabecalhoSlot(pfx,i,null,e.target.result);
+    sincronizarCabecalhoSlot(pfx,i,null,url);
     ajustarAlturaPorSlot(pfx,i);
   };
   reader.readAsDataURL(file);
