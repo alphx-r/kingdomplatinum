@@ -14,7 +14,8 @@ const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
 const S = require('./_staff');
 
 const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${REPO}/${BRANCH}`).replace(/\/$/, '');
-const MAX_IMG = 1.5 * 1024 * 1024;
+// Limite real: o corpo de uma requisição na Vercel é de 4,5 MB e o base64 pesa ~33% a mais, então ~3 MB de imagem é o teto que cabe.
+const MAX_IMG = 3 * 1024 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
 const RESERVADOS = ['nova', 'desativadas', 'adm'];
 const IDX = 'data/npcs/index.json';
@@ -41,7 +42,7 @@ function parseImg(v) {
   const m = v.match(/^data:image\/(jpeg|png|webp|gif);base64,([A-Za-z0-9+/=]+)$/);
   if (!m) throw erro('Formato de imagem inválido.', 400);
   const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > MAX_IMG) throw erro('Imagem grande demais (máx. 1,5 MB).', 400);
+  if (buf.length > MAX_IMG) throw erro('Imagem grande demais (máx. ' + (MAX_IMG / 1048576) + ' MB).', 400);
   return { buf, ext: m[1] === 'jpeg' ? 'jpg' : m[1] };
 }
 // cenário: 1 imagem = string; 2+ = array JSON (mesmo formato que o npcdex já usa)
@@ -66,6 +67,10 @@ function prepararImagens(campos, slug) {
     return `${IMG_BASE}/${path}`;
   };
   const out = { ...campos };
+  // sprites próprios dos Pokémon (time / pokemon_ghs): data URI vira arquivo no repo e o JSON guarda só a URL
+  const spr = x => { if (x && typeof x === 'object' && typeof x.img === 'string' && /^data:image\//.test(x.img)) x.img = um(x.img, 'pk'); };
+  if (Array.isArray(out.time)) out.time.forEach(spr);
+  if (out.pokemon_ghs && typeof out.pokemon_ghs === 'object') Object.values(out.pokemon_ghs).forEach(v => Array.isArray(v) && v.forEach(spr));
   if ('foto' in out) out.foto = um(out.foto, 'foto');
   if ('banner' in out) out.banner = um(out.banner, 'banner');
   if ('gym_imagem' in out) out.gym_imagem = gymSerializa(gymLista(out.gym_imagem).map(v => um(v, 'gym')).filter(Boolean));
@@ -136,10 +141,14 @@ async function mudancaHist(parent, slug, novas) {
 function indexEntry(n) {
   return { slug: n.slug, nome: n.nome, categoria: n.categoria || 'comum', cargo: n.cargo || '', foto: n.foto || null, ativo: n.ativo !== false, ordem: n.ordem ?? null, atualizado_em: n.atualizado_em };
 }
-const urlsEmUso = n => [n.foto, n.banner, ...gymLista(n.gym_imagem)].filter(u => typeof u === 'string');
+const sprUrls = n => { const o = [], it = x => { if (x && typeof x.img === 'string') o.push(x.img); };
+  (Array.isArray(n.time) ? n.time : []).forEach(it);
+  if (n.pokemon_ghs && typeof n.pokemon_ghs === 'object') Object.values(n.pokemon_ghs).forEach(v => Array.isArray(v) && v.forEach(it));
+  return o; };
+const urlsEmUso = n => [n.foto, n.banner, ...gymLista(n.gym_imagem), ...sprUrls(n)].filter(u => typeof u === 'string');
 const doDir = (existentes, emUso, manter) => existentes.filter(f => {
   const kind = f.name.split('-')[0];
-  return ['foto', 'banner', 'gym'].includes(kind) && !manter.has(f.path) && !emUso.some(u => u.endsWith('/' + f.path));
+  return ['foto', 'banner', 'gym', 'pk'].includes(kind) && !manter.has(f.path) && !emUso.some(u => u.endsWith('/' + f.path));
 }).map(f => ({ path: f.path, content: null }));
 
 // ---------- ações ----------
