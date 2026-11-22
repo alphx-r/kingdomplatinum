@@ -1,2111 +1,486 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<!-- KP-ADMIN:BEGIN site=datadex (gerado por build_gate.py) --><script data-site="datadex">
-/* admin-player.js — acesso por PLAYER (Chefe / ADM / MOD por site) + switch ao lado do nome do player.
-   Uso (em TODO html, no <head>):  <script src="/admin-player.js"><\/script>
-   Opcional: data-site="torneios" para forçar o nome do site (senão sai do caminho da URL).
-   A lista vem de config.kp_staff (projeto do index):
-     { "chefe":"ricky", "admins":["jef","lucas"], "mods":{ "torneios":[], "stores":[] } }
-   IMPORTANTE: isto só controla a INTERFACE. Quem protege os dados é o servidor (token do player). */
-(function () {
-  if (window.KPAdm) return;
-  var SU = 'https://ucbkodkjlbatttiuqjtv.supabase.co', SKEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
-  var KS = 'kp_ficha_sessao', KP = 'kp_preview', KC = 'kp_staff_cache', KT = 'kp_staff_ts', KJ = 'player_session', TTL = 600000;
-  /* lê/grava nos DOIS storages: sessionStorage (esta aba) e localStorage (vale para as outras abas e visitas).
-     rd(k, true) = a aba tem prioridade; rd(k) = o localStorage tem prioridade. A senha (kp_adm_cred) fica só na aba, de propósito. */
-  function rd(k, sf) { var f = [function () { return sessionStorage.getItem(k); }, function () { return localStorage.getItem(k); }]; if (!sf) f.reverse(); for (var i = 0; i < f.length; i++) { try { var v = f[i](); if (v != null) return v; } catch (e) {} } return null; }
-  function wr(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} try { localStorage.setItem(k, v); } catch (e) {} }
-  function js(k, sf) { try { return JSON.parse(rd(k, sf)); } catch (e) { return null; } }
-  var PADRAO = { chefe: 'ricky', admins: ['jef', 'lucas'], mods: {} };
-  var nrm = function (s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase(); };
-
-  var cs = document.currentScript;
-  var SITE = (cs && cs.getAttribute('data-site')) || (function () {
-    var p = location.pathname.replace(/\/+$/, '').replace(/\.html$/, '').split('/').pop() || 'index';
-    return { pokemart: 'stores' }[p] || p;
-  })();
-
-  function lista(a) { return Array.isArray(a) ? a.map(function (x) { return nrm(x && typeof x === 'object' ? x.nome : x); }).filter(Boolean) : []; }
-  function norm(v) {
-    if (!v || typeof v !== 'object') return null;
-    var mods = {}; Object.keys(v.mods || {}).forEach(function (k) { mods[String(k).toLowerCase()] = lista(v.mods[k]); });
-    return { chefe: nrm(v.chefe) || PADRAO.chefe, admins: lista(v.admins), mods: mods };
-  }
-  var staff = norm(js(KC)) || PADRAO;
-
-  function ses() { var s = js(KS); return s && s.token ? s : null; }
-  /* o nome vem do Fichário (kp_ficha_sessao) ou, na falta dele, do login do index (player_session) */
-  function nome() { var s = js(KS); if (s && s.nome) return s.nome; var j = js(KJ); return j && j.nome ? j.nome : ''; }
-  function papel() {
-    var n = nrm(nome()); if (!n) return null;
-    if (n === staff.chefe) return 'chefe';
-    if (staff.admins.indexOf(n) >= 0) return 'admin';
-    var m = staff.mods[SITE]; if (m && m.indexOf(n) >= 0) return 'mod';
-    return null;
-  }
-  function modoOn() { return rd(KP, true) !== '1'; }
-
-  var ouvintes = [];
-  function emit() { ouvintes.forEach(function (f) { try { f(); } catch (e) {} }); }
-
-  /* ── switch ao lado do nome do player (liga/desliga o modo ADM/MOD); o clique no nome continua com a página ── */
-  var busy = false;
-  var SEL = '#nav-player-name,#nav-who';
-  function pintar() {
-    if (busy) return;
-    var p = papel(), on = modoOn();
-    Array.prototype.forEach.call(document.querySelectorAll(SEL), function (el) {
-      var raw = el.textContent, txt = raw.replace(/^(ADM|MOD)\s+/, '').trim();
-      /* páginas sem código próprio para o nome (npcdex...): preenche com o player logado */
-      if ((!txt || txt === '—') && nome() && el.hasAttribute('data-kp-fill')) txt = nome();
-      if (txt && raw !== txt) { busy = true; el.textContent = txt; busy = false; }
-      var nx = el.nextElementSibling, sw = nx && nx.classList && nx.classList.contains('kp-sw') ? nx : null;
-      var pv = el.previousElementSibling, rl = pv && pv.classList && pv.classList.contains('kp-role') ? pv : null;
-      var bd = el.closest ? el.closest('#nav-player-badge') : null;
-      if (!p || !txt || txt === '—' || txt === 'Entrar') { if (sw) sw.remove(); if (rl) rl.remove(); if (bd) bd.classList.remove('kp-staff'); return; }
-      if (bd) bd.classList.add('kp-staff');
-      if (!rl) { rl = document.createElement('span'); rl.className = 'kp-role'; el.parentNode.insertBefore(rl, el); }
-      rl.textContent = p === 'mod' ? 'MOD' : 'ADM'; rl.classList.toggle('off', !on);
-      if (!sw) {
-        sw = document.createElement('button'); sw.type = 'button'; sw.className = 'kp-sw';
-        sw.setAttribute('role', 'switch'); sw.innerHTML = '<i></i>';
-        sw.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggle(); });
-        el.parentNode.insertBefore(sw, el.nextSibling);
-      }
-      var tipo = p === 'mod' ? 'MOD' : 'ADM';
-      sw.classList.toggle('on', on); sw.setAttribute('aria-checked', on ? 'true' : 'false');
-      sw.setAttribute('aria-label', 'Modo ' + tipo); sw.removeAttribute('title');
-    });
-  }
-  function toggle() {
-    if (!papel()) return;
-    /* torneios/stores já têm togPreview(): ela grava kp_preview e repinta a página */
-    if (typeof window.togPreview === 'function') { window.togPreview(); setTimeout(function () { try { var sv = sessionStorage.getItem(KP); if (sv != null) localStorage.setItem(KP, sv); } catch (e) {} pintar(); emit(); }, 260); return; }
-    wr(KP, modoOn() ? '1' : '');
-    pintar(); emit();
-  }
-
-
-  /* ── senha do player (para ações que gravam no servidor); fica só nesta aba ── */
-  var KK = 'kp_adm_cred';
-  function el(tag, css, html) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (html != null) e.innerHTML = html; return e; }
-  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  var DLG = 'padding:20px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:var(--bg,#1b1b20);color:var(--text,#fff);max-width:min(92vw,460px);width:100%;font:14px/1.4 system-ui,sans-serif';
-  var INP = 'width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font:inherit;margin:6px 0';
-  var BTN = 'padding:9px 16px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:inherit;font:inherit;font-weight:700;cursor:pointer';
-  function credLimpar() { try { sessionStorage.removeItem(KK); } catch (e) {} }
-  function cred(msg) {
-    return new Promise(function (ok) {
-      var c = null; try { c = JSON.parse(sessionStorage.getItem(KK)); } catch (e) {}
-      if (c && c.n && c.s) return ok(c);
-      var d = el('dialog', DLG);
-      d.innerHTML = '<h3 style="margin:0 0 6px">Confirme sua senha</h3><p style="margin:0 0 8px;opacity:.75">' + esc(msg || 'Para salvar, confirme a senha do seu player.') + '</p>' +
-        '<input id="kpc-n" style="' + INP + '" placeholder="Nome do player" value="' + esc(nome()) + '"><input id="kpc-s" type="password" style="' + INP + '" placeholder="Senha">' +
-        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button id="kpc-x" style="' + BTN + '">Cancelar</button><button id="kpc-o" style="' + BTN + ';background:#3bb54a;border-color:#3bb54a">Confirmar</button></div>';
-      var v = null; document.body.appendChild(d);
-      var go = function () { var n = d.querySelector('#kpc-n').value.trim(), s = d.querySelector('#kpc-s').value; if (!n || !s) return; v = { n: n, s: s }; try { sessionStorage.setItem(KK, JSON.stringify(v)); } catch (e) {} d.close(); };
-      d.querySelector('#kpc-o').onclick = go; d.querySelector('#kpc-x').onclick = function () { d.close(); };
-      d.querySelector('#kpc-s').onkeydown = function (e) { if (e.key === 'Enter') go(); };
-      d.addEventListener('close', function () { d.remove(); ok(v); }, { once: true }); d.showModal();
-    });
-  }
-
-  /* ── editor da lista de acesso (Chefe e ADMs) — com host (elemento) desenha dentro da página; sem host abre um diálogo ── */
-  var SITES = ['torneios', 'stores', 'mapa', 'npcdex', 'fichas', 'missoes', 'weathercast', 'datadex'];
-  var INP_I = 'width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;margin:6px 0';
-  var BTN_I = 'padding:9px 16px;border-radius:8px;border:1.5px solid var(--border,#dde3ee);background:var(--surface,#fff);color:var(--text,#1a1f2e);font:inherit;font-weight:700;cursor:pointer';
-  function editor(host) {
-    var p = papel(); if (p !== 'chefe' && p !== 'admin') return;
-    var inl = !!(host && host.nodeType === 1);
-    var cInp = inl ? INP_I : INP, cBtn = inl ? BTN_I : BTN;
-    var cChip = inl ? 'background:var(--surface2,#eef1f7);border:1px solid var(--border,#dde3ee)' : 'background:rgba(255,255,255,.1)';
-    var nv = JSON.parse(JSON.stringify(staff)); nv.mods = nv.mods || {};
-    SITES.forEach(function (k) { if (!nv.mods[k]) nv.mods[k] = []; });
-    var d = inl ? el('div') : el('dialog', DLG + ';max-height:88vh;overflow:auto'), dl = el('datalist'); dl.id = 'kpe-pl'; d.appendChild(dl);
-    fetch(SU + '/rest/v1/players?select=nome&order=nome.asc', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } }).then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (L) { dl.innerHTML = (L || []).map(function (x) { return '<option value="' + esc(x.nome) + '">'; }).join(''); }).catch(function () {});
-    var corpo = el('div'); d.appendChild(corpo);
-    function sec(titulo, arr) {
-      var h = '<div style="margin:12px 0 4px;font-weight:800">' + esc(titulo) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px">' +
-        (arr.map(function (n, i) { return '<span style="padding:4px 10px;border-radius:99px;' + cChip + '">' + esc(n) + ' <a href="#" data-del="' + i + '" style="color:inherit;text-decoration:none;opacity:.7">✕</a></span>'; }).join('') || '<span style="opacity:.6">ninguém</span>') + '</div>' +
-        '<div style="display:flex;gap:6px"><input list="kpe-pl" placeholder="Adicionar player…" style="' + cInp + '"><button data-add style="' + cBtn + ';margin:6px 0">+</button></div>';
-      var box = el('div', '', h);
-      box.addEventListener('click', function (e) {
-        var a = e.target.closest('[data-del]'), b = e.target.closest('[data-add]');
-        if (a) { e.preventDefault(); arr.splice(+a.getAttribute('data-del'), 1); desenha(); }
-        if (b) { var n = nrm(box.querySelector('input').value); if (n && arr.indexOf(n) < 0 && n !== nv.chefe) { arr.push(n); desenha(); } }
-      });
-      return box;
-    }
-    function desenha() {
-      corpo.innerHTML = (inl ? '' : '<h3 style="margin:0 0 4px">Equipe de acesso</h3>') + '<p style="margin:0;opacity:.75">Chefe: <b>' + esc(nv.chefe) + '</b>. O chefe só é trocado direto no banco.</p>';
-      corpo.appendChild(sec('ADMs (todos os sites)', nv.admins));
-      Object.keys(nv.mods).sort().forEach(function (k) { corpo.appendChild(sec('MODs · ' + k, nv.mods[k])); });
-      var rod = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px', '<span id="kpe-err" style="flex:1;color:' + (inl ? 'var(--red,#c0392b)' : '#ff8a8a') + ';align-self:center"></span><button id="kpe-x" style="' + cBtn + '">' + (inl ? 'Desfazer' : 'Fechar') + '</button><button id="kpe-s" style="' + cBtn + ';background:#3bb54a;border-color:#3bb54a;color:#fff">Salvar</button>');
-      corpo.appendChild(rod);
-      rod.querySelector('#kpe-x').onclick = function () { if (inl) editor(host); else d.close(); };
-      rod.querySelector('#kpe-s').onclick = async function () {
-        var err = rod.querySelector('#kpe-err'); err.textContent = '';
-        var c = await cred('Confirme a senha do seu player para salvar a equipe.'); if (!c) return;
-        try {
-          var r = await fetch('/api/ficha-salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'staff_salvar', nome: c.n, senha: c.s, staff: nv }) });
-          var j = await r.json().catch(function () { return {}; });
-          if (!r.ok) { if (r.status === 401 || r.status === 403) credLimpar(); throw new Error(j.error || 'Erro ' + r.status); }
-          staff = norm(j.staff) || staff; wr(KC, JSON.stringify(staff)); wr(KT, String(Date.now()));
-          pintar(); emit();
-          if (inl) { err.style.color = '#2e8b3a'; err.textContent = 'Equipe salva ✓'; } else d.close();
-        } catch (e) { err.textContent = e.message; }
-      };
-    }
-    desenha();
-    if (inl) { host.innerHTML = ''; host.appendChild(d); return; }
-    document.body.appendChild(d); d.addEventListener('close', function () { d.remove(); }, { once: true }); d.showModal();
-  }
-
-  var st = document.createElement('style');
-  st.textContent = '.kp-role{flex:none;margin:0 6px 0 0;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.22);color:inherit;font-size:10px;font-weight:800;letter-spacing:.6px;line-height:1;transition:opacity .18s}.kp-role.off{opacity:.45}.kp-sw{box-sizing:border-box;flex:none;position:relative;width:30px;height:17px;padding:0;margin:0 0 0 6px;border-radius:99px;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);cursor:pointer;transition:background .18s,border-color .18s;-webkit-tap-highlight-color:transparent}.kp-sw i{position:absolute;top:1.5px;left:1.5px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .18s}.kp-sw.on{background:#3bb54a;border-color:#3bb54a}.kp-sw.on i{transform:translateX(13px)}';
-  document.head.appendChild(st);
-
-  function iniciar() {
-    Array.prototype.forEach.call(document.querySelectorAll(SEL), function (el) {
-      new MutationObserver(pintar).observe(el, { childList: true, characterData: true, subtree: true });
-    });
-    pintar();
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
-  window.addEventListener('storage', function (e) { if (e.key === KS || e.key === KJ) carregar(false); else if (e.key === KP) { pintar(); emit(); } });
-
-  /* ── carrega a lista de acesso: só vai ao servidor se há player identificado e o cache (local+aba) passou de 10 min ── */
-  function carregar(forcar) {
-    var fresco = !!js(KC) && Date.now() - (+rd(KT) || 0) < TTL;
-    if (!forcar && (!nome() || fresco)) return Promise.resolve().then(function () { pintar(); emit(); });
-    return fetch(SU + '/rest/v1/config?chave=eq.kp_staff&select=valor', { headers: { apikey: SKEY, Authorization: 'Bearer ' + SKEY } })
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (rows) {
-        var v = rows && rows[0] && rows[0].valor; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
-        var n = norm(v); if (n) { staff = n; wr(KC, JSON.stringify(v)); wr(KT, String(Date.now())); }
-      })
-      .catch(function () {})
-      .then(function () { pintar(); emit(); });
-  }
-  var ready = carregar(false);
-
-  window.KPAdm = {
-    site: SITE, ready: ready,
-    papel: papel,                                                   // 'chefe' | 'admin' | 'mod' | null (ignora o botão)
-    isStaff: function () { return !!papel(); },                     // tem acesso, mesmo no modo player
-    modoOn: modoOn,
-    isChefe: function () { return papel() === 'chefe' && modoOn(); },
-    isAdm: function () { var p = papel(); return (p === 'chefe' || p === 'admin') && modoOn(); },   // use isto para liberar telas/botões de ADM
-    isMod: function () { return papel() === 'mod' && modoOn(); },
-    pode: function () { return !!papel() && modoOn(); },            // ADM ou MOD deste site, com o botão ligado
-    nome: nome, staff: function () { return staff; },
-    toggle: toggle, onChange: function (f) { ouvintes.push(f); },
-    cred: cred, credLimpar: credLimpar,                             // {n,s} da senha do player (cache só na aba); mande como admin_nome/admin_senha
-    editor: editor                                                  // editor(host): desenha a equipe dentro de 'host'; sem host abre um diálogo (Chefe/ADM)
-  };
-})();
-
-</script><!-- KP-ADMIN:END -->
-<!-- KP-GATE-HEAD:BEGIN (gerado por build_gate.py) --><style id="kp-gate-css">html:not(.kp-ok) body>*:not(#kp-gate){display:none!important}
-html.kp-ok #kp-gate{display:none!important}
-#kp-gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:var(--bg,#f4f6fb);color:var(--text,var(--ink,#1a1f2e));font:14px/1.45 var(--font-body,system-ui,sans-serif)}
-#kp-gate .kg-box{width:100%;max-width:380px;text-align:center;background:var(--surface,var(--panel,#fff));border:1.5px solid var(--border,var(--line,#dde3ee));border-radius:14px;padding:32px 28px;box-shadow:0 10px 40px rgba(0,0,0,.18)}
-#kp-gate .kg-ico{width:56px;height:56px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:26px;background:rgba(127,127,127,.16)}
-#kp-gate .kg-t{font:700 18px var(--font-title,inherit);margin-bottom:6px}
-#kp-gate .kg-s{font-size:13px;opacity:.78;margin-bottom:22px}
-#kp-gate .kg-b{display:inline-block;padding:10px 18px;border-radius:8px;font-weight:700;text-decoration:none;background:var(--brand,var(--cyan,#2563a8));color:#fff}
-html.kp-wait #kp-gate .kg-lock{display:none}
-html:not(.kp-wait) #kp-gate .kg-wait{display:none}</style>
-<script>
-(function () {
-  var h = document.documentElement, A = window.KPAdm, pend = true;
-  /* libera só se o player logado está na lista (Chefe/ADM, ou MOD deste site). Espera a lista carregar antes de trancar de vez. */
-  function dec() {
-    var ok = !!(A && A.isStaff());
-    h.classList.toggle('kp-ok', ok);
-    h.classList.toggle('kp-wait', !ok && pend && !!(A && A.nome()));
-  }
-  dec();
-  if (A) { A.onChange(dec); A.ready.then(function () { pend = false; dec(); }); } else { pend = false; dec(); }
-})();
-</script><!-- KP-GATE-HEAD:END -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ADM — MoveDex Kingdom Platinum</title>
-    <link rel="icon" type="image/x-icon" href="https://64.media.tumblr.com/c429cb57b048b0ba1d90c6451d7c3aa1/8607b48e6654212e-0d/s540x810/c1f9956cc78935a32f53346f3a7a942caa5d1d67.png">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --brand:#1a3a5c;--brand-mid:#2563a8;--brand-light:#e8f0fb;
-  --accent:#e8a020;--accent-light:#fdf3dc;
-  --bg:#f0f3f8;--surface:#fff;--surface2:#f5f7fb;
-  --border:#dde3ee;--border2:#c8d0e0;
-  --text:#1a1f2e;--muted:#6b7a99;
-  --green:#00c896;--green-dark:#007a5a;--green-light:#e0fff8;
-  --red:#e04040;--red-light:#fff0f0;
-  --purple:#7030d0;--purple-light:#f5eaff;
-  --teal:#0d8a8a;--teal-light:#e2f7f5;
-  --r:10px;
-  --font-title:'Cinzel',serif;--font-body:'Nunito',sans-serif;
-}
-html,body{min-height:100%;font-family:var(--font-body);color:var(--text);background:var(--bg)}
-
-.nav{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:52px;background:var(--brand);position:sticky;top:0;z-index:9000;border-bottom:2px solid var(--accent)}
-.nav-logo{font-family:var(--font-title);font-size:15px;font-weight:700;color:#fff;letter-spacing:1px}
-.nav-logo span{color:var(--accent)}
-.nav-logo small{font-size:10px;font-weight:400;color:rgba(255,255,255,.5);margin-left:8px;letter-spacing:.5px;font-family:var(--font-body)}
-.nav-right{display:flex;gap:10px;align-items:center}
-.nav-link{font-size:11px;color:rgba(255,255,255,.6);text-decoration:none;font-family:var(--font-title);letter-spacing:.4px;transition:color .2s}
-.nav-link:hover{color:#fff}
-
-.wrap{max-width:1160px;margin:0 auto;padding:24px 20px}
-
-.adm-header{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:18px 24px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.adm-title{font-family:var(--font-title);font-size:20px;color:var(--brand);letter-spacing:1px}
-.adm-title span{color:var(--accent)}
-.adm-desc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
-.adm-actions{display:flex;gap:8px;flex-wrap:wrap}
-.adm-more-wrap{position:relative;display:inline-block}
-.adm-more-menu{display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:290px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:0 12px 32px rgba(0,0,0,.14);padding:8px;z-index:40}
-.adm-more-menu.open{display:block}
-.adm-more-menu .adm-more-group-lbl{font-family:var(--font-title);font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 10px 4px}
-.adm-more-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;border-radius:7px;padding:8px 10px;font-family:var(--font-body);font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;white-space:normal}
-.adm-more-menu button:hover{background:var(--surface2);color:var(--brand)}
-.adm-more-menu hr{border:none;border-top:1px solid var(--border);margin:4px 0}
-
-.btn{font-family:var(--font-body);font-size:12px;font-weight:700;padding:8px 16px;border-radius:7px;border:none;cursor:pointer;transition:all .2s;letter-spacing:.2px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover:not(:disabled){background:var(--brand-mid)}
-.btn-success{background:var(--green);color:#fff}.btn-success:hover:not(:disabled){background:var(--green-dark)}
-.btn-outline{background:transparent;border:1.5px solid var(--border);color:var(--muted)}.btn-outline:hover:not(:disabled){border-color:var(--brand-mid);color:var(--brand)}
-.btn-danger{background:var(--red-light);border:1.5px solid #f0c0c0;color:var(--red)}.btn-danger:hover:not(:disabled){background:var(--red);color:#fff}
-.btn-purple{background:var(--purple-light);border:1.5px solid #c090e0;color:var(--purple)}.btn-purple:hover:not(:disabled){background:var(--purple);color:#fff}
-.btn-sm{font-size:11px;padding:5px 11px;border-radius:5px}
-.btn-xs{font-size:10px;padding:3px 9px;border-radius:4px}
-
-.tabs{display:flex;gap:0;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:4px;margin-bottom:16px}
-.tab{flex:1;padding:10px;border:none;border-radius:7px;background:transparent;font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .18s;letter-spacing:.3px;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:7px}
-.tab:hover{background:var(--surface2);color:var(--brand)}
-.tab.active{background:var(--brand);color:#fff}
-.tab-badge{border-radius:10px;font-size:10px;padding:1px 7px;font-weight:800;background:rgba(255,255,255,.2)}
-.tab:not(.active) .tab-badge{background:var(--brand-light);color:var(--brand-mid)}
-
-.panel{display:none}.panel.active{display:block}
-
-.stats-bar{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 18px;margin-bottom:12px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
-.stat-item{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:54px}
-.stat-val{font-family:var(--font-title);font-size:20px;font-weight:700;color:var(--brand)}
-.stat-val.g{color:var(--green)}.stat-val.o{color:var(--accent)}
-.stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-family:var(--font-title)}
-.sdiv{width:1px;height:36px;background:var(--border);margin:0 4px}
-.prog-wrap{flex:1;min-width:180px}
-.prog-lbl{font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between}
-.prog-bar{height:8px;background:var(--surface2);border-radius:4px;border:1px solid var(--border);overflow:hidden}
-.prog-fill{height:100%;background:linear-gradient(90deg,var(--green),#00a870);border-radius:4px;transition:width .5s ease}
-
-.toolbar{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.sinput-wrap{position:relative;flex:1;min-width:160px}
-.sinput-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
-.sinput{width:100%;padding:8px 12px 8px 32px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:13px;color:var(--text);outline:none;transition:border .2s}
-.sinput:focus{border-color:var(--brand-mid)}
-.fbtn{padding:8px 14px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;text-transform:uppercase;letter-spacing:.3px}
-.fbtn.on{background:var(--brand);border-color:var(--brand);color:#fff}
-.data-tab-group{display:flex;gap:6px;margin-bottom:14px}
-.data-tab-btn{padding:7px 14px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface2);font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s}
-.data-tab-btn.on{background:var(--brand);border-color:var(--brand);color:#fff}
-.falt-row .data-tab-group{margin-bottom:10px}
-.epk-main-tab-group{display:flex;justify-content:center;gap:10px;margin:0 0 16px}
-.epk-main-tab-btn{padding:8px 24px;border-radius:99px;border:none;background:transparent;font-family:var(--font-body);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .2s}
-.epk-main-tab-btn:hover{color:var(--brand-mid)}
-.epk-main-tab-btn.on{background:rgba(26,58,92,.6);color:#fff}
-#epk-tab-btn-alfa,#nrpg-tab-btn-alfa{border-color:#7060f0}
-#epk-tab-btn-alfa:hover,#nrpg-tab-btn-alfa:hover{border-color:#7060f0;color:#7060f0}
-#epk-tab-btn-alfa.on,#nrpg-tab-btn-alfa.on{background:#7060f0;border-color:#7060f0;color:#fff}
-.pk-reg-btn{padding:8px 16px;border:none;border-radius:6px;background:transparent;font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .18s;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;flex-shrink:0}
-.pk-reg-btn:hover{color:var(--brand)}
-.pk-reg-btn.active{background:var(--brand);color:#fff}
-.pk-grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding:4px 0}
-.pk-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:12px 8px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:all .18s;position:relative;animation:fadeUp .2s both}
-.pk-card:hover{border-color:var(--brand-mid);transform:translateY(-2px);box-shadow:0 4px 14px rgba(37,99,168,.13)}
-.pk-card::before,.pk-card::after{content:'';position:absolute;width:9px;height:9px;pointer-events:none;transition:border-color .18s;border-radius:3px 0 0 0}
-.pk-card::before{top:-1.5px;left:-1.5px;border-top:2px solid transparent;border-left:2px solid transparent}
-.pk-card::after{bottom:-1.5px;right:-1.5px;border-bottom:2px solid transparent;border-right:2px solid transparent;border-radius:0 0 3px 0}
-.pk-card.pending{border:1.5px solid #97a3b8;box-shadow:0 0 0 1px rgba(151,163,184,.15) inset}
-.pk-card.pending::before,.pk-card.pending::after{border-color:#97a3b8}
-.pk-card.has-alt:not(.approved)::before,.pk-card.has-alt:not(.approved)::after{border-color:var(--teal)}
-.pk-card.has-alt:not(.approved)::before{border-top-width:3px;border-left-width:3px}
-.pk-card.has-alt:not(.approved)::after{border-bottom-width:3px;border-right-width:3px}
-.pk-card.approved{border:1.5px solid var(--green);box-shadow:0 0 10px -2px rgba(0,200,150,.55),0 0 0 1px rgba(0,200,150,.12) inset}
-.pk-card.approved::before,.pk-card.approved::after{border-color:var(--green)}
-.pk-card.approved:hover{box-shadow:0 4px 14px rgba(37,99,168,.13),0 0 14px -1px rgba(0,200,150,.6)}
-.pk-card-sprite{width:64px;height:64px;object-fit:contain;image-rendering:pixelated}
-.pk-card-num{font-family:var(--font-title);font-size:9px;color:var(--muted);letter-spacing:.3px}
-.pk-card-name{font-family:var(--font-title);font-size:11px;color:var(--brand);text-align:center;letter-spacing:.2px;line-height:1.3}
-.pk-card-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;letter-spacing:.2px;text-transform:uppercase}
-
-.entry-list{display:flex;flex-direction:column;gap:6px}
-.entry{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;transition:border-color .2s;animation:fadeUp .2s both}
-.entry:hover{border-color:var(--border2)}
-.entry.approved{border-color:#80dfc0}
-.entry.has-pt{border-left:3px solid var(--green)}
-
-.entry-head{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none}
-.entry-num{font-family:var(--font-title);font-size:10px;color:var(--muted);min-width:36px;flex-shrink:0}
-.entry-sprite{width:40px;height:40px;object-fit:contain;flex-shrink:0}
-.entry-name{font-family:var(--font-title);font-size:13px;color:var(--brand);flex:1;letter-spacing:.3px}
-.entry-name small{display:block;font-size:10px;color:var(--muted);font-family:var(--font-body);letter-spacing:0;font-weight:400;margin-top:1px}
-.badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;flex-shrink:0}
-.badge-ok{background:var(--green-light);color:var(--green-dark)}
-.badge-pt{background:#e8f0fb;color:var(--brand-mid)}
-.badge-pend{background:#f5f5f5;color:var(--muted)}
-.badge-appr{background:var(--green-light);color:var(--green-dark)}
-.chev{color:var(--muted);font-size:11px;transition:transform .2s;flex-shrink:0}
-.entry.open .chev{transform:rotate(180deg)}
-
-.entry-body{display:none;border-top:1.5px solid var(--border);padding:16px}
-.entry.open .entry-body{display:block}
-
-/* Pokemon specific */
-.pk-grid{display:grid;grid-template-columns:130px 1fr;gap:16px}
-@media(max-width:580px){.pk-hab-grid{grid-template-columns:1fr!important}}
-@media(max-width:600px){.pk-grid{grid-template-columns:1fr}}
-.pk-art-col{display:flex;flex-direction:column;align-items:center;gap:8px}
-.pk-art-big{width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,.12))}
-.pk-types-row{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
-.tpill{display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;font-family:var(--font-body)}
-
-/* field rows */
-.field-row{margin-bottom:12px}
-.field-lbl{font-family:var(--font-body);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
-.field-lbl.en{color:var(--brand-mid)}.field-lbl.pt{color:var(--green-dark)}
-.field-en{font-size:12px;color:var(--muted);line-height:1.6;background:var(--surface2);padding:9px 12px;border-radius:7px;border:1px solid var(--border);min-height:44px}
-.field-pt{width:100%;font-size:12px;line-height:1.6;background:#fff;padding:9px 12px;border-radius:7px;border:1.5px solid var(--border);font-family:var(--font-body);resize:vertical;min-height:44px;outline:none;transition:border .2s;color:var(--text)}
-.field-pt:focus{border-color:var(--green)}
-.field-pt.filled{border-color:#80dfc0;background:var(--green-light)}
-#nit-description.filled,.it-desc-field.filled{background:#fff}
-
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:580px){.two-col{grid-template-columns:1fr}}
-
-.translate-row{display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:6px}
-.translate-btn{font-size:10px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #c090e0;background:var(--purple-light);color:var(--purple);cursor:pointer;font-family:var(--font-body);transition:all .2s;display:flex;align-items:center;gap:4px}
-.translate-btn:hover{background:var(--purple);color:#fff}
-.translate-btn:disabled{opacity:.4;cursor:not-allowed}
-.translate-hint{font-size:10px;color:var(--muted);font-style:italic}
-
-.entry-foot{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;align-items:center;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
-.save-ind{font-size:11px;color:var(--green);font-weight:700;opacity:0;transition:opacity .3s;margin-right:auto}
-.save-ind.show{opacity:1}
-
-.loading{text-align:center;padding:48px;color:var(--muted)}
-.spinner{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--brand-mid);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 10px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-text{font-family:var(--font-title);font-size:11px;letter-spacing:.4px}
-
-.toast{position:fixed;bottom:24px;right:24px;background:var(--brand);color:#fff;font-family:var(--font-body);font-size:13px;font-weight:600;padding:12px 20px;border-radius:9px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;max-width:340px}
-.toast.show{transform:translateY(0);opacity:1}
-.toast.ok{background:var(--green-dark)}.toast.err{background:var(--red)}
-
-.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:8000;display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
-.modal-ov.open{display:flex}
-.modal{background:var(--surface);border-radius:var(--r);padding:24px;width:100%;max-width:540px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
-.modal-title{font-family:var(--font-title);font-size:16px;color:var(--brand);margin-bottom:12px;letter-spacing:.4px}
-.modal-ta{width:100%;height:200px;padding:12px;border-radius:7px;border:1.5px solid var(--border);font-family:'Courier New',monospace;font-size:11px;color:var(--text);resize:vertical;outline:none}
-.modal-ta:focus{border-color:var(--brand-mid)}
-.modal-foot{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
-
-/* Editor de Pokémon: inline dentro do painel-pokemon (substitui a lista
-   quando aberto), não é mais um overlay/modal fullscreen */
-#edit-pokemon-modal{position:static;inset:auto;background:none;z-index:auto;padding:0;display:none;align-items:stretch;justify-content:stretch}
-#edit-pokemon-modal.open{display:block}
-#edit-pokemon-modal .modal{position:relative;max-width:none;width:100%;margin:0;border-radius:var(--r);box-shadow:none;padding:20px 24px;font-size:100%;background:var(--surface);border:1.5px solid var(--border)}
-/* A prevenção de zoom automático do iOS em inputs já é feita globalmente
-   na media query mobile (@media max-width:640px, mais abaixo) — cobre epk e
-   nrpg igualmente. Um override extra aqui, só pro epk, fazia os campos
-   (input/select/textarea) ficarem 16px mesmo no desktop, divergindo dos
-   mesmos componentes usados sem alteração no nrpg (ex: .evo-edit-row input,
-   compartilhado pelos dois, ficava 12px lá e 16px aqui). Removido. */
-
-/* Cards e accordions do modal de edição de Pokémon — layout compacto em seções */
-/* Espaço extra entre cada bloco de campos (Nome, Habilidades, Stats, etc) —
-   cada bloco já tem margin-bottom:4px inline, isso soma +3px em todos
-   consistentemente, sem precisar editar cada div individualmente. */
-/* Espaço entre cada bloco de campos (Nome, Habilidades, Stats, etc) — igual
-   nos dois formulários (editar Pokémon e novo Pokémon), 10px, sobrepondo o
-   margin-bottom:4px inline de cada bloco individual. */
-#edit-pokemon-modal .modal .epk-tab-normal,
-#edit-pokemon-modal .modal .epk-tab-alfa,
-#nrpg-inline-form .nrpg-tab-normal,
-#nrpg-inline-form .nrpg-tab-alfa{margin-bottom:10px!important}
-.epk-card{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
-.epk-card-title{font-family:var(--font-title);font-size:11px;font-weight:800;color:var(--brand-mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.epk-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
-@media(max-width:760px){.epk-grid-2{grid-template-columns:1fr}}
-#epk-formas-alt-card.epk-form-fullwidth{grid-column:1 / -1}
-.epk-grid-2.epk-grid-2-formfull{grid-template-columns:1fr}
-.epk-acc-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin-bottom:0}
-.epk-acc-head .epk-acc-chev{font-size:10px;color:var(--muted);transition:transform .2s;flex-shrink:0}
-.epk-acc-head.open .epk-acc-chev{transform:rotate(180deg)}
-.epk-acc-body{display:none;margin-top:12px}
-.epk-acc-head.open + .epk-acc-body{display:block}
-.epk-acc-hint{font-weight:400;color:var(--muted);font-size:10px;text-transform:none;letter-spacing:0}
-
-/* Modais de novo move e nova ability: fullscreen igual ao edit-pokemon-modal */
-#new-move-modal .modal{max-width:760px}
-#new-ability-modal .modal{max-width:680px}
-#type-icon-modal .modal{max-width:640px}
-.ticon-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
-.ticon-row:last-of-type{border-bottom:none}
-.ticon-preview{width:52px;height:52px;border-radius:50%;object-fit:contain;background:var(--surface2,#f4f4f4);border:1.5px solid var(--border);flex-shrink:0}
-.ticon-info{flex:1;min-width:0}
-.ticon-name{font-family:var(--font-title);font-size:12px;letter-spacing:.4px;margin-bottom:2px}
-.ticon-status{font-size:11px;color:var(--muted)}
-.ticon-status.ok{color:#2a7a2a}
-.ticon-status.err{color:#c03030}
-.ticon-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
-
-.empty-state{text-align:center;padding:48px;background:var(--surface);border:1.5px dashed var(--border2);border-radius:var(--r);color:var(--muted)}
-.empty-icon{font-size:36px;margin-bottom:12px}
-.empty-title{font-family:var(--font-title);font-size:14px;letter-spacing:.4px}
-.empty-desc{font-size:12px;margin-top:5px;opacity:.7}
-
-@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-
-/* Move extended fields */
-.mv-meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-@media(max-width:580px){.mv-meta-grid{grid-template-columns:1fr 1fr}}
-.mv-meta-item{display:flex;flex-direction:column;gap:4px}
-.mv-meta-lbl{font-family:var(--font-title);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-.mv-meta-val{font-size:12px;color:var(--text);background:var(--surface2);padding:6px 10px;border-radius:6px;border:1px solid var(--border);min-height:30px;display:flex;align-items:center}
-.mv-meta-input{font-size:12px;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;transition:border .2s;width:100%}
-.mv-meta-input:focus{border-color:var(--brand-mid)}
-.mv-meta-select{font-size:12px;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;cursor:pointer;width:100%}
-.cat-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;padding:3px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:.3px}
-.cat-physical{background:#fde8e8;color:#c03030}
-.cat-special{background:#e8eaff;color:#3040c0}
-.cat-status{background:#f0f0f0;color:#555}
-.mv-section-lbl{font-family:var(--font-title);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--brand);margin:14px 0 8px;padding-bottom:4px;border-bottom:1.5px solid var(--border);display:flex;align-items:center;gap:6px}
-.mv-name-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-@media(max-width:580px){.mv-name-row{grid-template-columns:1fr}}
-/* RPG tipo tags */
-.rpg-tipo-tag{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;background:var(--tc,var(--brand-mid));border:1.5px solid var(--tc,var(--border));color:#000;cursor:pointer;user-select:none;transition:all .15s}
-.rpg-tipo-tag:hover{opacity:.85}
-.rpg-tipo-tag.sel{opacity:.5;outline:2px solid var(--tc,var(--brand-mid));outline-offset:2px}
-.tipo-tag{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;background:var(--tc,var(--brand-mid));border:1.5px solid var(--tc,var(--border));color:#000;cursor:pointer;user-select:none;transition:all .15s}
-.tipo-tag:hover{opacity:.85}
-.tipo-tag.sel{opacity:.5;outline:2px solid var(--tc,var(--brand-mid));outline-offset:2px}
-.pk-bioma-tag{display:inline-flex;align-items:center;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;background:var(--surface);border:1.5px solid var(--border);cursor:pointer;user-select:none;transition:all .15s}
-.pk-bioma-tag:hover{border-color:var(--accent)}
-.pk-bioma-tag.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
-
-.bioma-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-radius:6px;font-size:11px;font-weight:700;background:var(--brand-light);color:var(--brand-mid);border:1.5px solid var(--brand-mid)}
-.bioma-chip button{background:none;border:none;color:var(--brand-mid);cursor:pointer;font-size:13px;line-height:1;padding:2px;display:flex;align-items:center;opacity:.7}
-.bioma-chip button:hover{opacity:1;color:var(--red)}
-
-/* Linha de bioma com raridade + condição próprias (uma por bioma selecionado) */
-.bioma-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.bioma-row-nome{font-size:12px;font-weight:800;color:var(--brand-mid)}
-.bioma-row-remove{background:none;border:1px solid transparent;color:var(--brand-mid);cursor:pointer;font-size:11px;font-weight:700;line-height:1;padding:4px 7px;border-radius:6px;display:flex;align-items:center;gap:3px;opacity:.75;transition:all .15s}
-.bioma-row-remove:hover{opacity:1;color:var(--red);border-color:var(--red);background:#fff}
-.bioma-row-fields{display:grid;grid-template-columns:1fr 1.4fr;gap:6px}
-@media(max-width:520px){.bioma-row-fields{grid-template-columns:1fr}}
-.bioma-row-vazio{font-size:11px;color:var(--muted)}
-
-/* Locais em abas — uma aba por local, só o conteúdo da aba ativa é exibido.
-   Abas são arrastáveis (⠿) pra reordenar. */
-.bioma-tabs-wrap{display:flex;flex-direction:column;gap:0}
-.bioma-tabs{display:flex;flex-wrap:wrap;gap:3px;align-items:flex-end}
-.bioma-tab{display:flex;align-items:center;gap:0;background:var(--surface2);border:1.5px solid var(--border);border-bottom:none;border-radius:7px 7px 0 0;transition:opacity .15s,background .15s}
-.bioma-tab.active{background:var(--brand-light);border-color:var(--brand-mid)}
-.bioma-tab.dragging{opacity:.35}
-.bioma-tab-drag{cursor:grab;color:var(--muted);font-size:11px;line-height:1;padding:6px 1px 6px 6px;user-select:none;touch-action:none}
-.bioma-tab-drag:active{cursor:grabbing}
-.bioma-tab.active .bioma-tab-drag{color:var(--brand-mid)}
-.bioma-tab-btn{background:none;border:none;font-family:var(--font-body);font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:6px 9px 6px 4px;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
-.bioma-tab.active .bioma-tab-btn{color:var(--brand-mid)}
-.bioma-tab-content{background:var(--brand-light);border:1.5px solid var(--brand-mid);border-radius:0 8px 8px 8px;padding:9px 10px;display:flex;flex-direction:column;gap:6px}
-
-/* Locais — lista em pills (só o nome). Clicar abre a área de edição. */
-.loc-pill-list{display:flex;flex-wrap:wrap;gap:8px}
-.loc-pill{font-family:var(--font-body);font-size:12.5px;font-weight:700;padding:9px 16px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
-.loc-pill:hover{border-color:var(--brand-mid);background:var(--brand-light)}
-.loc-pill.active{border-color:var(--brand-mid);background:var(--brand-mid);color:#fff}
-.loc-pill .loc-pill-pin{font-size:10px;opacity:.7}
-
-/* Regras de aparecimento (condição categorizada + raridade) por bioma */
-.bioma-regras{display:flex;flex-direction:column;gap:5px;margin-top:2px}
-.regra-row{display:grid;grid-template-columns:1fr 1fr .8fr 22px;gap:5px;align-items:center}
-@media(max-width:560px){.regra-row{grid-template-columns:1fr 1fr}}
-.regra-row-legado{grid-template-columns:1.6fr .8fr 22px}
-.regra-legado-txt{font-size:11px;color:var(--muted);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.regra-row-remove{background:none;border:none;color:var(--brand-mid);cursor:pointer;font-size:13px;line-height:1;padding:2px;display:flex;align-items:center;justify-content:center;opacity:.7}
-.regra-row-remove:hover{opacity:1;color:var(--red)}
-.bioma-add-regra{background:none;border:1px dashed var(--brand-mid);color:var(--brand-mid);border-radius:6px;font-size:11px;font-weight:700;padding:4px 8px;cursor:pointer;align-self:flex-start;margin-top:2px}
-.bioma-add-regra:hover{background:var(--brand-mid);color:#fff}
-
-/* Comportamento sazonal expandido — grade de 4 estações */
-.sazonal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:520px){.sazonal-grid{grid-template-columns:1fr}}
-.sazonal-cell .field-lbl{margin-bottom:4px}
-
-/* Evo Chain ADM */
-/* Evo editor — estilo uwadex */
-.evo-edit-row{display:grid;grid-template-columns:22px 100px minmax(140px,.85fr) 170px 170px 36px;gap:8px;align-items:end;margin-bottom:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;animation:fadeUp .2s both;transition:opacity .15s,box-shadow .15s}
-.evo-edit-row.evo-dragging{opacity:.4}
-.evo-edit-row.evo-drag-over{box-shadow:0 0 0 2px var(--brand-mid) inset}
-.evo-drag-handle{align-self:end;height:36px;display:flex;align-items:center;justify-content:center;cursor:grab;color:var(--muted);font-size:14px;letter-spacing:-1px;user-select:none;touch-action:none}
-.evo-drag-handle:active{cursor:grabbing}
-.evo-edit-row input,.evo-edit-row select{padding:7px 10px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12px;color:var(--text);width:100%;outline:none;transition:border .15s}
-.evo-edit-row input:focus,.evo-edit-row select:focus{border-color:var(--brand-mid)}
-.evo-label{font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
-.evo-edit-row .mv-del{background:none;border:1.5px solid var(--border);color:var(--muted);cursor:pointer;font-size:13px;padding:0;width:36px;height:36px;border-radius:6px;transition:all .15s;display:flex;align-items:center;justify-content:center}
-.evo-edit-row .mv-del:hover{background:var(--red);border-color:var(--red);color:#fff}
-/* Preview da sprite ao lado do row */
-.evo-sprite-preview{width:36px;height:36px;object-fit:contain;border-radius:6px;background:var(--surface2);border:1px solid var(--border);image-rendering:pixelated}
-
-/* Evo chain visual (exibição) */
-.evo-chain-wrap{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden}
-.evo-chain-title{background:var(--brand);color:#fff;text-align:center;font-family:var(--font-title);font-size:10px;letter-spacing:1.5px;padding:7px;font-weight:600}
-.evo-chain-inner{display:flex;align-items:flex-start;justify-content:center;gap:0;padding:16px 12px;flex-wrap:wrap;row-gap:8px}
-.evo-stage{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 12px}
-.evo-stage-sprite{width:72px;height:72px;object-fit:contain;image-rendering:pixelated;cursor:default}
-.evo-stage-name{font-family:var(--font-title);font-size:10px;color:var(--text);text-align:center;font-weight:600;letter-spacing:.3px}
-.evo-stage-num{font-size:9px;color:var(--brand-mid);font-family:var(--font-title);letter-spacing:.2px}
-.evo-stage.current .evo-stage-name{color:var(--brand-mid)}
-.evo-stage.current .evo-stage-sprite{filter:drop-shadow(0 0 6px rgba(37,99,168,.4))}
-.evo-arrow{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0 4px;margin-top:20px}
-.evo-arrow-icon{font-size:18px;color:var(--muted)}
-.evo-arrow-label{font-size:10px;color:var(--muted);font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 7px}
-.evo-chain-branched{display:flex;align-items:center;justify-content:center;gap:6px;padding:16px 12px;flex-wrap:wrap}
-.evo-branch-col{display:flex;flex-direction:column;gap:2px}
-.evo-branch-row{display:flex;align-items:center}
-/* Moveset */
-.moveset-section{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
-.moveset-section-title{font-family:var(--font-title);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--brand);margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.moveset-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
-.moveset-row{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;animation:fadeUp .2s both}
-.moveset-row select,.moveset-row input[type=text],.moveset-row input[type=number]{font-family:var(--font-body);font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:4px 7px;background:#fff;color:var(--text);outline:none;transition:border .15s}
-.moveset-row select:focus,.moveset-row input:focus{border-color:var(--brand-mid)}
-.moveset-row .mv-name{flex:1;min-width:0}
-.moveset-row .mv-lvl{width:70px;text-align:center}
-.moveset-row .mv-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1;border-radius:4px;transition:color .15s;flex-shrink:0}
-.moveset-row .mv-del:hover{color:var(--red)}
-/* Handle de arrastar pra reordenar moves dentro da lista (nível/TM/ovo/tutor) */
-.moveset-row .mv-drag-handle{flex-shrink:0;cursor:grab;color:var(--muted);font-size:14px;line-height:1;padding:2px 3px;border-radius:4px;user-select:none;touch-action:none;transition:color .15s,background .15s}
-.moveset-row .mv-drag-handle:hover{color:var(--brand-mid);background:var(--brand-light)}
-.moveset-row.dragging{opacity:.4;cursor:grabbing}
-.moveset-add-btn{font-family:var(--font-body);font-size:11px;font-weight:700;padding:5px 12px;border-radius:6px;border:1.5px dashed var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;width:100%}
-.moveset-add-btn:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--brand-light)}
-/* Moveset collapsible */
-.moveset-section.collapsed .moveset-list,
-.moveset-section.collapsed .moveset-bulk-area,
-.moveset-section.collapsed .moveset-add-btn,
-.moveset-section.collapsed > div:not(.moveset-section-title){display:none!important}
-.moveset-section-title{cursor:pointer;user-select:none}
-.moveset-section-title:hover{background:rgba(0,0,0,.03);border-radius:4px}
-.moveset-section-title .ms-chev{margin-left:auto;font-size:9px;color:var(--muted);transition:transform .18s}
-.moveset-section.collapsed .moveset-section-title .ms-chev{transform:rotate(-90deg)}
-.moveset-section-title .ms-count{margin-left:6px;font-size:9px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:8px;padding:1px 5px}
-
-/* Moveset bulk paste */
-.moveset-bulk-area{display:none;margin-top:6px;animation:fadeUp .15s both}
-.moveset-bulk-area.open{display:block}
-.moveset-bulk-ta{width:100%;font-size:11px;font-family:'Courier New',monospace;padding:7px 10px;border-radius:6px;border:1.5px solid var(--brand-mid);background:#fff;color:var(--text);resize:vertical;min-height:80px;outline:none;line-height:1.6}
-.moveset-bulk-actions{display:flex;gap:6px;margin-top:5px}
-/* RPG entries */
-.rpg-entry{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:8px;transition:border-color .15s}
-.rpg-entry.has-bio{border-color:#80dfc0}
-.rpg-entry-head{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none}
-.rpg-entry-sprite{width:40px;height:40px;object-fit:contain;flex-shrink:0;border-radius:50%;background:var(--surface2)}
-.rpg-entry-name{font-family:var(--font-title);font-size:13px;color:var(--brand);flex:1;letter-spacing:.3px}
-.rpg-entry-name small{display:block;font-size:10px;color:var(--muted);font-family:var(--font-body);letter-spacing:0;font-weight:400;margin-top:1px}
-.rpg-entry-body{display:none;border-top:1.5px solid var(--border);padding:16px}
-.rpg-entry.open .rpg-entry-body{display:block}
-
-/* ── Combobox (input + datalist autocomplete) ── */
-.cb-wrap{position:relative;width:100%}
-.cb-input{width:100%;font-size:12px;padding:6px 10px;border-radius:6px;border:1.5px solid var(--border);background:#fff;font-family:var(--font-body);color:var(--text);outline:none;transition:border .2s;cursor:pointer;-webkit-appearance:none;appearance:none}
-.cb-input:focus{border-color:var(--brand-mid)}
-.cb-input.has-val{border-color:#80dfc0;background:var(--green-light)}
-.cb-arrow{display:none}
-/* moveset combobox inline */
-.moveset-row .cb-wrap{min-width:0;flex:1}
-.moveset-row .cb-input{font-size:12px;padding:4px 7px;-webkit-appearance:none;appearance:none}
-
-/* ── Formas Alfa (Mega/Gigantamax/Tera etc — múltiplas formas completas) ── */
-.alfa-list{display:flex;flex-direction:column;gap:10px;margin-bottom:8px}
-.alfa-row{animation:fadeUp .2s both}
-.alfa-row-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-.alfa-row-head input.alfa-nome{flex:1;font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--purple);border:1.5px solid var(--border);border-radius:6px;padding:6px 9px;background:#fff;outline:none}
-.alfa-row-head input.alfa-nome:focus{border-color:var(--purple)}
-.alfa-identity-block{padding-bottom:10px;margin-bottom:10px;border-bottom:1px dashed var(--purple-light)}
-.alfa-del{background:none;border:1.5px solid var(--border);color:var(--muted);cursor:pointer;font-size:12px;width:22px;height:22px;line-height:1;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0}
-.alfa-del:hover{color:var(--red)}
-.alfa-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px}
-@media(max-width:560px){.alfa-grid{grid-template-columns:1fr 1fr}}
-.alfa-field-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:3px;display:block}
-.alfa-grid select,.alfa-grid input{width:100%;font-family:var(--font-body);font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text);outline:none}
-.alfa-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
-.alfa-stats-row input{width:100%;text-align:center;font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:5px 4px;font-family:var(--font-body)}
-.forma-bst{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--brand-mid);color:#000;border-radius:6px;padding:3px 10px;min-width:44px}
-.forma-bst-lbl{font-size:8px;font-weight:700;letter-spacing:.3px;opacity:.75}
-.forma-bst-val{font-family:var(--font-title);font-size:13px;font-weight:700}
-.forma-bst-full{display:flex;align-items:center;justify-content:space-between;background:color-mix(in srgb, var(--brand-mid) 40%, transparent);color:#fff;border-radius:6px;padding:7px 12px;width:100%;box-sizing:border-box}
-.forma-bst-full.forma-bst-alfa{background:color-mix(in srgb, #7060f0 55%, transparent)}
-.forma-bst-full .forma-bst-lbl{font-size:10px;letter-spacing:.5px;opacity:.9;text-transform:uppercase;color:#fff}
-.forma-bst-full .forma-bst-val{font-size:16px;color:#fff}
-.alfa-bst-val{font-family:var(--font-title);font-size:14px;font-weight:700}
-.alfa-sprite-row{display:flex;align-items:center;gap:8px}
-.alfa-sprite-prev{width:48px;height:48px;background:var(--surface2);border-radius:8px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
-.alfa-sprite-row input[type=file]{font-size:11px;flex:1;min-width:0}
-
-/* Formas Alternativas (ex: Oricorio Estilo Pom-Pom) — mesmo padrão visual das Formas Alfa, cor teal pra diferenciar */
-.falt-list{display:flex;flex-direction:column;gap:10px;margin-bottom:8px}
-.falt-row{background:var(--surface);border-radius:9px;padding:12px;animation:fadeUp .2s both}
-.falt-row-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-.falt-row-head input.falt-nome{flex:1;font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--teal);border:1.5px solid var(--border);border-radius:6px;padding:6px 9px;background:#fff;outline:none}
-.falt-row-head input.falt-nome:focus{border-color:var(--teal)}
-.falt-del{width:18px;height:18px;border-radius:50%;background:#fff;border:1.5px solid var(--teal);color:var(--teal);font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0;transition:all .15s}
-.falt-del:hover{background:var(--teal);color:#fff}
-.falt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:8px}
-@media(max-width:560px){.falt-grid{grid-template-columns:1fr 1fr}}
-.falt-field-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:3px;display:block}
-.falt-grid select,.falt-grid input{width:100%;font-family:var(--font-body);font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:5px 7px;background:#fff;color:var(--text);outline:none}
-.falt-stats-row{display:grid;grid-template-columns:repeat(6,1fr) auto;gap:6px;align-items:end;margin-bottom:8px}
-.falt-stats-row input{width:100%;text-align:center;font-size:12px;border:1.5px solid var(--border);border-radius:5px;padding:5px 4px;font-family:var(--font-body)}
-.falt-bst{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--teal);color:#fff;border-radius:6px;padding:4px 10px;min-width:44px}
-.falt-bst-lbl{font-size:8px;font-weight:700;letter-spacing:.3px;opacity:.8}
-.falt-bst-val{font-family:var(--font-title);font-size:13px;font-weight:700}
-.falt-sprite-row{display:flex;align-items:center;gap:8px}
-.falt-sprite-prev{width:38px;height:38px;background:var(--surface2);border-radius:6px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
-.falt-sprite-row input[type=file]{font-size:11px;flex:1;min-width:0}
-.falt-add-btn{width:100%;padding:8px;border:1.5px dashed #4ac0c0;border-radius:8px;background:var(--teal-light);color:var(--teal);font-family:var(--font-body);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px;text-transform:uppercase;transition:all .18s}
-.falt-add-btn:hover{background:var(--teal);color:#fff}
-
-/* Pills de navegação de formas no cabeçalho do modal de edição — mostra a
-   forma base + cada forma_alt com botão de ir direto pra edição, e um "+"
-   pra adicionar uma nova sem precisar rolar até a seção lá embaixo. */
-.epk-forms-nav{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
-#epk-formas-alfa-nav,#nrpg-formas-alfa-nav{justify-content:center}
-/* Pills das Formas Alfa usam a mesma cor roxa da aba "Força Alfa" (#7060f0)
-   em vez do teal padrão do componente .epk-form-pill — só aqui, não afeta
-   as pills de Formas Alternativas nem as de evolução, que usam o mesmo CSS. */
-#epk-formas-alfa-nav .epk-form-pill:hover,#nrpg-formas-alfa-nav .epk-form-pill:hover{border-color:#7060f0;color:#7060f0;background:rgba(112,96,240,.1)}
-#epk-formas-alfa-nav .epk-form-pill-selected,#nrpg-formas-alfa-nav .epk-form-pill-selected{box-shadow:0 0 0 2px #7060f0 inset;border-color:#7060f0;color:#7060f0}
-#epk-formas-alfa-nav .epk-form-pill-add,#nrpg-formas-alfa-nav .epk-form-pill-add{color:#7060f0;border-color:#7060f0;background:rgba(112,96,240,.1)}
-#epk-formas-alfa-nav .epk-form-pill-add:hover,#nrpg-formas-alfa-nav .epk-form-pill-add:hover{background:#7060f0;color:#fff}
-#epk-formas-alfa-nav .epk-form-pill-x,#nrpg-formas-alfa-nav .epk-form-pill-x{border-color:#7060f0;color:#7060f0}
-#epk-formas-alfa-nav .epk-form-pill-x:hover,#nrpg-formas-alfa-nav .epk-form-pill-x:hover{background:#7060f0;color:#fff}
-.epk-form-pill{font-family:var(--font-body);font-size:11px;font-weight:600;padding:5px 12px;border-radius:99px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
-.epk-form-pill:hover{border-color:var(--teal);color:var(--teal);background:var(--teal-light)}
-.epk-form-pill-base{border-color:var(--brand-mid);color:var(--brand-mid);font-weight:700;background:var(--brand-light)}
-.epk-form-pill-base:hover{border-color:var(--brand-mid);color:var(--brand-mid);background:var(--brand-light);filter:brightness(.97)}
-.epk-form-pill-add{border-style:dashed;color:var(--teal);border-color:#4ac0c0;background:var(--teal-light);font-weight:700;padding:5px 13px}
-.epk-form-pill-add:hover{background:var(--teal);color:#fff}
-.epk-form-pill-selected{box-shadow:0 0 0 2px var(--teal) inset;border-color:var(--teal)}
-.epk-form-pill-base.epk-form-pill-selected{box-shadow:0 0 0 2px var(--brand-mid) inset;border-color:var(--brand-mid)}
-.epk-form-pill-wrap{position:relative;display:inline-flex}
-.epk-form-pill-wrap .epk-form-pill{padding-right:14px}
-.epk-form-pill-x{position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#fff;border:1.5px solid var(--teal);color:var(--teal);font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:all .15s}
-.epk-form-pill-x:hover{background:var(--teal);color:#fff}
-/* Usada para esconder campos ao trocar de aba/forma (Dados do Pokémon ⇄ Força
-   Alfa, forma base ⇄ forma alternativa) SEM tocar em el.style.display — isso
-   evita apagar um "display:grid" definido inline no próprio elemento (o que
-   fazia layouts em grid virarem uma coluna só ao voltar pra forma base). */
-.epk-hide{display:none!important}
-.epk-form-active-banner{display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--teal-light);border:1.5px solid var(--teal);border-radius:9px;padding:9px 13px;margin-bottom:14px}
-.epk-form-active-banner.show{display:flex}
-@keyframes epkFlashHi{0%{box-shadow:0 0 0 0 rgba(74,192,192,.6)}70%{box-shadow:0 0 0 12px rgba(74,192,192,0)}100%{box-shadow:0 0 0 0 rgba(74,192,192,0)}}
-.epk-flash-highlight{animation:epkFlashHi 1.1s ease-out;border-radius:10px}
-
-/* ══════════════════════════════════════════════════════════════
-   ADAPTAÇÃO MOBILE
-   Regras gerais de responsividade para telas pequenas (≤640px) e
-   bem pequenas (≤380px). Usa seletores de atributo [style*="..."]
-   pra sobrescrever grids inline com !important onde não dá pra
-   depender só de classe (o resto do arquivo usa muito style="" solto).
-   ══════════════════════════════════════════════════════════════ */
-@media(max-width:640px){
-  html{-webkit-text-size-adjust:100%}
-  body{overflow-x:hidden}
-
-  /* Barra de abas principal (Pokémon/Abilities/Moves/Items/Locais/+) —
-     quebra em 2 linhas de 3 em vez de espremer tudo numa linha só */
-  .tabs{flex-wrap:wrap;row-gap:6px}
-  .tab{flex:1 1 33%;min-width:0;padding:8px 4px;font-size:10px;gap:4px}
-  .tab-badge{font-size:9px;padding:1px 5px}
-
-  /* Evita zoom automático do iOS ao focar inputs com font-size < 16px */
-  input,select,textarea{font-size:16px!important}
-  .btn,.data-tab-btn,.fbtn,.pk-reg-btn,.tipo-tag,.rpg-tipo-tag,.pk-bioma-tag,.badge,.epk-form-pill{font-size:12px}
-
-  /* Navegação e header */
-  .nav{padding:0 12px;height:48px}
-  .nav-logo{font-size:12px}
-  .nav-logo small{display:none}
-  .wrap{padding:12px 10px}
-  .adm-header{padding:14px 14px}
-  .adm-title{font-size:16px}
-  .adm-title span[style*="font-size:13px"]{display:block;font-size:11px!important;margin-top:2px}
-  .adm-actions{width:100%}
-  .adm-actions .btn{flex:1;justify-content:center}
-  .adm-more-menu{left:0;right:0;min-width:0}
-
-  /* Barra de busca/filtro */
-  .toolbar{padding:8px 10px}
-  .sinput-wrap{min-width:100%;flex-basis:100%}
-  .fbtn{flex:1}
-
-  /* Cards e listas */
-  .stats-bar{gap:12px;padding:10px 14px}
-  .sdiv{display:none}
-  .prog-wrap{flex-basis:100%}
-  .entry-head{padding:9px 10px;gap:8px}
-  .entry-name{font-size:12px}
-  .entry-body{padding:12px}
-  .pk-grid-cards{grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
-
-  /* Modal de edição de Pokémon: ocupa a largura toda, fonte normal
-     (o 120% do desktop fica gigante e quebra os grids em telas pequenas) */
-  #edit-pokemon-modal .modal{padding:14px;font-size:100%}
-  .modal-ov{padding:10px}
-  .modal{padding:16px}
-  .epk-card{padding:11px}
-  #epk-art-preview{width:52px!important;height:52px!important}
-  .epk-forms-nav{gap:5px}
-  .epk-form-pill{max-width:130px;font-size:10px;padding:4px 10px}
-  .epk-form-active-banner{padding:8px 10px}
-
-  /* Abas (Dados do Pokémon / Força Alfa) ocupam a largura toda */
-  .data-tab-group{flex-wrap:wrap}
-  .data-tab-group .data-tab-btn{flex:1;text-align:center}
-  .epk-main-tab-group{flex-wrap:wrap}
-  .epk-main-tab-btn{flex:1;text-align:center;padding:8px 12px}
-
-  /* Grids inline de 2/3/4 colunas → empilha ou reduz pra 2 em telas pequenas */
-  [style*="grid-template-columns:1.3fr 1fr"]{grid-template-columns:1fr!important}
-  [style*="grid-template-columns:1fr 1fr 120px"]{grid-template-columns:1fr!important}
-  [style*="grid-template-columns:1fr 1fr 110px"]{grid-template-columns:1fr!important}
-  [style*="grid-template-columns:1fr 1fr 1fr 1fr"]{grid-template-columns:1fr 1fr!important}
-  [style*="grid-template-columns:1fr 1fr 1fr"]{grid-template-columns:1fr 1fr!important}
-  [style*="grid-template-columns:1fr 1fr;gap:14px"]{grid-template-columns:1fr!important}
-  [style*="grid-template-columns:repeat(6,1fr)"]{grid-template-columns:repeat(3,1fr)!important}
-  [style*="grid-template-columns:repeat(3,1fr)"]{grid-template-columns:1fr 1fr!important}
-
-  /* Stats de forma alfa/alternativa (HP/ATK/DEF/SPA/SPD/SPE + BST) */
-  .alfa-stats-row,.falt-stats-row{grid-template-columns:repeat(3,1fr)!important}
-  .alfa-stats-row .forma-bst,.falt-stats-row .falt-bst,.alfa-stats-row .alfa-bst{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:8px;min-width:0;margin-top:2px}
-  .alfa-grid{grid-template-columns:1fr 1fr!important}
-
-  /* Linha de evolução: colunas fixas em px não cabem — empilha tudo */
-  .evo-edit-row{grid-template-columns:1fr!important;align-items:stretch}
-  .evo-drag-handle{height:auto;justify-content:flex-start;padding:2px 0}
-  .evo-edit-row .mv-del{width:100%;height:34px}
-  .evo-chain-inner{padding:12px 6px}
-  .evo-stage-sprite{width:56px;height:56px}
-  .evo-arrow{margin-top:0}
-
-  /* Combos de tipo, biomas e outras tags — permite quebrar linha sem cortar */
-  .tipo-tag,.rpg-tipo-tag,.pk-bioma-tag,.bioma-chip{font-size:10px;padding:3px 8px}
-
-  /* Formas alfa/alternativas — sprite row não estoura */
-  .alfa-sprite-row,.falt-sprite-row{flex-wrap:wrap}
-  .alfa-sprite-row input[type=file],.falt-sprite-row input[type=file]{flex-basis:100%}
-
-  /* Moveset: linha de move em telas pequenas */
-  .moveset-row{flex-wrap:wrap}
-  .moveset-row .mv-name{flex-basis:100%}
-  .moveset-row .mv-lvl{flex:1;width:auto}
-
-  /* Botões de rodapé de modal não somem embaixo da tela */
-  .modal-foot{flex-wrap:wrap}
-  .modal-foot .btn{flex:1;justify-content:center}
+// /api/commit — função única que substitui commit-abilities, commit-moves, commit-rewards,
+// commit-items, commit-image, commit-stores e missoes_publicar (a Vercel Hobby aceita no máximo 12 funções).
+// O tipo vem do rewrite do vercel.json (/api/commit-stores -> /api/commit?tipo=stores),
+// então as páginas continuam chamando os mesmos endereços de antes.
+// O GITHUB_TOKEN fica só na Vercel (env var); o navegador nunca vê o token.
+
+const OWNER = 'alphx-r';
+const REPO = process.env.GITHUB_REPO ? process.env.GITHUB_REPO.split('/')[1] : 'kingdomplatinum';
+const OWN = process.env.GITHUB_REPO ? process.env.GITHUB_REPO.split('/')[0] : OWNER;
+const BRANCH = process.env.GITHUB_BRANCH || 'main';
+import crypto from 'crypto';
+const API = `https://api.github.com/repos/${OWN}/${REPO}`;
+
+// TODOS os JSON (abilities, moves, items, rewards, stores, missões) ficam no repo de dados (kpfichas_db), o mesmo do
+// pokemon.json do nationaldex_adm, com as mesmas pastas de antes (itemdex/items.json, movedex/moves.json...).
+// Token: GH_SPRITE_TOKEN (o mesmo que a rota do nationaldex usa no kpfichas_db), com GITHUB_TOKEN como reserva.
+// Imagens (sprites/...) TAMBÉM vão para o repo de dados (kpfichas_db): as páginas apontam para lá.
+// Para as imagens voltarem a ir ao repo do site, ponha "imagens" em JSON_NO_SITE (ex.: JSON_NO_SITE=imagens).
+// Para um tipo voltar a gravar no repo do site (enquanto as páginas que leem aquele JSON não migram),
+// liste-o na env JSON_NO_SITE, ex.: JSON_NO_SITE=stores,missoes,imagens
+const DADOS_REPO = process.env.JSON_REPO || 'alphx-r/kpfichas_db';
+const DADOS_BRANCH = process.env.JSON_BRANCH || 'main';
+const DADOS_API = `https://api.github.com/repos/${DADOS_REPO}`;
+const NO_REPO_DO_SITE = new Set((process.env.JSON_NO_SITE || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+function alvoJson(tipo, tokenSite) {
+  if (NO_REPO_DO_SITE.has(tipo)) return { token: tokenSite, api: API, branch: BRANCH };
+  return { token: process.env.GH_SPRITE_TOKEN || tokenSite, api: DADOS_API, branch: DADOS_BRANCH };
 }
 
-@media(max-width:380px){
-  .adm-title{font-size:14px}
-  .epk-card-title{font-size:10px}
-  .alfa-stats-row,.falt-stats-row{grid-template-columns:1fr 1fr!important}
-  [style*="grid-template-columns:1fr 1fr 1fr 1fr"]{grid-template-columns:1fr!important}
-}
-.loc-pills-wrap{display:flex;flex-wrap:wrap;gap:8px}
-.loc-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1.5px solid var(--border);background:var(--surface);font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;transition:border-color .15s,background .15s}
-.loc-pill:hover{border-color:var(--brand-mid);background:var(--surface2)}
-.loc-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
-.loc-pill.sem-zona .dot{background:#e0a020}
-/* ═══ Edições: botão na nav + barra lateral + pílula de pendências ═══ */
-.nav-chg-btn{display:inline-flex;align-items:center;gap:7px;background:#fff;border:none;border-radius:4px;padding:6px 12px;font-family:var(--font-title);font-size:11px;font-weight:800;color:var(--brand);cursor:pointer;letter-spacing:.4px;margin-left:6px;transition:background .15s,transform .1s}
-.nav-chg-btn:hover{background:var(--accent-light)}
-.nav-chg-btn:active{transform:translateY(1px)}
-.nav-chg-n{background:var(--accent);color:#fff;border-radius:3px;min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-body);font-size:10.5px;font-weight:800}
-.nav-chg-n.zero{background:var(--border);color:var(--muted)}
-.chg-ov{position:fixed;inset:0;background:rgba(10,20,35,.45);z-index:9800;opacity:0;pointer-events:none;transition:opacity .2s}
-.chg-ov.open{opacity:1;pointer-events:auto}
-.chg-side{position:fixed;top:0;right:0;bottom:0;width:min(440px,100vw);background:var(--surface);z-index:9801;transform:translateX(100%);transition:transform .25s ease;display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,.25);border-left:2px solid var(--accent)}
-.chg-side.open{transform:none}
-.chg-head{display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--brand);color:#fff;border-bottom:2px solid var(--accent)}
-.chg-head-title{flex:1;min-width:0;font-family:var(--font-title);font-size:13px;font-weight:800;letter-spacing:.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chg-head-title small{display:block;font-family:var(--font-body);font-size:11px;font-weight:600;opacity:.7;letter-spacing:0;margin-top:1px}
-.chg-x,.chg-back{background:rgba(255,255,255,.12);border:none;color:#fff;border-radius:8px;height:30px;min-width:30px;padding:0 10px;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font-body)}
-.chg-x:hover,.chg-back:hover{background:rgba(255,255,255,.25)}
-.chg-search{padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2)}
-.chg-search input{width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font-body);font-size:12.5px;background:var(--surface);color:var(--text);outline:none}
-.chg-search input:focus{border-color:var(--brand-mid)}
-.chg-body{flex:1;overflow-y:auto;padding:6px 0 14px}
-.chg-sec{font-family:var(--font-title);font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:12px 16px 4px}
-.chg-row{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;border-bottom:1px solid var(--surface2)}
-.chg-row:hover{background:var(--brand-light)}
-.chg-thumb{width:34px;height:34px;border-radius:7px;background:var(--surface2);object-fit:contain;flex-shrink:0;border:1px solid var(--border)}
-.chg-thumb.ph{display:flex;align-items:center;justify-content:center;font-size:15px}
-.chg-row-main{flex:1;min-width:0}
-.chg-row-name{font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chg-row-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chg-go{color:var(--muted);font-size:16px;flex-shrink:0}
-.chg-detail{padding:14px 16px}
-.chg-detail-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.chg-detail-top .chg-thumb{width:52px;height:52px}
-.chg-detail-name{font-size:16px;font-weight:800;color:var(--text);line-height:1.2}
-.chg-field{border:1px solid var(--border);border-radius:9px;margin-bottom:9px;overflow:hidden}
-.chg-field-l{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:6px 10px;background:var(--surface2);border-bottom:1px solid var(--border);word-break:break-all}
-.chg-val{display:flex;gap:8px;padding:7px 10px;font-size:12.5px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere}
-.chg-val i{flex-shrink:0;font-style:normal;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px;height:fit-content;margin-top:1px}
-.chg-val.b{background:var(--red-light)}.chg-val.b i{background:#fff;color:var(--red)}.chg-val.b span{text-decoration:line-through;text-decoration-color:rgba(224,64,64,.45);color:#7a3030}
-.chg-val.a{background:var(--green-light)}.chg-val.a i{background:#fff;color:var(--green-dark)}.chg-val.a span{color:#0b4f3b;font-weight:600}
-.chg-val.n i{background:var(--surface2);color:var(--muted)}
-.chg-val.n{background:var(--surface)}
-.chg-empty{padding:30px 20px;text-align:center;color:var(--muted);font-size:12.5px}
-.chg-prev{max-width:100%;max-height:160px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);padding:8px}
-.chg-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface2)}
-.chg-foot .pend-note{flex:1}
-.pend-row.clk{cursor:pointer}
-/* pílula de pendências (mesma do ItemDex) */
-.pend-fab{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:9500;display:none;flex-direction:column;align-items:center;width:min(440px,calc(100vw - 20px))}
-.pend-fab.show{display:flex}
-.pend-pill{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;border:none;border-radius:99px;padding:8px 18px;font-family:var(--font-body);font-size:12.5px;font-weight:800;letter-spacing:.2px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:transform .15s}
-.pend-pill:hover{transform:translateY(1px)}
-.pend-pill .pend-chev{font-size:9px;transition:transform .2s}
-.pend-fab.open .pend-chev{transform:rotate(180deg)}
-.pend-panel{display:none;width:100%;margin-top:8px;background:var(--surface);border:1.5px solid var(--accent);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.22);overflow:hidden}
-.pend-fab.open .pend-panel{display:block}
-.pend-list{max-height:min(46vh,380px);overflow-y:auto;padding:6px 0}
-.pend-sec{font-family:var(--font-title);font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 14px 3px}
-.pend-row{display:flex;align-items:baseline;gap:8px;padding:5px 14px;font-size:12.5px;cursor:default}
-.pend-row:hover{background:var(--surface2)}
-.pend-tag{flex-shrink:0;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.3px}
-.pend-tag.add{background:var(--green-light);color:var(--green-dark)}
-.pend-tag.mod{background:var(--brand-light);color:var(--brand-mid)}
-.pend-tag.del{background:var(--red-light);color:var(--red)}
-.pend-tag.img{background:var(--purple-light);color:var(--purple)}
-.pend-name{font-weight:700;color:var(--text)}
-.pend-what{color:var(--muted);font-size:11.5px}
-.pend-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface2)}
-.pend-note{font-size:11px;color:var(--muted)}
+const AUTH_URL = process.env.AUTH_SUPA_URL || 'https://ucbkodkjlbatttiuqjtv.supabase.co';
+const AUTH_KEY = process.env.AUTH_SUPA_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
 
-</style>
-</head>
-<body>
-<!-- KP-GATE-BODY:BEGIN (gerado por build_gate.py — não edite à mão) --><div id="kp-gate"><div class="kg-box"><div class="kg-wait">Verificando acesso…</div><div class="kg-lock"><div class="kg-ico">🔒</div><div class="kg-t">Acesso restrito</div><div class="kg-s">Faça login como admin no site principal para acessá-lo.</div><a class="kg-b" href="/">Ir ao site principal</a></div></div></div><!-- KP-GATE-BODY:END -->
+// abilities e moves agora também enviam admin_nome/admin_senha (abilitydex_adm e movedex_adm novos),
+// então TODOS os tipos exigem player com papel de chefe/ADM/MOD. SEM_ADMIN_LEGADO fica só como lista vazia
+// (para liberar um tipo temporariamente, ponha o nome dele aqui e EXIGIR_ADMIN_EM_TODOS = false).
+const EXIGIR_ADMIN_EM_TODOS = true;
+const SEM_ADMIN_LEGADO = new Set();
 
-<nav class="nav">
-  <div class="nav-logo">PKMN <span>Kingdom Platinum</span><small>/ ADM</small></div>
-  <div class="nav-right">
-    <a class="nav-link" href="/datadex_adm">Pokémon</a>
-    <a class="nav-link" href="/abilitydex_adm">Abilities</a>
-    <a class="nav-link" href="/itemdex_adm">Itens</a>
-    <a class="nav-link" href="/nationaldex">← Pokédex</a>
-    <button type="button" class="nav-chg-btn" onclick="chgToggle()" title="Ver tudo o que foi editado e ainda não foi commitado">Edições <span class="nav-chg-n zero" id="chg-nav-n">0</span></button>
-  </div>
-</nav>
+class HttpErr extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
-<div class="wrap">
-
-  <div class="adm-header">
-    <div>
-      <div class="adm-title">Move<span>Dex</span> <span style="font-size:13px;color:var(--muted)">— Painel ADM</span></div>
-      <div class="adm-desc">Gerencie traduções e atributos de movimentos para pt-BR. Os dados ficam no moves.json (GitHub): as edições ficam no navegador até clicar em “Commitar moves.json”.</div>
-    </div>
-  </div>
-
-  <div class="panel active" id="panel-moves">
-    <div class="stats-bar">
-      <div class="stat-item"><span class="stat-val" id="mv-total">—</span><span class="stat-lbl">Total</span></div>
-      <div class="sdiv"></div>
-      <div class="stat-item"><span class="stat-val g" id="mv-appr">0</span><span class="stat-lbl">Aprovados</span></div>
-      <div class="sdiv"></div>
-      <div class="stat-item"><span class="stat-val o" id="mv-pend">0</span><span class="stat-lbl">Pendentes</span></div>
-      <div class="prog-wrap">
-        <div class="prog-lbl"><span>Progresso</span><span id="mv-pct">0%</span></div>
-        <div class="prog-bar"><div class="prog-fill" id="mv-bar" style="width:0%"></div></div>
-      </div>
-    </div>
-    <div class="toolbar">
-      <div class="sinput-wrap">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input class="sinput" id="mv-search" placeholder="Buscar movimento…" oninput="filterMv()">
-      </div>
-      <button class="fbtn on" id="mv-f-all" onclick="setMvFilter('all')">Todos</button>
-      <button class="fbtn" id="mv-f-pend" onclick="setMvFilter('pend')">Pendentes</button>
-      <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
-      <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
-      <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e adiciona à lista (sem sobrescrever traduções já feitas). Fica pendente até commitar o moves.json" style="margin-left:auto">📥 Importar da PokeAPI</button>
-      <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e marca/renumera is_tm / tm_number dos moves, sem desmarcar nenhum (pendente até commitar; usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
-      <button class="btn btn-outline btn-sm" id="mv-tmitems-btn" onclick="tmCriarItensManual()" title="Cria no itemdex/items.json o item (TMxxx: Nome) de cada move marcado como TM que ainda não tem item">➕ Criar itens das TMs</button>
-      <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Baixa o moves.json do kpfichas_db, mescla com as edições de outros admins e commita no repo alphx-r/kpfichas_db">📤 Commitar moves.json</button>
-      <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
-    </div>
-    <div id="mv-list"><div class="loading"><div class="spinner"></div><div class="loading-text">Carregando movimentos…</div></div></div>
-  </div>
-
-</div>
-
-<div class="toast" id="toast"></div>
-
-<!-- IMPORT/PROGRESS MODAL -->
-<div class="modal-ov" id="progress-modal">
-  <div class="modal" style="max-width:420px">
-    <div class="modal-title" id="progress-title">Importando…</div>
-    <div style="background:var(--border);border-radius:8px;height:18px;overflow:hidden;margin:14px 0 8px">
-      <div id="progress-bar" style="height:100%;width:0%;background:var(--accent,#4caf50);transition:width .15s ease;border-radius:8px"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
-      <span id="progress-label">0 / 0</span>
-      <span id="progress-pct">0%</span>
-    </div>
-  </div>
-</div>
-
-<div class="modal-ov" id="new-move-modal">
-  <div class="modal" style="position:relative">
-    <div class="modal-title" style="margin-bottom:4px">＋ Novo Move Customizado</div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Adicione um movimento homebrew. Entra na lista e só vai para o moves.json quando você clicar em “Commitar moves.json”.</p>
-    <div style="max-width:720px">
-      <div style="margin-bottom:12px">
-        <div class="field-lbl pt" style="margin-bottom:4px">Nome</div>
-        <input class="mv-meta-input" id="nmv-name" type="text" placeholder="ex: Explosão das Sombras" style="width:100%;max-width:360px">
-      </div>
-      <div class="mv-meta-grid" style="margin-bottom:12px">
-        <div class="mv-meta-item">
-          <div class="mv-meta-lbl">Tipo</div>
-          <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-type" list="dl-move-type" autocomplete="off" placeholder="— tipo —"><span class="cb-arrow">▾</span></div>
-        </div>
-        <div class="mv-meta-item">
-          <div class="mv-meta-lbl">Tipo 2 <span style="opacity:.5">(opcional)</span></div>
-          <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-type2" list="dl-move-type" autocomplete="off" placeholder="— nenhum —"><span class="cb-arrow">▾</span></div>
-        </div>
-        <div class="mv-meta-item">
-          <div class="mv-meta-lbl">Categoria</div>
-          <select class="mv-meta-select" id="nmv-cat">
-            <option value="">—</option>
-            <option value="physical">Físico</option>
-            <option value="special">Especial</option>
-            <option value="status">Status</option>
-          </select>
-        </div>
-        <div class="mv-meta-item">
-          <div class="mv-meta-lbl">Poder</div>
-          <input class="mv-meta-input" type="number" id="nmv-power" placeholder="—" min="0" max="999">
-        </div>
-        <div class="mv-meta-item">
-          <div class="mv-meta-lbl">Precisão (%)</div>
-          <input class="mv-meta-input" type="number" id="nmv-acc" placeholder="—" min="0" max="100">
-        </div>
-        <div class="mv-meta-item">
-          <div class="mv-meta-lbl">Contest Style</div>
-          <div class="cb-wrap"><input class="cb-input mv-meta-input" id="nmv-style" list="dl-contest-style" autocomplete="off" placeholder="— estilo —"><span class="cb-arrow">▾</span></div>
-        </div>
-      </div>
-      <div style="margin-bottom:12px">
-        <div class="field-lbl pt" style="margin-bottom:4px">Descrição</div>
-        <textarea class="field-pt" id="nmv-desc" rows="5" placeholder="Descrição do efeito…" style="width:100%"></textarea>
-      </div>
-      <div class="modal-foot" style="padding:0;margin-top:8px">
-        <button class="btn btn-outline" onclick="closeModal('new-move-modal')">Cancelar</button>
-        <button class="btn btn-success" onclick="saveNewMove()">✓ Adicionar à lista</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-/* ══════════════════════════════════════════
-   DADOS — os moves vivem no movedex/moves.json do repo kpfichas_db (GitHub), NÃO no Supabase.
-   (o HTML fica no repo principal; o JSON fica no kpfichas_db, igual ao pokemon.json do nationaldex_adm)
-   • Leitura: baixa o moves.json do GitHub uma vez e guarda em memória (S.mv.dbMap).
-   • Edição: mvUpsert/mvDelete só mexem na memória (nada é gravado até commitar).
-   • Gravação: botão "Commitar moves.json" → baixa o remoto de novo, mescla com o que
-     outros admins commitaram (3 vias: base × minha × remota) e manda pra /api/commit-moves.
-══════════════════════════════════════════ */
-const MV_REPO = 'alphx-r/kpfichas_db';   // mesmo repo do pokemon.json (KP_JSON_REPO no nationaldex_adm)
-const MV_PATH = 'movedex/moves.json';
-const MVJ = { loaded: false };
-let _mvjLoadP = null;
-
-// JSON "estável" (chaves ordenadas) pra comparar valores; undefined e null contam como iguais
-function mvStable(v) {
-  if (v === undefined || v === null) return 'null';
-  if (typeof v !== 'object') return JSON.stringify(v);
-  if (Array.isArray(v)) return '[' + v.map(mvStable).join(',') + ']';
-  return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + mvStable(v[k])).join(',') + '}';
-}
-function mvStrip(o) { return Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => !k.startsWith('_') && v !== undefined)); }
-
-async function mvFetchRemote() {
-  const comTimeout = (url, opts, ms) => {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
-    return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
-  };
-  const lista = j => { if (j && !Array.isArray(j) && Array.isArray(j.moves)) j = j.moves; return Array.isArray(j) ? j.filter(r => r && r.name) : null; };
-  const tentativas = [
-    () => comTimeout(`https://raw.githubusercontent.com/${MV_REPO}/main/${MV_PATH}?v=${Date.now()}`, { cache: 'no-store' }, 30000),
-    () => comTimeout(`https://api.github.com/repos/${MV_REPO}/contents/${MV_PATH}?ref=main`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' } }, 30000),
-  ];
-  let erro = '';
-  for (const t of tentativas) {
-    try {
-      const r = await t();
-      if (!r.ok) { erro = 'HTTP ' + r.status; continue; }
-      const l = lista(await r.json());
-      if (l) return l;
-      erro = 'formato inesperado (esperava uma lista)';
-    } catch (e) { erro = e.name === 'AbortError' ? 'demorou mais de 30s' : e.message; }
-  }
-  throw new Error(`Não consegui ler o ${MV_PATH} do GitHub (${erro}).`);
-}
-
-async function mvEnsureLoaded() {
-  if (MVJ.loaded) return;
-  if (!_mvjLoadP) {
-    _mvjLoadP = (async () => {
-      const rows = await mvFetchRemote();
-      S.mv.dbMap = {};
-      rows.forEach(r => { S.mv.dbMap[r.name] = r; });
-      mvSetBase(JSON.parse(JSON.stringify(rows)));   // BASE da mesclagem: exatamente o que está no GitHub agora
-      MVJ.loaded = true;
-    })().finally(() => { _mvjLoadP = null; });
-  }
-  return _mvjLoadP;
-}
-
-// Mesmas semânticas do antigo upsert "merge-duplicates": colunas não enviadas são mantidas.
-function mvUpsert(row) {
-  if (!MVJ.loaded) throw new Error('A lista de moves ainda não carregou do moves.json — recarregue a página.');
-  const name = String(row.name);
-  S.mv.dbMap[name] = { ...(S.mv.dbMap[name] || {}), ...row };
-  return S.mv.dbMap[name];
-}
-function mvDelete(name) {
-  if (!MVJ.loaded) throw new Error('A lista de moves ainda não carregou do moves.json — recarregue a página.');
-  delete S.mv.dbMap[name];
-}
-
-// Credenciais do player (nome + senha) para a rota /api/commit-moves: o servidor confere o player
-// e o papel (chefe/ADM/MOD). A senha é pedida uma vez por aba (KPAdm.cred guarda só em sessionStorage).
-async function kpCommitAuth() {
-  if (!window.KPAdm) return {};
-  if (!KPAdm.pode()) throw new Error('Ative o modo ADM (botão ao lado do seu nome) para commitar.');
-  // Crachá de sessão (emitido pelo servidor depois da 1ª confirmação de senha, vale 30 dias): enquanto valer, NÃO pede a senha de novo.
-  // O servidor continua conferindo o papel (chefe/ADM/MOD) a cada commit; o crachá só dispensa redigitar a senha.
-  const ct = kpCtGet();
-  if (ct) return { ct };
-  const c = await KPAdm.cred('Para commitar no GitHub, confirme a senha do seu player. (Só pede de novo daqui a 30 dias.)');
-  if (!c) throw new Error('Commit cancelado: senha não confirmada.');
-  return { admin_nome: c.n, admin_senha: c.s };
-}
-const KP_CT_KEY = 'kp_commit_ct';
-function kpCtGet() {
-  try { const c = localStorage.getItem(KP_CT_KEY); if (c) return c; } catch (e) {}
-  // crachá que o /api/ficha-token entrega no login do site (vem junto da sessão do player), se o login o guardou
-  for (const st of ['localStorage', 'sessionStorage']) {
-    try { const s = JSON.parse(window[st].getItem('kp_ficha_sessao') || 'null'); if (s && typeof s.ct === 'string' && s.ct.includes('.')) return s.ct; } catch (e) {}
-  }
-  return '';
-}
-function kpCtSave(j) { try { if (j && typeof j.ct === 'string' && j.ct) localStorage.setItem(KP_CT_KEY, j.ct); } catch (e) {} }
-function kpCommitAuthFail(res) {
-  if (res && (res.status === 401 || res.status === 403)) {
-    try { localStorage.removeItem(KP_CT_KEY); } catch (e) {}   // crachá vencido/negado: na próxima vez pede a senha
-    try { KPAdm.credLimpar(); } catch (e) {}
-  }
-}
-
-/* ── Mesclagem de 3 vias (protege contra sobrescrever o que outro admin commitou) ──
-   BASE = moves.json como estava quando esta página carregou (ou no último commit);
-   MINHA = memória; REMOTA = moves.json atual no GitHub.
-   Quem só mexeu de um lado leva a mudança; mexeram nos dois → campo a campo;
-   o mesmo campo editado dos dois lados = conflito (o admin escolhe quem prevalece). */
-function mvMerge3(base, localMap, remoteRows, preferLocal) {
-  base = base || {};
-  const remote = {}, ids = [];
-  (remoteRows || []).forEach(r => { if (r && r.name) { if (!(r.name in remote)) ids.push(r.name); remote[r.name] = r; } });
-  Object.keys(localMap || {}).forEach(n => { if (!(n in remote)) ids.push(n); });
-  const rows = [], conflicts = [], notas = { puxados: [], apagadosPorOutros: [] };
-  for (const n of ids) {
-    const Lm = localMap && localMap[n] ? mvStrip(localMap[n]) : undefined;
-    const Rm = remote[n] ? mvStrip(remote[n]) : undefined;
-    const Bm = base[n] ? mvStrip(base[n]) : undefined;
-    const Ls = Lm && mvStable(Lm), Rs = Rm && mvStable(Rm), Bs = Bm && mvStable(Bm);
-    if (Lm && Rm) {
-      if (Ls === Rs) { rows.push(Lm); continue; }
-      if (Bm && Ls === Bs) { rows.push(Rm); notas.puxados.push(n); continue; }   // só o outro mexeu
-      if (Bm && Rs === Bs) { rows.push(Lm); continue; }                           // só eu mexi
-      const out = {};
-      for (const k of new Set([...Object.keys(Lm), ...Object.keys(Rm)])) {
-        const l = mvStable(Lm[k]), r = mvStable(Rm[k]), b = Bm ? mvStable(Bm[k]) : undefined;
-        let v;
-        if (l === r) v = Lm[k];
-        else if (Bm && l === b) v = Rm[k];
-        else if (Bm && r === b) v = Lm[k];
-        else { conflicts.push({ name: n, campo: k }); v = preferLocal ? Lm[k] : Rm[k]; }
-        if (v !== undefined) out[k] = v;
-      }
-      rows.push(out);
-    } else if (Lm && !Rm) {
-      if (!Bm) { rows.push(Lm); continue; }                                       // move novo meu
-      if (Ls === Bs) { notas.apagadosPorOutros.push(n); continue; }               // outro apagou e eu não mexi → apaga
-      conflicts.push({ name: n, campo: '(outro admin excluiu este move)' });
-      if (preferLocal) rows.push(Lm); else notas.apagadosPorOutros.push(n);
-    } else if (!Lm && Rm) {
-      if (!Bm) { rows.push(Rm); notas.puxados.push(n); continue; }                // move novo de outro admin
-      if (Rs === Bs) continue;                                                    // eu apaguei e ninguém mexeu → apaga
-      conflicts.push({ name: n, campo: '(você excluiu, mas outro admin editou)' });
-      if (!preferLocal) { rows.push(Rm); notas.puxados.push(n); }
-    }
-  }
-  rows.sort((x, y) => String(x.name).localeCompare(String(y.name)));
-  return { rows, conflicts, notas };
-}
-function mvMergePerguntando(remoteRows) {
-  let res = mvMerge3(MVB.base, S.mv.dbMap, remoteRows, true);
-  if (res.conflicts.length) {
-    const lista = res.conflicts.slice(0, 10).map(c => `• ${cap(c.name)} — ${c.campo}`).join('\n');
-    const mais = res.conflicts.length > 10 ? `\n…e mais ${res.conflicts.length - 10}.` : '';
-    const minha = confirm(`⚠️ Outro admin alterou os MESMOS campos que você (${res.conflicts.length}):\n\n${lista}${mais}\n\nOK = manter a MINHA versão nesses campos\nCancelar = manter a versão do OUTRO admin`);
-    if (!minha) res = mvMerge3(MVB.base, S.mv.dbMap, remoteRows, false);
-  }
-  return res;
-}
-
-/* ══════════════════════════════════════════
-   HELPERS
-══════════════════════════════════════════ */
-function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, ' '); }
-// nome digitado -> chave (slug): minúsculas, espaços viram hífen, sem aspas/sinais que quebrem o HTML
-function kpSlug(v) { return String(v || '').trim().toLowerCase().replace(/['"<>&\\`]/g, '').replace(/\s+/g, '-'); }
-function kpAttr(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-let toastT;
-function toast(msg, type = '') {
-  const el = document.getElementById('toast');
-  if (!el) { console.warn('[toast]', msg); return; }
-  clearTimeout(toastT);
-  el.classList.remove('show');
-  el.textContent = msg; el.className = 'toast ' + type;
-  void el.offsetWidth;
-  el.classList.add('show');
-  toastT = setTimeout(() => el.classList.remove('show'), 2800);
-}
-
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-function openNewMove() { document.getElementById('new-move-modal').classList.add('open'); }
-
-document.querySelectorAll('.modal-ov').forEach(ov => {
-  ov.addEventListener('click', e => { if (e.target === ov) closeModal(ov.id); });
+const ghHeaders = token => ({
+  Authorization: 'Bearer ' + token,
+  Accept: 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+  'User-Agent': 'kingdomplatinum-commit',
 });
 
-/* ══════════════════════════════════════════
-   GOOGLE TRANSLATE (non-official)
-══════════════════════════════════════════ */
-async function gTranslate(text) {
-  if (!text || !text.trim()) return '';
+// Chave de transição: true = ainda aceita o modo antigo (só o nome/email do admin, SEM senha).
+// Esse modo é a falha de segurança: desligue (false) assim que todas as páginas ADM enviarem admin_nome/admin_senha.
+const ACEITAR_EMAIL_LEGADO = true;
+
+// Modo novo: nome+senha do PLAYER, conferidos no servidor, e papel lido de config.kp_staff.
+// chefe/admin editam tudo; MOD só edita o tipo do seu site (mods[tipo]). Retorna null se o corpo não usa o modo novo.
+// Crachá de equipe emitido pelo /api/ficha-token no login (nome + validade assinados com COMMIT_SECRET).
+function nomeDoCt(ct) {
+  const segredo = process.env.COMMIT_SECRET;
+  if (!segredo || typeof ct !== 'string') return null;
+  const [p, sig] = ct.split('.');
+  if (!p || !sig) return null;
+  const esperado = crypto.createHmac('sha256', segredo).update(p).digest('base64url');
+  const A = Buffer.from(sig), B = Buffer.from(esperado);
+  if (A.length !== B.length || !crypto.timingSafeEqual(A, B)) return null;
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=pt-BR&dt=t&q=${encodeURIComponent(text)}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    return d[0].map(s => s[0]).join('');
-  } catch (e) {
-    throw new Error('Falha na tradução automática');
-  }
-}
-async function translateField(id, type, field, enText) {
-  if (!enText || enText === '…' || enText === '—') { toast('Sem texto em inglês para traduzir.', 'err'); return; }
-  const fieldId = `mv-desc-${id}`;
-  const ta = document.getElementById(fieldId);
-  if (!ta) return;
-  const btn = ta.closest('.entry-body')?.querySelector(`.translate-btn[onclick*="${field}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = '⌛ Traduzindo…'; }
-  try {
-    const translated = await gTranslate(enText);
-    ta.value = translated;
-    ta.classList.add('filled');
-    if (btn) { btn.disabled = false; btn.innerHTML = '✦ Sugerir tradução'; }
-    toast('Tradução sugerida! Revise e aprove.', 'ok');
-  } catch (e) {
-    if (btn) { btn.disabled = false; btn.innerHTML = '✦ Sugerir tradução'; }
-    toast('Falha na tradução automática. Tente novamente.', 'err');
-  }
+    const d = JSON.parse(Buffer.from(p, 'base64url').toString('utf8'));
+    return d && typeof d.n === 'string' && d.exp > Date.now() ? d.n : null;
+  } catch (e) { return null; }
 }
 
-function toggleEntry(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.toggle('open');
-}
-function markFilled(ta) {
-  ta.classList.toggle('filled', !!ta.value.trim());
-}
-
-function showProgress(title) {
-  document.getElementById('progress-title').textContent = title;
-  document.getElementById('progress-bar').style.width = '0%';
-  document.getElementById('progress-label').textContent = '0 / 0';
-  document.getElementById('progress-pct').textContent = '0%';
-  document.getElementById('progress-modal').classList.add('open');
-}
-function updateProgress(current, total, extraLabel = '') {
-  const pct = total ? Math.round(current / total * 100) : 0;
-  document.getElementById('progress-bar').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = `${current} / ${total}${extraLabel ? ' — ' + extraLabel : ''}`;
-  document.getElementById('progress-pct').textContent = pct + '%';
-}
-function hideProgress() {
-  document.getElementById('progress-modal').classList.remove('open');
+const CT_DIAS = 30;
+function assinarCt(nome) {
+  const segredo = process.env.COMMIT_SECRET;
+  if (!segredo) return null;
+  const p = Buffer.from(JSON.stringify({ n: nome, exp: Date.now() + CT_DIAS * 864e5 })).toString('base64url');
+  return p + '.' + crypto.createHmac('sha256', segredo).update(p).digest('base64url');
 }
 
-/* ══════════════════════════════════════════
-   Datalists — tipo de move e contest style
-══════════════════════════════════════════ */
-function cbBuildDatalist(id, opts) {
-  let dl = document.getElementById(id);
-  if (!dl) { dl = document.createElement('datalist'); dl.id = id; document.body.appendChild(dl); }
-  dl.innerHTML = opts.map(o => `<option value="${o.label||o.value}"></option>`).join('');
-}
-const CB_DL_TYPE = 'dl-move-type';
-const MOVE_TYPES = ['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy','light','scent'];
-const CB_DL_STYLE = 'dl-contest-style';
-const CONTEST_STYLES = ['cool','beautify','cute','clever','tough'];
-function cbBuildStaticLists() {
-  cbBuildDatalist(CB_DL_TYPE,  MOVE_TYPES.map(t => ({ value: t, label: t.charAt(0).toUpperCase()+t.slice(1) })));
-  cbBuildDatalist(CB_DL_STYLE, CONTEST_STYLES.map(s => ({ value: s, label: s.charAt(0).toUpperCase()+s.slice(1) })));
-}
-
-/* ══════════════════════════════════════════
-   STATE
-══════════════════════════════════════════ */
-const S = { mv: { all: [], filtered: [], dbMap: {} } };
-
-
-/* ══════════════════════════════════════════
-   Diálogo interno do site (no lugar do confirm/alert do navegador, que mostra "kingdomplatinum.vercel.app diz")
-   kpDialog({ titulo, texto, itens[], aviso, ok, cancelar }) → Promise<boolean>
-   cancelar: null = só um botão (aviso).
-══════════════════════════════════════════ */
-function kpDialog({ titulo = '', texto = '', itens = [], aviso = '', ok = 'OK', cancelar = 'Cancelar' } = {}) {
-  const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  return new Promise(resolve => {
-    const ov = document.createElement('div');
-    ov.className = 'modal-ov open'; ov.style.zIndex = 9500; ov.style.alignItems = 'center';
-    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column">
-      <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:10px">${esc(titulo)}</div>
-      <div style="overflow-y:auto;font-size:13px;line-height:1.55;color:var(--text)">
-        ${texto ? `<div style="white-space:pre-line">${esc(texto)}</div>` : ''}
-        ${itens.length ? `<ul style="margin:8px 0 0;padding-left:20px">${itens.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
-        ${aviso ? `<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--red-light);color:var(--red);font-size:12px;white-space:pre-line">${esc(aviso)}</div>` : ''}
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-        ${cancelar ? `<button type="button" class="btn btn-outline btn-sm" data-r="0">${esc(cancelar)}</button>` : ''}
-        <button type="button" class="btn btn-primary btn-sm" data-r="1">${esc(ok)}</button>
-      </div></div>`;
-    const fim = v => { document.removeEventListener('keydown', tecla, true); ov.remove(); resolve(v); };
-    const tecla = e => { if (e.key === 'Escape') { e.stopPropagation(); fim(!cancelar); } };
-    ov.addEventListener('click', e => { const b = e.target.closest('button[data-r]'); if (b) fim(b.dataset.r === '1'); else if (e.target === ov && cancelar) fim(false); });
-    document.addEventListener('keydown', tecla, true);
-    document.body.appendChild(ov);
-    ov.querySelector('button[data-r="1"]').focus();
-  });
-}
-
-/* ══════════════════════════════════════════
-   Sincronizar flag de TM com a lista de TMs do items.json
-   Item "TM014: Acrobatics" -> move "acrobatics": is_tm = true, tm_number = 14.
-   Nunca desmarca: moves que já são TM no MoveDex e não têm item no items.json continuam TM.
-══════════════════════════════════════════ */
-const tmSlug = n => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`.]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-async function tmLoadItems() {
-  const urls = ['https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/itemdex/items.json', '/itemdex/items.json', '/items.json'];
-  for (const u of urls) {
-    try {
-      const r = await fetch(u + '?_=' + Date.now());
-      if (!r.ok) continue;
-      const j = await r.json();
-      if (Array.isArray(j) && j.length) return j;
-    } catch {}
-  }
-  throw new Error('Não consegui carregar o items.json.');
-}
-async function syncTmsFromItems() {
-  const btn = document.getElementById('mv-tmsync-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Lendo items.json…'; }
-  try {
-    if (!Object.keys(S.mv.dbMap).length) await loadMoves();
-    const items = await tmLoadItems();
-    const lista = new Map(), semMove = [], dup = [];
-    items.forEach(it => {
-      const nome = it && (it.name || it.nome);
-      if (!nome) return;
-      const cat = String(it.category || '').toLowerCase().replace(/[^a-z]/g, '');
-      const m = String(nome).match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.+)$/i);
-      if (!m) { if (/^(tms?|technicalmachines?|machines?)$/.test(cat)) semMove.push(nome); return; }
-      const mv = tmSlug(m[2]);
-      if (!S.mv.dbMap[mv]) { semMove.push(nome); return; }
-      if (lista.has(mv)) dup.push(nome);
-      lista.set(mv, parseInt(m[1], 10));
-    });
-    if (!lista.size) { toast('Nenhum TM do items.json bateu com um move da lista.', 'err'); return; }
-
-    const mudar = [];
-    Object.entries(S.mv.dbMap).forEach(([name, row]) => {
-      // Só marca/renumera. Move que já é TM no MoveDex mas não tem item no items.json NÃO perde a flag:
-      // a fonte de verdade das TMs são os movimentos.
-      if (!lista.has(name)) return;
-      const num = lista.get(name);
-      if (!row.is_tm || Number(row.tm_number) !== num)
-        mudar.push({ name, row, is_tm: true, tm_number: num });
-    });
-    const marcar = mudar.filter(x => x.is_tm && !x.row.is_tm).length;
-    const renum = mudar.filter(x => x.is_tm && x.row.is_tm).length;
-    if (!mudar.length) { toast(`✅ Já está sincronizado (${lista.size} TMs).`, 'ok'); return; }
-
-    const avisos = [];
-    if (semMove.length) avisos.push(`${semMove.length} item(ns) TM sem move correspondente na lista (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}`);
-    if (dup.length) avisos.push(`Número repetido para o mesmo move: ${dup.slice(0, 5).join(', ')}`);
-    if (!await kpDialog({
-      titulo: 'Sincronizar TMs', ok: 'Aplicar',
-      texto: `TMs no items.json: ${lista.size}\n\nO que muda (fica pendente até commitar o moves.json):`,
-      itens: [`${marcar} move(s) vão virar TM`, `${renum} move(s) já eram TM e terão o número atualizado`],
-      aviso: avisos.join('\n')
-    })) return;
-
-    showProgress('Sincronizando TMs…');
-    let ok = 0, fail = 0, feito = 0;
-    const erros = [], agora = new Date().toISOString();
-    for (let i = 0; i < mudar.length; i += 8) {
-      await Promise.all(mudar.slice(i, i + 8).map(async c => {
-        const e = c.row;
-        // mesmas colunas que o saveMv envia; o resto da linha não é tocado
-        const row = {
-          name: c.name, descricao: e.descricao || '', type: e.type || '', type2: e.type2 || null,
-          damage_class: e.damage_class || '', power: e.power ?? null, accuracy: e.accuracy ?? null,
-          contest_style: e.contest_style || null, is_tm: c.is_tm, tm_number: c.tm_number,
-          approved: !!e.approved, updated_at: agora
-        };
-        try { await mvUpsert(row); ok++; } catch (err) { fail++; erros.push(`${c.name}: ${err.message}`); }
-        updateProgress(++feito, mudar.length);
-      }));
+async function adminOkPlayer(body, tipo) {
+  if (body.ct) {   // sessão: sem senha. O papel é lido de config.kp_staff a cada pedido.
+    const nome = nomeDoCt(body.ct);
+    if (nome) {
+      try {
+        const m = await import('./_staff.js'); const ST = m.default || m;
+        const p = ST.papel(await ST.lerStaff(), nome, tipo);
+        return p === 'chefe' || p === 'admin' || p === 'mod';
+      } catch (e) { return false; }
     }
-    if (fail) console.warn('Falhas ao sincronizar TMs:', erros);
-    await loadMoves();
-    toast(`TMs sincronizados: ${ok} atualizados${fail ? `, ${fail} falharam (veja o console)` : ''}. Agora clique em “Commitar moves.json”.`, fail ? 'err' : 'ok');
-  } catch (e) {
-    toast('Erro ao sincronizar TMs: ' + e.message, 'err');
-  } finally {
-    hideProgress();
-    if (btn) { btn.disabled = false; btn.textContent = '🔄 Sincronizar TMs (items.json)'; }
+    if (!body.admin_nome || !body.admin_senha) return false;   // crachá vencido/inválido e sem senha -> 401
   }
-}
-
-/* ══════════════════════════════════════════
-   ██ MOVES
-══════════════════════════════════════════ */
-let mvFilter = 'all';
-function setMvFilter(f) {
-  mvFilter = f;
-  ['all','pend','appr'].forEach(x => document.getElementById('mv-f-' + x)?.classList.toggle('on', x === f));
-  applyMvFilter();
-}
-function filterMv() { applyMvFilter(); }
-function applyMvFilter() {
-  const q = document.getElementById('mv-search').value.toLowerCase();
-  S.mv.filtered = S.mv.all.filter(item => {
-    const nm = !q || item.name.includes(q);
-    const db = S.mv.dbMap[item.name] || {};
-    const appr = !!db.approved;
-    const fOk = mvFilter === 'all' || (mvFilter === 'appr' && appr) || (mvFilter === 'pend' && !appr);
-    return nm && fOk;
-  });
-  renderMvList();
-}
-
-function renderMvList() {
-  const con = document.getElementById('mv-list');
-  const items = S.mv.filtered;
-  if (!items.length) {
-    con.innerHTML = S.mv.all.length
-      ? `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nenhum movimento encontrado</div></div>`
-      : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum movimento no moves.json ainda</div><div style="font-size:12px;color:var(--muted);margin-top:6px">Use o botão "📥 Importar da PokeAPI" acima para popular a lista.</div></div>`;
-    return;
-  }
-  updateMvStats();
-  con.innerHTML = items.map((item, i) => {
-    const db = S.mv.dbMap[item.name] || {};
-    const appr = !!db.approved;
-    const hasDesc = !!(db.descricao);
-    const cat = db.damage_class || item.damage_class || '';
-    const catLabel = { physical: 'Físico', special: 'Especial', status: 'Status' }[cat] || cat;
-    const catClass = { physical: 'cat-physical', special: 'cat-special', status: 'cat-status' }[cat] || '';
-    const typeVal = db.type || item.type || '';
-    const type2Val = db.type2 || item.type2 || '';
-    const typeLabel = typeVal ? (typeVal.toUpperCase() + (type2Val ? ' / ' + type2Val.toUpperCase() : '')) : '';
-    const powerVal = db.power !== undefined ? db.power : (item.power !== undefined ? item.power : null);
-    const accVal = db.accuracy !== undefined ? db.accuracy : (item.accuracy !== undefined ? item.accuracy : null);
-    return `<div class="entry${appr?' approved':''}${hasDesc?' has-pt':''}" id="mv-entry-${item.name}" style="animation-delay:${Math.min(i*0.01,0.3)}s">
-      <div class="entry-head" onclick="toggleEntry('mv-entry-${item.name}')">
-        <span class="entry-name">${cap(item.name)}${typeLabel?`<small>${typeLabel}${cat?' · '+catLabel:''}</small>`:''}</span>
-        ${db.is_tm&&db.tm_number?`<span class="badge tm-pill" style="background:#e0eaff;color:#2050a0">TM${String(db.tm_number).padStart(3,'0')}</span>`:''}
-        ${catClass?`<span class="badge cat-pill ${catClass}">${catLabel}</span>`:''}
-        ${db.contest_style?`<span class="badge" style="background:#eee;color:#555">${cap(db.contest_style)}</span>`:''}
-        <span class="badge ${appr?'badge-appr':hasDesc?'badge-pt':'badge-pend'}">${appr?'✓ Aprovado':hasDesc?'Rascunho':'Pendente'}</span>
-        <span class="chev">▼</span>
-      </div>
-      <div class="entry-body">
-
-        <div class="mv-section-lbl">✏️ Nome</div>
-        <div class="mv-name-row">
-          <div class="field-row">
-            <input class="mv-meta-input" id="mv-name-${item.name}" type="text" value="${kpAttr(cap(item.name))}" placeholder="Nome do move" autocomplete="off">
-            <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Ao salvar, espaços viram hífen (ex.: “Take Down” → take-down). Pokémon que já têm este move no moveset continuam com o nome antigo.</div>
-          </div>
-        </div>
-
-        <div class="mv-section-lbl">⚙️ Atributos</div>
-        <div class="mv-meta-grid">
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Tipo</div>
-            <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-type-${item.name}" list="dl-move-type" autocomplete="off" placeholder="— tipo —" value="${(db.type||item.type||'').replace(/\b\w/g,c=>c.toUpperCase())}"><span class="cb-arrow">▾</span></div>
-          </div>
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Tipo 2 <span style="opacity:.5">(opcional)</span></div>
-            <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-type2-${item.name}" list="dl-move-type" autocomplete="off" placeholder="— nenhum —" value="${(db.type2||item.type2||'').replace(/\b\w/g,c=>c.toUpperCase())}"><span class="cb-arrow">▾</span></div>
-          </div>
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Categoria</div>
-            <select class="mv-meta-select" id="mv-cat-${item.name}">
-              <option value="">—</option>
-              <option value="physical"${(db.damage_class||item.damage_class)==='physical'?' selected':''}>Físico</option>
-              <option value="special"${(db.damage_class||item.damage_class)==='special'?' selected':''}>Especial</option>
-              <option value="status"${(db.damage_class||item.damage_class)==='status'?' selected':''}>Status</option>
-            </select>
-          </div>
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Poder</div>
-            <input class="mv-meta-input" type="number" min="0" max="999" id="mv-power-${item.name}" value="${powerVal !== null && powerVal !== undefined ? powerVal : ''}" placeholder="—">
-          </div>
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Precisão (%)</div>
-            <input class="mv-meta-input" type="number" min="0" max="100" id="mv-acc-${item.name}" value="${accVal !== null && accVal !== undefined ? accVal : ''}" placeholder="—">
-          </div>
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Contest Style</div>
-            <div class="cb-wrap"><input class="cb-input mv-meta-input" id="mv-style-${item.name}" list="dl-contest-style" autocomplete="off" placeholder="— estilo —" value="${(db.contest_style||item.style||''||'').replace(/\b\w/g,c=>c.toUpperCase())}"><span class="cb-arrow">▾</span></div>
-          </div>
-        </div>
-
-        <div class="mv-section-lbl">🔢 Máquina (TM)</div>
-        <div class="mv-meta-grid">
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">É TM?</div>
-            <label style="display:flex;align-items:center;gap:6px;height:34px">
-              <input type="checkbox" id="mv-istm-${item.name}" ${db.is_tm?'checked':''} onchange="mvToggleTmNumber('${item.name}')">
-              <span style="font-size:11px;color:var(--muted)">Marcar como TM</span>
-            </label>
-          </div>
-          <div class="mv-meta-item">
-            <div class="mv-meta-lbl">Número da TM</div>
-            <input class="mv-meta-input" type="number" min="1" max="999" id="mv-tmnum-${item.name}" value="${db.tm_number ?? ''}" placeholder="Ex: 101" ${db.is_tm?'':'disabled'} style="${db.is_tm?'':'opacity:.5'}">
-          </div>
-        </div>
-
-        <div class="mv-section-lbl">📄 Descrição</div>
-        <div class="field-row">
-          <textarea class="field-pt${db.descricao?' filled':''}" id="mv-desc-${item.name}" rows="3" placeholder="Descrição do efeito…" style="width:100%" oninput="markFilled(this)">${db.descricao || ''}</textarea>
-        </div>
-
-        <div class="entry-foot">
-          <span class="save-ind" id="mv-ind-${item.name}">✓ Salvo!</span>
-          <button class="btn btn-outline btn-sm" onclick="saveMv('${item.name}',false)">💾 Salvar rascunho</button>
-          <button class="btn btn-success btn-sm" onclick="saveMv('${item.name}',true)">✓ Aprovar</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteMove('${item.name}')" title="Remove este movimento da lista (vale no próximo commit)" style="margin-left:auto">🗑️ Excluir</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function mvToggleTmNumber(name) {
-  const chk = document.getElementById(`mv-istm-${name}`);
-  const num = document.getElementById(`mv-tmnum-${name}`);
-  if (!chk || !num) return;
-  num.disabled = !chk.checked;
-  num.style.opacity = chk.checked ? '1' : '.5';
-}
-
-async function saveMv(name, approve) {
-  const item = S.mv.all.find(m => m.name === name) || {};
-  const desc = document.getElementById(`mv-desc-${name}`)?.value.trim() || '';
-  const type = (document.getElementById(`mv-type-${name}`)?.value || item.type || '').toLowerCase();
-  const type2 = (document.getElementById(`mv-type2-${name}`)?.value || '').toLowerCase() || null;
-  const damage_class = document.getElementById(`mv-cat-${name}`)?.value || item.damage_class || '';
-  const powerRaw = document.getElementById(`mv-power-${name}`)?.value;
-  const accRaw = document.getElementById(`mv-acc-${name}`)?.value;
-  const styleRaw = (document.getElementById(`mv-style-${name}`)?.value || '').toLowerCase();
-  const power = powerRaw !== '' && powerRaw !== undefined ? parseInt(powerRaw) : null;
-  const accuracy = accRaw !== '' && accRaw !== undefined ? parseInt(accRaw) : null;
-  const contest_style = styleRaw || null;
-  const is_tm = document.getElementById(`mv-istm-${name}`)?.checked || false;
-  const tmNumRaw = document.getElementById(`mv-tmnum-${name}`)?.value;
-  const tm_number = is_tm && tmNumRaw !== '' && tmNumRaw !== undefined ? parseInt(tmNumRaw) : null;
-  if (is_tm && !tm_number) { toast('Informe o número da TM.', 'err'); return; }
-  // nome editável: se mudou, a chave do move muda (some o antigo, entra o novo)
-  let newName = name;
-  const nmEl = document.getElementById(`mv-name-${name}`);
-  if (nmEl && nmEl.value.trim() !== cap(name)) {
-    newName = kpSlug(nmEl.value);
-    if (!newName) { toast('O nome não pode ficar vazio.', 'err'); return; }
-    if (newName !== name && S.mv.dbMap[newName]) { toast(`Já existe um move chamado "${cap(newName)}".`, 'err'); return; }
-    if (newName !== name && !confirm(`Renomear "${cap(name)}" para "${cap(newName)}"?\n\nPokémon que já têm este move no moveset continuam com o nome antigo. O commit registra o move antigo como removido e o novo como adicionado.`)) return;
-  }
+  if (!body.admin_nome || !body.admin_senha) return null;
   try {
-    if (newName !== name) {   // troca a chave mantendo todos os campos do move
-      const prev = { ...(S.mv.dbMap[name] || {}) };
-      mvDelete(name);
-      S.mv.dbMap[newName] = prev;
-    }
-    const row = { name: newName, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, is_tm, tm_number, approved: approve, updated_at: new Date().toISOString() };
-    await mvUpsert(row);
-        item.type = type; item.type2 = type2; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
-    if (newName !== name) {   // chave nova: redesenha a lista e mantém o card aberto
-      if (S.mv.all.includes(item)) item.name = newName; else S.mv.all.push({ name: newName, type, type2, damage_class, power, accuracy });
-      S.mv.all.sort((a, b) => a.name.localeCompare(b.name));
-      applyMvFilter();
-      const ne = document.getElementById('mv-entry-' + newName);
-      if (ne) { ne.classList.add('open'); ne.scrollIntoView({ block: 'nearest' }); }
-      updateMvStats();
-      toast(`✓ Renomeado para "${cap(newName)}" — falta commitar o moves.json`, 'ok');
-      return;
-    }
-    const ind = document.getElementById('mv-ind-' + name);
-    if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
-    const entry = document.getElementById('mv-entry-' + name);
-    if (entry) {
-      entry.classList.toggle('approved', approve);
-      entry.classList.toggle('has-pt', !!desc);
-      const badge = entry.querySelector('.badge:last-of-type');
-      if (badge) { badge.textContent = approve ? '✓ Aprovado' : 'Rascunho'; badge.className = 'badge ' + (approve ? 'badge-appr' : 'badge-pt'); }
-      let tmBadge = entry.querySelector('.tm-pill');
-      if (is_tm && tm_number) {
-        const label = 'TM' + String(tm_number).padStart(3, '0');
-        if (tmBadge) { tmBadge.textContent = label; }
-        else {
-          tmBadge = document.createElement('span');
-          tmBadge.className = 'badge tm-pill';
-          tmBadge.style.cssText = 'background:#e0eaff;color:#2050a0';
-          tmBadge.textContent = label;
-          const head = entry.querySelector('.entry-head');
-          head.insertBefore(tmBadge, head.querySelector('.badge'));
-        }
-      } else if (tmBadge) { tmBadge.remove(); }
-    }
-    updateMvStats();
-    toast(approve ? '✓ Aprovado — falta commitar o moves.json' : '💾 Rascunho salvo — falta commitar o moves.json', 'ok');
-  } catch (e) { toast('Erro: ' + e.message, 'err'); }
+    const m = await import('./_staff.js'); const ST = m.default || m;
+    const eu = await ST.verificarPlayer(body.admin_nome, body.admin_senha);
+    if (!eu) return false;
+    const p = ST.papel(await ST.lerStaff(), eu.nome, tipo);
+    const ok = p === 'chefe' || p === 'admin' || p === 'mod';
+    if (ok) body._ctNovo = assinarCt(eu.nome);   // senha confirmada: devolve um crachá novo (a pessoa não precisa digitar de novo)
+    return ok;
+  } catch (e) { return false; }
 }
 
-function updateMvStats() {
-  const total = S.mv.all.length;
-  const appr = Object.values(S.mv.dbMap).filter(d => d.approved).length;
-  const pct = total ? Math.round(appr / total * 100) : 0;
-  document.getElementById('mv-total').textContent = total;
-  document.getElementById('mv-appr').textContent = appr;
-  document.getElementById('mv-pend').textContent = total - appr;
-  document.getElementById('mv-pct').textContent = pct + '%';
-  document.getElementById('mv-bar').style.width = pct + '%';
-}
-
-async function deleteMove(name) {
-  if (!confirm(`Excluir o movimento "${cap(name)}" da lista?\n\nPokémon que já têm esse move no moveset continuam com o nome salvo, mas ele deixa de aparecer na lista de Moves e perde descrição/atributos/status de TM.`)) return;
+async function adminOk(email) {
+  if (!email || typeof email !== 'string') return false;
   try {
-    await mvDelete(name);
-    delete S.mv.dbMap[name];
-    S.mv.all = S.mv.all.filter(m => m.name !== name);
-    applyMvFilter();
-    toast('🗑️ Movimento excluído.', 'ok');
-  } catch (e) { toast('Erro ao excluir: ' + e.message, 'err'); }
-}
-
-function mvRebuildList() {
-  const items = Object.values(S.mv.dbMap).map(r => ({
-    name: r.name, power: r.power, pp: r.pp, accuracy: r.accuracy,
-    damage_class: r.damage_class || '', type: r.type || '', type2: r.type2 || ''
-  }));
-  items.sort((a, b) => a.name.localeCompare(b.name));
-  S.mv.all = items;
-  S.mv.filtered = items;
-  renderMvList();
-  applyMvFilter();
-}
-
-// Só vai ao GitHub na primeira vez; depois apenas redesenha a lista a partir da memória
-// (assim as edições ainda não commitadas nunca são descartadas).
-async function loadMoves() {
-  try {
-    await mvEnsureLoaded();
-    mvRebuildList();
-  } catch (e) {
-    const msg = String(e.message || e).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    document.getElementById('mv-list').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar movimentos</div><div style="font-size:12px;color:var(--muted);margin-top:6px">${msg}</div></div>`;
-  }
-}
-
-async function importMovesFromPokeapi() {
-  if (!confirm('Isso vai buscar todos os movimentos da PokeAPI (~900) e adicionar à lista (pendente até commitar o moves.json): nome, tipo, categoria, poder, precisão, PP, contest style e número da dex. Se a descrição ainda estiver vazia, preenche com o texto em inglês (pra traduzir depois). NÃO sobrescreve descrição já preenchida nem status de aprovação já salvos. Pode demorar 2-3 minutos. Continuar?')) return;
-
-  const btn = event?.target;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando na PokeAPI…'; }
-  showProgress('Buscando movimentos na PokeAPI…');
-
-  try {
-    const listRes = await fetch('https://pokeapi.co/api/v2/move?limit=1000');
-    if (!listRes.ok) throw new Error('PokeAPI: HTTP ' + listRes.status);
-    const list = (await listRes.json()).results;
-
-    await mvEnsureLoaded();
-    const dbMap = S.mv.dbMap;
-
-    let ok = 0, fail = 0, i = 0;
-    const total = list.length;
-    const erros = [];
-    const BATCH = 20;
-
-    for (let b = 0; b < list.length; b += BATCH) {
-      const batch = list.slice(b, b + BATCH);
-      await Promise.all(batch.map(async item => {
-        i++;
-        updateProgress(i, total, item.name);
-        try {
-          const r = await fetch(item.url);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const d = await r.json();
-          const en = d.effect_entries?.find(e => e.language.name === 'en');
-          const enText = en ? en.short_effect.replace(/\$effect_chance/g, d.effect_chance || '?') : '';
-          const existing = dbMap[item.name] || {};
-          // PokeAPI usa "smart"/"beauty" nativamente; aqui usamos "clever"/"beautify".
-          const CONTEST_STYLE_FROM_POKEAPI = { smart: 'clever', beauty: 'beautify' };
-          const pokeapiStyle = d.contest_type?.name || null;
-          const mappedStyle = pokeapiStyle ? (CONTEST_STYLE_FROM_POKEAPI[pokeapiStyle] || pokeapiStyle) : null;
-          const row = {
-            name: item.name,
-            descricao: existing.descricao || enText,
-            type: d.type?.name || existing.type || null,
-            damage_class: d.damage_class?.name || existing.damage_class || null,
-            power: d.power ?? existing.power ?? null,
-            accuracy: d.accuracy ?? existing.accuracy ?? null,
-            pp: d.pp ?? existing.pp ?? null,
-            contest_style: mappedStyle || existing.contest_style || null,
-            approved: !!existing.approved,
-            updated_at: existing.updated_at || new Date().toISOString()
-          };
-          await mvUpsert(row);
-          ok++;
-        } catch (e) { fail++; erros.push(`${item.name}: ${e.message}`); }
-      }));
-    }
-
-    if (fail) console.warn('Falhas na importação de movimentos:', erros);
-    toast(`Movimentos: ${ok} importados/atualizados${fail ? `, ${fail} falharam (veja console)` : ''}.`, fail ? 'err' : 'ok');
-    await loadMoves();
-  } catch (e) {
-    toast('Erro ao importar movimentos: ' + e.message, 'err');
-  } finally {
-    hideProgress();
-    if (btn) { btn.disabled = false; btn.textContent = '📥 Importar da PokeAPI'; }
-  }
-}
-
-// Commita o moves.json no repo alphx-r/kpfichas_db pela rota serverless /api/commit-moves
-// (o token do GitHub fica só na Vercel). Antes de enviar, baixa o moves.json atual e mescla com o que
-// outros admins já commitaram. Este é o ÚNICO ponto que grava — nada mais é salvo em lugar nenhum.
-async function backupMovesNow() {
-  const btn = document.getElementById('mv-backup-btn');
-  const origLabel = btn?.innerHTML;
-  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Commitando…'; }
-  try {
-    if (!MVJ.loaded || !Object.keys(S.mv.dbMap).length) throw new Error('A lista de moves não está carregada — recarregue a página antes de commitar.');
-    const auth = await kpCommitAuth();
-    // 1) moves.json atual do GitHub — se não der pra conferir, NÃO grava (evita apagar o trabalho de outros admins)
-    let remote;
-    try { remote = await mvFetchRemote(); }
-    catch (e) { throw new Error(e.message + ' Nada foi gravado, para não sobrescrever o trabalho de outros admins.'); }
-    // 2) mescla (3 vias) e aplica na memória — bloco síncrono, sem await no meio
-    const res = mvMergePerguntando(remote);
-    if (res.rows.length < remote.length - 25) throw new Error(`Segurança: o resultado teria ${res.rows.length} moves, mas o moves.json no GitHub tem ${remote.length}. Recarregue a página antes de commitar para não apagar o trabalho de outros admins.`);
-    S.mv.dbMap = {};
-    res.rows.forEach(r => { S.mv.dbMap[r.name] = r; });
-    const puxou = res.notas.puxados.length + res.notas.apagadosPorOutros.length;
-    // 3) commit
-    const r = await fetch('/api/commit-moves', {
+    const r = await fetch(`${AUTH_URL}/rest/v1/rpc/admin_list`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ moves: res.rows, ...auth }),
+      headers: { apikey: AUTH_KEY, Authorization: 'Bearer ' + AUTH_KEY, 'Content-Type': 'application/json' },
+      body: '{}',
     });
-    let result = {};
-    try { result = await r.json(); } catch (e) {}
-    if (!r.ok) { kpCommitAuthFail(r); if (puxou) mvRebuildList(); throw new Error(result.error || `Erro ${r.status} ao commitar`); }
-    kpCtSave(result);   // guarda o crachá (não pede a senha de novo por 30 dias)
-    mvSetBase(JSON.parse(JSON.stringify(res.rows)));   // o que foi commitado vira a nova base
-    if (puxou) mvRebuildList();
-    toast(`✅ moves.json commitado no GitHub (${res.rows.length} moves)${puxou ? ` · ${puxou} vieram de outros admins` : ''}.`, 'ok');
-    try { chgRefresh(); } catch (e) {}
-    // moves marcados como TM que ainda não têm item no items.json → oferece criar os itens
-    try { await tmCriarItensFaltantes(res.rows, auth); } catch (e) { await kpDialog({ titulo: 'Moves commitados, mas os itens de TM falharam', texto: e.message, ok: 'Entendi', cancelar: null }); }
-  } catch (e) {
-    toast('Erro ao commitar moves.json: ' + e.message, 'err');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+    if (!r.ok) return false;
+    const lista = await r.json().catch(() => []);
+    return Array.isArray(lista) && lista.some(a => a && a.nome === email);
+  } catch (e) { return false; }
+}
+
+// Cria/atualiza UM arquivo via Contents API. conteudo: { texto } (utf8) ou { base64 }.
+async function putArquivo(token, path, conteudo, mensagem, { pularSeIgual = false, api = API, branch = BRANCH } = {}) {
+  const url = `${api}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const H = ghHeaders(token);
+  let sha, antigo = null;
+  const cur = await fetch(`${url}?ref=${encodeURIComponent(branch)}`, { headers: H });
+  if (cur.ok) {
+    const j = await cur.json();
+    sha = j.sha;
+    antigo = Buffer.from(j.content || '', 'base64').toString('utf8');
+  } else if (cur.status !== 404) {
+    throw new HttpErr(502, `GitHub respondeu HTTP ${cur.status} ao ler ${path}`);
   }
-}
-
-
-/* ══════════════════════════════════════════
-   Criar itens de TM automaticamente
-   Ao commitar o moves.json, todo move com is_tm + tm_number que ainda não tem o item
-   "TMxxx: Nome" no itemdex/items.json ganha um item novo (mesmo modelo das TMs existentes:
-   sprite pelo tipo do move, preço 3000, venda no PokéMart).
-══════════════════════════════════════════ */
-const TM_ITEMS_ROUTE = '/api/commit-items';   // rota serverless que commita o items.json (token só na Vercel)
-const TM_SPRITE_TIPOS = ['bug','dark','dragon','electric','fairy','fighting','fire','flying','ghost','grass','ground','ice','light','normal','poison','psychic','rock','scent','steel','water'];
-const TM_ITEM_DESC = 'Um disco técnico que permite ensinar um movimento específico a um Pokémon compatível.';
-const tmTitulo = slug => String(slug).split('-').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-
-function tmItemParaMove(row) {
-  const tipo = TM_SPRITE_TIPOS.includes(String(row.type || '').toLowerCase()) ? String(row.type).toLowerCase() : 'normal';
-  return {
-    name: `TM${String(row.tm_number).padStart(3, '0')}: ${tmTitulo(row.name)}`,
-    category: 'TM',
-    item_desc: TM_ITEM_DESC,
-    sprite: `/sprites/items/tms/tm-${tipo}.png`,
-    flags: { pokemart: { enabled: true }, consumivel: { enabled: false } },
-    price: 3000,
-    lojas: ['pokemart']
-  };
-}
-async function tmFetchItemsRemoto() {
-  const urls = [`https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/itemdex/items.json?v=${Date.now()}`,
-                'https://api.github.com/repos/alphx-r/kpfichas_db/contents/itemdex/items.json?ref=main'];
-  for (const [i, u] of urls.entries()) {
-    try {
-      const r = await fetch(u, { cache: 'no-store', headers: i ? { Accept: 'application/vnd.github.raw+json' } : {} });
-      if (!r.ok) continue;
-      const j = await r.json();
-      if (Array.isArray(j) && j.length) return j;
-    } catch (e) {}
-  }
-  throw new Error('não consegui ler o itemdex/items.json do GitHub.');
-}
-// Descobre quais TMs faltam em `itens` (por número E por move) e devolve os itens a criar + avisos.
-function tmCalcFaltantes(moves, itens) {
-  const numeroUsado = new Map(), moveTem = new Set();
-  itens.forEach(it => {
-    const m = String(it && it.name || '').match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.+)$/i);
-    if (m) { numeroUsado.set(parseInt(m[1], 10), it.name); moveTem.add(tmSlug(m[2])); }
+  if (pularSeIgual && conteudo.texto != null && antigo === conteudo.texto) return { unchanged: true };
+  const b64 = conteudo.base64 != null ? conteudo.base64 : Buffer.from(conteudo.texto, 'utf8').toString('base64');
+  const put = await fetch(url, {
+    method: 'PUT',
+    headers: { ...H, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: String(mensagem).slice(0, 200), content: b64, branch, ...(sha ? { sha } : {}) }),
   });
-  const criar = [], conflitos = [];
-  moves.filter(r => r && r.is_tm && Number(r.tm_number) > 0).sort((a, b) => a.tm_number - b.tm_number).forEach(r => {
-    if (moveTem.has(r.name)) return;
-    const n = Number(r.tm_number);
-    if (numeroUsado.has(n)) { conflitos.push(`TM${String(n).padStart(3, '0')} (${tmTitulo(r.name)}) — o número já é do item "${numeroUsado.get(n)}"`); return; }
-    criar.push(tmItemParaMove(r));
-  });
-  return { criar, conflitos };
-}
-async function tmCriarItensFaltantes(moves, auth) {
-  // sempre dá retorno visível: ou cria, ou diz que não há nada a criar, ou mostra o erro num diálogo (não some sozinho)
-  let itens = await tmFetchItemsRemoto();
-  const { criar, conflitos } = tmCalcFaltantes(moves, itens);
-  if (conflitos.length) await kpDialog({ titulo: 'TMs sem item criado', texto: 'Estas TMs NÃO tiveram item criado, porque o número já é de outro item:', itens: conflitos, ok: 'Entendi', cancelar: null });
-  if (!criar.length) { if (!conflitos.length) toast('✅ Todas as TMs marcadas já têm item no itemdex.', 'ok'); return; }
-  if (!await kpDialog({
-    titulo: 'Criar itens de TM', ok: 'Criar itens',
-    texto: `${criar.length} move(s) marcado(s) como TM ainda não têm item no itemdex. Criar agora? (PokéMart, preço 3000, sprite pelo tipo do move)`,
-    itens: criar.map(i => i.name)
-  })) return;
-  // junta de novo com o items.json mais recente, logo antes de enviar (evita apagar o que outro admin acabou de salvar)
-  itens = await tmFetchItemsRemoto();
-  const fresh = tmCalcFaltantes(moves, itens).criar;
-  if (!fresh.length) { toast('✅ Os itens de TM já existem no itemdex.', 'ok'); return; }
-  const numDe = nome => parseInt((String(nome).match(/^TM\s?(\d+)/i) || [])[1], 10);
-  fresh.forEach(novo => {   // mantém as TMs em ordem de número, junto das outras TMs
-    let pos = -1;
-    itens.forEach((it, i) => { const n = numDe(it && it.name); if (n && n < numDe(novo.name)) pos = i; });
-    if (pos < 0) { const ult = itens.map((it, i) => (it && it.category === 'TM') ? i : -1).filter(i => i >= 0).pop(); pos = ult == null ? itens.length - 1 : ult; }
-    itens.splice(pos + 1, 0, novo);
-  });
-  let ok = false, motivo = '';
-  try {
-    const r = await fetch(TM_ITEMS_ROUTE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: itens, ...auth }) });
-    let j = {}; try { j = await r.json(); } catch (e) {}
-    if (r.ok) kpCtSave(j);
-    if (r.ok && j && j.unchanged) { motivo = 'o GitHub respondeu que o items.json não mudou'; }
-    else if (r.ok) ok = true; else { kpCommitAuthFail(r); motivo = j.error || `erro ${r.status}`; }
-  } catch (e) { motivo = e.message; }
-  if (ok) {
-    await kpDialog({ titulo: 'Itens de TM criados', texto: `${fresh.length} item(ns) commitado(s) no itemdex/items.json:`, itens: fresh.map(i => i.name), ok: 'Fechar', cancelar: null });
-    return;
-  }
-  // não perde o trabalho: baixa o items.json já atualizado pra você subir pelo ItemDex
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(itens, null, 2)], { type: 'application/json' }));
-  a.download = 'items.json'; document.body.appendChild(a); a.click(); a.remove();
-  await kpDialog({ titulo: 'Os itens NÃO foram criados', texto: `Não consegui commitar o items.json (${motivo}).\n\nBaixei o arquivo já com as ${fresh.length} TM(s) novas — suba pelo ItemDex.`, itens: fresh.map(i => i.name), ok: 'Entendi', cancelar: null });
-}
-// Botão manual: cria os itens das TMs que faltam sem precisar commitar o moves.json antes
-async function tmCriarItensManual() {
-  const btn = document.getElementById('mv-tmitems-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Conferindo…'; }
-  try {
-    await mvEnsureLoaded();
-    const auth = await kpCommitAuth();
-    await tmCriarItensFaltantes(Object.values(S.mv.dbMap), auth);
-  } catch (e) {
-    await kpDialog({ titulo: 'Não foi possível criar os itens', texto: e.message, ok: 'Entendi', cancelar: null });
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '➕ Criar itens das TMs'; }
-  }
+  const out = await put.json().catch(() => ({}));
+  if (!put.ok) throw new HttpErr(502, out.message || `GitHub respondeu HTTP ${put.status} ao commitar ${path}`);
+  return { unchanged: false, sha: out.content?.sha || null, commitSha: out.commit?.sha || null, htmlUrl: out.content?.html_url || null };
 }
 
-async function saveNewMove() {
-  const name = document.getElementById('nmv-name').value.trim().toLowerCase().replace(/\s+/g, '-');
-  const desc = document.getElementById('nmv-desc')?.value.trim() || '';
-  const type = document.getElementById('nmv-type').value.toLowerCase();
-  const type2 = document.getElementById('nmv-type2')?.value.toLowerCase() || null;
-  const damage_class = document.getElementById('nmv-cat').value;
-  const powerRaw = document.getElementById('nmv-power').value;
-  const accRaw = document.getElementById('nmv-acc').value;
-  const contest_style = document.getElementById('nmv-style')?.value.toLowerCase() || null;
-  const power = powerRaw !== '' ? parseInt(powerRaw) : null;
-  const accuracy = accRaw !== '' ? parseInt(accRaw) : null;
-  if (!name) { toast('Nome é obrigatório.', 'err'); return; }
-  try {
-    const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style: contest_style||null, approved: false, updated_at: new Date().toISOString() };
-    await mvUpsert(row);
-        if (!S.mv.all.find(m => m.name === name)) {
-      S.mv.all.push({ name, type, type2, damage_class, power, accuracy, contest_style });
-      S.mv.all.sort((a, b) => a.name.localeCompare(b.name));
+/* ───────────── abilities ───────────── */
+async function hAbilities(token, body) {
+  const { abilities } = body;
+  if (!Array.isArray(abilities)) throw new HttpErr(400, 'Payload inválido: esperado { abilities: [...] }.');
+  const T = alvoJson('abilities', token);
+  const r = await putArquivo(T.token, 'abilitydex/abilities.json', { texto: JSON.stringify(abilities, null, 2) },
+    `chore: atualiza abilities.json (${abilities.length} habilidades) via abilitydex_adm`, { api: T.api, branch: T.branch });
+  return { ok: true, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
+}
+
+/* ───────────── moves ───────────── */
+async function hMoves(token, body) {
+  const { moves } = body;
+  if (!Array.isArray(moves)) throw new HttpErr(400, 'Payload inválido: esperado { moves: [...] }.');
+  const T = alvoJson('moves', token);
+  const r = await putArquivo(T.token, 'movedex/moves.json', { texto: JSON.stringify(moves, null, 2) },
+    `chore: atualiza moves.json (${moves.length} moves) via movedex_adm`, { api: T.api, branch: T.branch });
+  return { ok: true, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
+}
+
+/* ───────────── rewards ───────────── */
+const REW_CATS = ['badges', 'ribbons', 'pins', 'randoms'];
+function limpaRewards(rewards) {
+  if (!rewards || typeof rewards !== 'object') return null;
+  const out = {};
+  for (const c of REW_CATS) {
+    const a = rewards[c] === undefined ? [] : rewards[c];
+    if (!Array.isArray(a) || a.length > 1000) return null;
+    out[c] = [];
+    for (const x of a) {
+      const nome = typeof x?.nome === 'string' ? x.nome.trim() : '';
+      const sprite = typeof x?.sprite === 'string' ? x.sprite.trim() : '';
+      if (!nome || nome.length > 120 || sprite.length > 240) return null;
+      if (sprite && (/^[a-z][a-z0-9+.-]*:/i.test(sprite) || sprite.startsWith('//') || sprite.includes('..'))) return null;
+      out[c].push({ nome, sprite });
     }
-    applyMvFilter();
-    closeModal('new-move-modal');
-    ['nmv-name','nmv-desc','nmv-power','nmv-acc'].forEach(f => { const el = document.getElementById(f); if (el) el.value = ''; });
-    document.getElementById('nmv-type').value = '';
-    document.getElementById('nmv-type2').value = '';
-    document.getElementById('nmv-cat').value = '';
-    document.getElementById('nmv-style').value = '';
-    toast(`Move "${name}" adicionado — falta commitar o moves.json.`, 'ok');
-  } catch (e) { toast('Erro ao salvar: ' + e.message, 'err'); }
-}
-
-/* ══════════════════════════════════════════
-   INIT
-══════════════════════════════════════════ */
-cbBuildStaticLists();
-loadMoves();
-</script>
-<script>
-/* ═══ Edições: barra lateral + pílula de pendências ═══
-   Cada página registra window.CHG_ADAPTER = { get(), commit(), note, showFab(d), noun }.
-   get() devolve { noBase, add:[{key,name,sub,thumb,fields:[{label,after}]}],
-                   mod:[{key,name,sub,thumb,diffs:[{label,before,after}]}],
-                   del:[{key,name,sub,thumb,fields:[{label,before}]}],
-                   img:[{key,name,preview}] } */
-const CHG = { sel: null, q: '', timer: null };
-function chgEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function chgFmt(v) {
-  if (v === undefined) return '(não existia)';
-  if (v === null) return '(vazio)';
-  if (v === '') return '(vazio)';
-  if (typeof v === 'boolean') return v ? 'sim' : 'não';
-  if (typeof v === 'object') { try { v = JSON.stringify(v); } catch (e) { v = String(v); } }
-  v = String(v);
-  return v.length > 600 ? v.slice(0, 600) + '…' : v;
-}
-function chgData() {
-  try { return window.CHG_ADAPTER.get(); }
-  catch (e) { console.warn('[chg]', e); return { add: [], mod: [], del: [], img: [], noBase: true }; }
-}
-function chgTotal(d) { return d.add.length + d.mod.length + d.del.length + d.img.length; }
-const CHG_KINDS = { add: ['novo', 'add', 'Novos'], mod: ['editado', 'mod', 'Editados'], del: ['excluído', 'del', 'Excluídos'], img: ['imagem', 'img', 'Imagens na fila'] };
-
-function chgEnsureDom() {
-  if (document.getElementById('chg-side')) return;
-  const ov = document.createElement('div'); ov.className = 'chg-ov'; ov.id = 'chg-ov'; ov.onclick = () => chgToggle(false);
-  const sd = document.createElement('aside'); sd.className = 'chg-side'; sd.id = 'chg-side'; sd.setAttribute('aria-hidden', 'true');
-  sd.innerHTML = '<div class="chg-head"><button type="button" class="chg-back" id="chg-back" style="display:none" onclick="chgBack()">←</button><div class="chg-head-title" id="chg-title"></div><button type="button" class="chg-x" onclick="chgToggle(false)" title="Fechar (Esc)">✕</button></div>'
-    + '<div class="chg-search" id="chg-search"><input type="search" id="chg-q" placeholder="Filtrar na lista…" oninput="CHG.q=this.value;chgRender()"></div>'
-    + '<div class="chg-body" id="chg-body"></div>'
-    + '<div class="chg-foot"><span class="pend-note" id="chg-note"></span><button type="button" class="btn btn-success btn-sm" onclick="window.CHG_ADAPTER.commit()">Commitar agora</button></div>';
-  document.body.appendChild(ov); document.body.appendChild(sd);
-  sd.addEventListener('click', e => { const r = e.target.closest('[data-kind]'); if (r) chgOpen(r.dataset.kind, r.dataset.key); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && sd.classList.contains('open')) { if (CHG.sel) chgBack(); else chgToggle(false); } });
-  if (!document.getElementById('pend-fab')) {
-    const f = document.createElement('div'); f.className = 'pend-fab'; f.id = 'pend-fab';
-    f.innerHTML = '<button type="button" class="pend-pill" onclick="togglePendPanel()"><span>📤</span><span id="pend-count">0 pendentes</span><span class="pend-chev">▼</span></button>'
-      + '<div class="pend-panel"><div class="pend-list" id="pend-list"></div><div class="pend-foot"><span class="pend-note">Só no navegador até commitar.</span><button type="button" class="btn btn-success btn-sm" onclick="window.CHG_ADAPTER.commit()">Commitar agora</button></div></div>';
-    document.body.appendChild(f);
-    document.addEventListener('click', e => { if (f.classList.contains('open') && !f.contains(e.target)) f.classList.remove('open'); });
   }
-  document.getElementById('pend-list').addEventListener('click', e => {
-    const r = e.target.closest('[data-kind]'); if (!r) return;
-    document.getElementById('pend-fab').classList.remove('open'); chgToggle(true); chgOpen(r.dataset.kind, r.dataset.key);
-  });
+  return out;
 }
-if (typeof togglePendPanel !== 'function') {
-  window.togglePendPanel = function (force) {
-    const f = document.getElementById('pend-fab'); if (!f) return;
-    f.classList.toggle('open', typeof force === 'boolean' ? force : !f.classList.contains('open'));
-  };
+const formataRewards = r => '{\n' + REW_CATS.map(c => `  "${c}": [` + (r[c].length ? '\n' + r[c].map(x => '    ' + JSON.stringify(x)).join(',\n') + '\n  ' : '') + ']').join(',\n') + '\n}\n';
+async function hRewards(token, body) {
+  const rewards = limpaRewards(body.rewards);
+  if (!rewards) throw new HttpErr(400, 'Conteúdo do rewards.json inválido');
+  const T = alvoJson('rewards', token);
+  const r = await putArquivo(T.token, 'itemdex/rewards.json', { texto: formataRewards(rewards) },
+    'Atualiza itemdex/rewards.json (ItemDex ADM)', { pularSeIgual: true, api: T.api, branch: T.branch });
+  return r.unchanged ? { ok: true, unchanged: true } : { ok: true, sha: r.sha };
 }
-function chgToggle(force) {
-  chgEnsureDom();
-  const sd = document.getElementById('chg-side'), ov = document.getElementById('chg-ov');
-  const open = typeof force === 'boolean' ? force : !sd.classList.contains('open');
-  sd.classList.toggle('open', open); ov.classList.toggle('open', open); sd.setAttribute('aria-hidden', open ? 'false' : 'true');
-  if (open) { CHG.sel = null; CHG.q = ''; const q = document.getElementById('chg-q'); if (q) q.value = ''; document.getElementById('chg-note').textContent = window.CHG_ADAPTER.note || ''; chgRender(); }
-}
-function chgOpen(kind, key) { CHG.sel = { kind, key }; chgRender(); const b = document.getElementById('chg-body'); if (b) b.scrollTop = 0; }
-function chgBack() { CHG.sel = null; chgRender(); }
 
-function chgThumb(t) {
-  return t ? `<img class="chg-thumb" src="${chgEsc(t)}" alt="" onerror="this.style.visibility='hidden'">` : '';
-}
-function chgRender() {
-  const sd = document.getElementById('chg-side'); if (!sd || !sd.classList.contains('open')) return;
-  const d = chgData(), body = document.getElementById('chg-body'), title = document.getElementById('chg-title');
-  const back = document.getElementById('chg-back'), search = document.getElementById('chg-search');
-  const noun = window.CHG_ADAPTER.noun || 'itens';
-  if (CHG.sel) {
-    back.style.display = ''; search.style.display = 'none';
-    const { kind, key } = CHG.sel, e = (d[kind] || []).find(x => String(x.key) === String(key));
-    if (!e) { title.innerHTML = 'Edição'; body.innerHTML = '<div class="chg-empty">Essa alteração não está mais pendente (foi commitada ou desfeita).</div>'; return; }
-    const k = CHG_KINDS[kind];
-    title.innerHTML = `${chgEsc(e.name)}<small>${k[0]}${e.sub ? ' · ' + chgEsc(e.sub) : ''}</small>`;
-    let h = `<div class="chg-detail"><div class="chg-detail-top">${kind === 'img' ? '' : chgThumb(e.thumb)}<div><div class="chg-detail-name">${chgEsc(e.name)}</div><span class="pend-tag ${k[1]}">${k[0]}</span></div></div>`;
-    if (kind === 'img') {
-      h += '<div class="chg-field"><div class="chg-field-l">Imagem aguardando commit</div><div class="chg-val n"><span>' + chgEsc(e.key) + '</span></div></div>' + (e.preview ? `<img class="chg-prev" src="${chgEsc(e.preview)}" alt="">` : '');
-    } else if (kind === 'mod') {
-      h += (e.diffs || []).map(x => `<div class="chg-field"><div class="chg-field-l">${chgEsc(x.label)}</div>`
-        + `<div class="chg-val b"><i>antes</i><span>${chgEsc(chgFmt(x.before))}</span></div>`
-        + `<div class="chg-val a"><i>depois</i><span>${chgEsc(x.after === undefined ? '(removido)' : chgFmt(x.after))}</span></div></div>`).join('');
-      if (e.more) h += `<div class="chg-empty">…e mais ${e.more} diferença(s) não exibida(s).</div>`;
-    } else {
-      const side = kind === 'add' ? ['a', 'novo', 'after'] : ['b', 'era', 'before'];
-      h += (e.fields || []).map(x => `<div class="chg-field"><div class="chg-field-l">${chgEsc(x.label)}</div><div class="chg-val ${side[0]}"><i>${side[1]}</i><span>${chgEsc(chgFmt(x[side[2]]))}</span></div></div>`).join('')
-        || '<div class="chg-empty">Sem campos preenchidos.</div>';
+/* ───────────── items (items.json + imagens, 1 commit só) ───────────── */
+const IMG_PATH_RE = /^sprites\/(items(\/[\p{L}\p{N}][\p{L}\p{N}._ -]*)?|rewards\/(badges|ribbons|pins|randoms))\/[a-z0-9][a-z0-9._-]*\.(png|webp|gif|jpg|jpeg)$/u;
+async function hItems(token, body) {
+  const { items, images = [] } = body;
+  if (!Array.isArray(items) || !Array.isArray(images)) throw new HttpErr(400, 'Payload inválido.');
+  for (const im of images) {
+    if (!im?.path || !IMG_PATH_RE.test(im.path) || im.path.includes('..')) throw new HttpErr(400, `Caminho não permitido: ${im?.path}`);
+    if (!/^[A-Za-z0-9+/=]+$/.test(im.contentBase64 || '') || im.contentBase64.length > 2_000_000) throw new HttpErr(400, `Imagem inválida ou grande demais: ${im.path}`);
+  }
+  const FILE = 'itemdex/items.json';
+  // 1) imagens (sprites/...) vão para o repo de dados (kpfichas_db), num commit só — antes do JSON, pra o JSON nunca apontar pra imagem que não subiu
+  let commitImg = null;
+  if (images.length) {
+    const TI = alvoJson('imagens', token);
+    const H = { ...ghHeaders(TI.token), 'Content-Type': 'application/json' };
+    const gh = async (path, method = 'GET', b) => {
+      const r = await fetch(`${TI.api}/${path}`, { method, headers: H, body: b ? JSON.stringify(b) : undefined });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || `GitHub HTTP ${r.status}`);
+      return d;
+    };
+    const headSha = (await gh(`git/ref/heads/${TI.branch}`)).object.sha;
+    const baseTree = (await gh(`git/commits/${headSha}`)).tree.sha;
+    const entries = [];
+    for (const im of images) {
+      const bl = await gh('git/blobs', 'POST', { content: im.contentBase64, encoding: 'base64' });
+      entries.push({ path: im.path, mode: '100644', type: 'blob', sha: bl.sha });
     }
-    body.innerHTML = h + '</div>'; return;
+    const tree = await gh('git/trees', 'POST', { base_tree: baseTree, tree: entries });
+    if (tree.sha !== baseTree) {
+      const commit = await gh('git/commits', 'POST', { message: `chore: atualiza ${images.length} imagem(ns) de itens via itemdex_adm`, tree: tree.sha, parents: [headSha] });
+      await gh(`git/refs/heads/${TI.branch}`, 'PATCH', { sha: commit.sha });
+      commitImg = commit.sha;
+    }
   }
-  back.style.display = 'none'; search.style.display = '';
-  const n = chgTotal(d);
-  title.innerHTML = `Edições pendentes<small>${n} ${n === 1 ? 'alteração' : 'alterações'} ainda não commitada${n === 1 ? '' : 's'}</small>`;
-  if (d.noBase && !n) { body.innerHTML = '<div class="chg-empty">Ainda não tenho a lista anterior para comparar, então não consigo mostrar o que mudou. As alterações guardadas entram no próximo commit.</div>'; return; }
-  if (!n) { body.innerHTML = '<div class="chg-empty">Nada pendente. 🎉</div>'; return; }
-  const q = (CHG.q || '').trim().toLowerCase();
-  let h = '', shown = 0;
-  ['add', 'mod', 'del', 'img'].forEach(kind => {
-    const list = d[kind].filter(x => !q || String(x.name).toLowerCase().includes(q) || String(x.key).toLowerCase().includes(q));
-    if (!list.length) return;
-    const k = CHG_KINDS[kind];
-    h += `<div class="chg-sec">${k[2]} (${list.length})</div>` + list.map(x => {
-      const sub = kind === 'mod' ? (x.diffs || []).map(f => f.label.split(/[.\[]/)[0]).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5).join(', ') : (x.sub || '');
-      shown++;
-      return `<div class="chg-row" data-kind="${kind}" data-key="${chgEsc(x.key)}">${kind === 'img' ? '<div class="chg-thumb ph">🖼️</div>' : chgThumb(x.thumb)}<div class="chg-row-main"><div class="chg-row-name">${chgEsc(x.name)}</div><div class="chg-row-sub">${chgEsc(sub)}</div></div><span class="pend-tag ${k[1]}">${k[0]}</span><span class="chg-go">›</span></div>`;
-    }).join('');
-  });
-  body.innerHTML = h || `<div class="chg-empty">Nenhum ${chgEsc(noun)} encontrado para “${chgEsc(CHG.q)}”.</div>`;
+  // 2) items.json no repo de dados
+  const T = alvoJson('items', token);
+  const r = await putArquivo(T.token, FILE, { texto: JSON.stringify(items, null, 2) },
+    `chore: atualiza ${FILE} (${items.length} itens, ${images.length} imagens) via itemdex_adm`, { pularSeIgual: true, api: T.api, branch: T.branch });
+  if (r.unchanged && !commitImg) return { ok: true, unchanged: true };
+  return { ok: true, commitSha: r.commitSha || commitImg, imagensCommit: commitImg };
 }
 
-function chgRenderFab(d) {
-  const fab = document.getElementById('pend-fab'); if (!fab) return;
-  const A = window.CHG_ADAPTER, n = chgTotal(d);
-  if (!A.showFab(d)) { fab.classList.remove('show', 'open'); return; }
-  fab.classList.add('show');
-  document.getElementById('pend-count').textContent = d.noBase ? 'Alterações pendentes' : `${n} pendente${n === 1 ? '' : 's'}`;
-  const LIM = 120;
-  const row = (kind, x) => {
-    const k = CHG_KINDS[kind];
-    const what = kind === 'mod' ? (x.diffs || []).map(f => f.label.split(/[.\[]/)[0]).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).join(', ') : '';
-    return `<div class="pend-row clk" data-kind="${kind}" data-key="${chgEsc(x.key)}" title="Ver o que mudou"><span class="pend-tag ${k[1]}">${k[0]}</span><span class="pend-name">${chgEsc(x.name)}</span>${what ? `<span class="pend-what">${chgEsc(what)}</span>` : ''}</div>`;
-  };
-  let h = '';
-  if (d.noBase) h += '<div class="pend-row"><span class="pend-what">Há alterações guardadas no navegador, mas não tenho a lista anterior para comparar. Elas entram no próximo commit.</span></div>';
-  ['add', 'mod', 'del', 'img'].forEach(kind => {
-    const l = d[kind]; if (!l.length) return;
-    h += `<div class="pend-sec">${CHG_KINDS[kind][2]} (${l.length})</div>` + l.slice(0, LIM).map(x => row(kind, x)).join('');
-    if (l.length > LIM) h += `<div class="pend-row"><span class="pend-what">…e mais ${l.length - LIM}. Veja todos na barra lateral (botão Edições).</span></div>`;
-  });
-  document.getElementById('pend-list').innerHTML = h || '<div class="pend-row"><span class="pend-what">Nada pendente.</span></div>';
+/* ───────────── image (uma imagem em sprites/) ───────────── */
+async function hImage(token, body) {
+  const { path, contentBase64, message } = body;
+  if (!path || !IMG_PATH_RE.test(path) || path.includes('..'))
+    throw new HttpErr(400, 'Caminho não permitido. Use sprites/items/<categoria>/ ou sprites/rewards/<badges|ribbons|pins|randoms>/ com nome em minúsculas.');
+  if (!contentBase64 || !/^[A-Za-z0-9+/=]+$/.test(contentBase64)) throw new HttpErr(400, 'Imagem inválida.');
+  if (contentBase64.length > 2_000_000) throw new HttpErr(413, 'Imagem grande demais (máx. ~1,5 MB).');
+  const T = alvoJson('imagens', token);
+  const r = await putArquivo(T.token, path, { base64: contentBase64 }, message || `Atualiza ${path}`, { api: T.api, branch: T.branch });
+  return { ok: true, path, sha: r.sha, commit: r.commitSha };
 }
-function chgRefresh() {
-  if (!window.CHG_ADAPTER) return;
-  chgEnsureDom();
-  const d = chgData(), n = chgTotal(d);
-  const el = document.getElementById('chg-nav-n');
-  if (el) { el.textContent = n; el.classList.toggle('zero', !n); }
-  chgRenderFab(d);
-  chgRender();
-}
-function chgSoon() { clearTimeout(CHG.timer); CHG.timer = setTimeout(chgRefresh, 500); }
 
-/* ── Adaptador do MoveDex: compara o estado atual com o moves.json commitado no GitHub ── */
-const MVB = { base: null };
-const MV_FIELDS = [['descricao', 'Descrição'], ['type', 'Tipo'], ['type2', 'Tipo 2'], ['damage_class', 'Categoria'], ['power', 'Poder'], ['accuracy', 'Precisão'], ['contest_style', 'Contest style'], ['approved', 'Aprovado'], ['is_tm', 'É TM'], ['tm_number', 'Número da TM']];
-function mvPayload() {   // linhas completas (com campos extras), ordenadas por nome
-  return Object.values(S.mv.dbMap).map(mvStrip).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+/* ───────────── stores (stores/stores.json) ───────────── */
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const ESTACOES = ['primavera', 'verao', 'outono', 'inverno'];
+const RECURSOS = ['reciclagem', 'tm_voucher'];
+const HEX = /^#[0-9a-f]{6}$/i;
+const CAMPOS_LOJA = new Set(['slug', 'nome', 'empresa', 'descricao', 'logo', 'banner', 'modo', 'compra', 'sell_pct', 'estacoes', 'requisitos', 'recursos', 'ativa', 'ordem', 'promocao', 'promo_ate', 'tema', 'detalhes']);
+const txt = (v, max) => { const s = typeof v === 'string' ? v.trim() : ''; return s.length > max ? null : s; };
+const urlOk = u => u === '' || ((/^https?:\/\//i.test(u) || /^\/(?!\/)/.test(u)) && !u.includes('..'));
+
+function limpaLoja(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  const slug = typeof x.slug === 'string' ? x.slug : '';
+  if (!SLUG_RE.test(slug)) return null;
+  const nome = txt(x.nome, 120), empresa = txt(x.empresa, 120), descricao = txt(x.descricao, 500);
+  const logo = txt(x.logo, 400), banner = txt(x.banner, 400), promocao = txt(x.promocao, 120);
+  if (!nome || empresa == null || descricao == null || logo == null || banner == null || promocao == null) return null;
+  if (!urlOk(logo) || !urlOk(banner)) return null;
+
+  const o = {};
+  // campos extras (ex.: compra_venda_flag) passam desde que sejam valores simples
+  for (const [k, v] of Object.entries(x)) {
+    if (CAMPOS_LOJA.has(k) || !/^[a-z][a-z0-9_]{0,39}$/i.test(k)) continue;
+    if (v === null || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.length <= 500)) o[k] = v;
+  }
+  o.slug = slug; o.nome = nome; o.empresa = empresa; o.descricao = descricao; o.logo = logo; o.banner = banner;
+  o.modo = x.modo === 'catalogo' ? 'catalogo' : 'loja';
+  o.compra = x.compra !== false;
+  const sp = Number(x.sell_pct);
+  o.sell_pct = Number.isFinite(sp) ? Math.min(1, Math.max(0, sp)) : 0.5;
+
+  if (x.estacoes == null) o.estacoes = null;
+  else {
+    if (!Array.isArray(x.estacoes) || x.estacoes.some(e => !ESTACOES.includes(e))) return null;
+    o.estacoes = x.estacoes.length ? [...new Set(x.estacoes)] : null;
+  }
+  o.requisitos = x.requisitos && x.requisitos.vip ? { vip: true } : null;
+  if (x.recursos == null) o.recursos = [];
+  else {
+    if (!Array.isArray(x.recursos) || x.recursos.some(r => !RECURSOS.includes(r))) return null;
+    o.recursos = [...new Set(x.recursos)];
+  }
+  o.ativa = x.ativa !== false;
+  const ord = Number(x.ordem);
+  o.ordem = Number.isFinite(ord) ? ord : 99;
+
+  if (promocao) {
+    o.promocao = promocao;
+    if (x.promo_ate != null && x.promo_ate !== '') {
+      if (typeof x.promo_ate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(x.promo_ate)) return null;
+      o.promo_ate = x.promo_ate;
+    }
+  }
+  if (x.tema != null) {
+    if (typeof x.tema !== 'object' || Array.isArray(x.tema)) return null;
+    const t = {};
+    for (const k of ['brand', 'brandMid', 'accent', 'bg', 'surface', 'text']) {
+      if (x.tema[k] == null) continue;
+      if (typeof x.tema[k] !== 'string' || !HEX.test(x.tema[k])) return null;
+      t[k] = x.tema[k];
+    }
+    if (Object.keys(t).length) o.tema = t;
+  }
+  // detalhes por item (lojas de catálogo): { [nomeNormalizado]: { qtd: inteiro>=0 | null, obs: texto } }
+  if (x.detalhes != null) {
+    if (typeof x.detalhes !== 'object' || Array.isArray(x.detalhes)) return null;
+    const es = Object.entries(x.detalhes);
+    if (es.length > 500) return null;
+    const d = {};
+    for (const [k, v] of es) {
+      if (!/^[a-z0-9]{1,80}$/.test(k) || !v || typeof v !== 'object' || Array.isArray(v)) return null;
+      let qtd = null;
+      if (v.qtd != null && v.qtd !== '') {
+        const n = Number(v.qtd);
+        if (!Number.isFinite(n) || n < 0 || n > 999999) return null;
+        qtd = Math.floor(n);
+      }
+      const obs = txt(v.obs == null ? '' : v.obs, 300);
+      if (obs == null) return null;
+      if (qtd == null && !obs) continue;
+      d[k] = { qtd, obs };
+    }
+    if (Object.keys(d).length) o.detalhes = d;
+  }
+  return o;
 }
-function mvNorm(k, v) { if (k === 'approved' || k === 'is_tm') return !!v; return (v === undefined || v === '') ? null : v; }
-function mvSetBase(rows) { const m = {}; (rows || []).forEach(r => { if (r && r.name) m[r.name] = r; }); MVB.base = m; }
-window.CHG_ADAPTER = {
-  noun: 'move',
-  note: 'Só no navegador até commitar o moves.json.',
-  commit() { togglePendPanel(false); backupMovesNow(); },
-  showFab(d) { return !d.noBase && (d.add.length + d.mod.length + d.del.length) > 0; },
-  get() {
-    const out = { noBase: false, add: [], mod: [], del: [], img: [] };
-    if (!MVB.base || !S.mv.all.length) { out.noBase = true; return out; }
-    const cur = mvPayload(), cm = new Set(cur.map(x => x.name));
-    const sub = r => [r.type, r.damage_class].filter(Boolean).join(' · ');
-    const fields = (r, side) => MV_FIELDS.map(([k, l]) => ({ k, l, v: r[k] })).filter(x => x.v !== null && x.v !== undefined && x.v !== '' && x.v !== false).map(x => ({ label: x.l, [side]: x.v }));
-    cur.forEach(c => {
-      const b = MVB.base[c.name];
-      if (!b) { out.add.push({ key: c.name, name: cap(c.name), sub: sub(c), fields: fields(c, 'after') }); return; }
-      const diffs = [];
-      MV_FIELDS.forEach(([k, l]) => { const x = mvNorm(k, b[k]), y = mvNorm(k, c[k]); if (x !== y) diffs.push({ label: l, before: x, after: y }); });
-      if (diffs.length) out.mod.push({ key: c.name, name: cap(c.name), sub: sub(c), diffs });
-    });
-    Object.keys(MVB.base).forEach(n => { if (!cm.has(n)) out.del.push({ key: n, name: cap(n), sub: sub(MVB.base[n]), fields: fields(MVB.base[n], 'before') }); });
-    return out;
-  },
-};
-['loadMoves', 'saveMv', 'saveNewMove', 'deleteMove', 'syncTmsFromItems', 'importMovesFromPokeapi'].forEach(n => {
-  const f = window[n]; if (typeof f !== 'function') return;
-  window[n] = function () { const r = f.apply(this, arguments); if (r && typeof r.then === 'function') r.then(chgSoon, chgSoon); else chgSoon(); return r; };
-});
-chgEnsureDom();
-window.addEventListener('beforeunload', e => {
+function limpaLojas(lista) {
+  if (!Array.isArray(lista) || lista.length < 1 || lista.length > 200) return null;
+  const out = [], vistos = new Set();
+  for (const x of lista) {
+    const l = limpaLoja(x);
+    if (!l || vistos.has(l.slug)) return null;
+    vistos.add(l.slug); out.push(l);
+  }
+  return out;
+}
+async function hStores(token, body) {
+  const lojas = limpaLojas(body.lojas);
+  if (!lojas) throw new HttpErr(400, 'Conteúdo do stores.json inválido (confira slug, nome, cores e se há slugs repetidos).');
+  const T = alvoJson('stores', token);
+  const r = await putArquivo(T.token, 'stores/stores.json', { texto: JSON.stringify(lojas, null, 2) + '\n' },
+    'Atualiza stores/stores.json (Stores ADM)', { pularSeIgual: true, api: T.api, branch: T.branch });
+  return r.unchanged ? { ok: true, unchanged: true, lojas } : { ok: true, sha: r.sha, lojas };
+}
+
+/* ───────────── missões (missoes/missoes.json — Quests Guild) ─────────────
+   Recebe { missoes: [...novas/editadas], apagar: [ids] } (o mesmo lote que o missoes.html guarda como rascunho),
+   aplica sobre o missoes.json publicado e faz UM commit. Aceita array puro ou { missoes: [...] } e mantém o formato.
+   Campos fora de CAMPOS_MISSAO que já existam na missão publicada são preservados. */
+const CAMPOS_MISSAO = ['titulo', 'ranking', 'estilo', 'pre_requisitos', 'local', 'mapa', 'capturavel', 'repetivel', 'descricao', 'recompensas', 'ordem', 'repeticao', 'repeticao_dias', 'ativa', 'vagas'];
+// mesmos valores do <select> de repetição do missoes.html ('dias' = personalizado, usa repeticao_dias)
+const REPETICOES = new Set(['livre', 'sem_limite', 'diaria', '3dias', 'semanal', 'quinzenal', 'mensal', 'bimestral', 'dias', 'nao']);
+function limpaMissao(m) {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+  const id = m.id == null ? '' : String(m.id).trim();
+  if (!id || id.length > 80) return null;
+  const o = { id };
+  for (const k of CAMPOS_MISSAO) {
+    const v = m[k];
+    if (v == null || v === '') continue;
+    if (typeof v === 'string') { if (v.length > 5000) return null; o[k] = v; }
+    else if (typeof v === 'number') { if (!Number.isFinite(v)) return null; o[k] = v; }
+    else if (typeof v === 'boolean') o[k] = v;
+    else return null;
+  }
+  if (typeof o.titulo !== 'string' || !o.titulo.trim()) return null;
+  if (o.repeticao != null && !REPETICOES.has(o.repeticao)) return null;
+  if (o.repeticao === 'dias') { const d = parseInt(o.repeticao_dias, 10); if (!(d > 0 && d <= 3650)) return null; o.repeticao_dias = d; }
+  else delete o.repeticao_dias;
+  return o;
+}
+async function lerArquivo(token, path, { api = API, branch = BRANCH } = {}) {
+  const url = `${api}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`;
+  const r = await fetch(url, { headers: ghHeaders(token) });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new HttpErr(502, `GitHub respondeu HTTP ${r.status} ao ler ${path}`);
+  const j = await r.json();
+  return Buffer.from(j.content || '', 'base64').toString('utf8');
+}
+async function hMissoes(token, body) {
+  const { missoes = [], apagar = [] } = body;
+  if (!Array.isArray(missoes) || !Array.isArray(apagar) || missoes.length > 500 || apagar.length > 500)
+    throw new HttpErr(400, 'Payload inválido: esperado { missoes: [...], apagar: [...] }.');
+  const lote = missoes.map(limpaMissao);
+  if (lote.some(x => !x)) throw new HttpErr(400, 'Missão inválida (confira id e título).');
+  const ids = apagar.map(String);
+  if (!lote.length && !ids.length) throw new HttpErr(400, 'Nada para publicar.');
+
+  const FILE = 'missoes/missoes.json';
+  const T = alvoJson('missoes', token);
+  const texto = await lerArquivo(T.token, FILE, { api: T.api, branch: T.branch });
+  let raiz = [];
+  if (texto != null) { try { raiz = JSON.parse(texto); } catch (e) { throw new HttpErr(502, 'missoes.json atual não é um JSON válido.'); } }
+  const ehArray = Array.isArray(raiz);
+  let lista = ehArray ? raiz : (raiz && Array.isArray(raiz.missoes) ? raiz.missoes : null);
+  if (!lista) throw new HttpErr(502, 'Formato inesperado no missoes.json atual.');
+  lista = lista.slice();
+
+  let novas = 0, editadas = 0, apagadas = 0;
+  for (const m of lote) {
+    const i = lista.findIndex(x => x && String(x.id) === m.id);
+    if (i >= 0) {
+      const extras = {};
+      for (const [k, v] of Object.entries(lista[i])) if (k !== 'id' && !CAMPOS_MISSAO.includes(k)) extras[k] = v;
+      lista[i] = { id: m.id, ...extras, ...m }; editadas++;
+    } else { lista.push(m); novas++; }
+  }
+  if (ids.length) {
+    const antes = lista.length;
+    lista = lista.filter(x => !(x && ids.includes(String(x.id))));
+    apagadas = antes - lista.length;
+  }
+  const saida = ehArray ? lista : { ...raiz, missoes: lista };
+  const r = await putArquivo(T.token, FILE, { texto: JSON.stringify(saida, null, 2) + '\n' },
+    `Quests Guild: +${novas} nova(s), ~${editadas} editada(s), -${apagadas} apagada(s) (missoes.html)`, { pularSeIgual: true, api: T.api, branch: T.branch });
+  return r.unchanged ? { ok: true, unchanged: true, novas, editadas, apagadas }
+                     : { ok: true, novas, editadas, apagadas, commitSha: r.commitSha, htmlUrl: r.htmlUrl };
+}
+
+/* ───────────── copiar (migração: repo do site → kpfichas_db) ─────────────
+   Copia, byte a byte, UM dos JSON abaixo do repo do site para o repo de dados (usado pelo migrar_json.html).
+   Não toca em nada além desses caminhos. Se o destino já existe e é diferente, só substitui com sobrescrever: true. */
+const COPIAVEIS = ['abilitydex/abilities.json', 'movedex/moves.json', 'itemdex/items.json', 'itemdex/rewards.json', 'stores/stores.json', 'missoes/missoes.json'];
+// lê o arquivo como texto cru (a Contents API em JSON vem vazia acima de 1 MB; o formato raw não tem esse limite)
+async function lerBruto(token, path, { api = API, branch = BRANCH } = {}) {
+  const url = `${api}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`;
+  const r = await fetch(url, { headers: { ...ghHeaders(token), Accept: 'application/vnd.github.raw+json' } });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new HttpErr(502, `GitHub respondeu HTTP ${r.status} ao ler ${path}`);
+  return await r.text();
+}
+async function hCopiar(token, body) {
+  const { arquivo, sobrescrever } = body;
+  if (typeof arquivo !== 'string' || !COPIAVEIS.includes(arquivo)) throw new HttpErr(400, 'Arquivo não permitido para cópia: ' + arquivo);
+  const origem = await lerBruto(token, arquivo);
+  if (origem == null) return { ok: true, status: 'sem_origem', arquivo };
+  if (!origem.trim()) throw new HttpErr(422, `A origem (${arquivo}) está vazia — nada foi copiado.`);
+  try { JSON.parse(origem); } catch (e) { throw new HttpErr(422, `A origem (${arquivo}) não é um JSON válido — nada foi copiado.`); }
+  const T = alvoJson('copiar', token);
+  const destino = await lerBruto(T.token, arquivo, { api: T.api, branch: T.branch });
+  const bytes = Buffer.byteLength(origem, 'utf8');
+  if (destino != null) {
+    if (destino === origem) return { ok: true, status: 'igual', arquivo, bytes };
+    if (!sobrescrever) return { ok: true, status: 'ja_existe', arquivo, bytes, bytesDestino: Buffer.byteLength(destino, 'utf8') };
+  }
+  const r = await putArquivo(T.token, arquivo, { texto: origem }, `chore: copia ${arquivo} do repo do site para o kpfichas_db`, { api: T.api, branch: T.branch });
+  return { ok: true, status: destino != null ? 'sobrescrito' : 'copiado', arquivo, bytes, commitSha: r.commitSha };
+}
+
+/* ───────────── roteamento ───────────── */
+const TIPOS = { abilities: hAbilities, moves: hMoves, rewards: hRewards, items: hItems, image: hImage, stores: hStores, missoes: hMissoes, copiar: hCopiar };
+
+function tipoDe(req) {
+  const q = req.query && req.query.tipo;
+  if (q) return String(Array.isArray(q) ? q[0] : q).toLowerCase();
+  const m = String(req.url || '').match(/commit-([a-z]+)/i);
+  return m ? m[1].toLowerCase() : '';
+}
+
+export default async function handler(req, res) {
+  const tipo = tipoDe(req);
+  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Método não permitido.' }); }
+  const fn = TIPOS[tipo];
+  if (!fn) return res.status(400).json({ error: 'Tipo de commit desconhecido: ' + (tipo || '(vazio)') });
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return res.status(500).json({ error: 'GITHUB_TOKEN não configurado na Vercel.' });
+
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }
+  if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Corpo da requisição inválido.' });
+
   try {
-    const d = window.CHG_ADAPTER.get();
-    if (!d.noBase && (d.add.length + d.mod.length + d.del.length) > 0) { e.preventDefault(); e.returnValue = ''; }
-  } catch (_) {}
-});
-
-</script>
-</body>
-</html>
+    const exige = EXIGIR_ADMIN_EM_TODOS || !SEM_ADMIN_LEGADO.has(tipo) || body.admin != null || body.admin_nome != null;
+    if (exige) {
+      const viaPlayer = await adminOkPlayer(body, tipo);
+      const ok = viaPlayer !== null ? viaPlayer : (ACEITAR_EMAIL_LEGADO && await adminOk(body.admin));
+      if (!ok) return res.status(401).json({ error: 'Sem permissão. Entre com seu player (nome e senha) e ative o modo ADM.' });
+    }
+    const out = await fn(token, body);
+    return res.status(200).json(body._ctNovo ? { ...out, ct: body._ctNovo } : out);
+  } catch (e) {
+    return res.status(e instanceof HttpErr ? e.status : 500).json({ error: e.message || 'Erro inesperado' });
+  }
+}
