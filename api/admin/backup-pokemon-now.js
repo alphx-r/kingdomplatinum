@@ -6,13 +6,14 @@
 //         usando o helper _gh.js. Não consulta o Supabase.
 // POST com Content-Type: application/json → upload de sprites (ver _upload-sprite.js).
 //         Fica aqui para não criar uma função nova (limite de 12 no plano Hobby).
+// POST com Content-Type: text/plain → LEITURA do pokemon.json atual (gzip), sem cache e sem limite da API pública.
 // GET   → comportamento antigo (backupPokemonToGithub, igual ao cron).
 //
 // Variáveis: GH_REPO, GH_TOKEN, GH_BRANCH (já usadas pelo _gh.js) e,
 // opcionalmente, POKEMON_JSON_PATH (padrão "pokemon.json" — use o
 // mesmo caminho que o lib/backupPokemon.js escreve).
 
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { commit, readFile } from '../_gh.js';
 import { handleUploadSprite } from '../_upload-sprite.js';
@@ -21,6 +22,28 @@ import { backupPokemonToGithub } from '../../lib/backupPokemon.js';
 const JSON_PATH = process.env.POKEMON_JSON_PATH || 'pokemon.json';
 // Impressão digital do pokemon.json: o navegador calcula a mesma coisa (SHA-256 de JSON.stringify da lista já lida)
 const hashRows = rows => createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+
+// Leitura do pokemon.json ATUAL do GitHub (sem cache de CDN e sem o limite de 60 consultas/h da API pública),
+// usando o GH_TOKEN que esta rota já tem. Sem função nova: entra aqui como POST text/plain (corpo "read").
+// Vai em gzip porque o arquivo (~3,7 MB) passa perto do limite de resposta da Vercel (4,5 MB).
+async function lerPokemonJson(res) {
+  const repo = process.env.GH_REPO, token = process.env.GH_TOKEN, branch = process.env.GH_BRANCH || 'main';
+  if (!repo || !token) return res.status(500).json({ error: 'GH_REPO / GH_TOKEN não configurados.' });
+  const r = await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURI(JSON_PATH)}?ref=${encodeURIComponent(branch)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github.raw+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'kp-adm',
+    },
+  });
+  if (!r.ok) return res.status(r.status).json({ error: 'GitHub HTTP ' + r.status });
+  const gz = gzipSync(Buffer.from(await r.arrayBuffer()));
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Encoding', 'gzip');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).send(gz);
+}
 
 async function readBody(req) {
   if (Buffer.isBuffer(req.body)) return req.body;
@@ -39,6 +62,11 @@ export default async function handler(req, res) {
   // POST em JSON = upload de sprite (o backup do pokemon.json manda application/octet-stream)
   if (req.method === 'POST' && String(req.headers['content-type'] || '').includes('application/json')) {
     return handleUploadSprite(req, res);
+  }
+  // POST text/plain = só LER o pokemon.json atual (ver lerPokemonJson). Não grava nada.
+  if (req.method === 'POST' && String(req.headers['content-type'] || '').includes('text/plain')) {
+    try { return await lerPokemonJson(res); }
+    catch (e) { console.error('leitura do pokemon.json falhou:', e); return res.status(500).json({ error: e.message }); }
   }
   try {
     if (req.method === 'GET') {
