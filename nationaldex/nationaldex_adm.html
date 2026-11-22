@@ -2065,13 +2065,61 @@ async function _pkjLoadReal() {
   catch (e) { throw new Error('Não consegui ler o pokemon.json do GitHub (' + e.message + ')'); }
   PKJ.preCommit = null;
   PKJ.base = pkjSnapshot(rows);          // BASE da mesclagem: exatamente o que está no GitHub agora (antes dos ajustes locais de sprite)
+  const recuperados = pkjDraftRestaurar(rows);   // alterações não commitadas da sessão anterior (rascunho local)
   S.pk.dbMap = {};
   rows.forEach(x => { kpFixSprites(x); S.pk.dbMap[x.id] = x; });
   PKJ.loaded = true; PKJ.count = rows.length; PKJ.dirty = false;
+  if (recuperados.length) {
+    PKJ.dirty = true;
+    setTimeout(() => {
+      pkjStatus('⏳ Alteração não commitada', 'warn');
+      try { toast(`♻️ Recuperei ${recuperados.length} alteração(ões) que não tinham sido commitadas: ${recuperados.slice(0, 6).join(', ')}${recuperados.length > 6 ? '…' : ''}. Clique em "Commit pokemon.json" para salvar.`, 'ok'); } catch (e) {}
+    }, 1500);
+  }
   return rows;
+}
+/* ── Rascunho local (rede de segurança) ──
+   Criar/editar Pokémon só mexe na memória até alguém clicar em "Commit pokemon.json". Se a aba fechar/recarregar, ou uma
+   recarga da lista acontecer, o que não foi commitado sumia (ex.: Pokémon recém-criado). Agora toda alteração pendente é
+   copiada para o localStorage deste navegador e restaurada automaticamente ao carregar; some depois do commit. */
+const PKJ_DRAFT_KEY = 'pkj_draft_v1';
+function pkjDraftSalvar(agora) {
+  clearTimeout(pkjDraftSalvar._t);
+  if (!agora) { pkjDraftSalvar._t = setTimeout(() => pkjDraftSalvar(true), 500); return; }
+  try {
+    const itens = [];
+    Object.values((S.pk && S.pk.dbMap) || {}).forEach(r => {
+      if (!r || r.id == null) return;
+      const st = pkjStrip(r), id = String(r.id);
+      if (pkjStable(st) !== PKJ.base[id]) itens.push({ id, row: st, b: PKJ.base[id] === undefined ? null : PKJ.base[id] });
+    });
+    if (!itens.length) { localStorage.removeItem(PKJ_DRAFT_KEY); return; }
+    localStorage.setItem(PKJ_DRAFT_KEY, JSON.stringify({ t: Date.now(), itens }));
+  } catch (e) { console.warn('[pkj] não consegui salvar o rascunho local:', e); }
+}
+// Aplica o rascunho em `rows` (a lista recém-baixada do GitHub). Só restaura o que é seguro:
+// Pokémon criado por mim que sumiu, ou edição minha em Pokémon que ninguém mais mexeu no GitHub.
+function pkjDraftRestaurar(rows) {
+  const nomes = [];
+  try {
+    const raw = localStorage.getItem(PKJ_DRAFT_KEY); if (!raw) return nomes;
+    const d = JSON.parse(raw); if (!d || !Array.isArray(d.itens)) return nomes;
+    const idx = new Map(rows.map((r, i) => [String(r.id), i]));
+    for (const it of d.itens) {
+      if (!it || !it.row || it.id == null) continue;
+      const i = idx.get(it.id);
+      if (i === undefined) {
+        if (it.b === null) { rows.push(it.row); idx.set(it.id, rows.length - 1); nomes.push(it.row.name || it.id); }
+      } else if (it.b !== null && PKJ.base[it.id] === it.b && pkjStable(pkjStrip(rows[i])) !== pkjStable(it.row)) {
+        rows[i] = it.row; nomes.push(it.row.name || it.id);
+      }
+    }
+  } catch (e) { console.warn('[pkj] rascunho ilegível:', e); }
+  return nomes;
 }
 function pkjSujo() {
   PKJ.dirty = true; pkjStatus('⏳ Alteração não commitada', 'warn', true);
+  pkjDraftSalvar();
 }
 async function pkjGravar(force) {
   if (!PKJ.dirty && !force) return;
@@ -2085,6 +2133,17 @@ async function pkjGravar(force) {
     let remote;
     try { remote = tentativa ? await pkjFetchRemoteApi() : await pkjFetchRemoteSeguro(); }   // nas repetições: direto pela API (sem cache de CDN)
     catch (e) { PKJ.dirty = true; pkjStatus('⚠️ Não consegui conferir o GitHub — nada foi gravado', 'err'); throw new Error('Não consegui conferir o pokemon.json atual no GitHub (' + e.message + '). Nada foi gravado, para não sobrescrever o trabalho de outros admins. Tente de novo.'); }
+    // Anti-cache: se o remoto parece REMOVER Pokémon meus ou DESFAZER aprovações, confere de novo direto pela API do GitHub
+    // (sem CDN) ANTES de incomodar o admin. Na maioria das vezes era só o raw.githubusercontent devolvendo versão velha.
+    if (!tentativa) {
+      try {
+        const seco = pkjMerge3(PKJ.base, S.pk.dbMap, remote, true);
+        if (seco.notas.removidosMeus.length || seco.notas.revertidos.some(x => x.aprovado)) {
+          pkjStatus('🔄 Conferindo de novo direto pela API do GitHub (sem cache)…', 'warn');
+          remote = await pkjFetchRemoteApi();
+        }
+      } catch (e) { console.warn('[pkj] reconferência via API falhou, segue com o remoto já baixado:', e); }
+    }
     const hashRemoto = await pkjHashRows(remote), snapRemoto = pkjSnapshot(remote);   // ANTES de mesclar (a mescla mexe em objetos aninhados)
     // 2) mescla (3 vias; conflitos reais abrem a janela de escolha) e aplica na memória
     let res;
@@ -2103,6 +2162,7 @@ async function pkjGravar(force) {
       const body = await kpCommitPokemonJson(rows, hashRemoto);
       PKJ.preCommit = snapRemoto; PKJ.lastCommitAt = Date.now();   // como o GitHub estava ANTES deste commit (detecta cache velho depois)
       PKJ.base = baseNova; PKJ.count = rows.length;       // o que foi commitado vira a nova base
+      pkjDraftSalvar(true);                              // nada pendente → apaga o rascunho local (ou guarda só o que sobrou)
       pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok', PKJ.dirty);
       if (puxou) { pkjAtualizarTela(); if (body && typeof body === 'object') body.mesclado = resumos.join(' · '); }
       return body;
@@ -2291,18 +2351,47 @@ async function pkjFetchRemoteSeguro() {
   return rows;
 }
 
+// Aviso (janela do próprio site, não do navegador) quando o GitHub quer remover Pokémon seus ou desfazer aprovações.
+// Resolve true = aceitar a versão do GitHub | false = manter o meu trabalho (padrão: Esc, clique fora ou o botão verde).
+function pkjAvisoDiferenca(rem, rev) {
+  return new Promise(resolve => {
+    const lista = a => '<ul style="margin:6px 0 0;padding-left:18px;font:13px/1.5 sans-serif;color:#222">'
+      + a.slice(0, 12).map(x => `<li>${enclEsc(x.nome || x.id)} <span style="color:#777">(${enclEsc(x.id)})</span></li>`).join('')
+      + (a.length > 12 ? `<li style="list-style:none;margin-left:-18px;color:#777">…e mais ${a.length - 12}.</li>` : '') + '</ul>';
+    const bloco = (titulo, a) => a.length ? `<div style="margin-top:10px"><b style="font:800 13px sans-serif">${titulo} (${a.length})</b>${lista(a)}</div>` : '';
+    const ov = document.createElement('div');
+    ov.id = 'pkj-diff-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px';
+    ov.innerHTML = `<div role="dialog" aria-modal="true" style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.4)">
+      <div style="padding:16px 18px 8px"><div style="font:800 16px sans-serif">⚠️ O GitHub está diferente do seu ADM</div>
+        <div style="font:13px/1.45 sans-serif;color:#555;margin-top:4px">O pokemon.json do GitHub não bate com o que você carregou/commitou.</div></div>
+      <div style="padding:0 18px 6px;overflow:auto;flex:1 1 auto">
+        ${bloco('Seriam REMOVIDOS', rem)}${bloco('Teriam a APROVAÇÃO desfeita', rev)}
+        <div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:#fff7e6;border:1px solid #f0d9a8;font:13px/1.45 sans-serif;color:#5a4a1e">
+          Se você <b>não sabe</b> de outro admin que fez isso, provavelmente é o GitHub devolvendo uma versão velha (cache). Nesse caso, mantenha o seu trabalho.</div>
+      </div>
+      <div style="padding:12px 18px 16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid #eee">
+        <button type="button" class="btn btn-outline" data-a="gh">Aceitar versão do GitHub</button>
+        <button type="button" class="btn btn-success" data-a="meu">Manter o meu trabalho</button></div></div>`;
+    const fim = v => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); fim(false); } };
+    ov.addEventListener('click', e => {
+      if (e.target === ov) return fim(false);
+      const b = e.target.closest('[data-a]'); if (b) fim(b.dataset.a === 'gh');
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    ov.querySelector('[data-a="meu"]').focus();
+  });
+}
 // Mescla com o remoto; se houver conflito de campo, pergunta quem prevalece.
 async function pkjMesclarPerguntando(remoteRows) {
   let res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, true);
   // Trava de segurança: o GitHub quer REMOVER Pokémon que estão no seu ADM ou DESFAZER aprovações suas.
   const rem = res.notas.removidosMeus, rev = res.notas.revertidos.filter(x => x.aprovado);
   if (rem.length || rev.length) {
-    const nomes = a => a.slice(0, 12).map(x => `• ${x.nome || x.id} (${x.id})`).join('\n') + (a.length > 12 ? `\n…e mais ${a.length - 12}.` : '');
-    let msg = '⚠️ O pokemon.json do GitHub é DIFERENTE do que você commitou/carregou:\n';
-    if (rem.length) msg += `\nSeriam REMOVIDOS (${rem.length}):\n${nomes(rem)}\n`;
-    if (rev.length) msg += `\nTeriam a APROVAÇÃO desfeita (${rev.length}):\n${nomes(rev)}\n`;
-    msg += '\nSe você NÃO sabe de outro admin que fez isso, pode ser o GitHub devolvendo uma versão velha (cache).\n\nOK = aceitar a versão do GitHub\nCancelar = MANTER o meu trabalho';
-    if (!confirm(msg)) {
+    const aceitarGitHub = await pkjAvisoDiferenca(rem, rev);   // true = aceitar a versão do GitHub | false = manter o meu trabalho
+    if (!aceitarGitHub) {
       const keep = new Set([...rem.map(x => x.id), ...res.notas.revertidos.map(x => x.id)]);
       res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, true, keep);
       res._keep = keep;
@@ -7966,8 +8055,13 @@ async function uploadImgStorage(b64, bucket, path, slug) {
   let fname, pasta = '';
   const mBase = /^N0*(\d+)$/i.exec(stem);
   const mAlfa = /^N?0*(\d+)-.*?-?alfa-/i.exec(stem);
+  const mSpec = /^S\d+$/i.exec(stem);
   if (mBase) {
     fname = kpGhFileName({ id: stem, url_slug: slug || stem }, ext);
+  } else if (mSpec) {
+    // Specials (S001, S0002…): mesmo nome que kpRenameGhUrl passa a gravar no pokemon.json ("000-s0002.png").
+    // Antes caía no fallback "[#000] - S0002.png" e a URL salva (000-s0002.png) dava 404.
+    fname = KP_NOME_NOVO ? `000-${kpSlugify(stem)}.${ext}` : `[#000] - ${stem}.${ext}`;
   } else if (mAlfa && slug) {
     // Forma Alfa: sprites/pokemon/006-charizard-mega-x.png (shiny: shiny/…) — sem subpasta (servidor não aceita 'alfa/')
     fname = `${mAlfa[1].padStart(3, '0')}-${slug}.${ext}`; pasta = KP_ALFA_DIR ? KP_ALFA_DIR + '/' : '';
