@@ -1106,11 +1106,30 @@ function mvDelete(name) {
 async function kpCommitAuth() {
   if (!window.KPAdm) return {};
   if (!KPAdm.pode()) throw new Error('Ative o modo ADM (botão ao lado do seu nome) para commitar.');
-  const c = await KPAdm.cred('Para commitar no GitHub, confirme a senha do seu player.');
+  // Crachá de sessão (emitido pelo servidor depois da 1ª confirmação de senha, vale 30 dias): enquanto valer, NÃO pede a senha de novo.
+  // O servidor continua conferindo o papel (chefe/ADM/MOD) a cada commit; o crachá só dispensa redigitar a senha.
+  const ct = kpCtGet();
+  if (ct) return { ct };
+  const c = await KPAdm.cred('Para commitar no GitHub, confirme a senha do seu player. (Só pede de novo daqui a 30 dias.)');
   if (!c) throw new Error('Commit cancelado: senha não confirmada.');
   return { admin_nome: c.n, admin_senha: c.s };
 }
-function kpCommitAuthFail(res) { if (res && (res.status === 401 || res.status === 403)) { try { KPAdm.credLimpar(); } catch (e) {} } }
+const KP_CT_KEY = 'kp_commit_ct';
+function kpCtGet() {
+  try { const c = localStorage.getItem(KP_CT_KEY); if (c) return c; } catch (e) {}
+  // crachá que o /api/ficha-token entrega no login do site (vem junto da sessão do player), se o login o guardou
+  for (const st of ['localStorage', 'sessionStorage']) {
+    try { const s = JSON.parse(window[st].getItem('kp_ficha_sessao') || 'null'); if (s && typeof s.ct === 'string' && s.ct.includes('.')) return s.ct; } catch (e) {}
+  }
+  return '';
+}
+function kpCtSave(j) { try { if (j && typeof j.ct === 'string' && j.ct) localStorage.setItem(KP_CT_KEY, j.ct); } catch (e) {} }
+function kpCommitAuthFail(res) {
+  if (res && (res.status === 401 || res.status === 403)) {
+    try { localStorage.removeItem(KP_CT_KEY); } catch (e) {}   // crachá vencido/negado: na próxima vez pede a senha
+    try { KPAdm.credLimpar(); } catch (e) {}
+  }
+}
 
 /* ── Mesclagem de 3 vias (protege contra sobrescrever o que outro admin commitou) ──
    BASE = moves.json como estava quando esta página carregou (ou no último commit);
@@ -1742,6 +1761,7 @@ async function backupMovesNow() {
     let result = {};
     try { result = await r.json(); } catch (e) {}
     if (!r.ok) { kpCommitAuthFail(r); if (puxou) mvRebuildList(); throw new Error(result.error || `Erro ${r.status} ao commitar`); }
+    kpCtSave(result);   // guarda o crachá (não pede a senha de novo por 30 dias)
     mvSetBase(JSON.parse(JSON.stringify(res.rows)));   // o que foi commitado vira a nova base
     if (puxou) mvRebuildList();
     toast(`✅ moves.json commitado no GitHub (${res.rows.length} moves)${puxou ? ` · ${puxou} vieram de outros admins` : ''}.`, 'ok');
@@ -1834,6 +1854,7 @@ async function tmCriarItensFaltantes(moves, auth) {
   try {
     const r = await fetch(TM_ITEMS_ROUTE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: itens, ...auth }) });
     let j = {}; try { j = await r.json(); } catch (e) {}
+    if (r.ok) kpCtSave(j);
     if (r.ok && j && j.unchanged) { motivo = 'o GitHub respondeu que o items.json não mudou'; }
     else if (r.ok) ok = true; else { kpCommitAuthFail(r); motivo = j.error || `erro ${r.status}`; }
   } catch (e) { motivo = e.message; }
