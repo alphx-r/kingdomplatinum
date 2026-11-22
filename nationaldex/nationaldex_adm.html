@@ -2038,6 +2038,48 @@ const SH = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorizat
      NÃO há commit automático: o arquivo inteiro só é commitado no GitHub (rota /api/admin/backup-pokemon-now)
      quando o botão "Commit pokemon.json" é clicado (a pílula no canto inferior esquerdo só avisa que há alterações pendentes).
 ══════════════════════════════════════════ */
+/* ── Janelas do site (substituem alert()/confirm() do navegador) ──
+   kpAlert/kpConfirm devolvem Promise. window.alert é redirecionado para kpAlert (não bloqueia; mensagens entram em fila).
+   Esc = Cancelar/fechar · Enter = OK · clique fora = Cancelar/fechar. */
+const KPDLG = { fila: Promise.resolve() };
+const _alertNativo = window.alert.bind(window);
+function kpDialog(msg, opts) {
+  opts = opts || {};
+  return new Promise(resolve => {
+    KPDLG.fila = KPDLG.fila.then(() => new Promise(done => {
+      if (!document.body) { if (opts.confirm) resolve(window.confirm(msg)); else { _alertNativo(msg); resolve(true); } return done(); }
+      const txt = String(msg == null ? '' : msg);
+      const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cor = /^\s*(❌|⛔)/.test(txt) ? '#c62828' : /^\s*(✅|✓)/.test(txt) ? '#2e7d32' : /^\s*(⚠️|⚠)/.test(txt) ? '#ef6c00' : '#1e3a5f';
+      const titulo = opts.title || (opts.confirm ? 'Confirmar' : (cor === '#c62828' ? 'Erro' : cor === '#2e7d32' ? 'Pronto' : 'Aviso'));
+      const ov = document.createElement('div');
+      ov.className = 'kp-dlg-ov';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px';
+      ov.innerHTML = `<div role="dialog" aria-modal="true" style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.4);border-top:5px solid ${cor}">
+        <div style="padding:14px 18px 4px;font:800 15px sans-serif;color:#222">${esc(titulo)}</div>
+        <div style="padding:6px 18px 12px;overflow:auto;flex:1 1 auto;font:14px/1.5 sans-serif;color:#333;white-space:pre-wrap;overflow-wrap:anywhere">${esc(txt)}</div>
+        <div style="padding:10px 18px 14px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #eee">
+          ${opts.confirm ? `<button type="button" class="btn btn-outline" data-r="0">${esc(opts.cancelLabel || 'Cancelar')}</button>` : ''}
+          <button type="button" class="btn btn-success" data-r="1">${esc(opts.okLabel || 'OK')}</button></div></div>`;
+      const fim = v => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); done(); };
+      const onKey = e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fim(false); }
+        else if (e.key === 'Enter' && !(e.target && e.target.closest && e.target.closest('[data-r="0"]'))) { e.preventDefault(); e.stopPropagation(); fim(true); }
+      };
+      ov.addEventListener('click', e => {
+        if (e.target === ov) return fim(opts.confirm ? false : true);
+        const b = e.target.closest('[data-r]'); if (b) fim(b.dataset.r === '1');
+      });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(ov);
+      ov.querySelector('[data-r="1"]').focus();
+    }));
+  });
+}
+function kpAlert(msg, opts) { return kpDialog(msg, opts); }
+function kpConfirm(msg, opts) { return kpDialog(msg, Object.assign({ confirm: true }, opts || {})); }
+window.alert = msg => { kpDialog(msg); };
+
 const PKJ = { loaded: false, count: 0, dirty: false, timer: null, chain: Promise.resolve(), base: {}, preCommit: null, lastCommitAt: 0 };
 function pkjStatus(txt, tipo, temporario) {
   let el = document.getElementById('pkj-status');
@@ -2060,9 +2102,20 @@ async function pkjLoad() {
   return _pkjLoadP;
 }
 async function _pkjLoadReal() {
-  let rows;
-  try { rows = await pkjFetchRemote(); }
-  catch (e) { throw new Error('Não consegui ler o pokemon.json do GitHub (' + e.message + ')'); }
+  let rows, viaApi = false;
+  try { rows = await pkjFetchRemoteApi(); viaApi = true; }      // 1º a API (sem cache): é o estado real do GitHub agora
+  catch (e0) {
+    try { rows = await pkjFetchRemote(); }                       // reserva: raw.githubusercontent (pode vir com cache)
+    catch (e) { throw new Error('Não consegui ler o pokemon.json do GitHub (' + e.message + ')'); }
+  }
+  if (!viaApi) {
+    // Veio do raw: se acabei de commitar e ele ainda mostra versão anterior, vale a cópia interna do meu último commit.
+    const ult = await pkjLerUltimoCommit();
+    if (ult && Date.now() - ult.t < 30 * 60 * 1000 && !pkjSnapIgual(pkjSnapshot(rows), pkjSnapshot(ult.rows))) {
+      console.warn('[pkj] GitHub (raw) devolveu versão diferente do meu último commit — usando a cópia interna.');
+      rows = ult.rows;
+    }
+  }
   PKJ.preCommit = null;
   PKJ.base = pkjSnapshot(rows);          // BASE da mesclagem: exatamente o que está no GitHub agora (antes dos ajustes locais de sprite)
   const recuperados = pkjDraftRestaurar(rows);   // alterações não commitadas da sessão anterior (rascunho local)
@@ -2082,6 +2135,28 @@ async function _pkjLoadReal() {
    Criar/editar Pokémon só mexe na memória até alguém clicar em "Commit pokemon.json". Se a aba fechar/recarregar, ou uma
    recarga da lista acontecer, o que não foi commitado sumia (ex.: Pokémon recém-criado). Agora toda alteração pendente é
    copiada para o localStorage deste navegador e restaurada automaticamente ao carregar; some depois do commit. */
+/* ── Cópia interna do último commit ──
+   Depois de cada commit, o ADM guarda (compactado, neste navegador) exatamente o que foi commitado. Se, ao recarregar a página,
+   o GitHub ainda devolver uma versão ANTERIOR a esse commit (cache do CDN), o ADM usa a cópia interna em vez da versão velha,
+   para não "ressuscitar" o que você apagou nem desfazer o que você acabou de salvar. */
+const PKJ_LAST_KEY = 'pkj_last_commit_v1';
+async function pkjGzB64(str) {
+  const buf = new Uint8Array(await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function pkjUnGzB64(b64) {
+  const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+}
+async function pkjGuardarUltimoCommit(rows) {
+  try { localStorage.setItem(PKJ_LAST_KEY, JSON.stringify({ t: Date.now(), z: await pkjGzB64(JSON.stringify(rows.map(pkjStrip))) })); }
+  catch (e) { console.warn('[pkj] não consegui guardar a cópia do último commit:', e); }
+}
+async function pkjLerUltimoCommit() {
+  try { const raw = localStorage.getItem(PKJ_LAST_KEY); if (!raw) return null; const d = JSON.parse(raw); return { t: d.t, rows: await pkjUnGzB64(d.z) }; }
+  catch (e) { return null; }
+}
 const PKJ_DRAFT_KEY = 'pkj_draft_v1';
 function pkjDraftSalvar(agora) {
   clearTimeout(pkjDraftSalvar._t);
@@ -2135,7 +2210,7 @@ async function pkjGravar(force) {
     catch (e) { PKJ.dirty = true; pkjStatus('⚠️ Não consegui conferir o GitHub — nada foi gravado', 'err'); throw new Error('Não consegui conferir o pokemon.json atual no GitHub (' + e.message + '). Nada foi gravado, para não sobrescrever o trabalho de outros admins. Tente de novo.'); }
     // Anti-cache: se o remoto parece REMOVER Pokémon meus ou DESFAZER aprovações, confere de novo direto pela API do GitHub
     // (sem CDN) ANTES de incomodar o admin. Na maioria das vezes era só o raw.githubusercontent devolvendo versão velha.
-    if (!tentativa) {
+    if (!tentativa && !remote.__api) {
       try {
         const seco = pkjMerge3(PKJ.base, S.pk.dbMap, remote, true);
         if (seco.notas.removidosMeus.length || seco.notas.revertidos.some(x => x.aprovado)) {
@@ -2162,6 +2237,7 @@ async function pkjGravar(force) {
       const body = await kpCommitPokemonJson(rows, hashRemoto);
       PKJ.preCommit = snapRemoto; PKJ.lastCommitAt = Date.now();   // como o GitHub estava ANTES deste commit (detecta cache velho depois)
       PKJ.base = baseNova; PKJ.count = rows.length;       // o que foi commitado vira a nova base
+      pkjGuardarUltimoCommit(rows);                      // cópia interna do que acabou de ir pro GitHub
       pkjDraftSalvar(true);                              // nada pendente → apaga o rascunho local (ou guarda só o que sobrou)
       pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok', PKJ.dirty);
       if (puxou) { pkjAtualizarTela(); if (body && typeof body === 'object') body.mesclado = resumos.join(' · '); }
@@ -2329,11 +2405,21 @@ function pkjSnapIgual(a, b) {
 }
 // GitHub pelo endpoint da API (não passa pelo cache do CDN do raw.githubusercontent)
 async function pkjFetchRemoteApi() {
+  // 1º pela rota do próprio servidor (usa o token da Vercel: sem cache e sem o limite de 60 consultas/h). Se ainda não existir
+  // (rota antiga responde 400) ou falhar, segue para a API pública do GitHub logo abaixo.
+  try {
+    const ctl0 = new AbortController(); const t0 = setTimeout(() => ctl0.abort(), 30000);
+    try {
+      const r0 = await fetch('/api/admin/backup-pokemon-now', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'read', cache: 'no-store', signal: ctl0.signal });
+      if (r0.ok) { const rows0 = await r0.json(); if (Array.isArray(rows0) && rows0.length) { rows0.__api = true; return rows0; } }
+    } finally { clearTimeout(t0); }
+  } catch (e0) { console.warn('[pkj] leitura pelo servidor falhou, tentando a API pública:', e0 && e0.message); }
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 30000);
   try {
     const r = await fetch(`https://api.github.com/repos/${KP_JSON_REPO}/contents/pokemon.json?ref=main&v=${Date.now()}`, { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw+json' }, signal: ctl.signal });
     if (!r.ok) throw new Error('API HTTP ' + r.status);
     const rows = await r.json(); if (!Array.isArray(rows)) throw new Error('formato inesperado');
+    rows.__api = true;   // veio direto da API (sem cache de CDN): é o estado real do GitHub agora
     return rows;
   } finally { clearTimeout(t); }
 }
@@ -2341,6 +2427,8 @@ async function pkjFetchRemoteApi() {
 // Bug real: logo depois de um commit o raw.githubusercontent pode devolver o arquivo antigo; a mesclagem então
 // achava que "outro admin" tinha desfeito/apagado o seu trabalho e gravava a versão antiga por cima.
 async function pkjFetchRemoteSeguro() {
+  // 1º a API do GitHub (sem cache): se ela responde, o que vier é o estado real — nada de "versão velha" para confundir.
+  try { return await pkjFetchRemoteApi(); } catch (e) { console.warn('[pkj] API do GitHub indisponível, usando o raw (com checagem de cache):', e && e.message); }
   let rows = await pkjFetchRemote();
   const antigo = PKJ.preCommit;                                  // foto do GitHub ANTES do meu último commit
   if (antigo && !pkjSnapIgual(PKJ.base, antigo) && pkjSnapIgual(pkjSnapshot(rows), antigo)) {
@@ -2389,7 +2477,7 @@ async function pkjMesclarPerguntando(remoteRows) {
   let res = pkjMerge3(PKJ.base, S.pk.dbMap, remoteRows, true);
   // Trava de segurança: o GitHub quer REMOVER Pokémon que estão no seu ADM ou DESFAZER aprovações suas.
   const rem = res.notas.removidosMeus, rev = res.notas.revertidos.filter(x => x.aprovado);
-  if (rem.length || rev.length) {
+  if ((rem.length || rev.length) && !remoteRows.__api) {   // vindo da API é o estado real: outro admin mexeu de verdade, a mescla resolve sem perguntar
     const aceitarGitHub = await pkjAvisoDiferenca(rem, rev);   // true = aceitar a versão do GitHub | false = manter o meu trabalho
     if (!aceitarGitHub) {
       const keep = new Set([...rem.map(x => x.id), ...res.notas.revertidos.map(x => x.id)]);
@@ -2756,9 +2844,9 @@ async function enclCopiarPara() {
   if (!origem || !ENCL.rows.length) { toast('Este Local não tem lista para copiar.', 'err'); return; }
   if (!dest) { toast('Escolha o Local de destino.', 'err'); return; }
   if (dest === origem) { toast('Origem e destino são o mesmo Local.', 'err'); return; }
-  if (!confirm(`Copiar os ${ENCL.rows.length} Pokémon de “${origem}” para “${dest}”?`)) return;
+  if (!await kpConfirm(`Copiar os ${ENCL.rows.length} Pokémon de “${origem}” para “${dest}”?`)) return;
   const jaTem = ENCL.contagem[dest] > 0;
-  const substituir = jaTem && confirm(`“${dest}” já tem ${ENCL.contagem[dest]} Pokémon.\n\nOK = SUBSTITUIR a lista de “${dest}” pela de “${origem}”.\nCancelar = MESCLAR (mantém o que já tem e soma o que falta).`);
+  const substituir = jaTem && await kpConfirm(`“${dest}” já tem ${ENCL.contagem[dest]} Pokémon.\n\nOK = SUBSTITUIR a lista de “${dest}” pela de “${origem}”.\nCancelar = MESCLAR (mantém o que já tem e soma o que falta).`);
   try {
     pkjCheck();
     const copia = JSON.parse(JSON.stringify(ENCL.rows));   // snapshot antes de mexer em qualquer coisa
@@ -2897,7 +2985,7 @@ async function enclSalvarEdicao() {
 }
 async function enclRemover(id) {
   const r = ENCL.rows.find(x => x.id === id); if (!r) return;
-  if (!confirm(`Remover ${r.pokemon_nome || r.pokemon_id} de ${ENCL.local}?`)) return;
+  if (!await kpConfirm(`Remover ${r.pokemon_nome || r.pokemon_id} de ${ENCL.local}?`)) return;
   try {
     enclTirarLocal(r.pokemon_id, ENCL.local);
     ENCL.rows = ENCL.rows.filter(x => x.id !== id); ENCL.contagem[ENCL.local] = ENCL.rows.length;
@@ -2923,7 +3011,7 @@ async function enclAdicionar() {
 }
 async function enclMigrarDoSupabase() {
   if (!PKJ.loaded) { toast('Aguarde o pokemon.json carregar.', 'err'); return; }
-  if (!confirm('Trazer para dentro do pokemon.json as listas de encontros que ainda estão no Supabase?\n\nLocais que JÁ têm lista no pokemon.json não são alterados.')) return;
+  if (!await kpConfirm('Trazer para dentro do pokemon.json as listas de encontros que ainda estão no Supabase?\n\nLocais que JÁ têm lista no pokemon.json não são alterados.')) return;
   try {
     enclMsg('Lendo encontros do Supabase…');
     const todas = [];
@@ -2963,7 +3051,7 @@ async function enclNovoLocal() {
 async function enclRemoverLocal() {
   const nome = ENCL.local; if (!nome) return;
   const n = ENCL.rows.length;
-  if (!confirm(`Remover o local “${nome}”${n ? ` e apagar a lista de ${n} Pokémon dele` : ''}? Não dá para desfazer.`)) return;
+  if (!await kpConfirm(`Remover o local “${nome}”${n ? ` e apagar a lista de ${n} Pokémon dele` : ''}? Não dá para desfazer.`)) return;
   try {
     await enclReq('locais_encontro?nome=eq.' + encodeURIComponent(nome), { method: 'DELETE' });
     if (n) { enclLimparLocal(nome); await pkjFlush(); }
@@ -2975,7 +3063,7 @@ async function enclRemoverLocal() {
 }
 async function enclEsvaziar() {
   if (!ENCL.rows.length) return;
-  if (!confirm(`Apagar TODA a lista de ${ENCL.local} (${ENCL.rows.length} Pokémon)? Depois disso o rolador volta a usar a dedução pelos biomas.`)) return;
+  if (!await kpConfirm(`Apagar TODA a lista de ${ENCL.local} (${ENCL.rows.length} Pokémon)? Depois disso o rolador volta a usar a dedução pelos biomas.`)) return;
   try {
     enclLimparLocal(ENCL.local);
     ENCL.rows = []; ENCL.contagem[ENCL.local] = 0; enclRenderSelect(); enclRender();
@@ -3321,7 +3409,7 @@ async function kpUnificarImportados() {
   });
   if (!plano.length) { alert('ℹ️ Nenhum Pokémon importado para unificar.' + (sobra.length ? `\n\nFicam como estão (sem Pokémon base com esse nome): ${sobra.slice(0, 15).join(', ')}${sobra.length > 15 ? '…' : ''}` : '')); return; }
   const lista = plano.slice(0, 12).map(x => `${x.r.name} → ${x.base.name}`).join('\n');
-  if (!confirm(`Transformar ${plano.length} Pokémon importados em Forma Alternativa do Pokémon base (os Locais vão junto) e apagar os registros separados?\n\n${lista}${plano.length > 12 ? '\n…' : ''}${sobra.length ? `\n\n${sobra.length} continuam como estão (sem base com esse nome): ${sobra.slice(0, 8).join(', ')}${sobra.length > 8 ? '…' : ''}` : ''}`)) return;
+  if (!await kpConfirm(`Transformar ${plano.length} Pokémon importados em Forma Alternativa do Pokémon base (os Locais vão junto) e apagar os registros separados?\n\n${lista}${plano.length > 12 ? '\n…' : ''}${sobra.length ? `\n\n${sobra.length} continuam como estão (sem base com esse nome): ${sobra.slice(0, 8).join(', ')}${sobra.length > 8 ? '…' : ''}` : ''}`)) return;
   let feitos = 0; const falhas = [];
   for (const { r, base } of plano) {
     try {
@@ -3380,7 +3468,7 @@ async function kpImpAplicar() {
   if (aNovos.length) extras.push(`• ${aNovos.length} Pokémon novo(s) sem dados (rascunho, não aparece para os players): ${aNovos.slice(0, 10).join(', ')}${aNovos.length > 10 ? '…' : ''}`);
   const rep = KPIMP.repetidos || [];
   const avisoRep = rep.length ? `\n\n⚠️ ${rep.length} repetido(s) em mais de uma raridade na mesma lista: ${rep.slice(0, 6).map(e => kpRepTexto(e, false)).join('; ')}${rep.length > 6 ? '…' : ''}` : '';
-  if (!confirm(`${modoTxt} ${localTxt} — ${qtd} Pokémon${puladas ? ` (${puladas} linhas sem correspondência serão puladas)` : ''}?${extras.length ? '\n\nTambém será cadastrado:\n' + extras.join('\n') : ''}${avisoRep}`)) return;
+  if (!await kpConfirm(`${modoTxt} ${localTxt} — ${qtd} Pokémon${puladas ? ` (${puladas} linhas sem correspondência serão puladas)` : ''}?${extras.length ? '\n\nTambém será cadastrado:\n' + extras.join('\n') : ''}${avisoRep}`)) return;
 
   const btn = document.getElementById('kpimp-apply'); btn.disabled = true;
   const resumo = document.getElementById('kpimp-resumo');
@@ -3467,7 +3555,7 @@ async function limparBiomasPokemons() {
     const sem = (locs || []).filter(l => !(ENCL.contagem[l.nome] > 0)).map(l => l.nome);
     if (sem.length) aviso = `\n\n⚠️ ${sem.length} Local(is) ainda estão SEM lista própria (${sem.slice(0, 6).join(', ')}${sem.length > 6 ? '…' : ''}). Sem lista, o rolador não vai achar nenhum Pokémon neles — importe o PDF antes.`;
   } catch (e) { aviso = '\n\n(Não consegui conferir quais Locais já têm lista.)'; }
-  if (!confirm(`Zerar os biomas de ${alvo.length} Pokémon (e de suas formas alternativas)? Um arquivo de backup será baixado antes.${aviso}`)) return;
+  if (!await kpConfirm(`Zerar os biomas de ${alvo.length} Pokémon (e de suas formas alternativas)? Um arquivo de backup será baixado antes.${aviso}`)) return;
   const bk = { gerado_em: new Date().toISOString(), pokemons: alvo.map(r => ({ id: r.id, biomas: r.biomas || [], formas_alt_biomas: (r.formas_alt || []).map(f => (f && f.biomas) || []) })) };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(bk)], { type: 'application/json' }));
@@ -5327,21 +5415,21 @@ function alfaShowRow(listId, uid) {
   window._alfaActiveRow[listId] = uid;
   alfaRefreshNav(listId);
 }
-function alfaDeleteRow(btn) {
+async function alfaDeleteRow(btn) {
   const row = btn.closest('.alfa-row');
   const list = row?.closest('.alfa-list');
   if (!row || !list) return;
-  if (!confirm('Remover esta forma alfa?')) return;
+  if (!await kpConfirm('Remover esta forma alfa?')) return;
   const listId = list.id;
   row.remove();
   if (window._alfaActiveRow) window._alfaActiveRow[listId] = null;
   alfaRefreshNav(listId);
 }
-function alfaDeleteRowByUid(listId, uid) {
+async function alfaDeleteRowByUid(listId, uid) {
   const list = document.getElementById(listId);
   const row = list?.querySelector(`.alfa-row[data-uid="${uid}"]`);
   if (!row) return;
-  if (!confirm('Remover esta forma alfa?')) return;
+  if (!await kpConfirm('Remover esta forma alfa?')) return;
   row.remove();
   if (window._alfaActiveRow) window._alfaActiveRow[listId] = null;
   alfaRefreshNav(listId);
@@ -6289,10 +6377,10 @@ function epkRefreshFormsNav() {
 // Remove uma forma alternativa direto pela pill de navegação (mesmo padrão
 // usado pelas formas alfa — ver alfaDeleteRowByUid). Se a forma removida
 // era a que estava sendo editada, volta pra forma base.
-function epkDeleteFormByUid(uid) {
+async function epkDeleteFormByUid(uid) {
   const row = document.querySelector(`#epk-formas-alt .falt-row[data-uid="${uid}"]`);
   if (!row) return;
-  if (!confirm('Remover esta forma?')) return;
+  if (!await kpConfirm('Remover esta forma?')) return;
   const wasActive = window._epkActiveForm === uid;
   row.remove();
   if (wasActive) epkShowBase(false); else epkRefreshFormsNav();
@@ -6832,7 +6920,7 @@ async function epkFetchMovesetFromPokeapi(category) {
   if (!id) { toast('Não foi possível identificar o Pokémon.', 'err'); return; }
   const pk = S.pk.all.find(p => String(p.id) === String(id));
   const query = /^\d+$/.test(id) ? id : String(pk?.url_slug || pk?.name || id).trim().toLowerCase().replace(/\s+/g, '-');
-  if (!confirm(`Isso vai buscar o moveset "${label}" de "${query}" na PokéAPI e SALVAR no ADM (depois clique em “Commit pokemon.json” para gravar no GitHub) — sobrescreve só o campo "${label}" deste Pokémon. Continuar?`)) return;
+  if (!await kpConfirm(`Isso vai buscar o moveset "${label}" de "${query}" na PokéAPI e SALVAR no ADM (depois clique em “Commit pokemon.json” para gravar no GitHub) — sobrescreve só o campo "${label}" deste Pokémon. Continuar?`)) return;
 
   const btn = event?.target;
   const origLabel = btn?.textContent;
@@ -6874,7 +6962,7 @@ async function epkBuscarMovesetsTodos() {
   const alvo = oficiais.filter(p => S.pk.dbMap && S.pk.dbMap[String(p.id)]);
   const foraDoJson = oficiais.length - alvo.length;
   if (!alvo.length) { toast('Nenhum Pokémon oficial carregado no pokemon.json.', 'err'); return; }
-  if (!confirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos.${foraDoJson ? `\n${foraDoJson} Pokémon da lista não estão no pokemon.json e serão pulados.` : ''}\nPode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
+  if (!await kpConfirm(`Buscar na PokéAPI o moveset (Por Nível, TM e Egg Moves) de ${alvo.length} Pokémon oficiais?\n\nOrdem fixa: Scarlet/Violet → se não existir, Sword/Shield → Sun/Moon → ... (usa o primeiro jogo em que cada Pokémon existe).\n\nIsso SOBRESCREVE esses três campos.${foraDoJson ? `\n${foraDoJson} Pokémon da lista não estão no pokemon.json e serão pulados.` : ''}\nPode levar alguns minutos; depois clique em “Commit pokemon.json”.`)) return;
 
   EPK_MOVES_TODOS_RODANDO = true;
   const btn = document.getElementById('pk-btn-moves-todos');
@@ -7240,7 +7328,7 @@ async function deletePkModal() {
   if (!id) return;
   const pk = S.pk.all.find(p => String(p.id) === String(id));
   const nome = pk ? pk.name : id;
-  if (!confirm(`Deletar "${nome}" do pokemon.json? Esta ação não pode ser desfeita.`)) return;
+  if (!await kpConfirm(`Deletar "${nome}" do pokemon.json? Esta ação não pode ser desfeita.`)) return;
   try {
     await sbDelete('pokemons', id);
     delete S.pk.dbMap[id];
@@ -7602,7 +7690,7 @@ async function evoFetchChainFromPokeapi(listId, slugRaw, btn) {
 
   const list = document.getElementById(listId);
   const jaTemEstagios = list && list.querySelectorAll('.evo-edit-row').length > 0;
-  if (jaTemEstagios && !confirm('Isso vai SUBSTITUIR os estágios já preenchidos nesta linha evolutiva pelos dados encontrados na PokeAPI. Continuar?')) return;
+  if (jaTemEstagios && !await kpConfirm('Isso vai SUBSTITUIR os estágios já preenchidos nesta linha evolutiva pelos dados encontrados na PokeAPI. Continuar?')) return;
 
   const origLabel = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando…'; }
@@ -7668,27 +7756,23 @@ async function runManualBackup() {
   // o servidor só commita, não consulta o Supabase.
   const total = Object.keys((S.pk && S.pk.dbMap) || {}).length;
   if (!total) { alert('❌ Nenhum Pokémon carregado ainda. Espere a lista carregar e tente de novo.'); return; }
-  if (!confirm(`Isso vai primeiro SINCRONIZAR com o que outros admins já commitaram e depois commitar o pokemon.json no GitHub (sem novo deploy da Vercel). Continuar?`)) return;
 
   const btn = document.getElementById('btn-manual-backup');
   const original = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Sincronizando...';
+  btn.textContent = '⏳ Commitando...';
   try {
     // 1) Sincronizar (mesmo fluxo do botão "🔄 Sincronizar"); se falhar, aborta e NADA é commitado.
-    let resumoSync = '';
     try {
       PKJ.chain = PKJ.chain.catch(() => {}).then(() => pkjSincronizar());
-      resumoSync = await PKJ.chain;
+      await PKJ.chain;   // sincroniza em silêncio (só aparece algo se der erro ou houver conflito real)
     } catch (e) { if (e.cancelado) throw e; throw new Error('Não consegui sincronizar antes de commitar (' + e.message + '). Nada foi commitado.'); }
     // 2) Commitar
-    btn.textContent = '⏳ Commitando...';
     const body = await pkjCommit(true);
-    if (resumoSync) { const m = '🔄 Sincronizado antes do commit: ' + resumoSync; body && typeof body === 'object' ? (body.mesclado = body.mesclado ? m + ' · ' + body.mesclado : m) : null; }
     if (body && body.unchanged) {
       alert(`ℹ️ O pokemon.json no GitHub já está igual ao ADM — nenhum commit foi necessário.\n\n${body.total} Pokémon.`);
     } else {
-      alert(`✅ Commit feito! ${(body && body.total) || total} Pokémon.${body && body.mesclado ? `\n\n🔀 Mesclado com alterações de outros admins: ${body.mesclado}.` : ''}\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
+      alert(`✅ Commit feito! ${(body && body.total) || total} Pokémon.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
     }
   } catch (e) {
     alert(e.cancelado ? 'ℹ️ ' + e.message : '❌ Falha ao commitar o pokemon.json: ' + e.message);
@@ -7806,13 +7890,13 @@ function pwRender() {
     + (PW.alvos.length > PW.limite ? `<div style="text-align:center;margin:8px 0"><button type="button" class="btn btn-outline btn-sm" onclick="PW.limite+=150;pwRender()">Mostrar mais (${PW.alvos.length - PW.limite} restantes)</button></div>` : '');
 }
 function pwAtualizarOutrasAbas() { if (typeof ENCL !== 'undefined' && ENCL.loaded && ENCL.local) ENCL.rows = enclLinhasDoLocal(ENCL.local); }
-function pwAplicar() {
+async function pwAplicar() {
   try { pkjCheck(); } catch (e) { toast(e.message, 'err'); return; }
   const muda = [];
   PW.alvos.forEach(a => { if (!PW.sel.has(a.key)) return; const n = pwNovo(a.peso); if (n != null && n !== a.peso) muda.push({ a, n }); });
   if (!muda.length) { toast('Nada para alterar.'); return; }
   const pokes = new Set(muda.map(m => m.a.pid)).size;
-  if (!confirm(`Alterar o peso de ${muda.length} regra(s) em ${pokes} Pokémon?\n\nDepois é só clicar em “Commit pokemon.json” para gravar no GitHub. Antes disso você ainda pode usar “Desfazer última”.`)) return;
+  if (!await kpConfirm(`Alterar o peso de ${muda.length} regra(s) em ${pokes} Pokémon?\n\nDepois é só clicar em “Commit pokemon.json” para gravar no GitHub. Antes disso você ainda pode usar “Desfazer última”.`)) return;
   const grupos = new Map();
   muda.forEach(({ a, n }) => {
     const k = a.pid + '\u0000' + a.local;
@@ -7833,9 +7917,9 @@ function pwAplicar() {
   pwAtualizarOutrasAbas(); pwReset();
   toast(`${ok} peso(s) alterado(s) — falta o Commit pokemon.json para gravar no GitHub.`, 'ok');
 }
-function pwDesfazer() {
+async function pwDesfazer() {
   if (!PW.undo || !PW.undo.length) return;
-  if (!confirm(`Desfazer a última aplicação (${PW.undo.length} Pokémon/Local voltam como estavam)?`)) return;
+  if (!await kpConfirm(`Desfazer a última aplicação (${PW.undo.length} Pokémon/Local voltam como estavam)?`)) return;
   try { PW.undo.forEach(u => enclSetRegras(u.pid, u.local, u.regras)); }
   catch (e) { toast('Erro ao desfazer: ' + e.message, 'err'); return; }
   PW.undo = null; pwEl('pw-desfazer').disabled = true;
@@ -8093,7 +8177,7 @@ async function runUpdatePhotos() {
       if (p.sprite !== a || p.sprite_shiny !== b || JSON.stringify([p.formas_alt, p.formas_alfa]) !== fa) changed++;
     });
     if (!changed) { alert('ℹ️ Nenhuma foto pendente no pokemon.json (Supabase ou nome antigo) — nada a atualizar.'); return; }
-    if (!confirm(`${changed} Pokémon vão ter as fotos trocadas/renomeadas para o padrão novo no pokemon.json. Os arquivos precisam já estar renomeados no repo. Continuar?`)) return;
+    if (!await kpConfirm(`${changed} Pokémon vão ter as fotos trocadas/renomeadas para o padrão novo no pokemon.json. Os arquivos precisam já estar renomeados no repo. Continuar?`)) return;
     await kpCommitPokemonJson(rows);
     alert(`✅ Pronto! ${changed} Pokémon atualizados.\n\nA NationalDex enxerga o arquivo novo em ~1 minuto.`);
   } catch (e) {
@@ -8129,7 +8213,7 @@ async function runPokeapiPhotos(){
       if (t) tocados.push(p);
     });
     if (!tocados.length) { alert('ℹ️ Todos os Pokémon oficiais já têm foto normal e shiny — nada a atualizar.'); return; }
-    if (!confirm(`${tocados.length} Pokémon oficiais estão sem foto (${nNormal} normal, ${nShiny} shiny). Preencher com a PokeAPI e gravar no pokemon.json?`)) return;
+    if (!await kpConfirm(`${tocados.length} Pokémon oficiais estão sem foto (${nNormal} normal, ${nShiny} shiny). Preencher com a PokeAPI e gravar no pokemon.json?`)) return;
     btn.textContent = '⏳ Gravando pokemon.json...';
     await kpCommitPokemonJson(rows);
     // espelha na memória do ADM p/ o próximo Commit pokemon.json não apagar o que foi preenchido
@@ -8606,10 +8690,10 @@ function nrpgRefreshFormsNav() {
   `;
 }
 // Ver epkDeleteFormByUid — mesmo padrão pro formulário "Novo Pokémon Nendo".
-function nrpgDeleteFormByUid(uid) {
+async function nrpgDeleteFormByUid(uid) {
   const row = document.querySelector(`#nrpg-formas-alt .falt-row[data-uid="${uid}"]`);
   if (!row) return;
-  if (!confirm('Remover esta forma?')) return;
+  if (!await kpConfirm('Remover esta forma?')) return;
   const wasActive = window._nrpgActiveForm === uid;
   row.remove();
   if (wasActive) nrpgShowBase(false); else nrpgRefreshFormsNav();
@@ -9224,7 +9308,7 @@ async function ccAplicarMapa(mapa) {
   if (n) await pkjFlush();
   return n;
 }
-function ccConfirmaDescarte() { return !CC.items.some(x => x.dirty) || confirm('Há edições não salvas nesta aba que serão descartadas. Continuar?'); }
+async function ccConfirmaDescarte() { return !CC.items.some(x => x.dirty) || await kpConfirm('Há edições não salvas nesta aba que serão descartadas. Continuar?'); }
 async function ccAplicarTexto(i) {
   const t = CC.textos[i], qtdPartes = Math.max(1, ccPartes(t.txt).length), lista = [];
   for (let j = 0; j < qtdPartes; j++) {
@@ -9232,8 +9316,8 @@ async function ccAplicarTexto(i) {
     if (!cat || !cond) { toast('Escolha a categoria e a condição de cada parte.', 'err'); return; }
     lista.push({ categoria: cat, condicao: cond });
   }
-  if (!ccConfirmaDescarte()) return;
-  if (!confirm(`Trocar o texto livre “${t.txt}” por ${ccLabelLista(lista)} em ${t.n} regra(s)?${lista.length > 1 ? `\n\nCada uma vira ${lista.length} regras separadas, com a mesma raridade.` : ''}`)) return;
+  if (!(await ccConfirmaDescarte())) return;
+  if (!await kpConfirm(`Trocar o texto livre “${t.txt}” por ${ccLabelLista(lista)} em ${t.n} regra(s)?${lista.length > 1 ? `\n\nCada uma vira ${lista.length} regras separadas, com a mesma raridade.` : ''}`)) return;
   try {
     const n = await ccAplicarMapa(x => x === t.txt ? lista : null);
     ccCarregar(); toast(`${n} regra(s) organizadas.`, 'ok');
@@ -9242,9 +9326,9 @@ async function ccAplicarTexto(i) {
 async function ccAplicarSugestoes() {
   const aplicaveis = CC.textos.filter(t => ccSugerirLista(t.txt));
   if (!aplicaveis.length) { toast('Nenhum texto tem sugestão automática. Use os selects.', 'err'); return; }
-  if (!ccConfirmaDescarte()) return;
+  if (!(await ccConfirmaDescarte())) return;
   const qtd = aplicaveis.reduce((x, t) => x + t.n, 0);
-  if (!confirm(`Aplicar sugestões automáticas em ${qtd} regra(s) (${aplicaveis.length} textos)?\n\n` + aplicaveis.map(t => `• ${t.txt} → ${ccLabelLista(ccSugerirLista(t.txt))}`).join('\n'))) return;
+  if (!await kpConfirm(`Aplicar sugestões automáticas em ${qtd} regra(s) (${aplicaveis.length} textos)?\n\n` + aplicaveis.map(t => `• ${t.txt} → ${ccLabelLista(ccSugerirLista(t.txt))}`).join('\n'))) return;
   try {
     const n = await ccAplicarMapa(ccSugerirLista);
     ccCarregar(); toast(`${n} regra(s) organizadas.`, 'ok');
@@ -9532,11 +9616,11 @@ async function kpMigrarLinksSprites() {
       + (ausentes.length ? `\n\n⚠️ ${ausentes.length} foto(s) ainda NÃO estão no kpfichas_db e ficam como estão (rode a migração de sprites antes):\n${lista}${ausentes.length > 12 ? '\n…e mais ' + (ausentes.length - 12) + '.' : ''}` : '')
       + '\n\nContinuar? (só altera no ADM; depois você commita o pokemon.json)';
     if (!ok.length) { alert('Nenhuma das ' + ausentes.length + ' foto(s) do repositório antigo existe no kpfichas_db ainda.\n\nPrimeiro copie os sprites com a página migrar_sprites.\n\n' + lista); return; }
-    if (!confirm(msg)) return;
+    if (!await kpConfirm(msg)) return;
     const { n } = kpAplicarLinks(ok, existe);
     pkjSujo(); pkjAtualizarTela();
     toast(`🔧 ${n} link(s) atualizado(s) — falta commitar o pokemon.json.`, 'ok');
-    if (confirm(`${n} link(s) atualizado(s) no ADM.\n\nCommitar o pokemon.json agora?`)) await runManualBackup();
+    if (await kpConfirm(`${n} link(s) atualizado(s) no ADM.\n\nCommitar o pokemon.json agora?`)) await runManualBackup();
   } catch (e) {
     alert('❌ Não consegui atualizar os links: ' + e.message);
   } finally {
@@ -9741,13 +9825,13 @@ function evtSum() {
   el.textContent = `${d.on} marcada(s)` + (partes.length ? ' · ' + partes.join(' · ') : ' · sem alterações');
   btn.disabled = !partes.length;
 }
-function evtAplicarLoc() {
+async function evtAplicarLoc() {
   try {
     pkjCheck();
     const t = enclAlvo(EVT.pid); if (!t) throw new Error('Pokémon não encontrado no pokemon.json');
     const d = evtDiff(); if (!d.add && !d.rem && !d.chg) return;
     const nome = (ENCL.pk[EVT.pid] || {}).nome || EVT.pid;
-    if (d.rem && !confirm(`Remover ${nome} de ${d.rem} localidade(s)?\n\nAs condições e raridades que ele tinha nelas serão apagadas (até você descartar sem commitar).`)) return;
+    if (d.rem && !await kpConfirm(`Remover ${nome} de ${d.rem} localidade(s)?\n\nAs condições e raridades que ele tinha nelas serão apagadas (até você descartar sem commitar).`)) return;
     const antes = pkjStable(t.obj.encontros_local || null);
     const novos = [];
     // mantém a ordem atual e a lista completa de condições; só troca a raridade quando ela foi alterada
@@ -9812,7 +9896,7 @@ function evtRenderBoost() {
     : '<div class="chg-empty">Nenhum boost diário ativo.</div>';
   evtBadge();
 }
-function evtBoostAplicar() {
+async function evtBoostAplicar() {
   try {
     pkjCheck();
     if (!EVT.tipo) { toast('Escolha o tipo que receberá o boost.', 'err'); return; }
@@ -9825,7 +9909,7 @@ function evtBoostAplicar() {
     if (!alvos.length) { toast(`Nenhum Pokémon do tipo ${cap(EVT.tipo)} encontrado.`, 'err'); return; }
     const entry = { tipo: EVT.tipo, mult: Math.round((1 + pct / 100) * 100) / 100 };
     if (dias.length < 7) entry.dias = dias;
-    if (!confirm(`Aplicar +${pct}% (${evtDiasTxt(entry.dias)}) em ${alvos.length} Pokémon/forma(s) do tipo ${cap(EVT.tipo)}?\n\nSe eles já tiverem boost desse tipo, ele é substituído.`)) return;
+    if (!await kpConfirm(`Aplicar +${pct}% (${evtDiasTxt(entry.dias)}) em ${alvos.length} Pokémon/forma(s) do tipo ${cap(EVT.tipo)}?\n\nSe eles já tiverem boost desse tipo, ele é substituído.`)) return;
     const agora = new Date().toISOString();
     alvos.forEach(a => {
       a.obj.boost_diario = (Array.isArray(a.obj.boost_diario) ? a.obj.boost_diario : []).filter(b => b && b.tipo !== EVT.tipo).concat([{ ...entry }]);
@@ -9835,11 +9919,11 @@ function evtBoostAplicar() {
     toast(`⚡ Boost aplicado em ${alvos.length} Pokémon/forma(s) — falta o Commit pokemon.json.`, 'ok');
   } catch (e) { toast('Erro ao aplicar boost: ' + e.message, 'err'); }
 }
-function evtBoostRemover(tipo) {
+async function evtBoostRemover(tipo) {
   try {
     pkjCheck();
     let n = 0; const agora = new Date().toISOString();
-    if (!confirm(`Remover o boost do tipo ${cap(tipo)} de todos os Pokémon?`)) return;
+    if (!await kpConfirm(`Remover o boost do tipo ${cap(tipo)} de todos os Pokémon?`)) return;
     enclTodos((pid, obj, row) => {
       if (!Array.isArray(obj.boost_diario)) return;
       const nova = obj.boost_diario.filter(b => b && b.tipo !== tipo);
