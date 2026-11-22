@@ -1172,6 +1172,9 @@ function mvMergePerguntando(remoteRows) {
    HELPERS
 ══════════════════════════════════════════ */
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, ' '); }
+// nome digitado -> chave (slug): minúsculas, espaços viram hífen, sem aspas/sinais que quebrem o HTML
+function kpSlug(v) { return String(v || '').trim().toLowerCase().replace(/['"<>&\\`]/g, '').replace(/\s+/g, '-'); }
+function kpAttr(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 let toastT;
 function toast(msg, type = '') {
@@ -1411,7 +1414,8 @@ function renderMvList() {
         <div class="mv-section-lbl">✏️ Nome</div>
         <div class="mv-name-row">
           <div class="field-row">
-            <div class="mv-meta-input" style="background:var(--surface2);color:var(--muted);cursor:default">${cap(item.name)}</div>
+            <input class="mv-meta-input" id="mv-name-${item.name}" type="text" value="${kpAttr(cap(item.name))}" placeholder="Nome do move" autocomplete="off">
+            <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Ao salvar, espaços viram hífen (ex.: “Take Down” → take-down). Pokémon que já têm este move no moveset continuam com o nome antigo.</div>
           </div>
         </div>
 
@@ -1503,10 +1507,34 @@ async function saveMv(name, approve) {
   const tmNumRaw = document.getElementById(`mv-tmnum-${name}`)?.value;
   const tm_number = is_tm && tmNumRaw !== '' && tmNumRaw !== undefined ? parseInt(tmNumRaw) : null;
   if (is_tm && !tm_number) { toast('Informe o número da TM.', 'err'); return; }
+  // nome editável: se mudou, a chave do move muda (some o antigo, entra o novo)
+  let newName = name;
+  const nmEl = document.getElementById(`mv-name-${name}`);
+  if (nmEl && nmEl.value.trim() !== cap(name)) {
+    newName = kpSlug(nmEl.value);
+    if (!newName) { toast('O nome não pode ficar vazio.', 'err'); return; }
+    if (newName !== name && S.mv.dbMap[newName]) { toast(`Já existe um move chamado "${cap(newName)}".`, 'err'); return; }
+    if (newName !== name && !confirm(`Renomear "${cap(name)}" para "${cap(newName)}"?\n\nPokémon que já têm este move no moveset continuam com o nome antigo. O commit registra o move antigo como removido e o novo como adicionado.`)) return;
+  }
   try {
-    const row = { name, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, is_tm, tm_number, approved: approve, updated_at: new Date().toISOString() };
+    if (newName !== name) {   // troca a chave mantendo todos os campos do move
+      const prev = { ...(S.mv.dbMap[name] || {}) };
+      mvDelete(name);
+      S.mv.dbMap[newName] = prev;
+    }
+    const row = { name: newName, descricao: desc, type, type2, damage_class, power, accuracy, contest_style, is_tm, tm_number, approved: approve, updated_at: new Date().toISOString() };
     await mvUpsert(row);
         item.type = type; item.type2 = type2; item.damage_class = damage_class; item.power = power; item.accuracy = accuracy;
+    if (newName !== name) {   // chave nova: redesenha a lista e mantém o card aberto
+      if (S.mv.all.includes(item)) item.name = newName; else S.mv.all.push({ name: newName, type, type2, damage_class, power, accuracy });
+      S.mv.all.sort((a, b) => a.name.localeCompare(b.name));
+      applyMvFilter();
+      const ne = document.getElementById('mv-entry-' + newName);
+      if (ne) { ne.classList.add('open'); ne.scrollIntoView({ block: 'nearest' }); }
+      updateMvStats();
+      toast(`✓ Renomeado para "${cap(newName)}" — falta commitar o moves.json`, 'ok');
+      return;
+    }
     const ind = document.getElementById('mv-ind-' + name);
     if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 2000); }
     const entry = document.getElementById('mv-entry-' + name);
