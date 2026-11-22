@@ -103,6 +103,25 @@ async function sbRpc(nome, body) {
   return j;
 }
 
+// NOME ATUAL do player (tabela players do projeto do index), pelo player_id. Renomear o player não muda o id,
+// mas o nome gravado na ficha (d.player) fica velho: aqui ele é sempre corrigido pelo id. Falhou/sem config -> null (mantém o gravado).
+async function nomeAtual(pid) {
+  try {
+    const IU = process.env.INDEX_SUPA_URL, IK = process.env.INDEX_SUPA_KEY;
+    if (!IU || !IK || pid == null || pid === '' || pid === 'admin' || pid === 'zero') return null;
+    const r = await fetch(`${IU.replace(/\/$/, '')}/rest/v1/players?select=nome&id=eq.${encodeURIComponent(String(pid))}`, { headers: { apikey: IK, Authorization: 'Bearer ' + IK } });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const n = Array.isArray(j) && j[0] && String(j[0].nome || '').trim();
+    return n ? n.slice(0, 60) : null;
+  } catch { return null; }
+}
+// d da ficha com d.player = nome atual do dono (é o que o Supabase vê ao conferir a permissão)
+async function dAtual(f) {
+  const d = (f && f.d) || {}, n = await nomeAtual(f && f.player_id);
+  return n && d.player !== n ? { ...d, player: n } : d;
+}
+
 // "data:image/jpeg;base64,..." -> {buf, ext}; URL http(s) -> mantém; vazio -> null
 function parseImg(v) {
   if (!v) return null;
@@ -332,7 +351,7 @@ module.exports = async (req, res) => {
       const atual = await readFile(caminho);
       if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
       const f0 = JSON.parse(atual);
-      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: f0.d || {} });
+      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: await dAtual(f0) });
       const g = String(p.gender || '').toLowerCase();
       const lv = Math.floor(Number(p.nivel));
       const novo = {
@@ -399,7 +418,7 @@ module.exports = async (req, res) => {
       if (atual == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
       const f0 = JSON.parse(atual);
       // o Supabase confere token/permissão (mesma regra de editar a ficha); aqui regrava os dados iguais, sem mudar nada
-      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: f0.d || {} });
+      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: await dAtual(f0) });
       let saida = null;
       await commit(async parent => {
         const t = await readFile(caminho, parent);
@@ -497,7 +516,7 @@ module.exports = async (req, res) => {
     const atualizado_em = new Date().toISOString();
 
     // 1) o Supabase confere o token e a permissão. Guarda só texto e URLs (sem base64).
-    await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: (await lerEx())?.d ?? b.d });
+    await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urls.foto, p_banner: urls.banner, p_d: (await lerEx()) ? await dAtual(await lerEx()) : b.d });
 
     // 2) um único commit no GitHub: JSON + imagens novas + índice (+ apaga imagens antigas)
     const ficha = { slug, nome, player_id: b.player_id ?? null, foto: urls.foto, banner: urls.banner, thumb: urls.thumb, d: b.d, atualizado_em };
@@ -509,7 +528,7 @@ module.exports = async (req, res) => {
       // Vale o que está gravado no commit-pai; o player_id/d.player que o navegador mandou só vale para ficha NOVA.
       const tCur = await readFile(`data/fichas/${slug}.json`, parent);
       const cur0 = tCur ? JSON.parse(tCur) : null;
-      if (cur0) { ficha.player_id = cur0.player_id ?? null; b.d.player = cur0.d?.player ?? ''; }
+      if (cur0) { ficha.player_id = cur0.player_id ?? null; b.d.player = (await nomeAtual(cur0.player_id)) ?? cur0.d?.player ?? ''; }   // nome do player vem do id (sobrevive a renomear)
       // MERGE POR CAMPO: se a ficha mudou desde que o navegador a carregou (b.base), aplica por cima da versão atual
       // só os campos de `d` que ESTE usuário mexeu (b.mud). Só há conflito se o mesmo campo mudou dos dois lados.
       if (Array.isArray(b.mud) && b.base) {
