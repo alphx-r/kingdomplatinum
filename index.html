@@ -8613,8 +8613,10 @@ async function restaurarSessaoPlayer(){
       playerLogado = null;
       return false;
     }
-    const match = lista.find(p=>p.nome===sess.nome);
+    // O id vale mais que o nome: se o player foi renomeado, a sessão antiga continua dele.
+    const match = (sess.id!=null && lista.find(p=>String(p.id)===String(sess.id))) || lista.find(p=>p.nome===sess.nome);
     if(!match){ localStorage.removeItem('player_session'); playerLogado=null; return false; }
+    if(match.nome!==sess.nome){ try{ localStorage.setItem('player_session', JSON.stringify({nome:match.nome, id:match.id})); }catch(e){} }
     if(await playerEstaDesativado(match.id)){
       localStorage.removeItem('player_session'); playerLogado=null;
       try{ const sv=JSON.parse(localStorage.getItem('kp_ficha_sessao')||'null'); if(sv && normalizarNome(sv.nome)===normalizarNome(match.nome)) localStorage.removeItem('kp_ficha_sessao'); }catch(e){}
@@ -8645,7 +8647,27 @@ async function admRenomearPlayer(){
   // Atualiza tabela players
   await dbPatch('players',`id=eq.${playerId}`,{nome:novoNome});
   if(p) p.nome = novoNome;
-  // As fichas ficam ligadas ao player pelo player_id, que não muda ao renomear.
+  // As fichas ficam ligadas ao player pelo player_id (não muda ao renomear), mas o nome gravado
+  // nelas (d.player) é o antigo: regrava com o novo nome para o Fichário não voltar ao player antigo.
+  try{
+    const lf = await (await fetch('/api/ficha-salvar?lista=1',{cache:'no-store'})).json();
+    const alvo = (Array.isArray(lf)?lf:[]).filter(x=>x && String(x.player_id)===String(playerId) && String(x.player||'')!==novoNome);
+    if(alvo.length){
+      const c = await admCred('Confirme a senha do seu player para atualizar o nome nas fichas.');
+      if(c){
+        let falhas = 0;
+        for(const x of alvo){
+          try{
+            const r = await fetch('/api/ficha-salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+              action:'atribuir', adm_nome:c.n, adm_senha:c.s, slug:x.slug, player_id:playerId, player:novoNome, por:c.n })});
+            if(!r.ok) falhas++;
+          }catch(e){ falhas++; }
+        }
+        if(falhas){ errEl.textContent = `Player renomeado, mas ${falhas} ficha(s) não atualizaram o nome (o Fichário já mostra o nome novo pelo id).`; errEl.style.display='block'; }
+        admFichasLista = null;
+      }
+    }
+  }catch(e){ console.warn('[renomear→fichas]', e); }
   // Invalida cache de login e atualiza sessão se era esse player
   _loginPlayerCache = null;
   if(playerLogado && playerLogado.nome === nomeAntigo){
