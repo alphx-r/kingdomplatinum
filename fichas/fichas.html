@@ -1200,7 +1200,22 @@ const admPlayer=()=>!!ses&&!ses.admin&&ADM_PLAYERS.includes(nrm(ses.nome));
 const PZ='playerzero',isPZ=x=>!!x&&(x.slug===PZ||nrm(x.nome)===PZ);
 const pzOk=()=>window.KPAdm?KPAdm.isAdm():!!ses&&(!!ses.admin||admPlayer());
 const pzVirtual=()=>({slug:PZ,nome:'PlayerZero',player:'PlayerZero',player_id:'zero',classe:'ADM',time:[]});
-const dono=()=>f&&ses&&(ses.admin||admPlayer()||(ses.player_id!=null&&String(ses.player_id)===String(f.player_id)));
+/* nome ATUAL do player (id -> nome): renomear o player não pode deixar sessão/ficha presas ao nome antigo */
+let PLN=null;
+const plLoad=()=>PLN?Promise.resolve(PLN):fetch(IU+'/rest/v1/players?select=id,nome',{headers:{apikey:IK,Authorization:'Bearer '+IK}}).then(r=>r.ok?r.json():[]).then(l=>{const m=new Map();(Array.isArray(l)?l:[]).forEach(p=>{if(p&&p.id!=null&&p.nome)m.set(String(p.id),p.nome)});if(m.size)PLN=m;return m}).catch(()=>new Map());
+const plNome=id=>id!=null&&id!==''&&PLN?(PLN.get(String(id))||''):'';
+/* ficha/lista: o nome exibido é sempre o do player_id (o nome gravado na ficha pode ser o antigo) */
+const fixPl=x=>{if(!x||typeof x!=='object'||isPZ(x))return x;const n=plNome(x.player_id);if(n){x.player=n;if(x.d&&typeof x.d==='object')x.d.player=n}return x};
+const dono=()=>{if(!f||!ses)return false;if(ses.admin||admPlayer())return true;
+ if(ses.player_id!=null&&f.player_id!=null&&String(ses.player_id)===String(f.player_id))return true;
+ /* ficha sem player_id válido: cai no nome gravado (comparado com o nome atual) */
+ const pid=f.player_id,semId=pid==null||pid==='',orfa=!semId&&PLN&&!PLN.has(String(pid))&&String(pid)!=='admin'&&String(pid)!=='zero';
+ return (semId||orfa)&&!!nrm(f.player||f.d?.player)&&nrm(f.player||f.d?.player)===nrm(ses.nome)};
+/* sessão guardada com o nome antigo (player renomeado): atualiza e pede novo login, pois o token foi emitido com o nome antigo */
+async function sesSync(){if(!ses||ses.admin||ses.player_id==null)return;const m=await plLoad(),n=m.get(String(ses.player_id));if(!n||n===ses.nome)return;
+ try{localStorage.removeItem(SK)}catch{}
+ try{const j=JSON.parse(localStorage.getItem('player_session'));if(j&&String(j.id)===String(ses.player_id)){j.nome=n;localStorage.setItem('player_session',JSON.stringify(j))}}catch{}
+ ses=null;LST=null;try{ln.value=n}catch{}mostrarBadge();setTimeout(()=>{try{toast('Seu nome de player agora é "'+n+'". Entre novamente para editar suas fichas.')}catch{}},300)}
 const has=a=>(a||[]).some(x=>x&&x.nome);
 /* texto rico (negrito / itálico / link) */
 function clean(h){const t=document.createElement('div');t.innerHTML=h||'';let st=0;(function w(n){[...n.childNodes].forEach(c=>{if(c.nodeType===3){if(/\S/.test(c.nodeValue))st=1;return}if(c.nodeType!==1){c.remove();return}const g=c.tagName;
@@ -2122,7 +2137,7 @@ function go(u,rep){history[rep?'replaceState':'pushState'](null,'',u);route();sc
 document.addEventListener('click',e=>{const a=e.target.closest?.('a[data-r]');if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey)return;e.preventDefault();go(a.getAttribute('href'))});
 addEventListener('popstate',()=>route());
 function modo(m){document.body.classList.remove('ed');relSelI=-1;f=null;ed=false;drw=false;fab=true;ab.clear();so.clear();psA=0;setColors({});mostrarBadge()}
-async function carregaLista(){if(!LST){SHC.clear();const r=await fetch('/api/ficha-salvar?lista=1&_='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json()}return LST}
+async function carregaLista(){if(!LST){SHC.clear();const r=await fetch('/api/ficha-salvar?lista=1&_='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);LST=await r.json();if(Array.isArray(LST)){await plLoad();LST.forEach(fixPl)}}return LST}
 /* limite: cada player só pode ter 2 fichas ativas (admin não tem limite) */
 const LIM_ATIVAS=2,LIM_MSG='Limite atingido: cada player só pode ter 2 fichas ativas. Desative uma das fichas antigas (Fichas > Desativadas) para criar ou reativar outra.';
 async function atingiuLimite(exceto){if(!ses||ses.admin)return false;LST=null;const l=await carregaLista(),me=String(ses.nome||'').trim().toLowerCase();
@@ -2379,7 +2394,7 @@ async function vFicha(slug,id){modo('F');document.title='Ficha | Kingdom Platinu
    f={slug:PZ,player_id:ses.admin?'admin':ses.player_id,nome:'PlayerZero',d:{player:'PlayerZero',pv:'100',ranking:'1',pts_ranking:'0',reputacao:'0',dinheiro:'0',pontos:'0'}};f.d.time=Array.from({length:6},()=>({}));f.d.box=Array.from({length:6},()=>({}));ed=true;drw=true;document.title='PlayerZero | Fichário';render();return}
   if(!r.length){app.innerHTML='<div class="wrap"><div class="lt">Ficha não encontrada. <a href="/fichas" data-r>← Voltar ao fichário</a></div></div>';return}f=r[0]}
  catch(e){if(id===rid)app.innerHTML='<div class="wrap"><div class="lt" style="color:#c00">Erro: '+esc(e.message)+'</div></div>';return}
- f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});f._bd=JSON.parse(JSON.stringify(f.d));f._bi={foto:f.foto||null,banner:f.banner||null,thumb:f.thumb||null};document.title=(f.nome||'Ficha')+' | Fichário';await PKL().catch(()=>0);if(id!==rid)return;render();fixStats()}
+ f.d=f.d||{};f.d.time=Array.from({length:6},(_,i)=>f.d.time?.[i]||{});f.d.box=Array.from({length:Math.max(6,(f.d.box||[]).length)},(_,i)=>f.d.box?.[i]||{});f._bd=JSON.parse(JSON.stringify(f.d));await plLoad();fixPl(f);f._bi={foto:f.foto||null,banner:f.banner||null,thumb:f.thumb||null};document.title=(f.nome||'Ficha')+' | Fichário';await PKL().catch(()=>0);if(id!==rid)return;render();fixStats()}
 // ── Ícone do botão de controle do sidebar (vetor): hamburguer/fechar ──
 const NAV_ICO_MENU  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>';
 const NAV_ICO_GAMEPAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.2" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>';
@@ -2504,8 +2519,7 @@ document.addEventListener('click',e=>{const c=e.target.closest('.inv-c');if(!c||
  let d=document.getElementById('itm');if(!d){d=document.createElement('dialog');d.id='itm';d.style.width='min(420px,94vw)';d.onclick=ev=>{if(ev.target===d)d.close()};document.body.appendChild(d)}
  const im=c.querySelector('.inv-i'),src=(im&&im.style.display!=='none'&&im.getAttribute('src'))||'',nm=c.querySelector('.inv-n')?.textContent||'',ds=c.querySelector('.inv-d')?.innerHTML||'';
  d.innerHTML='<div style="text-align:center">'+(src?'<img src="'+esc(src)+'" alt="" style="width:40px;height:40px;object-fit:contain">':'')+'<div class="mtl" style="margin:6px 0 10px">'+esc(nm)+'</div></div><div style="font:13px/1.55 var(--fb);text-align:justify">'+(ds||'<span class="mu">Sem descrição.</span>')+'</div><div class="mb" style="justify-content:center"><button type="button" class="btn s" onclick="itm.close()">Fechar</button></div>';d.showModal()});
-route();
-if(!ses&&parse()!=='nova')lg.showModal();
+Promise.race([sesSync(),new Promise(r=>setTimeout(r,4000))]).catch(()=>0).then(()=>{route();if(!ses&&parse()!=='nova')lg.showModal()});
 </script>
 </body>
 </html>
