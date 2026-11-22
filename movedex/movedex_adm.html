@@ -952,6 +952,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
       <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e adiciona à lista (sem sobrescrever traduções já feitas). Fica pendente até commitar o moves.json" style="margin-left:auto">📥 Importar da PokeAPI</button>
       <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e marca/renumera is_tm / tm_number dos moves, sem desmarcar nenhum (pendente até commitar; usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
+      <button class="btn btn-outline btn-sm" id="mv-tmitems-btn" onclick="tmCriarItensManual()" title="Cria no itemdex/items.json o item (TMxxx: Nome) de cada move marcado como TM que ainda não tem item">➕ Criar itens das TMs</button>
       <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Baixa o moves.json do kpfichas_db, mescla com as edições de outros admins e commita no repo alphx-r/kpfichas_db">📤 Commitar moves.json</button>
       <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
@@ -1275,6 +1276,37 @@ function cbBuildStaticLists() {
 ══════════════════════════════════════════ */
 const S = { mv: { all: [], filtered: [], dbMap: {} } };
 
+
+/* ══════════════════════════════════════════
+   Diálogo interno do site (no lugar do confirm/alert do navegador, que mostra "kingdomplatinum.vercel.app diz")
+   kpDialog({ titulo, texto, itens[], aviso, ok, cancelar }) → Promise<boolean>
+   cancelar: null = só um botão (aviso).
+══════════════════════════════════════════ */
+function kpDialog({ titulo = '', texto = '', itens = [], aviso = '', ok = 'OK', cancelar = 'Cancelar' } = {}) {
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-ov open'; ov.style.zIndex = 9500; ov.style.alignItems = 'center';
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column">
+      <div style="font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--brand);margin-bottom:10px">${esc(titulo)}</div>
+      <div style="overflow-y:auto;font-size:13px;line-height:1.55;color:var(--text)">
+        ${texto ? `<div style="white-space:pre-line">${esc(texto)}</div>` : ''}
+        ${itens.length ? `<ul style="margin:8px 0 0;padding-left:20px">${itens.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+        ${aviso ? `<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--red-light);color:var(--red);font-size:12px;white-space:pre-line">${esc(aviso)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        ${cancelar ? `<button type="button" class="btn btn-outline btn-sm" data-r="0">${esc(cancelar)}</button>` : ''}
+        <button type="button" class="btn btn-primary btn-sm" data-r="1">${esc(ok)}</button>
+      </div></div>`;
+    const fim = v => { document.removeEventListener('keydown', tecla, true); ov.remove(); resolve(v); };
+    const tecla = e => { if (e.key === 'Escape') { e.stopPropagation(); fim(!cancelar); } };
+    ov.addEventListener('click', e => { const b = e.target.closest('button[data-r]'); if (b) fim(b.dataset.r === '1'); else if (e.target === ov && cancelar) fim(false); });
+    document.addEventListener('keydown', tecla, true);
+    document.body.appendChild(ov);
+    ov.querySelector('button[data-r="1"]').focus();
+  });
+}
+
 /* ══════════════════════════════════════════
    Sincronizar flag de TM com a lista de TMs do items.json
    Item "TM014: Acrobatics" -> move "acrobatics": is_tm = true, tm_number = 14.
@@ -1326,9 +1358,15 @@ async function syncTmsFromItems() {
     const renum = mudar.filter(x => x.is_tm && x.row.is_tm).length;
     if (!mudar.length) { toast(`✅ Já está sincronizado (${lista.size} TMs).`, 'ok'); return; }
 
-    const extra = (semMove.length ? `\n\n⚠️ ${semMove.length} item(ns) TM sem move correspondente na lista (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}` : '')
-      + (dup.length ? `\n⚠️ Número repetido para o mesmo move: ${dup.slice(0, 5).join(', ')}` : '');
-    if (!confirm(`TMs no items.json: ${lista.size}\n\n• ${marcar} move(s) vão virar TM\n• ${renum} move(s) já eram TM e terão o número atualizado${extra}\n\nAplicar? (fica pendente até commitar o moves.json)`)) return;
+    const avisos = [];
+    if (semMove.length) avisos.push(`${semMove.length} item(ns) TM sem move correspondente na lista (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}`);
+    if (dup.length) avisos.push(`Número repetido para o mesmo move: ${dup.slice(0, 5).join(', ')}`);
+    if (!await kpDialog({
+      titulo: 'Sincronizar TMs', ok: 'Aplicar',
+      texto: `TMs no items.json: ${lista.size}\n\nO que muda (fica pendente até commitar o moves.json):`,
+      itens: [`${marcar} move(s) vão virar TM`, `${renum} move(s) já eram TM e terão o número atualizado`],
+      aviso: avisos.join('\n')
+    })) return;
 
     showProgress('Sincronizando TMs…');
     let ok = 0, fail = 0, feito = 0;
@@ -1709,7 +1747,7 @@ async function backupMovesNow() {
     toast(`✅ moves.json commitado no GitHub (${res.rows.length} moves)${puxou ? ` · ${puxou} vieram de outros admins` : ''}.`, 'ok');
     try { chgRefresh(); } catch (e) {}
     // moves marcados como TM que ainda não têm item no items.json → oferece criar os itens
-    try { await tmCriarItensFaltantes(res.rows, auth); } catch (e) { toast('Moves commitados, mas os itens de TM falharam: ' + e.message, 'err'); }
+    try { await tmCriarItensFaltantes(res.rows, auth); } catch (e) { await kpDialog({ titulo: 'Moves commitados, mas os itens de TM falharam', texto: e.message, ok: 'Entendi', cancelar: null }); }
   } catch (e) {
     toast('Erro ao commitar moves.json: ' + e.message, 'err');
   } finally {
@@ -1771,15 +1809,20 @@ function tmCalcFaltantes(moves, itens) {
   return { criar, conflitos };
 }
 async function tmCriarItensFaltantes(moves, auth) {
+  // sempre dá retorno visível: ou cria, ou diz que não há nada a criar, ou mostra o erro num diálogo (não some sozinho)
   let itens = await tmFetchItemsRemoto();
   const { criar, conflitos } = tmCalcFaltantes(moves, itens);
-  if (conflitos.length) alert('⚠️ Estas TMs NÃO tiveram item criado (número já usado por outro item):\n\n• ' + conflitos.join('\n• '));
-  if (!criar.length) return;
-  if (!confirm(`${criar.length} move(s) marcado(s) como TM ainda não têm item no itemdex:\n\n• ${criar.map(i => i.name).join('\n• ')}\n\nCriar esses itens agora? (PokéMart, preço 3000, sprite pelo tipo do move)`)) return;
+  if (conflitos.length) await kpDialog({ titulo: 'TMs sem item criado', texto: 'Estas TMs NÃO tiveram item criado, porque o número já é de outro item:', itens: conflitos, ok: 'Entendi', cancelar: null });
+  if (!criar.length) { if (!conflitos.length) toast('✅ Todas as TMs marcadas já têm item no itemdex.', 'ok'); return; }
+  if (!await kpDialog({
+    titulo: 'Criar itens de TM', ok: 'Criar itens',
+    texto: `${criar.length} move(s) marcado(s) como TM ainda não têm item no itemdex. Criar agora? (PokéMart, preço 3000, sprite pelo tipo do move)`,
+    itens: criar.map(i => i.name)
+  })) return;
   // junta de novo com o items.json mais recente, logo antes de enviar (evita apagar o que outro admin acabou de salvar)
   itens = await tmFetchItemsRemoto();
   const fresh = tmCalcFaltantes(moves, itens).criar;
-  if (!fresh.length) { toast('Os itens de TM já existem no itemdex.', 'ok'); return; }
+  if (!fresh.length) { toast('✅ Os itens de TM já existem no itemdex.', 'ok'); return; }
   const numDe = nome => parseInt((String(nome).match(/^TM\s?(\d+)/i) || [])[1], 10);
   fresh.forEach(novo => {   // mantém as TMs em ordem de número, junto das outras TMs
     let pos = -1;
@@ -1791,14 +1834,32 @@ async function tmCriarItensFaltantes(moves, auth) {
   try {
     const r = await fetch(TM_ITEMS_ROUTE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: itens, ...auth }) });
     let j = {}; try { j = await r.json(); } catch (e) {}
-    if (r.ok) ok = true; else { kpCommitAuthFail(r); motivo = j.error || `erro ${r.status}`; }
+    if (r.ok && j && j.unchanged) { motivo = 'o GitHub respondeu que o items.json não mudou'; }
+    else if (r.ok) ok = true; else { kpCommitAuthFail(r); motivo = j.error || `erro ${r.status}`; }
   } catch (e) { motivo = e.message; }
-  if (ok) { toast(`✅ ${fresh.length} item(ns) de TM criado(s) no items.json (${fresh.map(i => i.name.split(':')[0]).join(', ')}).`, 'ok'); return; }
+  if (ok) {
+    await kpDialog({ titulo: 'Itens de TM criados', texto: `${fresh.length} item(ns) commitado(s) no itemdex/items.json:`, itens: fresh.map(i => i.name), ok: 'Fechar', cancelar: null });
+    return;
+  }
   // não perde o trabalho: baixa o items.json já atualizado pra você subir pelo ItemDex
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(itens, null, 2)], { type: 'application/json' }));
   a.download = 'items.json'; document.body.appendChild(a); a.click(); a.remove();
-  toast(`Não consegui commitar o items.json (${motivo}). Baixei o arquivo já com as ${fresh.length} TM(s) novas — suba pelo ItemDex.`, 'err');
+  await kpDialog({ titulo: 'Os itens NÃO foram criados', texto: `Não consegui commitar o items.json (${motivo}).\n\nBaixei o arquivo já com as ${fresh.length} TM(s) novas — suba pelo ItemDex.`, itens: fresh.map(i => i.name), ok: 'Entendi', cancelar: null });
+}
+// Botão manual: cria os itens das TMs que faltam sem precisar commitar o moves.json antes
+async function tmCriarItensManual() {
+  const btn = document.getElementById('mv-tmitems-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Conferindo…'; }
+  try {
+    await mvEnsureLoaded();
+    const auth = await kpCommitAuth();
+    await tmCriarItensFaltantes(Object.values(S.mv.dbMap), auth);
+  } catch (e) {
+    await kpDialog({ titulo: 'Não foi possível criar os itens', texto: e.message, ok: 'Entendi', cancelar: null });
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Criar itens das TMs'; }
+  }
 }
 
 async function saveNewMove() {
