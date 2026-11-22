@@ -1000,9 +1000,11 @@ const regra=m=>{const r=m.repeticao;return(r==='nao'||r==='dias'||REP[r])?r:'sem
 const diasDe=m=>{const r=regra(m);if(r==='nao')return null;if(r==='dias'){const n=parseInt(m.repeticao_dias,10);return n>0?n:7}return REP[r][0]};
 const repLbl=m=>{const r=regra(m);if(r==='dias'){const n=diasDe(m);return n===1?'1x por dia':'A cada '+n+' dias'}return REP[r][1]};
 const fmtDH=d=>d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-function bloqueio(m,personagem){
+function bloqueio(m,personagem,ignOutra){
  const pers=personagem||'',minhas=aceitas.filter(a=>a.missao_id===m.id&&souEu(a)&&(a.personagem||'')===pers);
  if(minhas.some(a=>a.status==='aceita'))return 'Já está em andamento';
+ /* limite: 1 missão em andamento por personagem (sem personagem: por player) */
+ if(!ignOutra){const o=aceitas.find(a=>a.status==='aceita'&&a.missao_id!==m.id&&souEu(a)&&(a.personagem||'')===pers);if(o){const mo=missoes.find(x=>x.id===o.missao_id);return 'Já está em outra missão'+(mo&&mo.titulo?': '+mo.titulo:'')}}
  if(regra(m)==='nao'&&minhas.some(a=>a.status==='concluida'))return 'Missão não repetível — já concluída';
  const dias=diasDe(m);
  if(dias){
@@ -1056,7 +1058,7 @@ function indisponivel(m){
  if(m.ativa===false||ocupada(m))return true;
  if(!me)return false;
  const ps=meusPers.length?meusPers:[''];
- return ps.every(p=>bloqueio(m,p));
+ return ps.every(p=>bloqueio(m,p,true));
 }
 /* ── Render ── */
 function render(){
@@ -1153,6 +1155,7 @@ async function onBoardClick(e){
   const a=aceitas.find(x=>x.id===id);if(!a||!(isAdm()||souEu(a)))return;
   const mr=missoes.find(x=>x.id===a.missao_id);
   if(mr&&(emAndamento(mr).length>=nVagas(mr)||aceitas.some(x=>x.id!==a.id&&x.missao_id===a.missao_id&&x.status==='aceita'&&String(x.player_id)===String(a.player_id)&&(x.personagem||'')===(a.personagem||'')))){toast('Não dá para reabrir: a missão já está em andamento (vagas ocupadas).');return}
+  if(aceitas.some(x=>x.id!==a.id&&x.status==='aceita'&&(x.personagem||'')===(a.personagem||'')&&((a.personagem||'')||String(x.player_id)===String(a.player_id)))){toast('Não dá para reabrir: '+(a.personagem||'o player')+' já está em outra missão.');return}
   if(!confirm('Marcar como NÃO realizada (volta para em andamento): '+(a.personagem||a.player_nome)+'?'))return;
   try{
    await api('missoes_aceitas?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({status:'aceita',concluida_em:null})});
@@ -1197,6 +1200,9 @@ $('ac-go').onclick=async()=>{
   /* confere no banco, na hora, se alguém já pegou a missão (a tela pode estar desatualizada) */
   const jaTem=await api('missoes_aceitas?select=id,personagem,player_nome&missao_id=eq.'+encodeURIComponent(m.id)+'&status=eq.aceita');
   if(jaTem.length>=nVagas(m)){acm.close();await carregarDados();render();toast(nVagas(m)>1?'As vagas dessa missão acabaram de ser preenchidas.':'Essa missão acabou de ser aceita por '+(jaTem[0].personagem||jaTem[0].player_nome||'outro player')+'.');return}
+  /* confere no banco se o personagem já está em outra missão (a tela pode estar desatualizada) */
+  const outra=await api('missoes_aceitas?select=missao_id&status=eq.aceita&'+(pers?'personagem=eq.'+encodeURIComponent(pers):'personagem=is.null&player_id=eq.'+encodeURIComponent(String(me.id))));
+  if(outra.some(x=>String(x.missao_id)!==String(m.id))){acm.close();await carregarDados();render();toast((pers||'Você')+' já está em outra missão. Conclua ou cancele antes de aceitar uma nova.');return}
   await api('missoes_aceitas',{method:'POST',body:JSON.stringify({missao_id:m.id,player_id:String(me.id),player_nome:me.nome,personagem:pers||null,status:'aceita'})});
   acm.close();await carregarDados();render();toast('Missão aceita! Boa sorte, '+(pers||me.nome)+'.');
  }catch(e){err.textContent=/duplicate|unique/i.test(e.message)?'Você já aceitou esta missão com esse personagem.':'Erro: '+e.message}
