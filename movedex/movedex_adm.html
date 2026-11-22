@@ -951,7 +951,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
       <button class="fbtn" id="mv-f-appr" onclick="setMvFilter('appr')">Aprovados</button>
       <span style="font-size:10px;color:var(--muted);margin-left:4px;font-family:var(--font-title);letter-spacing:.3px">A→Z</span>
       <button class="btn btn-outline btn-sm" onclick="importMovesFromPokeapi()" title="Busca todos os movimentos na PokeAPI e adiciona à lista (sem sobrescrever traduções já feitas). Fica pendente até commitar o moves.json" style="margin-left:auto">📥 Importar da PokeAPI</button>
-      <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e ajusta is_tm / tm_number dos moves (pendente até commitar; usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
+      <button class="btn btn-outline btn-sm" id="mv-tmsync-btn" onclick="syncTmsFromItems()" title="Lê os itens TM do items.json e marca/renumera is_tm / tm_number dos moves, sem desmarcar nenhum (pendente até commitar; usa o nome do item: TM001: Take Down)">🔄 Sincronizar TMs (items.json)</button>
       <button class="btn btn-outline btn-sm" id="mv-backup-btn" onclick="backupMovesNow()" title="Baixa o moves.json do kpfichas_db, mescla com as edições de outros admins e commita no repo alphx-r/kpfichas_db">📤 Commitar moves.json</button>
       <button class="btn btn-primary btn-sm" onclick="openNewMove()">＋ Novo Move</button>
     </div>
@@ -1278,7 +1278,7 @@ const S = { mv: { all: [], filtered: [], dbMap: {} } };
 /* ══════════════════════════════════════════
    Sincronizar flag de TM com a lista de TMs do items.json
    Item "TM014: Acrobatics" -> move "acrobatics": is_tm = true, tm_number = 14.
-   Moves que estavam como TM e não estão na lista perdem a flag.
+   Nunca desmarca: moves que já são TM no MoveDex e não têm item no items.json continuam TM.
 ══════════════════════════════════════════ */
 const tmSlug = n => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`.]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 async function tmLoadItems() {
@@ -1315,18 +1315,20 @@ async function syncTmsFromItems() {
 
     const mudar = [];
     Object.entries(S.mv.dbMap).forEach(([name, row]) => {
-      const num = lista.has(name) ? lista.get(name) : null, quer = num != null;
-      if (!!row.is_tm !== quer || (quer && Number(row.tm_number) !== num) || (!quer && row.tm_number != null))
-        mudar.push({ name, row, is_tm: quer, tm_number: num });
+      // Só marca/renumera. Move que já é TM no MoveDex mas não tem item no items.json NÃO perde a flag:
+      // a fonte de verdade das TMs são os movimentos.
+      if (!lista.has(name)) return;
+      const num = lista.get(name);
+      if (!row.is_tm || Number(row.tm_number) !== num)
+        mudar.push({ name, row, is_tm: true, tm_number: num });
     });
     const marcar = mudar.filter(x => x.is_tm && !x.row.is_tm).length;
     const renum = mudar.filter(x => x.is_tm && x.row.is_tm).length;
-    const desmarcar = mudar.filter(x => !x.is_tm).length;
     if (!mudar.length) { toast(`✅ Já está sincronizado (${lista.size} TMs).`, 'ok'); return; }
 
     const extra = (semMove.length ? `\n\n⚠️ ${semMove.length} item(ns) TM sem move correspondente na lista (ignorados): ${semMove.slice(0, 8).join(', ')}${semMove.length > 8 ? '…' : ''}` : '')
       + (dup.length ? `\n⚠️ Número repetido para o mesmo move: ${dup.slice(0, 5).join(', ')}` : '');
-    if (!confirm(`TMs no items.json: ${lista.size}\n\n• ${marcar} move(s) vão virar TM\n• ${renum} move(s) já eram TM e terão o número atualizado\n• ${desmarcar} move(s) deixam de ser TM (não estão na lista)${extra}\n\nAplicar? (fica pendente até commitar o moves.json)`)) return;
+    if (!confirm(`TMs no items.json: ${lista.size}\n\n• ${marcar} move(s) vão virar TM\n• ${renum} move(s) já eram TM e terão o número atualizado${extra}\n\nAplicar? (fica pendente até commitar o moves.json)`)) return;
 
     showProgress('Sincronizando TMs…');
     let ok = 0, fail = 0, feito = 0;
@@ -1706,11 +1708,97 @@ async function backupMovesNow() {
     if (puxou) mvRebuildList();
     toast(`✅ moves.json commitado no GitHub (${res.rows.length} moves)${puxou ? ` · ${puxou} vieram de outros admins` : ''}.`, 'ok');
     try { chgRefresh(); } catch (e) {}
+    // moves marcados como TM que ainda não têm item no items.json → oferece criar os itens
+    try { await tmCriarItensFaltantes(res.rows, auth); } catch (e) { toast('Moves commitados, mas os itens de TM falharam: ' + e.message, 'err'); }
   } catch (e) {
     toast('Erro ao commitar moves.json: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
+}
+
+
+/* ══════════════════════════════════════════
+   Criar itens de TM automaticamente
+   Ao commitar o moves.json, todo move com is_tm + tm_number que ainda não tem o item
+   "TMxxx: Nome" no itemdex/items.json ganha um item novo (mesmo modelo das TMs existentes:
+   sprite pelo tipo do move, preço 3000, venda no PokéMart).
+══════════════════════════════════════════ */
+const TM_ITEMS_ROUTE = '/api/commit-items';   // rota serverless que commita o items.json (token só na Vercel)
+const TM_SPRITE_TIPOS = ['bug','dark','dragon','electric','fairy','fighting','fire','flying','ghost','grass','ground','ice','light','normal','poison','psychic','rock','scent','steel','water'];
+const TM_ITEM_DESC = 'Um disco técnico que permite ensinar um movimento específico a um Pokémon compatível.';
+const tmTitulo = slug => String(slug).split('-').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+function tmItemParaMove(row) {
+  const tipo = TM_SPRITE_TIPOS.includes(String(row.type || '').toLowerCase()) ? String(row.type).toLowerCase() : 'normal';
+  return {
+    name: `TM${String(row.tm_number).padStart(3, '0')}: ${tmTitulo(row.name)}`,
+    category: 'TM',
+    item_desc: TM_ITEM_DESC,
+    sprite: `/sprites/items/tms/tm-${tipo}.png`,
+    flags: { pokemart: { enabled: true }, consumivel: { enabled: false } },
+    price: 3000,
+    lojas: ['pokemart']
+  };
+}
+async function tmFetchItemsRemoto() {
+  const urls = [`https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/itemdex/items.json?v=${Date.now()}`,
+                'https://api.github.com/repos/alphx-r/kpfichas_db/contents/itemdex/items.json?ref=main'];
+  for (const [i, u] of urls.entries()) {
+    try {
+      const r = await fetch(u, { cache: 'no-store', headers: i ? { Accept: 'application/vnd.github.raw+json' } : {} });
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (Array.isArray(j) && j.length) return j;
+    } catch (e) {}
+  }
+  throw new Error('não consegui ler o itemdex/items.json do GitHub.');
+}
+// Descobre quais TMs faltam em `itens` (por número E por move) e devolve os itens a criar + avisos.
+function tmCalcFaltantes(moves, itens) {
+  const numeroUsado = new Map(), moveTem = new Set();
+  itens.forEach(it => {
+    const m = String(it && it.name || '').match(/^TM\s?(\d+)\s*[:\-–—]?\s*(.+)$/i);
+    if (m) { numeroUsado.set(parseInt(m[1], 10), it.name); moveTem.add(tmSlug(m[2])); }
+  });
+  const criar = [], conflitos = [];
+  moves.filter(r => r && r.is_tm && Number(r.tm_number) > 0).sort((a, b) => a.tm_number - b.tm_number).forEach(r => {
+    if (moveTem.has(r.name)) return;
+    const n = Number(r.tm_number);
+    if (numeroUsado.has(n)) { conflitos.push(`TM${String(n).padStart(3, '0')} (${tmTitulo(r.name)}) — o número já é do item "${numeroUsado.get(n)}"`); return; }
+    criar.push(tmItemParaMove(r));
+  });
+  return { criar, conflitos };
+}
+async function tmCriarItensFaltantes(moves, auth) {
+  let itens = await tmFetchItemsRemoto();
+  const { criar, conflitos } = tmCalcFaltantes(moves, itens);
+  if (conflitos.length) alert('⚠️ Estas TMs NÃO tiveram item criado (número já usado por outro item):\n\n• ' + conflitos.join('\n• '));
+  if (!criar.length) return;
+  if (!confirm(`${criar.length} move(s) marcado(s) como TM ainda não têm item no itemdex:\n\n• ${criar.map(i => i.name).join('\n• ')}\n\nCriar esses itens agora? (PokéMart, preço 3000, sprite pelo tipo do move)`)) return;
+  // junta de novo com o items.json mais recente, logo antes de enviar (evita apagar o que outro admin acabou de salvar)
+  itens = await tmFetchItemsRemoto();
+  const fresh = tmCalcFaltantes(moves, itens).criar;
+  if (!fresh.length) { toast('Os itens de TM já existem no itemdex.', 'ok'); return; }
+  const numDe = nome => parseInt((String(nome).match(/^TM\s?(\d+)/i) || [])[1], 10);
+  fresh.forEach(novo => {   // mantém as TMs em ordem de número, junto das outras TMs
+    let pos = -1;
+    itens.forEach((it, i) => { const n = numDe(it && it.name); if (n && n < numDe(novo.name)) pos = i; });
+    if (pos < 0) { const ult = itens.map((it, i) => (it && it.category === 'TM') ? i : -1).filter(i => i >= 0).pop(); pos = ult == null ? itens.length - 1 : ult; }
+    itens.splice(pos + 1, 0, novo);
+  });
+  let ok = false, motivo = '';
+  try {
+    const r = await fetch(TM_ITEMS_ROUTE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: itens, ...auth }) });
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    if (r.ok) ok = true; else { kpCommitAuthFail(r); motivo = j.error || `erro ${r.status}`; }
+  } catch (e) { motivo = e.message; }
+  if (ok) { toast(`✅ ${fresh.length} item(ns) de TM criado(s) no items.json (${fresh.map(i => i.name.split(':')[0]).join(', ')}).`, 'ok'); return; }
+  // não perde o trabalho: baixa o items.json já atualizado pra você subir pelo ItemDex
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(itens, null, 2)], { type: 'application/json' }));
+  a.download = 'items.json'; document.body.appendChild(a); a.click(); a.remove();
+  toast(`Não consegui commitar o items.json (${motivo}). Baixei o arquivo já com as ${fresh.length} TM(s) novas — suba pelo ItemDex.`, 'err');
 }
 
 async function saveNewMove() {
