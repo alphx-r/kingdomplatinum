@@ -1251,7 +1251,7 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
   <div class="tp" data-tp="pokemon" id="tp-pokemon">
   <!-- TIME -->
   <div class="ficha-section" id="secao-time">
-    <div class="ficha-section-title"><img class="fsi" src="https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/sprites/tabs/team.png" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"><span>Time Principal</span></div>
+    <div class="ficha-section-title"><img class="fsi" src="https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/sprites/tabs/team.png" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"><span>Time Principal</span><button type="button" id="btn-imp-time" title="Importar Pokémon (texto)" aria-label="Importar Pokémon" onclick="event.stopPropagation();impAbrir()" style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);border:1.5px solid rgba(255,255,255,.4);color:inherit;border-radius:6px;padding:3px 10px;font:700 11px var(--font-body);letter-spacing:.4px;cursor:pointer">Importar</button></div>
     <div class="ficha-section-body" style="padding:0">
       <div class="time-grid" id="time-grid"></div>
     </div>
@@ -2760,6 +2760,7 @@ function renderTime(){
   secao.classList.toggle('oculta', !modoEdicao && !temTimePreenchido());
   const grid=document.getElementById('time-grid');
   grid.className=modoEdicao?'pse-grid':'pk-view';
+  {const bi=document.getElementById('btn-imp-time');if(bi)bi.style.display=modoEdicao?'':'none';}
   if(modoEdicao){
     let ab=_pkAbertoT>=0?_pkAbertoT:time.findIndex(pk=>pk&&(pk.nome||'').trim());if(ab<0)ab=0;_pkAbertoT=-1;
     grid.innerHTML=time.slice(0,6).map((pk,i)=>slotEdit(i,pk||{},i===ab)).join('');
@@ -2882,7 +2883,7 @@ function slotEdit(i,pk0,aberto){
       ${delta?tipoSel(0,t0,'Tipo primário')+tipoSel(1,t1,'Tipo secundário'):`<input type="hidden" id="${pfx}-tipo0-${i}" value="${escAttr(t0)}"/><input type="hidden" id="${pfx}-tipo1-${i}" value="${escAttr(t1)}"/>`}
       <label class="fld"><span class="fl">Nature</span><select id="${pfx}-nature-${i}">${natureOptsHtml(pk.nature)}</select></label>
       <label class="fld"><span class="fl">Hold item</span><select id="${pfx}-item-${i}">${itemOptsHtml(pk.item)}</select></label>
-      <label class="fld"><span class="fl">Happiness</span><input id="${pfx}-happ-${i}" inputmode="numeric" maxlength="3" value="${escAttr(pk.happ||'')}" placeholder="000" autocomplete="off"/></label>
+      <label class="fld"><span class="fl">Happiness</span><input id="${pfx}-happ-${i}" inputmode="numeric" maxlength="4" value="${escAttr(pk.happ||'')}" placeholder="0-1000" oninput="this.value=this.value.replace(/\D/g,'').slice(0,4);if(+this.value>1000)this.value='1000'" autocomplete="off"/></label>
       <div class="fld s3"><span class="fl">Stats <span style="font-weight:400;opacity:.7">(base do Lv 50 — a ficha exibe o valor do nível, exceto o HP)</span></span><div class="stg" id="${pfx}-stats-${i}">${STAT_KEYS.map(k=>`<label class="fld"><span class="fl">${k.toUpperCase()}</span><input id="${pfx}-st-${k}-${i}" value="${escAttr(st[k]??'')}" autocomplete="off"/></label>`).join('')}</div></div>
       <div class="fld s3"><span class="fl">Atributos</span><div class="stg stg5">${PK_AT.map(([k,l])=>`<label class="fld"><span class="fl">${l}</span><input id="${pfx}-ath-${k}-${i}" inputmode="numeric" maxlength="3" value="${escAttr(at[k]??'')}" placeholder="000" autocomplete="off"/></label>`).join('')}</div></div>
       <div class="fld s3"><span class="fl">Moveset</span><div class="mvl">${mvs.map((m,j)=>`<div class="mvr"><input id="${pfx}-mv-${j}-${i}" list="dl-moves" value="${escAttr(m.n||'')}" placeholder="Golpe ${j+1}" autocomplete="off"/><select id="${pfx}-mo-${j}-${i}">${PK_MO.map(([v,t])=>`<option value="${v}"${(m.o||'')===v?' selected':''}>${t}</option>`).join('')}</select></div>`).join('')}</div></div>
@@ -3428,5 +3429,106 @@ if(window.NPC_ROUTE&&(NPC_ROUTE.tipo==='ficha'||NPC_ROUTE.tipo==='nova'))init();
   </div>
   <div class="kp-lb-dots" id="kpLbDots"></div>
 </div>
+
+<script>
+/* ═══ Importar Pokémon por texto (Time Principal) ═══
+   Modelo:  Nome / Level: / Ability: / Gender: / Feature: / Ball: / Hold item: / Nature: / Happiness / 1. Golpe ...
+   A origem de cada golpe é detectada pelo pokemon.json da espécie: Level Up → TM → Egg Move; se nenhuma, vira Pill. */
+const IMP_EXEMPLO='Donphan\nLevel: 100\nAbility: \nGender: \nFeature: Normal\nBall: \nHold item: \nNature:\nHappiness 1000\n\n1. Earthquake\n2. Rapid Spin\n3. Rock Slide\n4. Ice Fang\n5. Fire Fang\n6. Knock Off\n7. Stealth Rock\n8. Heavy Slam';
+const IMP_KEYS={level:'level',lvl:'level',ability:'ability',habilidade:'ability',gender:'gender',genero:'gender',feature:'feature',ball:'ball',pokebola:'ball',holditem:'item',item:'item',nature:'nature',happiness:'happ',happ:'happ',nickname:'apelido',apelido:'apelido'};
+function impParse(txt){
+  const out=[];let cur=null;
+  String(txt||'').replace(/\r/g,'').split('\n').forEach(raw=>{
+    const l=raw.trim();if(!l)return;
+    let m=/^(?:\d+\s*[.)\-:]|[-•*])\s*(.+)$/.exec(l);
+    if(m&&cur){cur.moves.push(m[1].trim());return;}
+    m=/^([A-Za-zÀ-ú ]+?)\s*:\s*(.*)$/.exec(l)||/^(happiness|level)\s+(\S.*)$/i.exec(l);
+    const k=m&&IMP_KEYS[_normNome(m[1])];
+    if(k&&cur){cur[k]=m[2].trim();return;}
+    // linha de nome: "Espécie" ou "Apelido (Espécie)"
+    cur={nome:l,moves:[]};
+    const n=/^(.+?)\s*\(([^)]{2,})\)\s*$/.exec(l);
+    if(n&&!/^(m|f)$/i.test(n[2].trim())){cur.apelido=n[1].trim();cur.nome=n[2].trim();}
+    out.push(cur);
+  });
+  return out;
+}
+async function impMontar(r,aviso){
+  await carregarPokeDex();await carregarMoveDex();
+  const d=(window._pokeDex||[]).find(x=>x&&_normNome(x.nome)===_normNome(r.nome));
+  const nome=d?d.nome:nomeBonito(r.nome);
+  if(!d)aviso.push(nome+': espécie não encontrada no Dex (sprite/stats não carregados)');
+  const g=String(r.gender||'').toLowerCase();
+  const gender=/^(m|male|macho|♂)/.test(g)?'male':/^(f|female|femea|fêmea|♀)/.test(g)?'female':/^(genderless|sem|—|-)/.test(g)?'genderless':'';
+  const fe=_normNome(r.feature);const feature=fe==='shiny'?'Shiny':fe==='modified'?'Modified':fe==='delta'?'Delta':'Normal';
+  const bn=_normNome(r.ball);const ball=(POKEBALLS.find(b=>_normNome(b.val)===bn||_normNome(b.label)===bn)||{}).val||'pokeball';
+  if(r.ball&&bn&&!POKEBALLS.some(b=>_normNome(b.val)===bn||_normNome(b.label)===bn))aviso.push(nome+': Ball "'+r.ball+'" não reconhecida — usei Poké Ball');
+  const nat=NATURES.find(n=>n.toLowerCase()===String(r.nature||'').trim().toLowerCase())||'';
+  if(r.nature&&!nat)aviso.push(nome+': Nature "'+r.nature+'" inválida');
+  const lv=parseInt(String(r.level||'').replace(/\D/g,''),10);
+  // golpes: nome oficial do movedex + origem
+  const sets={};for(const t of['lv','tm','egg'])sets[t]=await mvPermitidos(nome,t);
+  const semDados=!sets.lv.size&&!sets.tm.size&&!sets.egg.size;
+  if(semDados&&r.moves.length)aviso.push(nome+': sem lista de golpes no pokemon.json — origens ficaram como Level Up');
+  const moves=[];
+  r.moves.slice(0,8).forEach(raw=>{
+    const k=_normNome(raw);
+    const oficial=(window._moveDex||[]).find(n=>_normNome(n)===k);
+    if(!oficial)aviso.push(nome+': golpe "'+raw+'" não existe no MoveDex');
+    const n=oficial||raw;
+    let o='';
+    if(!semDados){o=sets.lv.has(k)?'':sets.tm.has(k)?'tm':sets.egg.has(k)?'egg':'pilula';}
+    moves.push({n,o});
+  });
+  if(r.moves.length>8)aviso.push(nome+': só os 8 primeiros golpes foram importados');
+  const stats=d?await buscarStatsPokemon(d.nome,d.id):null;
+  const tipos=d?(d.tipos||[]).map(t=>String(t).toLowerCase()):[];
+  const sprite=d?(feature==='Shiny'&&d.sh?d.sh:d.sprite):'';
+  return{nome,apelido:r.apelido||'',ball,tipos,img:sprite||'',level:Number.isFinite(lv)?String(Math.min(100,Math.max(1,lv))):'',ability:r.ability||'',gender:gender||'male',feature,nature:nat,item:r.item||'',happ:String(r.happ||'').replace(/\D/g,''),stats:stats&&statsTemAlgumValor(stats)?stats:null,ath:{},moves,moveset:moves.map(m=>m.n).join('\n'),combo:'',_sprite:sprite};
+}
+async function impAplicar(txt,slotSel){
+  const lista=impParse(txt);if(!lista.length){kpToast('Nada para importar: cole ao menos o nome do Pokémon');return false;}
+  const aviso=[];
+  const time=coletarTimeForm();while(time.length<6)time.push({});
+  const livres=time.map((pk,i)=>pk&&pk.nome?-1:i).filter(i=>i>=0);
+  let destinos;
+  if(slotSel>=0)destinos=[slotSel,...livres.filter(i=>i!==slotSel)];else destinos=livres;
+  if(!destinos.length){kpToast('Time cheio: escolha um slot para substituir');return false;}
+  let ok=0,primeiro=-1;
+  for(let k=0;k<lista.length;k++){
+    if(k>=destinos.length){aviso.push('Sem slot livre para '+lista[k].nome);continue;}
+    const i=destinos[k],pk=await impMontar(lista[k],aviso);
+    window._pokeImgs=window._pokeImgs||{};window._pokeImgs.time=window._pokeImgs.time||{};
+    if(pk._sprite)window._pokeImgs.time[i]=pk._sprite;else delete window._pokeImgs.time[i];
+    delete pk._sprite;time[i]=pk;ok++;if(primeiro<0)primeiro=i;
+  }
+  npc.time=time;_pkAbertoT=primeiro>=0?primeiro:-1;renderTime();
+  const g=document.getElementById('time-grid');if(g){ajustarAlturaSecaoPai(g);setTimeout(()=>ajustarAlturaSecaoPai(g),350);}
+  kpToast(ok+' Pokémon importado(s) — clique em Salvar para gravar'+(aviso.length?' · Atenção: '+aviso.join(' | '):''));
+  return true;
+}
+function impAbrir(){
+  if(!modoEdicao)return;
+  const d=document.createElement('dialog');
+  d.style.cssText='border:none;border-radius:10px;padding:0;width:min(560px,94vw);max-height:92vh;overflow:auto;font-family:var(--font-body)';
+  const time=(npc&&npc.time)||[];
+  d.innerHTML='<div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">'+
+    '<div style="font:700 15px var(--font-title)">Importar Pokémon</div>'+
+    '<div style="font-size:12px;color:#666;line-height:1.5">Cole no modelo abaixo (pode colar vários, um depois do outro). Os golpes são classificados sozinhos em <b>Level Up</b>, <b>TM</b> ou <b>Egg Move</b> conforme o que a espécie aprende; golpe fora dessas listas vira <b>Pill</b>.</div>'+
+    '<textarea id="imp-txt" rows="14" spellcheck="false" style="width:100%;box-sizing:border-box;font:13px/1.45 monospace;padding:8px;border:1.5px solid #ccc;border-radius:6px;resize:vertical" placeholder="'+escAttr(IMP_EXEMPLO)+'"></textarea>'+
+    '<label style="font-size:12px;display:flex;gap:8px;align-items:center">Destino: <select id="imp-slot" style="flex:1;padding:5px;border:1.5px solid #ccc;border-radius:6px"><option value="-1">Primeiros slots vazios</option>'+
+    [0,1,2,3,4,5].map(i=>'<option value="'+i+'">Substituir slot '+(i+1)+(time[i]&&time[i].nome?' ('+escAttr(time[i].nome)+')':' (vazio)')+'</option>').join('')+'</select></label>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="imp-ex" style="padding:7px 12px;border:1.5px solid #ccc;background:#fff;border-radius:6px;cursor:pointer">Usar exemplo</button><button type="button" id="imp-x" style="padding:7px 12px;border:1.5px solid #ccc;background:#fff;border-radius:6px;cursor:pointer">Cancelar</button><button type="button" id="imp-ok" style="padding:7px 14px;border:none;background:var(--pri,#1a1a1a);color:var(--on-pri,#fff);border-radius:6px;font-weight:700;cursor:pointer">Importar</button></div></div>';
+  document.body.appendChild(d);
+  const q=id=>d.querySelector('#'+id);
+  q('imp-ex').onclick=()=>{q('imp-txt').value=IMP_EXEMPLO;};
+  q('imp-x').onclick=()=>d.close();
+  q('imp-ok').onclick=async()=>{const b=q('imp-ok');b.disabled=true;b.textContent='Importando…';
+    try{if(await impAplicar(q('imp-txt').value,parseInt(q('imp-slot').value,10)))d.close();}catch(e){console.error(e);kpToast('Erro ao importar: '+(e&&e.message||e));}
+    b.disabled=false;b.textContent='Importar';};
+  d.addEventListener('close',()=>d.remove(),{once:true});
+  d.showModal();q('imp-txt').focus();
+}
+</script>
 </body>
 </html>
