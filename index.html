@@ -3900,7 +3900,7 @@ window.calcSituSoma = function(){
   // chave só com letras/números: "Mr. Mime" = mrmime · "Farfetch’d" = "Farfetch'd" · "Ho-Oh" = hooh
   const chaveNome = x => normNome(x).replace(/[^a-z0-9]/g,'');
   const REGIAO = {alola:'alola',alolan:'alola',alolano:'alola',alolana:'alola',galar:'galar',galarian:'galar',galariano:'galar',galariana:'galar',
-    hisui:'hisui',hisuian:'hisui',hisuiano:'hisui',hisuiana:'hisui',paldea:'paldea',paldean:'paldea',paldeano:'paldea',paldeana:'paldea'};
+    hisui:'hisui',hisuian:'hisui',hisuiano:'hisui',hisuiana:'hisui',nendo:'nendo',paldea:'paldea',paldean:'paldea',paldeano:'paldea',paldeana:'paldea'};
   const PALAVRA_FORMA = new Set(['form','forma','de','da','do','of','regional']);
   const PALAVRA_MEGA = new Set(['mega','gigantamax','gmax','primal','shiny']);
   // "Raichu (Alola Form)" · "Alolan Raichu" · "Raichu de Alola" · "Raichu-Alola"  →  {base:'raichu', regiao:'alola'}
@@ -3915,26 +3915,35 @@ window.calcSituSoma = function(){
   function indiceDB(){
     const db = (typeof pokemonDB !== 'undefined' && Array.isArray(pokemonDB)) ? pokemonDB : [];
     if(_ixDB && _ixN === db.length) return _ixDB;
-    const exato = new Map(), slug = new Map(), regional = new Map();
+    const exato = new Map(), slug = new Map(), regional = new Map(), alt = new Map(), altReg = new Map();
+    const LETRA_REG = {a:'alola', g:'galar', h:'hisui', p:'paldea', n:'nendo'};
     db.forEach(p => {
+      // formas_alt (ex.: "(N) Meowth"): vira um registro próprio, herdando do Pokémon base o que a forma não define
+      (p.formas_alt || []).forEach(f => {
+        const fn = f && (f.nome || f.name); if(!fn) return;
+        const reg = Object.assign({}, p, f, {name: fn, nome: fn, _formaAlt: true, url_slug: f.url_slug || p.url_slug});
+        const kf = chaveNome(fn); if(kf && !alt.has(kf)) alt.set(kf, reg);
+        const m = /^\(\s*([a-z])\s*\)\s*(.+)$/i.exec(String(fn).trim());   // "(N) Meowth" → meowth|nendo
+        if(m && LETRA_REG[m[1].toLowerCase()]){ const kr = chaveNome(m[2])+'|'+LETRA_REG[m[1].toLowerCase()]; if(!altReg.has(kr)) altReg.set(kr, reg); }
+      });
       const nm = p.name || p.nome; if(!nm) return;
       const k = chaveNome(nm); if(k && !exato.has(k)) exato.set(k, p);
       if(p.url_slug){ const ks = chaveNome(p.url_slug); if(ks && !slug.has(ks)) slug.set(ks, p); }
       const f = partesNome(nm); if(f.regiao && f.base){ const kr = f.base+'|'+f.regiao; if(!regional.has(kr)) regional.set(kr, p); }
     });
     _ixN = db.length;
-    return _ixDB = {exato, slug, regional};
+    return _ixDB = {exato, slug, regional, alt, altReg};
   }
   // Procura o Pokémon no dex. Forma regional que não existe no dex NÃO cai na espécie base (tipos errados).
   function acharInfo(nome){
     try{
       const ix = indiceDB(), k = chaveNome(nome);
       if(!k) return {reg:null};
-      let p = ix.exato.get(k) || ix.slug.get(k);
+      let p = ix.exato.get(k) || ix.slug.get(k) || ix.alt.get(k);
       if(p) return {reg:p, exato:true};
       const f = partesNome(nome);
       if(f.regiao){
-        p = f.base ? ix.regional.get(f.base+'|'+f.regiao) : null;
+        p = f.base ? (ix.regional.get(f.base+'|'+f.regiao) || ix.altReg.get(f.base+'|'+f.regiao)) : null;
         return p ? {reg:p, exato:true} : {reg:null, regiao:f.regiao};
       }
       // "Nome (variação)" · "Mega Nome X" → tenta só a espécie (aproximado, avisa no status)
