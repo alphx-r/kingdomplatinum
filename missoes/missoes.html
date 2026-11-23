@@ -516,12 +516,13 @@ dialog#qm{width:min(520px,94vw)}.qg{display:grid;grid-template-columns:1fr 1fr;g
 .qc img,.qc .ph{width:72px;height:72px;border-radius:50%;object-fit:cover;background:var(--s2);display:flex;align-items:center;justify-content:center;font:700 28px var(--ft);color:var(--mu)}
 .qc b{font:800 15px var(--ft);word-break:break-word}.qc small{font:600 12px var(--fb);color:var(--mu)}
 .fabb{position:absolute;top:-5px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--red,#c0392b);color:#fff;font:800 9px/16px var(--font-body);text-align:center;box-sizing:border-box}
-dialog#mym{width:min(720px,96vw);max-height:88vh;padding:0;border:0;border-radius:16px;overflow:hidden;background:var(--bg,var(--surface2));color:var(--text);box-shadow:0 16px 60px rgba(0,0,0,.45)}
+dialog#mym{width:min(720px,96vw);max-height:88vh;max-height:88dvh;padding:0;border:0;border-radius:16px;overflow:hidden;background:var(--bg,var(--surface2));color:var(--text);box-shadow:0 16px 60px rgba(0,0,0,.45)}
 dialog#mym[open]{display:flex;flex-direction:column}
 dialog#mym::backdrop{background:rgba(10,20,40,.7);backdrop-filter:blur(3px)}
 .mymh{flex:none;display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--surface);box-shadow:0 1px 6px rgba(0,0,0,.12)}.mymh h3{font:700 18px var(--font-title);margin:0}
 .mymx{border:0;background:none;font-size:18px;cursor:pointer;color:var(--muted,#666);padding:4px 8px}
-.mymc{flex:1;overflow-y:auto;grid-template-columns:minmax(0,1fr)!important;padding:14px;margin:0!important}
+.mymc{flex:1 1 auto;min-height:0;-webkit-overflow-scrolling:touch;overflow-y:auto;grid-template-columns:minmax(0,1fr)!important;padding:14px;margin:0!important}
+.mymt{flex:none;margin:12px 14px 0;overflow-x:auto;gap:4px}.mymt button{display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}.mymt .tb{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:rgba(0,0,0,.12);font:800 11px/18px var(--font-body);text-align:center}.mymt button.on .tb{background:rgba(255,255,255,.28)}
 .mymc h4{font:800 10px var(--font-body);text-transform:uppercase;letter-spacing:.6px;color:var(--muted,#666);margin:4px 2px 0}
 @media(max-width:700px){.pmtabs button{padding:9px 4px;font-size:12px}.pmtl{flex-direction:column;align-items:stretch}.pmtl .pmtabs{flex:none}.pmtl .pms{width:100%}}
 .pmg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;align-items:stretch}
@@ -758,6 +759,7 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
 <dialog id="qm" onclick="if(event.target===this)this.close()"><div class="mtl">Qual ficha está ativa?</div><div class="qg" id="qg" onclick="qmClick(event)"></div><div class="mb"><button type="button" class="btn s" onclick="qm.close()">Cancelar</button></div></dialog>
 <dialog id="mym" onclick="if(event.target===this)this.close()">
   <div class="mymh"><h3>Minhas missões</h3><button type="button" class="mymx" aria-label="Fechar" onclick="mym.close()">✕</button></div>
+  <div class="pmtabs mymt" id="mym-tabs" style="display:none"></div>
   <div class="pmg mymc" id="mym-list"></div>
 </dialog>
 <div class="toast" id="tst"></div>
@@ -966,15 +968,25 @@ async function api(path,opts={}){
 }
 
 /* ── Estado ── */
-let RAW={fmt:'a',jm:[],rl:[]},me=null,missoes=[],aceitas=[],meusPers=[],aba='disp',aceitando=null;
+let RAW={fmt:'a',jm:[],rl:[]},me=null,missoes=[],aceitas=[],meusPers=[],aba='disp',aceitando=null,mymTab=null,escopo=null;
 /* player logado = o da sessão do PokéMart (kp_ficha_sessao); sessão de admin do index não tem player, aí cai no player_session */
 function meAtual(){
- if(!ses)return null;let id=ses.player_id,nome=ses.nome;
- if(id==null){try{const p=JSON.parse(localStorage.getItem('player_session'));if(p&&p.id!=null&&nrm(p.nome)===nrm(ses.nome)){id=p.id;nome=p.nome}}catch{}}
+ if(!ses)return null;
+ const real=v=>v!=null&&String(v)!==''&&String(v)!=='admin';   /* 'admin' é papel de ADM/chefe, nunca o id do player */
+ let id=real(ses.player_id)?ses.player_id:null,nome=ses.nome;
+ if(id==null){try{const p=JSON.parse(localStorage.getItem('player_session'));if(p&&real(p.id)&&nrm(p.nome)===nrm(ses.nome)){id=p.id;nome=p.nome}}catch{}}
  return id!=null?{nome,id}:null;
 }
+/* sessão de ADM sem player_session: descobre o id real do player pelo nome, na lista de fichas */
+async function resolverMe(){
+ if(!ses||!ses.nome)return null;
+ try{const x=(await carregaLista()).find(f=>f&&f.player_id!=null&&String(f.player_id)!=='admin'&&nrm(f.player)===nrm(ses.nome));
+  if(x)return{nome:ses.nome,id:x.player_id}}catch(e){console.warn('me:',e.message)}
+ return null;
+}
 const meusIds=new Set();/* ids de todos os players com o mesmo nome (tratados como um só jogador) */
-const souEu=a=>!!me&&(String(a.player_id)===String(me.id)||meusIds.has(String(a.player_id)));
+/* 'admin' é id genérico de ADM/chefe (não de um player): nunca pode casar registros */
+const souEu=a=>!!me&&String(a.player_id)!=='admin'&&(String(a.player_id)===String(me.id)||meusIds.has(String(a.player_id)));
 
 async function carregarDados(){
  try{
@@ -1038,11 +1050,28 @@ function renderMinhas(){
  const minhas=aceitas.filter(a=>souEu(a)),andam=new Set(minhas.filter(a=>a.status==='aceita').map(a=>a.missao_id));
  bd.textContent=andam.size;bd.style.display=andam.size?'':'none';
  if(!mym.open)return;
- const por=m=>minhas.some(a=>a.missao_id===m.id),all=missoes.filter(por).sort(ordena);
- const em=all.filter(m=>andam.has(m.id)),fe=all.filter(m=>!andam.has(m.id));
- $('mym-list').innerHTML=all.length?(em.length?'<h4>Em andamento</h4>'+em.map(card).join(''):'')+(fe.length?'<h4>Concluídas</h4>'+fe.map(card).join(''):''):'<div class="empty">Você ainda não aceitou nenhuma missão.</div>';
+ /* uma aba por personagem (ficha) do player; "Outras" só aparece se houver missão sem ficha reconhecida */
+ const tb=$('mym-tabs'),nomeOk=a=>meusChars.some(c=>nrm(c.nome)===nrm(a.personagem||''));
+ const outras=meusChars.length?minhas.filter(a=>!nomeOk(a)):[];
+ const tabs=meusChars.map(c=>({k:c.slug,nome:c.nome,of:a=>nrm(a.personagem||'')===nrm(c.nome)}));
+ if(outras.length)tabs.push({k:'_o',nome:'Outras',of:a=>!nomeOk(a)});
+ let esc_=null;
+ if(tabs.length){
+  if(!tabs.some(t=>t.k===mymTab))mymTab=(fichaAtual()&&tabs.some(t=>t.k===fichaAtual().slug)?fichaAtual().slug:tabs[0].k);
+  tabs.forEach(t=>{t.l=minhas.filter(t.of);t.n=new Set(t.l.filter(a=>a.status==='aceita').map(a=>a.missao_id)).size});
+  tb.innerHTML=tabs.map(t=>`<button type="button" data-k="${esc(t.k)}" class="${t.k===mymTab?'on':''}">${esc(t.nome)}${t.n?`<span class="tb">${t.n}</span>`:''}</button>`).join('');
+  tb.style.display='';
+ }else{tb.style.display='none';tb.innerHTML=''}
+ const at=tabs.find(t=>t.k===mymTab),mm=at?at.l:minhas;
+ if(at&&at.k!=='_o')esc_=at.nome;
+ const ms=new Set(mm.map(a=>a.missao_id)),am=new Set(mm.filter(a=>a.status==='aceita').map(a=>a.missao_id));
+ const all=missoes.filter(m=>ms.has(m.id)).sort(ordena),em=all.filter(m=>am.has(m.id)),fe=all.filter(m=>!am.has(m.id));
+ escopo=esc_;
+ try{$('mym-list').innerHTML=all.length?(em.length?'<h4>Em andamento</h4>'+em.map(card).join(''):'')+(fe.length?'<h4>Concluídas</h4>'+fe.map(card).join(''):''):`<div class="empty">${at&&at.k!=='_o'?esc(at.nome)+' ainda não aceitou nenhuma missão.':'Você ainda não aceitou nenhuma missão.'}</div>`}
+ finally{escopo=null}
 }
-function abrirMinhas(){if(!me)return lg.showModal();mym.showModal();renderMinhas()}
+$('mym-tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-k]');if(!b)return;mymTab=b.dataset.k;renderMinhas()});
+function abrirMinhas(){if(!me)return lg.showModal();mymTab=null;mym.showModal();renderMinhas()}
 /* indisponível: desativada (só admin vê) ou bloqueada para todos os meus personagens (cooldown / não repetível). Em andamento não conta. */
 /* foto de quem aceitou: busca em personagens/players (campos de imagem comuns); sem foto, mostra a inicial */
 const FOTOS=new Map(),FCAND=['foto','avatar','imagem','image','img','foto_url','avatar_url','imagem_url','icon','sprite'];
@@ -1086,9 +1115,9 @@ const rkCor=r=>{const n=parseInt(r,10);return n>=1&&n<=5?RKC[n-1]:'#78909c'};
 const info=(k,v,w,c)=>v?`<div class="pi${w?' w':''}${c?' '+c:''}"><span class="pik">${k}</span><span class="piv">${esc(v)}</span></div>`:'';
 const linha=(k,v)=>v?`<dt>${k}:</dt><dd>${esc(v)}</dd>`:'';
 function card(m){
- const adm=isAdm(),aqui=aceitas.filter(a=>a.missao_id===m.id);
- const chips=aqui.filter(a=>adm||a.status==='concluida'||souEu(a)).map(a=>{
-  const eu=souEu(a),feito=a.status==='concluida',pode=adm||eu,nome=esc(a.personagem||a.player_nome);
+ const adm=isAdm(),aqui=aceitas.filter(a=>a.missao_id===m.id),sEu=a=>souEu(a)&&(!escopo||nrm(a.personagem||'')===nrm(escopo));
+ const chips=aqui.filter(a=>adm||a.status==='concluida'||sEu(a)).map(a=>{
+  const eu=sEu(a),feito=a.status==='concluida',pode=adm||eu,nome=esc(a.personagem||a.player_nome);
   const dt=feito&&(a.concluida_em||a.aceita_em)?' em '+new Date(a.concluida_em||a.aceita_em).toLocaleDateString('pt-BR'):'';
   let ac='';
   if(pode&&!feito)ac+=`<button title="Marcar como realizada" data-act="concluir" data-id="${a.id}">✔</button>`;
@@ -1099,7 +1128,7 @@ function card(m){
  const SV=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
  const IC={ok:SV('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),user:SV('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.4 7-5.4s6.2 1.8 7 5.4"/>'),lock:SV('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>')};
  let acao='',btn='';
- const tomadas=aqui.filter(a=>a.status==='aceita'),vg=nVagas(m),minha=tomadas.find(souEu),cheia=tomadas.length>=vg;
+ const tomadas=aqui.filter(a=>a.status==='aceita'),vg=nVagas(m),minha=tomadas.find(sEu),cheia=tomadas.length>=vg;
  const av=(a,me_)=>{const nm=a.personagem||a.player_nome||'',ft=fotoAc(a),ini=esc((nm[0]||'?').toUpperCase()),tt=esc(tomadas.map(x=>x.personagem||x.player_nome).join(', '));
   const im=ft?`<img src="${esc(ft)}" alt="${esc(nm)}" loading="lazy" onerror="this.outerHTML='<span class=&quot;ini&quot;>${ini}</span>'">`:`<span class="ini">${ini}</span>`;
   return me_?`<button type="button" class="pc-act taken me own" data-act="armar" data-aid="${a.id}" title="Em andamento com ${tt} — toque para cancelar" aria-label="Cancelar participação">${im}<span class="xx">✕</span></button>`
@@ -1114,8 +1143,8 @@ function card(m){
   else{const mb=bloqueio(m,ps[0]);btn=`<div class="pc-act lock" title="${esc(mb)}">${IC.lock}</div>`;acao=`<span class="hint">${esc(mb)}</span>`}
  }
  if(btn&&vg>1)btn=`<div class="pc-actw">${btn}<span class="pc-cnt" title="Vagas ocupadas">${tomadas.length}/${vg}</span></div>`;
- const mine=aqui.some(a=>souEu(a)&&a.status==='aceita');
- const ult=aqui.filter(a=>souEu(a)&&a.status==='concluida').sort((x,y)=>new Date(y.concluida_em||y.aceita_em)-new Date(x.concluida_em||x.aceita_em))[0];
+ const mine=aqui.some(a=>sEu(a)&&a.status==='aceita');
+ const ult=aqui.filter(a=>sEu(a)&&a.status==='concluida').sort((x,y)=>new Date(y.concluida_em||y.aceita_em)-new Date(x.concluida_em||x.aceita_em))[0];
  const ativa=m.ativa!==false,rk=rkN(m.ranking)||'—';
  return `<article class="pc ${mine?'on':''} ${abertas.has(m.id)?'open':''}" data-id="${esc(m.id)}" style="--rc:${rkCor(m.ranking)}">
   <div class="pc-top">
@@ -1203,6 +1232,7 @@ $('ac-go').onclick=async()=>{
   /* confere no banco se o personagem já está em outra missão (a tela pode estar desatualizada) */
   const outra=await api('missoes_aceitas?select=missao_id&status=eq.aceita&'+(pers?'personagem=eq.'+encodeURIComponent(pers):'personagem=is.null&player_id=eq.'+encodeURIComponent(String(me.id))));
   if(outra.some(x=>String(x.missao_id)!==String(m.id))){acm.close();await carregarDados();render();toast((pers||'Você')+' já está em outra missão. Conclua ou cancele antes de aceitar uma nova.');return}
+  if(!me||String(me.id)==='admin'){err.textContent='Não foi possível identificar seu player. Entre com a conta do player.';return}
   await api('missoes_aceitas',{method:'POST',body:JSON.stringify({missao_id:m.id,player_id:String(me.id),player_nome:me.nome,personagem:pers||null,status:'aceita'})});
   acm.close();await carregarDados();render();toast('Missão aceita! Boa sorte, '+(pers||me.nome)+'.');
  }catch(e){err.textContent=/duplicate|unique/i.test(e.message)?'Você já aceitou esta missão com esse personagem.':'Erro: '+e.message}
@@ -1492,7 +1522,7 @@ async function boot(){
  /* a tela de carregamento sempre sai, mesmo se algo falhar (rede lenta no celular, dado inesperado) */
  const seg=setTimeout(fim,8000);
  try{
-  mostrarBadge();me=meAtual();meusPers=[];$('btn-cfg').style.display=isAdm()?'flex':'none';
+  mostrarBadge();me=meAtual()||await resolverMe();meusPers=[];$('btn-cfg').style.display=isAdm()?'flex':'none';
   if(me){try{meusPers=await carregarPersonagens()}catch(e){console.warn('personagens:',e.message)}}
   if(await carregarDados())render();
  }catch(e){
