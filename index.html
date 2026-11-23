@@ -3853,13 +3853,26 @@ window.calcSituSoma = function(){
         if(P.tipos.length && !P.tipos.some(t => cl.residual.includes(t))) hints.push(cl.nome+': <b>'+(P.nome || 'Pokémon')+'</b> perde 1/16 do HP no fim do turno');
       }); }
 
-    // Stats efetivos por nível, mostrados abaixo dos campos de cada lado
+    // Stats efetivos por nível + estágio, mostrados abaixo dos campos de cada lado
     [A, D].forEach(P => {
       const el = $('cpk-'+P.s+'-efetivo'); if(!el) return;
-      if(P.nivel == null || [P.atk, P.def, P.spa, P.spd, P.spe].every(v => v == null)){ el.textContent = ''; return; }
-      const k = multStat(P.nivel);
+      if([P.atk, P.def, P.spa, P.spd, P.spe].every(v => v == null)){ el.textContent = ''; return; }
       const r0 = v => v == null ? '–' : Math.round(v);
-      el.innerHTML = 'Lv '+P.nivel+' → stats <b>×'+k.toFixed(2)+'</b> · base (Lv 50): HP '+r0(P.hpBase)+' · Atk '+r0(P.atk)+' · Def '+r0(P.def)+' · Sp.Atk '+r0(P.spa)+' · Sp.Def '+r0(P.spd)+' · Speed '+r0(P.spe);
+      let html = '';
+      if(P.nivel != null){
+        const k = multStat(P.nivel);
+        html = 'Lv '+P.nivel+' → stats <b>×'+k.toFixed(2)+'</b> · base (Lv 50): HP '+r0(P.hpBase)+' · Atk '+r0(P.atk)+' · Def '+r0(P.def)+' · Sp.Atk '+r0(P.spa)+' · Sp.Def '+r0(P.spd)+' · Speed '+r0(P.spe);
+      }
+      // Novo valor de cada stat com estágio (Mega = +1 em todos), mesma conta usada no cálculo de dano
+      const mudou = [['atk','Atk'],['def','Def'],['spa','Sp.Atk'],['spd','Sp.Def'],['spe','Speed']].map(([key, rot]) => {
+        const v = P[key]; if(v == null) return null;
+        const e = clamp((P.st[key] || 0) + (P.mega ? 1 : 0), -6, 6); if(!e) return null;
+        const antes = statEf(v, P.nivel);
+        const depois = Math.max(1, Math.floor(antes * multEstagio(e) + 1e-9));
+        return rot+' '+antes+' → <b>'+depois+'</b> ('+(e>0?'+':'')+e+')';
+      }).filter(Boolean);
+      if(mudou.length) html += (html ? '<br>' : '') + 'Com estágios: ' + mudou.join(' · ');
+      el.innerHTML = html;
     });
     const mult = multNiveis(A.nivel, D.nivel);
     const info = $('cpk-nivel-info');
