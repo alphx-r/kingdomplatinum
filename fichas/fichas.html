@@ -2291,8 +2291,8 @@ function histUne(ev){   /* ev em ordem cronológica crescente; cada item = entra
  for(const g of ev){
   const t=new Date(g[0].ts).getTime(),ss=g.find(e=>e.sessao)?.sessao||'',mo=g.find(e=>e.motivo)?.motivo||'',key=ss?g[0].slug+'|'+ss:g[0].slug,L=last.get(key);
   /* com id de sessão: tudo da mesma edição vira UM cartão (com o motivo); registros antigos continuam unidos por intervalo de 10 min */
-  if(L&&(ss||t-L.t1<=HW)){L.t1=t;L.x=g[0];if(mo)L.mo=mo;for(const e of g)for(const q of histSplit(e))histJunta(L.l,q)}
-  else{const o={x:g[0],t0:t,t1:t,l:[],mo,ss};for(const e of g)for(const q of histSplit(e))histJunta(o.l,q);out.push(o);last.set(key,o)}
+  if(L&&(ss||t-L.t1<=HW)){L.t1=t;L.x=g[0];if(mo)L.mo=mo;if(!g.every(e=>e.auto))L.au=false;for(const e of g)for(const q of histSplit(e))histJunta(L.l,q)}
+  else{const o={x:g[0],t0:t,t1:t,l:[],mo,ss,au:g.every(e=>e.auto)};for(const e of g)for(const q of histSplit(e))histJunta(o.l,q);out.push(o);last.set(key,o)}
  }
  for(const o of out)o.l=o.l.filter(e=>!histZero(e));
  return out.filter(o=>o.l.length).reverse()}
@@ -2320,7 +2320,7 @@ function histMain(){
   const x=o.x,t0=new Date(o.t0),t1=new Date(o.t1),por=x.por&&nrm(x.por)!==nrm(x.player||'')?`<small>· por ${esc(x.por)}</small>`:'';
   const who=HS?'':`<a href="/fichas/${encodeURIComponent(x.slug)}" data-r onclick="hism.close()">${esc(x.nome||x.slug)}</a>${x.player?` <small>(${esc(x.player)})</small>`:''}`;
   const hr=t=>t.toLocaleTimeString('pt-BR',HTZ),ts=(o.t0===o.t1?hr(t1):hr(t0)+' – '+hr(t1))+' · '+t1.toLocaleDateString('pt-BR',HTZ);
-  const mot=o.mo?`<div class="hs-mo"><b>Motivo</b>${esc(o.mo)}</div>`:`<div class="hs-mo vz">Sem motivo informado</div>`;
+  const mot=o.mo?`<div class="hs-mo"><b>Motivo</b>${esc(o.mo)}</div>`:o.au?`<div class="hs-mo vz">Automático (loja, item ou captura) — não pede motivo</div>`:`<div class="hs-mo vz">Sem motivo informado</div>`;
   return `<div class="hs-e"><div class="hs-eh"><span>${who} ${por}<span class="hs-n2">${o.l.length} alteraç${o.l.length===1?'ão':'ões'}</span></span><span class="hs-ts">${ts}</span></div>${mot}${o.l.map(e=>{const k=e.det?null:histCurto(e),tx=k?k.t:e.txt,dt=histFotoLn(e)?null:k?{a:k.a,d:k.d}:e.det;return `<div class="hs-ln"><span class="hs-p">${esc(HC[e.cat]||e.cat||'—')}</span><div class="hs-tx">${esc(tx)}${histDetBox({det:dt})}</div></div>`}).join('')}</div>`}).join('')}
 /* ===== motivo das alterações =====
    Cada edição de ficha é uma "sessão" (id gerado no 1º save). O autosave grava com { sessao }; ao salvar, sair da edição, trocar de página
