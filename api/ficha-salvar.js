@@ -1,6 +1,7 @@
 // POST /api/ficha-salvar
-//   { action:'save',   token, slug, nome, foto, banner, thumb, player_id, d }
-//   { action:'delete', token, slug }
+//   { action:'save',   token, slug, nome, foto, banner, thumb, player_id, d, sessao?, motivo? }
+//   { action:'delete', token, slug, motivo? }
+//   { action:'motivo', token, slug, sessao, motivo }   -> anexa o motivo às entradas do histórico daquela edição (sessao) que ainda não têm
 // A validação do token/permissão é feita pelas MESMAS funções que já existem no Supabase
 // (ficha_salvar / ficha_excluir). Se o Supabase recusar, nada é gravado no GitHub.
 const crypto = require('crypto');
@@ -90,6 +91,36 @@ function mesclaCampo(k, base, mine, theirs) {
   if (k === 'time' || k === 'box') return mesclaSlots(base, mine, theirs, k);
   if (k === 'dinheiro') return mesclaDinheiro(base, mine, theirs);
   return null;
+}
+
+// ---- MOTIVO DAS ALTERAÇÕES (histórico) ----
+// Cada edição da ficha tem um id (`sessao`). O autosave grava as entradas só com `sessao`; quando a pessoa informa o motivo
+// (salvar, sair da edição, trocar de página/aba) ele vai junto no save ou pela ação 'motivo', que preenche as entradas anteriores.
+// Ações automáticas (loja, uso de item, captura) levam `auto:true` e não pedem motivo.
+const limpaMotivo = v => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 400);
+const limpaSessao = v => /^[a-z0-9]{4,40}$/i.test(String(v || '')) ? String(v) : undefined;
+const marca = (arr, extra) => Array.isArray(arr) ? arr.map(e => (e && typeof e === 'object' ? { ...e, ...extra } : e)) : arr;
+const mesesRecentes = () => {   // mês atual (horário de Brasília) e o anterior
+  const d = new Date(Date.now() - 3 * 36e5), f = x => x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0');
+  return [f(d), f(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)))];
+};
+// preenche `motivo` nas entradas de { slug, sessao } que ainda não têm. Só faz commit se algo mudou.
+async function anexarMotivo(slug, sessao, motivo) {
+  let n = 0;
+  await commit(async parent => {
+    const ch = []; n = 0;
+    for (const mes of mesesRecentes()) {
+      const path = `data/historico/${mes}.json`, t = await readFile(path, parent);
+      if (!t) continue;
+      let arr; try { arr = JSON.parse(t); } catch { continue; }
+      if (!Array.isArray(arr)) continue;
+      let mudou = 0;
+      for (const e of arr) if (e && e.slug === slug && e.sessao === sessao && !e.motivo) { e.motivo = motivo; mudou++; }
+      if (mudou) { n += mudou; ch.push({ path, content: JSON.stringify(arr) }); }
+    }
+    return ch;
+  }, `historico: motivo (${slug})`);
+  return n;
 }
 
 async function sbRpc(nome, body) {
@@ -338,6 +369,17 @@ module.exports = async (req, res) => {
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
     if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug || '')) return res.status(400).json({ error: 'Slug inválido.' });
 
+    if (action === 'motivo') {   // anexa o motivo às entradas do histórico da edição `sessao`
+      const sessao = limpaSessao(b.sessao), motivo = limpaMotivo(b.motivo);
+      if (!sessao) return res.status(400).json({ error: 'Sessão inválida.' });
+      if (motivo.length < 3) return res.status(400).json({ error: 'Informe o motivo.' });
+      const t0 = await readFile(`data/fichas/${slug}.json`);
+      if (t0 == null) return res.status(404).json({ error: 'Ficha não encontrada.' });
+      const f0 = JSON.parse(t0);
+      await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: await dAtual(f0) });   // o Supabase confere token/permissão (regrava os dados iguais)
+      return res.json({ ok: true, atualizadas: await anexarMotivo(slug, sessao, motivo) });
+    }
+
     if (action === 'capturar') {
       const p = (b.pokemon && typeof b.pokemon === 'object') ? b.pokemon : {};
       const nomePk = String(p.nome || '').trim().slice(0, 60);
@@ -391,7 +433,7 @@ module.exports = async (req, res) => {
         saida = { repetida: false, f, onde, slot: i };
         const ch = [{ path: caminho, content: JSON.stringify(f) }];
         try {
-          const hist = await mudancaHist(readFile, parent, entradas(f, b.por, [...eventosItens('consumir', [{ nome: bolaNome, qtd: 1 }], 0, op), { cat: 'pokemon', txt: `Capturou ${nomePk}${novo.level ? ' lvl ' + novo.level : ''} com ${bolaNome} (${onde === 'time' ? 'time' : 'box'})` }]));
+          const hist = await mudancaHist(readFile, parent, marca(entradas(f, b.por, [...eventosItens('consumir', [{ nome: bolaNome, qtd: 1 }], 0, op), { cat: 'pokemon', txt: `Capturou ${nomePk}${novo.level ? ' lvl ' + novo.level : ''} com ${bolaNome} (${onde === 'time' ? 'time' : 'box'})` }]), { auto: true }));
           if (hist) ch.push(hist);
         } catch (e) { console.warn('ficha-salvar: histórico (capturar) falhou:', e.message); }
         const idx = parseIdx(await readFile('data/index.json', parent)).filter(x => x.slug !== slug);
@@ -429,7 +471,7 @@ module.exports = async (req, res) => {
         if (r.repetida) return [];
         f.d = r.d; f.atualizado_em = saida.atualizado_em = new Date().toISOString();
         const ch = [{ path: caminho, content: JSON.stringify(f) }];
-        const hist = await mudancaHist(readFile, parent, entradas(f, b.por, eventosItens(action, itens, custo, op)));
+        const hist = await mudancaHist(readFile, parent, marca(entradas(f, b.por, eventosItens(action, itens, custo, op)), { auto: true }));
         if (hist) ch.push(hist);
         return ch;
       }, `ficha: ${action === 'consumir' ? 'usar' : 'receber'} item (${slug})`);
@@ -446,7 +488,7 @@ module.exports = async (req, res) => {
         const ch = [{ path: `data/fichas/${slug}.json`, content: null }];
         try {
           const t = await readFile(`data/fichas/${slug}.json`, parent);
-          const hist = await mudancaHist(readFile, parent, entradas(t ? JSON.parse(t) : { slug, nome: slug, d: {} }, b.por, [{ cat: 'ficha', txt: 'Excluiu a ficha' }]));
+          const hist = await mudancaHist(readFile, parent, marca(entradas(t ? JSON.parse(t) : { slug, nome: slug, d: {} }, b.por, [{ cat: 'ficha', txt: 'Excluiu a ficha' }]), { motivo: limpaMotivo(b.motivo) || undefined }));
           if (hist) ch.push(hist);
         } catch {}
         for (const f of await listDir(`img/fichas/${slug}`, parent)) ch.push({ path: f.path, content: null });
@@ -581,7 +623,7 @@ module.exports = async (req, res) => {
       const pHist = (async () => {   // histórico: compara com a versão que está no GitHub agora
         try {
           const t = await readFile(`data/fichas/${slug}.json`, parent);
-          return await mudancaHist(readFile, parent, entradas(fin, b.por, diffFicha(t ? JSON.parse(t) : null, fin)));
+          return await mudancaHist(readFile, parent, marca(entradas(fin, b.por, diffFicha(t ? JSON.parse(t) : null, fin)), { sessao: limpaSessao(b.sessao), motivo: limpaMotivo(b.motivo) || undefined }));
         } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); return null; }
       })();
       const [hist, existentes, idxTxt] = await Promise.all([pHist, pExist, pIdx]);
@@ -603,6 +645,9 @@ module.exports = async (req, res) => {
       ch.push({ path: 'data/index.json', content: JSON.stringify(sortIdx(idx)) });
       return ch;
     }, `ficha: ${slug}`);
+
+    // veio o motivo: também preenche as entradas anteriores da mesma edição (as que o autosave já gravou sem motivo)
+    if (limpaSessao(b.sessao) && limpaMotivo(b.motivo).length >= 3) { try { await anexarMotivo(slug, limpaSessao(b.sessao), limpaMotivo(b.motivo)); } catch (e) { console.warn('ficha-salvar: motivo (anexar) falhou:', e.message); } }
 
     try { await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: nome, p_foto: urlsFinal.foto, p_banner: urlsFinal.banner, p_d: mesclado ? mesclado.d : b.d }); }
     catch (e) { console.warn('ficha-salvar: espelho Supabase falhou:', e.message); }   // o GitHub é a fonte da verdade
