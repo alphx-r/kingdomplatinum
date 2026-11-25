@@ -7,7 +7,7 @@
 const crypto = require('crypto');
 const { REPO, BRANCH, readFile, listDir, commit } = require('./_gh');
 const { aplicar } = require('./_itens');
-const { diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
+const { carregaEvo, diffFicha, entradas, eventosItens, mudancaHist } = require('./_historico');
 const T = require('./_torneios');   // torneios (arquivo com "_" não conta como função na Vercel)
 const ST = require('./_staff');     // lista de acesso (chefe/ADM/MOD) — config.kp_staff
 const NP = require('./_npcs');       // NPCs do npcdex em JSON (data/npcs/...)
@@ -623,6 +623,7 @@ module.exports = async (req, res) => {
       const pHist = (async () => {   // histórico: compara com a versão que está no GitHub agora
         try {
           const t = await readFile(`data/fichas/${slug}.json`, parent);
+          await carregaEvo();   // linha evolutiva (evoluiu/desevoluiu); se falhar, segue sem
           return await mudancaHist(readFile, parent, marca(entradas(fin, b.por, diffFicha(t ? JSON.parse(t) : null, fin)), { sessao: limpaSessao(b.sessao), motivo: limpaMotivo(b.motivo) || undefined }));
         } catch (e) { console.warn('ficha-salvar: histórico falhou:', e.message); return null; }
       })();
