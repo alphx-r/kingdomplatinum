@@ -1789,7 +1789,7 @@ const PKL=()=>PKD??=Promise.all([
  const l=Array.isArray(d)?d:(d?.pokemons||d?.results||[]);
  const byNum=new Map(l.filter(p=>p&&/^\d+$/.test(String(p.id))).map(p=>[String(p.id),String(p.nome||p.name||'')]));
  /* pokemon.json é a fonte principal; o Supabase só completa o que faltar (fakemons) ou assume se o json falhar */
- const of=l.map(p=>{const raw=p.nome||p.name||'';if(!raw)return null;const tipos=[p.tipo1,p.tipo2].filter(Boolean);if(!tipos.length&&Array.isArray(p.types))tipos.push(...p.types.filter(Boolean));const o={id:p.id,nome:raw.split(/[-\s]/).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '),k:nk(raw),raw,tipos,sprite:p.sprite||p.image||(p.id?'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/'+p.id+'.png':''),ab:abRow(p),st:stRow(p),mv:mvRow(p),sh:shRow(p)};const c=cm.get(o.k);if(c){if(!o.sh)o.sh=c.sh;{const nb=[...new Set([...o.mv,...c.mv])];nb.by=mvByMerge(o.mv.by,c.mv.by);o.mv=nb}o.st=o.st||c.st;if(!o.ab.length)o.ab=c.ab;if(!o.tipos.length)o.tipos=c.tipos}return regRename(o,byNum)}).filter(Boolean);
+ const of=l.map(p=>{const raw=p.nome||p.name||'';if(!raw)return null;const tipos=[p.tipo1,p.tipo2].filter(Boolean);if(!tipos.length&&Array.isArray(p.types))tipos.push(...p.types.filter(Boolean));const o={id:p.id,ev:Array.isArray(p.evolucoes)?p.evolucoes:null,nome:raw.split(/[-\s]/).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '),k:nk(raw),raw,tipos,sprite:p.sprite||p.image||(p.id?'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/'+p.id+'.png':''),ab:abRow(p),st:stRow(p),mv:mvRow(p),sh:shRow(p)};const c=cm.get(o.k);if(c){if(!o.sh)o.sh=c.sh;{const nb=[...new Set([...o.mv,...c.mv])];nb.by=mvByMerge(o.mv.by,c.mv.by);o.mv=nb}o.st=o.st||c.st;if(!o.ab.length)o.ab=c.ab;if(!o.tipos.length)o.tipos=c.tipos}return regRename(o,byNum)}).filter(Boolean);
  custom.forEach(c=>regRename(c,byNum));
  const ok=new Set(of.map(p=>p.k));
  const nf=regForms([...(Array.isArray(l)?l:[]),...cu]).filter(p=>!ok.has(p.k));nf.forEach(p=>ok.add(p.k));
@@ -2317,6 +2317,7 @@ function histUne(ev){   /* ev em ordem cronológica crescente; cada item = entra
 /* campos curtos ("Classe: A → B", "Pontos 100 → 150", "nature A → B"...): mesmo modelo das caixas Antes → Depois */
 function histCurto(e){let m;const c=histCad(e),v=x=>x==='—'?'':x;
  if(c)return{t:c[0],a:v(c[1]),d:v(c[2])};
+ if(e.cat==='pokemon'&&(m=e.txt.match(/^(Evoluiu|Desevoluiu): (.+?) → (.+)$/)))return{t:m[1],a:v(m[2]),d:v(m[3])};
  if(e.cat==='dinheiro'&&(m=e.txt.match(/^Dinheiro (.+?) → (.+?)(?: \(([+−].*)\))?$/)))return{t:'Dinheiro'+(m[3]?' ('+m[3]+')':''),a:v(m[1]),d:v(m[2])};
  if(e.cat==='pokemon'&&(m=e.txt.match(/^(Editou .+?): (nature|habilidade|feature|level|hold item|happiness|pokébola|gênero|apelido) "?(.+?)"? → "?(.+?)"?$/)))return{t:m[1]+': '+m[2],a:v(m[3]),d:v(m[4])};
  return null}
@@ -2368,6 +2369,14 @@ function motivoPedir(tit,sub,obrig,resumo){
 const MLBL={anotacoes:'Anotações',altura:'Altura',peso:'Peso',massa_muscular:'Massa muscular',indole:'Alinhamento',pontos:'Pontos',pts_ranking:'Pontos de Ranking',reputacao:'Reputação',pv:'PV',dinheiro:'Dinheiro',aniversario:'Aniversário',photoplayer:'Photoplayer',classe:'Classe',frase:'Frase',pronomes:'Pronomes',ocupacao:'Ocupação',idade:'Idade',naturalidade:'Naturalidade',historia:'História',timeline:'Timeline',relacionados:'Relacionados',rel_total:'Nº de relacionados',cor_pri:'Cor primária',cor_sec:'Cor secundária',ribbons:'Ribbons',insignias:'Insígnias',premiacoes:'Premiações',pins:'Pins',equipe:'Equipe',box_up:'Expansão da Box',box_mini:'Mini Box',desativada:'Desativada',time:'Time',box:'Box',inventario:'Bag'};
 const mLbl=k=>MLBL[k]||(k.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()));
 const mTxt=v=>{if(v==null)return '';if(typeof v==='object')return JSON.stringify(v);const t=document.createElement('div');t.innerHTML=String(v).replace(/<br\s*\/?>|<\/(p|div|li)>/gi,'\n');return t.textContent.replace(/\n{3,}/g,'\n\n').trim()};
+/* linha evolutiva: 'evoluiu' | 'desevoluiu' | null (usa o campo evolucoes do pokemon.json) */
+const evN=v=>String(v||'').toLowerCase().replace(/♀/g,'f').replace(/♂/g,'m').replace(/[^a-z0-9]/g,'');
+function evRel(a,b){
+ const na=evN(a),nb=evN(b);if(!na||!nb||na===nb)return null;
+ const ev=(pkSync(a)?.ev||pkSync(b)?.ev);if(!Array.isArray(ev))return null;
+ const ix=n=>ev.findIndex(e=>evN(e&&e.name)===n),ia=ix(na),ib=ix(nb);if(ia<0||ib<0)return null;
+ const sobe=(i,t)=>{for(let g=0;i>=0&&g<12;g++){if(i===t)return true;const p=ev[i]&&ev[i].from;i=p?p-1:-1}return false};
+ return sobe(ib,ia)?'evoluiu':sobe(ia,ib)?'desevoluiu':null}
 function motivoMudancas(){
  const out=[];try{
   const b=f&&f._bd,d=f&&f.d;if(!b||!d)return out;
@@ -2377,9 +2386,12 @@ function motivoMudancas(){
    if(k==='time'||k==='box'){
     const n=Math.max((A||[]).length,(D||[]).length);
     for(let i=0;i<n;i++){const x=(A||[])[i]||{},y=(D||[])[i]||{};if(J(x)===J(y))continue;
-     const lb=mLbl(k)+' · slot '+(i+1);
-     if((x.nome||'')!==(y.nome||''))out.push({l:lb,a:x.nome||'',d:y.nome||''});
-     else{const c=[...new Set([...Object.keys(x),...Object.keys(y)])].filter(q=>J(x[q])!==J(y[q])&&q!=='foto'||q==='foto'&&x.foto!==y.foto);out.push({l:lb+(y.nome?' ('+y.nome+')':''),nota:'Editado: '+c.join(', ')})}}
+     const lb=mLbl(k)+' · slot '+(i+1),nA=x.nome||'',nD=y.nome||'';
+     if(nA!==nD){const r=nA&&nD?evRel(nA,nD):null;out.push({l:lb+(r?' · '+(r==='evoluiu'?'Evoluiu':'Desevoluiu'):''),a:nA,d:nD})}
+     const nm=nD||nA,lq=lb+(nm?' ('+nm+')':''),FL={apelido:'Apelido',level:'Level',nature:'Nature',ability:'Ability',item:'Hold item',happ:'Happiness',ball:'Pokébola',gender:'Gênero',feature:'Feature'};
+     for(const q in FL){const va=String(x[q]??''),vd=String(y[q]??'');if(va!==vd)out.push({l:lq+' · '+FL[q],a:va,d:vd})}
+     const c=[...new Set([...Object.keys(x),...Object.keys(y)])].filter(q=>q!=='nome'&&!(q in FL)&&J(x[q])!==J(y[q]));
+     if(c.length)out.push({l:lq,nota:'Editado: '+c.join(', ')})}
     continue}
    if(k==='inventario'&&Array.isArray(D||[])&&Array.isArray(A||[])){
     const ag=l=>{const m=new Map();for(const it of(l||[])){if(!it||!it.nome)continue;const id=it.nome+(it.bag?' ('+it.bag+')':'');m.set(id,(m.get(id)||0)+(parseInt(it.qtd,10)>0?parseInt(it.qtd,10):1))}return m};
