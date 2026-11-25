@@ -14,6 +14,37 @@ const lim = v => s(v).slice(0, 4000);   // texto completo guardado em det (limit
 const arr = v => (Array.isArray(v) ? v : []);
 const nk = v => s(v).toLowerCase();
 
+// ---------- linha evolutiva (pokemon.json do kpfichas_db, campo "evolucoes") ----------
+const EVO_URL = 'https://raw.githubusercontent.com/alphx-r/kpfichas_db/main/pokemon.json';
+const evN = v => s(v).toLowerCase().replace(/♀/g, 'f').replace(/♂/g, 'm').replace(/[^a-z0-9]/g, '');
+let EVC = new Map(), EVT = 0;
+// carrega (com cache de 10 min) nome normalizado -> [{name, from}]. Se falhar, só não detecta evolução.
+async function carregaEvo() {
+  if (EVT && Date.now() - EVT < 600000) return EVC;
+  try {
+    const r = await fetch(EVO_URL);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(), l = Array.isArray(j) ? j : (j?.pokemons || j?.results || []), m = new Map();
+    for (const p of l) {
+      const k = evN(p?.name || p?.nome), ev = p?.evolucoes;
+      if (k && Array.isArray(ev) && ev.length > 1 && !m.has(k)) m.set(k, ev.map(e => ({ name: evN(e?.name), from: e?.from })));
+    }
+    EVC = m; EVT = Date.now();
+  } catch (e) { console.warn('historico: linha evolutiva indisponível:', e.message); EVT = Date.now() - 540000; }   // tenta de novo em ~1 min
+  return EVC;
+}
+// 'evoluiu' | 'desevoluiu' | null (b é descendente de a / a é descendente de b na mesma linha)
+function relEvo(a, b) {
+  const na = evN(a), nb = evN(b);
+  if (!na || !nb || na === nb) return null;
+  const ev = EVC.get(na) || EVC.get(nb);
+  if (!ev) return null;
+  const ia = ev.findIndex(e => e.name === na), ib = ev.findIndex(e => e.name === nb);
+  if (ia < 0 || ib < 0) return null;
+  const sobe = (i, t) => { for (let g = 0; i >= 0 && g < 12; g++) { if (i === t) return true; const p = ev[i] && ev[i].from; i = p ? p - 1 : -1; } return false; };
+  return sobe(ib, ia) ? 'evoluiu' : sobe(ia, ib) ? 'desevoluiu' : null;
+}
+
 const BAGS = { item: 'Item Bag', snack: 'Snack Case', forage: 'Forage Bag', trash: 'Trash Pocket' };
 const bagNome = b => BAGS[b] || BAGS.item;
 
@@ -34,7 +65,7 @@ const GEN = { male: 'macho', female: 'fêmea', genderless: 'sem gênero' };
 
 function movesDe(x) { return arr(x.moves).map(m => s(m?.n)).filter(Boolean); }
 
-function editaPk(a, b, dets = []) {   // a = antes, b = depois (mesmo Pokémon)
+function editaPk(a, b, dets = [], evo = false) {   // a = antes, b = depois (mesmo Pokémon; evo = mudou de espécie na mesma linha)
   const ch = [];
   if (s(a.apelido) !== s(b.apelido)) ch.push(s(a.apelido) ? (s(b.apelido) ? `apelido "${a.apelido}" → "${b.apelido}"` : `removeu o apelido "${a.apelido}"`) : `apelido definido: "${b.apelido}"`);
   for (const [k, l, g] of [['nature', 'nature', 'a'], ['ability', 'habilidade', 'a'], ['feature', 'feature', 'a'], ['level', 'level', 'o'], ['item', 'hold item', 'o'], ['happ', 'happiness', 'a']]) {
@@ -50,7 +81,8 @@ function editaPk(a, b, dets = []) {   // a = antes, b = depois (mesmo Pokémon)
   if (novos.length) ch.push('aprendeu ' + novos.join(', '));
   if (velhos.length) ch.push('esqueceu ' + velhos.join(', '));
   const sa = a.stats || {}, sb = b.stats || {}, st = [];
-  for (const k of ['hp', 'atk', 'def', 'satk', 'sdef', 'spd']) if (s(sa[k]) !== s(sb[k]) && (s(sa[k]) || s(sb[k]))) st.push(`${k.toUpperCase()} ${s(sa[k]) || '—'} → ${s(sb[k]) || '—'}`);
+  // ao evoluir, os stats mudam sozinhos (vêm da espécie): não vira linha de histórico
+  if (!evo) for (const k of ['hp', 'atk', 'def', 'satk', 'sdef', 'spd']) if (s(sa[k]) !== s(sb[k]) && (s(sa[k]) || s(sb[k]))) st.push(`${k.toUpperCase()} ${s(sa[k]) || '—'} → ${s(sb[k]) || '—'}`);
   if (st.length) ch.push('stats: ' + st.join(', '));
   const ta = a.ath || {}, tb = b.ath || {}, at = [];
   for (const k of ['pwr', 'stm', 'skl', 'jmp', 'spd']) if (s(ta[k]) !== s(tb[k]) && (s(ta[k]) || s(tb[k]))) at.push(`${k.toUpperCase()} ${s(ta[k]) || '—'} → ${s(tb[k]) || '—'}`);
@@ -71,9 +103,12 @@ function diffPokemon(A, B) {
   pass((o, n) => o.loc === n.loc && o.i === n.i && nk(o.x.nome) === nk(n.x.nome));
   pass((o, n) => nk(o.x.nome) === nk(n.x.nome) && nk(o.x.apelido) === nk(n.x.apelido));
   pass((o, n) => nk(o.x.nome) === nk(n.x.nome));
+  pass((o, n) => o.loc === n.loc && o.i === n.i && !!relEvo(o.x.nome, n.x.nome));   // mesmo slot, mesma linha evolutiva
   for (const [o, n] of pares) {
     if (o.loc !== n.loc) ev.push({ cat: 'pokemon', txt: `Moveu ${nomePk(n.x)} do ${LOC[o.loc]} para o ${LOC[n.loc]}` });
-    const dets = [], ch = editaPk(o.x, n.x, dets);
+    const rel = nk(o.x.nome) !== nk(n.x.nome) ? relEvo(o.x.nome, n.x.nome) : null;
+    if (rel) ev.push({ cat: 'pokemon', txt: `${rel === 'evoluiu' ? 'Evoluiu' : 'Desevoluiu'}: ${s(o.x.nome)} → ${s(n.x.nome)}${s(n.x.apelido) ? ` (${n.x.apelido})` : ''}` });
+    const dets = [], ch = editaPk(o.x, n.x, dets, !!rel);
     for (const c of ch) {   // uma linha por mudança
       const dt = dets.filter(x => c === (x.l === 'Combo' ? 'editou o Combo' : 'editou "Sobre o Pokémon"'));
       ev.push({ cat: 'pokemon', txt: `Editou ${nomePk(n.x)}: ${c}`, ...(dt.length ? { det: dt } : {}) });
@@ -192,4 +227,4 @@ async function mudancaHist(readFile, parent, novas) {
   return { path, content: JSON.stringify(todas) };
 }
 
-module.exports = { diffFicha, entradas, eventosItens, mudancaHist, mesDe, PASTA };
+module.exports = { carregaEvo, diffFicha, entradas, eventosItens, mudancaHist, mesDe, PASTA };
