@@ -37,8 +37,8 @@ function movesDe(x) { return arr(x.moves).map(m => s(m?.n)).filter(Boolean); }
 function editaPk(a, b, dets = []) {   // a = antes, b = depois (mesmo Pokémon)
   const ch = [];
   if (s(a.apelido) !== s(b.apelido)) ch.push(s(a.apelido) ? (s(b.apelido) ? `apelido "${a.apelido}" → "${b.apelido}"` : `removeu o apelido "${a.apelido}"`) : `apelido definido: "${b.apelido}"`);
-  for (const [k, l] of [['nature', 'nature'], ['ability', 'habilidade'], ['feature', 'feature']]) {
-    if (s(a[k]) !== s(b[k])) ch.push(s(a[k]) ? (s(b[k]) ? `${l} ${curto(a[k])} → ${curto(b[k])}` : `removeu ${l} ${curto(a[k])}`) : `${l} definida: ${curto(b[k])}`);
+  for (const [k, l, g] of [['nature', 'nature', 'a'], ['ability', 'habilidade', 'a'], ['feature', 'feature', 'a'], ['level', 'level', 'o'], ['item', 'hold item', 'o'], ['happ', 'happiness', 'a']]) {
+    if (s(a[k]) !== s(b[k])) ch.push(s(a[k]) ? (s(b[k]) ? `${l} ${curto(a[k])} → ${curto(b[k])}` : `removeu ${l} ${curto(a[k])}`) : `${l} definid${g}: ${curto(b[k])}`);
   }
   // ball/gender: o site preenche um padrão ao abrir, então só conta troca de um valor já existente
   if (s(a.ball) && s(b.ball) && s(a.ball) !== s(b.ball)) ch.push(`pokébola ${a.ball} → ${b.ball}`);
@@ -52,6 +52,9 @@ function editaPk(a, b, dets = []) {   // a = antes, b = depois (mesmo Pokémon)
   const sa = a.stats || {}, sb = b.stats || {}, st = [];
   for (const k of ['hp', 'atk', 'def', 'satk', 'sdef', 'spd']) if (s(sa[k]) !== s(sb[k]) && (s(sa[k]) || s(sb[k]))) st.push(`${k.toUpperCase()} ${s(sa[k]) || '—'} → ${s(sb[k]) || '—'}`);
   if (st.length) ch.push('stats: ' + st.join(', '));
+  const ta = a.ath || {}, tb = b.ath || {}, at = [];
+  for (const k of ['pwr', 'stm', 'skl', 'jmp', 'spd']) if (s(ta[k]) !== s(tb[k]) && (s(ta[k]) || s(tb[k]))) at.push(`${k.toUpperCase()} ${s(ta[k]) || '—'} → ${s(tb[k]) || '—'}`);
+  if (at.length) ch.push('atributos: ' + at.join(', '));
   if (s(a.combo) !== s(b.combo)) { ch.push('editou o Combo'); dets.push({ l: 'Combo', a: lim(a.combo), d: lim(b.combo) }); }
   if (s(a.sobre) !== s(b.sobre)) { ch.push('editou "Sobre o Pokémon"'); dets.push({ l: 'Sobre o Pokémon', a: lim(a.sobre), d: lim(b.sobre) }); }
   return ch;
