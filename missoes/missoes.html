@@ -769,8 +769,7 @@ addEventListener('load',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.dataset.
   <div class="pmtl">
     <div class="pmtabs" id="tabs">
       <button class="on" data-aba="disp">Disponíveis</button>
-      <button data-aba="mim">Para Mim</button>
-      <button data-aba="indisp">Indisponíveis</button>
+      <button data-aba="and">Em andamento</button>
     </div>
     <select class="pms" id="f-rank"><option value="">Todos os rankings</option></select>
   </div>
@@ -1181,18 +1180,10 @@ function render(){
  let l=missoes.filter(m=>m.ativa!==false||isAdm()).sort(ordena);
  if(rk)l=l.filter(m=>rkN(m.ranking)===rk);
  if(q)l=l.filter(m=>[m.titulo,m.local,m.mapa,m.descricao,m.estilo].join(' ').toLowerCase().includes(q));
-  if(aba==='mim'){
-  if(!me){$('board').innerHTML='<div class="empty">Entre com seu player para ver as missões do ranking do seu personagem.</div>';return}
-  if(!meusRanks.size){const sem=meusChars.map(c=>esc(c.nome)).join(', ');$('board').innerHTML='<div class="empty">'+(meusChars.length?'Encontrei seus personagens ('+sem+'), mas a ficha deles não tem o rank preenchido.':'Não encontrei nenhum personagem vinculado ao seu player ('+esc(me.nome)+').')+'</div>';return}
-  const disp=l.filter(m=>!indisponivel(m)),fa=fichaAtual(),cs=fa&&fa.rank?[fa]:[];
-  if(!cs.length){$('board').innerHTML='<div class="empty">A ficha <b>'+esc(fa?fa.nome:'')+'</b> não tem o rank preenchido.</div>';return}
-  $('board').innerHTML=cs.map(c=>{const ms=disp.filter(m=>rkN(m.ranking)===c.rank),ini=esc((c.nome[0]||'?').toUpperCase());
-   return `<div class="mim-h" style="--rc:${rkCor(c.rank)}"><span class="mim-av">${c.foto?`<img src="${esc(c.foto)}" alt="" loading="lazy" onerror="this.outerHTML='<span>${ini}</span>'">`:`<span>${ini}</span>`}</span><b>${esc(c.nome)}</b><span class="mim-rk">• Rank ${esc(c.rank)}</span></div>`+(ms.length?ms.map(card).join(''):'<div class="empty" style="grid-column:1/-1;margin:0">Nenhuma missão disponível neste ranking.</div>')}).join('');
-  return;
- }
- if(aba==='disp')l=l.filter(m=>!indisponivel(m));
- if(aba==='indisp')l=l.filter(indisponivel);
- $('board').innerHTML=l.length?l.map(card).join(''):aba==='indisp'?'<div class="empty">Nenhuma missão indisponível no momento.</div>':'<div class="empty">Nenhuma missão encontrada.</div>';
+ /* Disponíveis: livres para aceitar (admin também vê as desativadas, para poder editar). Em andamento: alguém está com a missão agora. */
+ if(aba==='disp')l=l.filter(m=>!indisponivel(m)||(isAdm()&&m.ativa===false));
+ if(aba==='and')l=l.filter(m=>m.ativa!==false&&emAndamento(m).length>0);
+ $('board').innerHTML=l.length?l.map(card).join(''):aba==='and'?'<div class="empty">Nenhuma missão em andamento no momento.</div>':'<div class="empty">Nenhuma missão encontrada.</div>';
 }
 const abertas=new Set();
 const RKC=['#43a047','#1e88e5','#8e24aa','#f4511e','#c62828'];
