@@ -1351,7 +1351,7 @@ const alfaKind=(t,n)=>{const s=nk(t),k=(ALFA_KINDS.find(k=>s.includes(k[0]))||[]
 const isAlfa=it=>!!it&&(/alpha/.test(nk(it.category))||!!alfaKind((it.category||'')+' '+(it.name||''),it.name||''));
 const keyStat=n=>{const t=nk(n);return/sdef|spdef|specialdef/.test(t)?'sdef':/def/.test(t)?'def':/atk|attack/.test(t)?'atk':/spd|speed/.test(t)?'spd':''};
 const ALFA_IC='<svg class="fsi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l5 10-5 10-5-10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 8l2 4-2 4-2-4z" fill="currentColor"/></svg>';
-async function alfaAdd(n){const it=(await ITL()).get(nk(n)),a=f.d.inventario=f.d.inventario||[],e=a.find(x=>x&&nk(x.nome)===nk(n)&&bg(x)==='alpha');if(e)e.qtd=(parseInt(e.qtd)||1)+1;else a.push({nome:n,qtd:1,bag:'alpha',kind:alfaKind((it?.category||'')+' '+n,n)});invm.close();render();toast('Item adicionado')}
+async function alfaAdd(n){const it=(await ITL()).get(nk(n)),a=f.d.inventario=f.d.inventario||[],e=a.find(x=>x&&nk(x.nome)===nk(n)&&bg(x)==='alpha'&&!x.economista);if(e)e.qtd=(parseInt(e.qtd)||1)+1;else a.push({nome:n,qtd:1,bag:'alpha',kind:alfaKind((it?.category||'')+' '+n,n)});invm.close();render();toast('Item adicionado')}
 const alfaHtml=()=>{const A=bagItems('alpha'),used=new Set(),kd=x=>x.kind||alfaKind(x.nome,x.nome),
  row=x=>`<div class="inv-c inv-v" data-it="${esc(x.nome)}" ${invDa(x,1)}><div class="inv-h"><img class="inv-i" alt="" style="display:none"><div class="inv-t"><span class="inv-n">${esc(invNm(x))}</span>${vnc(x)}${holdTag(x)} <i>x${esc(x.qtd)||1}</i></div></div><div class="inv-d">${esc(x.desc)}</div></div>`,
  grp=g=>{const it=A.filter(x=>!used.has(x)&&kd(x)===g.kind&&(!g.stat||keyStat(x.nome)===g.stat));it.forEach(x=>used.add(x));return it},
@@ -1418,7 +1418,7 @@ const bkDesc=x=>x&&bkNk(x.nome)&&x.bko==='fab'&&x.bkb&&x.bkb.length?'Berries: '+
 const bkHave=n=>(f.d.inventario||[]).reduce((t,x)=>x&&nk(x.nome)===nk(n)?t+(parseInt(x.qtd)||1):t,0);
 const bkAv=n=>bkHave(n)+BK_PREV.filter(b=>nk(b)===nk(n)).length*BK_M;
 function bkTake(n,q){const a=f.d.inventario||[];for(let i=0;i<a.length&&q>0;i++){const x=a[i];if(!x||nk(x.nome)!==nk(n))continue;const c=parseInt(x.qtd)||1,t=Math.min(c,q);q-=t;if(c-t>0)x.qtd=c-t;else{a.splice(i,1);i--}}}
-function bkGive(n,q){const a=f.d.inventario=f.d.inventario||[],e=a.find(x=>x&&nk(x.nome)===nk(n));if(e)e.qtd=(parseInt(e.qtd)||1)+q;else a.push({nome:n,qtd:q,bag:'forage'})}
+function bkGive(n,q){const a=f.d.inventario=f.d.inventario||[],e=a.find(x=>x&&nk(x.nome)===nk(n)&&!x.economista);if(e)e.qtd=(parseInt(e.qtd)||1)+q;else a.push({nome:n,qtd:q,bag:'forage'})}
 /* devolve as berries da receita anterior (se houver) e debita as novas, m = quantas unidades do Pokéblock */
 function bkApply(prev,nw,m){(prev||[]).forEach(b=>bkGive(b,m));(nw||[]).forEach(b=>bkTake(b,m))}
 const psBase=n=>String(n||'').replace(/^\s*personalized\s+/i,'').trim()||String(n||'');
@@ -1468,7 +1468,7 @@ function exOk(){const q=exPend;if(!q)return;let o={};
  const a=f.d.inventario=f.d.inventario||[];
  if(q.i!=null){const x=a[q.i];if(x){const pv=q.k==='blk'&&x.bko==='fab'?(x.bkb||[]).slice():[],pm=parseInt(x.qtd)||1;Object.assign(x,o);if('forma' in o&&!o.forma)delete x.forma;if('info' in o&&!o.info)delete x.info;if('bkb' in o&&!(o.bkb&&o.bkb.length))delete x.bkb;if(q.k==='blk')bkApply(pv,o.bkb||[],pm);render()}return}
  const same=q.k==='blk'?e=>e.happ===o.happ&&e.bko===o.bko&&(e.bkb||[]).join('|')===(o.bkb||[]).join('|'):q.k==='syn'?e=>e.hab===o.hab:q.k==='pers'&&o.forma?e=>e.forma===o.forma&&!e.info:null,
-  e=same&&a.find(x=>x&&nk(x.nome)===nk(q.n)&&(x.bag?bg(x):'item')===q.bag&&same(x));
+  e=same&&a.find(x=>x&&nk(x.nome)===nk(q.n)&&(x.bag?bg(x):'item')===q.bag&&same(x)&&!x.economista);
  if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const n={nome:q.n,qtd:1,bag:q.bag};if(o.hab)n.hab=o.hab;if(o.happ!=null){n.happ=o.happ;n.bko=o.bko;if(o.bkb&&o.bkb.length)n.bkb=o.bkb}if(o.forma)n.forma=o.forma;if(o.info)n.info=o.info;a.push(n)}
  if(q.k==='blk')bkApply([],o.bkb||[],1);
  render();toast(e?'Quantidade aumentada':'Item adicionado')}
@@ -1504,7 +1504,7 @@ function bkRead(){
 function bagDe(it){if(!it)return'item';const r=[['tm',isTM],['pill',isPill],['med',isMed],['snack',isSnack],['forage',isForage],['trash',isTrash],['ball',isBall],['alpha',isAlfa]].find(x=>x[1](it));return r?r[0]:'item'}
 async function invAdd(n){if(invSc==='all'){const it=(await ITL()).get(nk(n)),b=bagDe(it);if(BAGS.some(x=>x[0]===b)){invTg=b;invTab=b}}
  if(invTg==='alpha'){alfaAdd(n);return}{const it=(await ITL()).get(nk(n));if(infoNk(n)||psNk(n)||bkNk(n)||synIt(it)){invm.close();exOpen(n);return}}if(plNk(n)){invm.close();plmOpen(n);return}if(dcNk(n)){invm.close();dcOpen(n);return}invAddFin(n,'')}
-function invAddFin(n,fm){const a=f.d.inventario=f.d.inventario||[],k=nk(n),e=a.find(x=>x&&nk(x.nome)===k&&bg(x)===invTg&&(x.forma||'')===(fm||''));if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const o={nome:n,qtd:1,bag:invTg};if(fm)o.forma=fm;a.push(o)}if(isPkt({nome:n}))pktInicial();invm.close();render();toast(e?'Quantidade aumentada':'Item adicionado')}
+function invAddFin(n,fm){const a=f.d.inventario=f.d.inventario||[],k=nk(n),e=a.find(x=>x&&nk(x.nome)===k&&bg(x)===invTg&&(x.forma||'')===(fm||'')&&!x.economista);if(e)e.qtd=(parseInt(e.qtd)||1)+1;else{const o={nome:n,qtd:1,bag:invTg};if(fm)o.forma=fm;a.push(o)}if(isPkt({nome:n}))pktInicial();invm.close();render();toast(e?'Quantidade aumentada':'Item adicionado')}
 /* box: mesmo modelo de slot do time principal; 6 slots base + upgrades (quantidade vinda do items.json) */
 const BX_BASE=6,BX_MAX=120;let BX_MINI=2,BX_UP=5,BXL=0,BXSM='',BXSU='',BXCNT='',BXQ='';
 function bxQtd(it){if(!it)return 0;for(const k of ['slots','slot','box_slots','boxSlots','aumenta','aumento','quantidade','valor','value','amount','bonus']){const n=parseInt(it[k]);if(n>0)return n}
@@ -1701,7 +1701,7 @@ const bagPool=m=>{const a=[...m.values()],ok={tm:isTM,pill:isPill,med:isMed,snac
 /* visualização: TM Case (lista TM01–TM250) ao lado da Pill Case */
 function bagTmPill(){
  const T=bagItems('tm'),P=bagItems('pill'),mp=new Map(),ex=[],qt=x=>Math.max(1,parseInt(x.qtd)||1);
- T.forEach(x=>{const m=String(x.nome).match(/^TM[\s\-_]*(\d+)\s*[:\-–—]?\s*(.*)$/i),n=m?parseInt(m[1],10):0;if(m&&n>=1&&n<=250)mp.set(n,{mv:(m[2]||'').trim()||x.nome,q:qt(x)});else ex.push(x)});
+ T.forEach(x=>{const m=String(x.nome).match(/^TM[\s\-_]*(\d+)\s*[:\-–—]?\s*(.*)$/i),n=m?parseInt(m[1],10):0;if(m&&n>=1&&n<=250){const pv=mp.get(n);mp.set(n,{mv:(m[2]||'').trim()||x.nome,q:qt(x)+(pv?pv.q:0)})}else ex.push(x)});
  const rows=Array.from({length:250},(_,i)=>{const n=i+1,e=mp.get(n);return `<div class="tmr${e?' on':''}"><b>TM${String(n).padStart(2,'0')}</b>: <span>${e?esc(e.mv)+(e.q>1?' x'+e.q:''):'none'}</span></div>`}).join('');
  const exh=ex.length?`<div class="tmo"><b>Outros:</b> ${ex.map(x=>`<span class="inv-c tmo-i" data-it="${esc(x.nome)}"><span class="inv-n">${esc(invNm(x))}</span>${qt(x)>1?' x'+qt(x):''}<img class="inv-i" alt="" style="display:none"><span class="inv-d" style="display:none"></span></span>`).join(', ')}</div>`:'';
  const tm=sec('TM Case',`<div class="tmc"><div class="tml">${rows}</div>${exh}</div>`,true);
