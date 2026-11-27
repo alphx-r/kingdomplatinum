@@ -468,7 +468,7 @@ dialog#exm{width:min(420px,94vw);text-align:left}.exs{font:600 12px var(--fb);co
 
 /* Talentos (5 abas sob Ranking/Dinheiro/Reputação/PV; o clique abre um popup) */
 .tal{margin:-4px 0 14px;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;overflow:hidden}.tal .ctabs{margin:0;border-bottom:0;padding:0}.tal .ctabs{min-height:40px}.tal .ctabs button{flex:1 1 0;min-width:0;text-align:center;padding:10px 8px;margin-bottom:0;border-bottom-color:transparent}.tal .ctabs .tn{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tal .ctabs button.on{background:var(--pri);color:var(--on-pri,#fff)}.tal .ctabs button.on:hover{color:var(--on-pri,#fff)}.talp:not(:empty){padding:14px;border-top:1px solid var(--bd)}.talx{font:500 12.5px/1.55 var(--fb);color:var(--tx)}.talx b{font-weight:800;font-size:11.5px}.talmsg{color:var(--mu);font:600 13px var(--fb);text-align:center;padding:6px 0}.tals{margin-bottom:10px}.tals .in{width:100%}
+.tal .ctabs button.on{background:var(--pri);color:var(--on-pri,#fff)}.tal .ctabs button.on:hover{color:var(--on-pri,#fff)}.talwarn{margin:0;padding:9px 14px;background:#fdecea;color:#a12622;border-top:1px solid #f3c1bd;font:700 12.5px/1.45 var(--fb)}.tal .ctabs button.bad{color:#c0392b}.tal .ctabs button.bad.on{background:#c0392b;color:#fff}.talp:not(:empty){padding:14px;border-top:1px solid var(--bd)}.talx{font:500 12.5px/1.55 var(--fb);color:var(--tx)}.talx b{font-weight:800;font-size:11.5px}.talmsg{color:var(--mu);font:600 13px var(--fb);text-align:center;padding:6px 0}.tals{margin-bottom:10px}.tals .in{width:100%}
 @media(max-width:700px){.tal .ctabs button{padding:10px 4px;font-size:12px}}
 .cqg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.cqpg{max-height:320px;overflow-y:auto;padding:2px;margin-bottom:4px}.cqgp{display:none}.cqgp.on{display:block}.cqgp>.cqgh{display:none;color:var(--pri);font-size:11px;margin:12px 0 6px}.cqsearching .cqgp{display:block}.cqsearching .cqgp>.cqgh{display:block}.cqsearching .cqgp:first-child>.cqgh{margin-top:2px}.cqsearching .cqsub{display:none}.cqsearching .cqgp[hidden]{display:none}.cqhd{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px}.cqhd .cqsub{margin:0;flex:1 1 auto;min-width:0}.cqhd .cqx{margin:0;flex:0 1 300px;min-width:200px;margin-left:auto}.cqhd .cqsub button{padding:7px 14px;font-size:12px}
 .cqt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px 8px;border:1.5px solid var(--bd);border-radius:8px;background:var(--sf);cursor:pointer;font-family:var(--fb);color:var(--tx);text-align:center;position:relative;transition:border-color .15s,transform .15s}.cqt[hidden]{display:none}.cqt:hover{border-color:var(--pri);transform:translateY(-1px)}
@@ -1595,6 +1595,7 @@ function cqHtml(g='cq'){if(!f?.d)return'';const d=cqData(),ks=CQG[g]||[],list=ed
 /* ===== Talentos: 5 espaços (Talento I–V) abaixo de Ranking/Dinheiro/Reputação/PV =====
    Ao clicar numa aba o sistema lê o talentos.json (arquivo padrão do kpfichas_db). Por enquanto só aparece na ficha playerzero (player ADM). */
 const TALN=['Talento I','Talento II','Talento III','Talento IV','Talento V'];
+let TALW=false;   /* já avisou sobre requisito faltando nesta edição */
 let TALC=null,TALA=-1,TALS=0;   /* catálogo, talento aberto (-1 = nenhum), estado: 0 não lido · 1 lendo · 2 ok · 3 falhou */
 const talOn=()=>!!f&&isPZ(f);
 const talNm=x=>x&&(x.nome||x.name||x.titulo||x.title);
@@ -1606,6 +1607,8 @@ function talList(d){let l=Array.isArray(d)?d:d&&(d.talentos||d.talents||d.data||
 const talCan=n=>nk(String(n||'').trim().replace(/\s+I$/i,''));
 const talReqs=t=>{let r=t&&(t.requisito??t.requisitos??t.requirement);if(r==null||r==='')return[];if(!Array.isArray(r))r=String(r).split(/[,;+]/);return r.map(x=>String(x).trim()).filter(Boolean)};
 const talFalta=(t,own)=>talReqs(t).filter(r=>!own.some(o=>talCan(o)===talCan(r)));
+/* talentos cujo requisito não está em nenhum outro espaço (só confere com o catálogo lido) */
+const talPend=()=>{const a=f?.d?.talentos||[];if(!TALC)return[];return a.map((n,j)=>{if(!n)return null;const t=TALC.find(x=>nk(x.nome)===nk(n));if(!t)return null;const fl=talFalta(t,a.filter((m,k)=>m&&k!==j));return fl.length?{i:j,nome:n,falta:fl}:null}).filter(Boolean)};
 const talSel=i=>{const n=(f.d.talentos||[])[i];return n?(TALC||[]).find(t=>nk(t.nome)===nk(n))||{nome:n}:null};
 /* texto do talento (talentos.json → "descricao"): **negrito**, *itálico*, [tam=16]texto maior[/tam] (8–40 px) e \n para quebrar linha. Qualquer HTML é escapado. */
 function talRich(t){return esc(t).replace(/\*\*([\s\S]+?)\*\*/g,'<b>$1</b>').replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g,'$1<i>$2</i>').replace(/\[tam=(\d{1,2})\]([\s\S]*?)\[\/tam\]/g,(m,n,x)=>`<span style="font-size:${Math.min(40,Math.max(8,+n))}px">${x}</span>`).replace(/\n/g,'<br>')}
@@ -1618,9 +1621,21 @@ function talPanel(){const i=TALA;if(i<0)return'';
  const usados=new Set(a.filter((n,j)=>n&&j!==i).map(nk)),op=(TALC||[]).filter(x=>!usados.has(nk(x.nome))||nk(x.nome)===nk(cur)),ok=!cur||op.some(x=>nk(x.nome)===nk(cur));
  return`<div class="tals"><select class="in" onchange="talSet(${i},this.value)"><option value="">— ${TALN[i]}: nenhum —</option>${ok?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`}${op.map(x=>{const fl=talFalta(x,a.filter((m,j)=>m&&j!==i));return`<option value="${esc(x.nome)}"${nk(x.nome)===nk(cur)?' selected':''}${fl.length?' disabled':''}>${esc(x.nome)}${fl.length?' (requer '+esc(fl.join(', '))+')':''}</option>`}).join('')}</select></div>`+(tx||'<div class="talmsg">Escolha um talento da lista.</div>')}
 /* data-tl (e não data-ti, que o app usa para os ícones de tipo e apagaria o texto do botão) */
-function talInner(){const a=f.d.talentos||[];
- return`<nav class="ctabs" role="tablist">${TALN.map((n,i)=>`<button type="button" role="tab" aria-selected="${i===TALA}" class="${i===TALA?'on':''}" data-tl="${i}" onclick="talTab(${i})" title="${esc(a[i]||n)}"><span class="tn">${esc(a[i]||n)}</span></button>`).join('')}</nav><div class="talp" id="talp">${talPanel()}</div>`}
-function talHtml(){return talOn()?`<section class="tal" id="tal">${talInner()}</section>`:''}
+function talInner(){const a=f.d.talentos||[],pd=ed?talPend():[],bad=new Set(pd.map(x=>x.i));
+ const bn=pd.length?`<div class="talwarn talbn">⚠ Requisito faltando: ${pd.map(x=>esc(x.nome)+' (requer '+esc(x.falta.join(', '))+')').join('; ')}. Altere antes de salvar.</div>`:'';
+ return`<nav class="ctabs" role="tablist">${TALN.map((n,i)=>`<button type="button" role="tab" aria-selected="${i===TALA}" class="${i===TALA?'on':''}${bad.has(i)?' bad':''}" data-tl="${i}" onclick="talTab(${i})" title="${esc(a[i]||n)}"><span class="tn">${bad.has(i)?'⚠ ':''}${esc(a[i]||n)}</span></button>`).join('')}</nav>${bn}<div class="talp" id="talp">${talPanel()}</div>`}
+function talHtml(){if(!talOn())return'';
+ if(!ed)TALW=false;else if(!TALW){TALW=true;if(TALC)setTimeout(talWarn,0);else if(TALS===0)talLoadEd()}
+ return`<section class="tal" id="tal">${talInner()}</section>`}
+async function talLoadEd(){TALS=1;const d=await dbJson('talentos.json');if(d){TALC=talList(d);TALS=2}else TALS=3;talWarn()}
+/* ao abrir a edição: sinaliza o talento sem requisito, abre o espaço dele e pede a alteração */
+function talWarn(){if(!ed||!talOn())return;const p=talPend();if(!p.length){talDraw();return}
+ if(TALA<0||!p.some(x=>x.i===TALA))TALA=p[0].i;talDraw();
+ toast('Requisito faltando: '+p.map(x=>x.nome+' (requer '+x.falta.join(', ')+')').join('; ')+'. Altere antes de salvar.',10000)}
+/* salvar só com os requisitos em dia */
+{const _sv=salvar;salvar=async function(){const p=talOn()&&ed?talPend():[];
+ if(p.length){TALA=p[0].i;talDraw();alert('Corrija os talentos antes de salvar:\n'+p.map(x=>'• '+x.nome+' exige '+x.falta.join(', ')).join('\n'));return}
+ return _sv.apply(this,arguments)}}
 function talDraw(){const e=document.getElementById('tal');if(e&&talOn())e.innerHTML=talInner()}
 async function talTab(i){if(!talOn())return;TALA=TALA===i?-1:i;TALS=TALC?2:1;talDraw();if(TALA<0)return;
  const d=await dbJson('talentos.json');   /* lê o talentos.json a cada abertura (o dbJson já renova o cache por minuto) */
@@ -2541,6 +2556,7 @@ const asOn=()=>!!(ed&&f&&f.slug&&asF===f);
 function asReset(){asF=null;asBase=null;asAgain=false;asConf=false}
 async function asRun(quiet){
  if(asConf||!asOn()||asBase===null||asSnap()===asBase)return;
+ if(talOn()&&talPend().length){if(!quiet)toast('Talentos com requisito faltando — nada foi salvo. Corrija antes de sair.',6000);return}
  if(!(f.nome||'').trim()){if(!quiet)toast('Autosave não feito: informe o nome do personagem');return}
  if(asBusy){if(!quiet)asAgain=true;return}
  const F=f;asBusy=true;let ok=false;
@@ -2569,6 +2585,10 @@ salvarFicha=function(x){if(!x.criar&&x.slug&&!x.sessao)x.sessao=msGet(x.slug,x.n
    Object.entries(j.outros||{}).forEach(([k,v])=>{if(JSON.stringify(F.d[k])===JSON.stringify(F._bd[k])){F.d[k]=JSON.parse(JSON.stringify(v));novo=true}F._bd[k]=JSON.parse(JSON.stringify(v))});
    if(novo&&F===f){if(eq0)asBase=asSnap();toast('Mudanças feitas por outra pessoa foram mescladas na ficha',5000);if(!document.activeElement?.matches?.('input,textarea,select'))render()}}
   return j})};
+/* talento sem requisito: nenhum save (manual ou autosave) passa até corrigir */
+{const _s2=salvarFicha;salvarFicha=function(x){const p=ed&&talOn()&&x&&f&&x.slug===f.slug?talPend():[];
+ if(p.length){const e=new Error('Corrija os talentos antes de salvar: '+p.map(q=>q.nome+' exige '+q.falta.join(', ')).join('; '));e.cancelado=true;return Promise.reject(e)}
+ return _s2.apply(this,arguments)}}
 const _rd=render;
 render=function(){const r=_rd.apply(this,arguments);if(!ed||!f||!f.slug){if(asF)asReset()}else if(asF!==f){asF=f;asBase=asSnap();asConf=false}return r};
 const _cn=cancelar;
