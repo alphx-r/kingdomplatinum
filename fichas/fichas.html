@@ -467,7 +467,7 @@ dialog#exm{width:min(420px,94vw);text-align:left}.exs{font:600 12px var(--fb);co
 .ctp{display:none}.ctp.on{display:block}
 
 /* Talentos (5 abas sob Ranking/Dinheiro/Reputação/PV) */
-.tal{margin:-4px 0 14px;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;overflow:hidden}.tal .ctabs{margin:0;border-bottom:0;padding:0 4px}.tal .ctabs button{flex:1 1 0;text-align:center;padding:10px 8px;margin-bottom:0}.tal .ctabs button.on{border-bottom-color:var(--pri)}
+.tal{margin:-4px 0 14px;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;overflow:hidden}.tal .ctabs{margin:0;border-bottom:0;padding:0}.tal .ctabs button{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:center;padding:10px 8px;margin-bottom:0}.tal .ctabs button.on{background:var(--pri);color:var(--on-pri,#fff);border-bottom-color:var(--pri)}.tal .ctabs button.on:hover{color:var(--on-pri,#fff)}
 .talp{padding:0}.talp:not(:empty){padding:14px;border-top:1px solid var(--bd)}.talm{color:var(--mu);font:600 13px var(--fb);text-align:center;padding:6px 0}
 .talc h4{margin:0 0 6px;font:800 16px var(--fb);color:var(--tx)}.talc p{margin:0 0 10px;font:500 13.5px/1.5 var(--fb);color:var(--tx);white-space:pre-line}.talf{display:flex;flex-wrap:wrap;gap:6px 18px}.talf div{min-width:0}.talf .hl{margin-bottom:2px}.talf .hv{font-weight:700}
 .tals{display:flex;gap:8px;align-items:center;margin-bottom:10px}.tals .in{flex:1;min-width:0}
@@ -1604,10 +1604,14 @@ function talList(d){let l=Array.isArray(d)?d:d&&(d.talentos||d.talents||d.data||
  if(!l&&d&&typeof d==='object')l=d;
  if(l&&!Array.isArray(l)&&typeof l==='object')l=Object.entries(l).map(([k,v])=>v&&typeof v==='object'?{nome:k,...v}:{nome:k,descricao:v});
  return(Array.isArray(l)?l:[]).map(x=>typeof x==='string'?{nome:x}:x).filter(x=>x&&talNm(x)&&x.approved!==false).map(x=>({...x,nome:talNm(x)}))}
+/* requisito: vem do campo "requisito" do talentos.json (texto, lista ou "A, B"). "Brilhante I" vale como "Brilhante". */
+const talCan=n=>nk(String(n||'').trim().replace(/\s+I$/i,''));
+const talReqs=t=>{let r=t&&(t.requisito??t.requisitos??t.requirement);if(r==null||r==='')return[];if(!Array.isArray(r))r=String(r).split(/[,;+]/);return r.map(x=>String(x).trim()).filter(Boolean)};
+const talFalta=(t,own)=>talReqs(t).filter(r=>!own.some(o=>talCan(o)===talCan(r)));
 const talSel=i=>{const n=(f.d.talentos||[])[i];return n?(TALC||[]).find(t=>nk(t.nome)===nk(n))||{nome:n}:null};
 function talCard(t){const ds=t.descricao||t.desc||t.description||t.efeito||t.effect||'';
  const F=[['tipo','Tipo'],['categoria','Categoria'],['nivel','Nível'],['custo','Custo'],['requisito','Requisito'],['alcance','Alcance']].map(([k,l])=>t[k]!=null&&t[k]!==''?`<div><div class="hl">${l}</div><div class="hv">${esc(t[k])}</div></div>`:'').join('');
- return`<div class="talc"><h4>${esc(t.nome)}</h4>${ds?`<p>${esc(ds)}</p>`:''}${F?`<div class="talf">${F}</div>`:''}</div>`}
+ return`<div class="talc">${ds?`<p>${esc(ds)}</p>`:''}${F?`<div class="talf">${F}</div>`:''}</div>`}
 function talPanel(){const i=TALA;if(i<0)return'';
  if(TALS===1&&!TALC)return'<div class="talm">Carregando talentos...</div>';
  if(TALS===3&&!TALC)return'<div class="talm">Não foi possível ler o talentos.json. Clique na aba para tentar de novo.</div>';
@@ -1615,17 +1619,25 @@ function talPanel(){const i=TALA;if(i<0)return'';
  if(ed){const usados=new Set(a.filter((n,j)=>n&&j!==i).map(nk));
   const op=(TALC||[]).filter(t=>!usados.has(nk(t.nome))||nk(t.nome)===nk(cur));
   const ok=!cur||op.some(t=>nk(t.nome)===nk(cur));
-  return`<div class="tals"><select class="in" onchange="talSet(${i},this.value)"><option value="">— ${TALN[i]}: nenhum —</option>${ok?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`}${op.map(t=>`<option value="${esc(t.nome)}"${nk(t.nome)===nk(cur)?' selected':''}>${esc(t.nome)}</option>`).join('')}</select></div>`+(cur?talCard(talSel(i)):'<div class="talm">Escolha um talento da lista.</div>')}
+  return`<div class="tals"><select class="in" onchange="talSet(${i},this.value)"><option value="">— ${TALN[i]}: nenhum —</option>${ok?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`}${op.map(t=>{const fl=talFalta(t,a.filter((m,j)=>m&&j!==i));return`<option value="${esc(t.nome)}"${nk(t.nome)===nk(cur)?' selected':''}${fl.length?' disabled':''}>${esc(t.nome)}${fl.length?' (requer '+esc(fl.join(', '))+')':''}</option>`}).join('')}</select></div>`+(cur?talCard(talSel(i)):'<div class="talm">Escolha um talento da lista.</div>')}
  return cur?talCard(talSel(i)):'<div class="talm">Nenhum talento definido neste espaço.</div>'}
 function talInner(){const a=f.d.talentos||[];
- return`<nav class="ctabs" role="tablist">${TALN.map((n,i)=>`<button type="button" role="tab" aria-selected="${i===TALA}" class="${i===TALA?'on':''}" data-ti="${i}" onclick="talTab(${i})">${n}${a[i]?'<span class="cqn">•</span>':''}</button>`).join('')}</nav><div class="talp" id="talp">${talPanel()}</div>`}
+ return`<nav class="ctabs" role="tablist">${TALN.map((n,i)=>`<button type="button" role="tab" aria-selected="${i===TALA}" class="${i===TALA?'on':''}" data-ti="${i}" onclick="talTab(${i})" title="${esc(a[i]||n)}">${esc(a[i]||n)}</button>`).join('')}</nav><div class="talp" id="talp">${talPanel()}</div>`}
 function talHtml(){return talOn()?`<section class="tal" id="tal">${talInner()}</section>`:''}
 function talDraw(){const e=document.getElementById('tal');if(e&&talOn())e.innerHTML=talInner()}
 async function talTab(i){TALA=TALA===i?-1:i;talDraw();if(TALA<0)return;
  TALS=1;talDraw();const d=await dbJson('talentos.json');   /* lê o talentos.json a cada abertura (o dbJson já renova o cache por minuto) */
  if(d){TALC=talList(d);TALS=2}else TALS=TALC?2:3;
  if(talOn())talDraw()}
-function talSet(i,v){const a=Array.isArray(f.d.talentos)?f.d.talentos:(f.d.talentos=[]);while(a.length<5)a.push('');a[i]=v||'';talDraw()}
+function talSet(i,v){const a=Array.isArray(f.d.talentos)?f.d.talentos:(f.d.talentos=[]);while(a.length<5)a.push('');
+ if(v){const t=(TALC||[]).find(x=>nk(x.nome)===nk(v)),fl=t?talFalta(t,a.filter((m,j)=>m&&j!==i)):[];
+  if(fl.length){toast('Requisito não cumprido: '+fl.join(', '),4000);talDraw();return}}
+ a[i]=v||'';
+ /* quem dependia de um talento que saiu perde o requisito e também sai */
+ const rem=[];let ch=true;while(ch){ch=false;a.forEach((n,j)=>{if(!n)return;const t=(TALC||[]).find(x=>nk(x.nome)===nk(n));
+  if(t&&talFalta(t,a.filter((m,k)=>m&&k!==j)).length){rem.push(n);a[j]='';ch=true}})}
+ if(rem.length)toast('Removido por falta de requisito: '+rem.join(', '),4500);
+ talDraw()}
 function cqDraw(){if(!f)return;Object.keys(CQG).forEach(g=>{const c=document.getElementById(g);if(!c)return;c.innerHTML=cqHtml(g);cqIcs(c)})}
 function cqInit(){const cs=Object.keys(CQG).map(g=>document.getElementById(g)).filter(Boolean);if(!cs.length)return;cs.forEach(c=>cqIcs(c));if(ed&&!CQR)CQL().then(()=>cqDraw())}
 function setCTab(k){const g=Object.keys(CQG).find(x=>CQG[x].includes(k)),c=g&&document.getElementById(g);if(!c)return;tabCs[g]=k;c.querySelectorAll('.ctabs button').forEach(b=>b.classList.toggle('on',b.dataset.ck===k));c.querySelectorAll('.ctp').forEach(x=>x.classList.toggle('on',x.dataset.ck===k))}
