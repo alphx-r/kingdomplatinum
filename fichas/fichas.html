@@ -468,7 +468,7 @@ dialog#exm{width:min(420px,94vw);text-align:left}.exs{font:600 12px var(--fb);co
 
 /* Talentos (5 abas sob Ranking/Dinheiro/Reputação/PV; o clique abre um popup) */
 .tal{margin:-4px 0 14px;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;overflow:hidden}.tal .ctabs{margin:0;border-bottom:0;padding:0}.tal .ctabs{min-height:40px}.tal .ctabs button{flex:1 1 0;min-width:0;text-align:center;padding:10px 8px;margin-bottom:0;border-bottom-color:transparent}.tal .ctabs .tn{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-dialog#talm{width:min(460px,94vw);text-align:left}.talt{font:800 18px var(--ft);text-align:center;margin-bottom:10px}.talx{font:500 12.5px/1.55 var(--fb);color:var(--tx);margin-bottom:14px}.talx b{font-weight:800}.talmsg{color:var(--mu);font:600 13px var(--fb);text-align:center;padding:6px 0}.tals{margin-bottom:10px}.tals .in{width:100%}
+.tal .ctabs button.on{background:var(--pri);color:var(--on-pri,#fff)}.tal .ctabs button.on:hover{color:var(--on-pri,#fff)}.talp:not(:empty){padding:14px;border-top:1px solid var(--bd)}.talx{font:500 12.5px/1.55 var(--fb);color:var(--tx)}.talx b{font-weight:800;font-size:11.5px}.talmsg{color:var(--mu);font:600 13px var(--fb);text-align:center;padding:6px 0}.tals{margin-bottom:10px}.tals .in{width:100%}
 @media(max-width:700px){.tal .ctabs button{padding:10px 4px;font-size:12px}}
 .cqg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.cqpg{max-height:320px;overflow-y:auto;padding:2px;margin-bottom:4px}.cqgp{display:none}.cqgp.on{display:block}.cqgp>.cqgh{display:none;color:var(--pri);font-size:11px;margin:12px 0 6px}.cqsearching .cqgp{display:block}.cqsearching .cqgp>.cqgh{display:block}.cqsearching .cqgp:first-child>.cqgh{margin-top:2px}.cqsearching .cqsub{display:none}.cqsearching .cqgp[hidden]{display:none}.cqhd{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px}.cqhd .cqsub{margin:0;flex:1 1 auto;min-width:0}.cqhd .cqx{margin:0;flex:0 1 300px;min-width:200px;margin-left:auto}.cqhd .cqsub button{padding:7px 14px;font-size:12px}
 .cqt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px 8px;border:1.5px solid var(--bd);border-radius:8px;background:var(--sf);cursor:pointer;font-family:var(--fb);color:var(--tx);text-align:center;position:relative;transition:border-color .15s,transform .15s}.cqt[hidden]{display:none}.cqt:hover{border-color:var(--pri);transform:translateY(-1px)}
@@ -1595,7 +1595,7 @@ function cqHtml(g='cq'){if(!f?.d)return'';const d=cqData(),ks=CQG[g]||[],list=ed
 /* ===== Talentos: 5 espaços (Talento I–V) abaixo de Ranking/Dinheiro/Reputação/PV =====
    Ao clicar numa aba o sistema lê o talentos.json (arquivo padrão do kpfichas_db). Por enquanto só aparece na ficha playerzero (player ADM). */
 const TALN=['Talento I','Talento II','Talento III','Talento IV','Talento V'];
-let TALC=null,TALA=-1,TALS=0;   /* catálogo, talento aberto no popup (-1 = nenhum), estado: 0 não lido · 1 lendo · 2 ok · 3 falhou */
+let TALC=null,TALA=-1,TALS=0;   /* catálogo, talento aberto (-1 = nenhum), estado: 0 não lido · 1 lendo · 2 ok · 3 falhou */
 const talOn=()=>!!f&&isPZ(f);
 const talNm=x=>x&&(x.nome||x.name||x.titulo||x.title);
 function talList(d){let l=Array.isArray(d)?d:d&&(d.talentos||d.talents||d.data||d.results);
@@ -1610,28 +1610,22 @@ const talSel=i=>{const n=(f.d.talentos||[])[i];return n?(TALC||[]).find(t=>nk(t.
 /* texto do talento (talentos.json → "descricao"): **negrito**, *itálico*, [tam=16]texto maior[/tam] (8–40 px) e \n para quebrar linha. Qualquer HTML é escapado. */
 function talRich(t){return esc(t).replace(/\*\*([\s\S]+?)\*\*/g,'<b>$1</b>').replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g,'$1<i>$2</i>').replace(/\[tam=(\d{1,2})\]([\s\S]*?)\[\/tam\]/g,(m,n,x)=>`<span style="font-size:${Math.min(40,Math.max(8,+n))}px">${x}</span>`).replace(/\n/g,'<br>')}
 const talDesc=t=>t&&(t.descricao||t.desc||t.description||t.efeito||t.effect)||'';
-function talModal(){let m=document.getElementById('talm');if(m)return m;
- m=document.createElement('dialog');m.id='talm';m.setAttribute('onclick','if(event.target===this)this.close()');m.innerHTML='<div id="talmb"></div>';document.body.appendChild(m);
- m.addEventListener('close',()=>{TALA=-1});return m}
-function talBody(){const i=TALA,b=document.getElementById('talmb');if(!b||i<0)return;
- const a=f.d.talentos||[],cur=a[i]||'',t=cur?talSel(i):null;let h='';
- if(TALS===1&&!TALC)h='<div class="talmsg">Carregando talentos...</div>';
- else if(TALS===3&&!TALC)h='<div class="talmsg">Não foi possível ler o talentos.json.</div>';
- else if(ed){const usados=new Set(a.filter((n,j)=>n&&j!==i).map(nk));
-  const op=(TALC||[]).filter(x=>!usados.has(nk(x.nome))||nk(x.nome)===nk(cur));
-  const ok=!cur||op.some(x=>nk(x.nome)===nk(cur));
-  h=`<div class="tals"><select class="in" onchange="talSet(${i},this.value)"><option value="">— ${TALN[i]}: nenhum —</option>${ok?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`}${op.map(x=>{const fl=talFalta(x,a.filter((m,j)=>m&&j!==i));return`<option value="${esc(x.nome)}"${nk(x.nome)===nk(cur)?' selected':''}${fl.length?' disabled':''}>${esc(x.nome)}${fl.length?' (requer '+esc(fl.join(', '))+')':''}</option>`}).join('')}</select></div>`+(t?`<div class="talx">${talRich(talDesc(t))}</div>`:'<div class="talmsg">Escolha um talento da lista.</div>')}
- else h=t?`<div class="talx">${talRich(talDesc(t))}</div>`:'';
- b.innerHTML=`<div class="talt">${esc(ed?TALN[i]:(cur||TALN[i]))}</div>${h}<div class="mb" style="justify-content:center"><button type="button" class="btn s" onclick="document.getElementById('talm').close()">${ed?'Pronto':'Fechar'}</button></div>`}
+function talPanel(){const i=TALA;if(i<0)return'';
+ if(TALS===1&&!TALC)return'<div class="talmsg">Carregando talentos...</div>';
+ if(TALS===3&&!TALC)return'<div class="talmsg">Não foi possível ler o talentos.json. Clique na aba para tentar de novo.</div>';
+ const a=f.d.talentos||[],cur=a[i]||'',t=cur?talSel(i):null,tx=t?`<div class="talx">${talRich(talDesc(t))}</div>`:'';
+ if(!ed)return tx||'<div class="talmsg">Nenhum talento definido neste espaço.</div>';
+ const usados=new Set(a.filter((n,j)=>n&&j!==i).map(nk)),op=(TALC||[]).filter(x=>!usados.has(nk(x.nome))||nk(x.nome)===nk(cur)),ok=!cur||op.some(x=>nk(x.nome)===nk(cur));
+ return`<div class="tals"><select class="in" onchange="talSet(${i},this.value)"><option value="">— ${TALN[i]}: nenhum —</option>${ok?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`}${op.map(x=>{const fl=talFalta(x,a.filter((m,j)=>m&&j!==i));return`<option value="${esc(x.nome)}"${nk(x.nome)===nk(cur)?' selected':''}${fl.length?' disabled':''}>${esc(x.nome)}${fl.length?' (requer '+esc(fl.join(', '))+')':''}</option>`}).join('')}</select></div>`+(tx||'<div class="talmsg">Escolha um talento da lista.</div>')}
+/* data-tl (e não data-ti, que o app usa para os ícones de tipo e apagaria o texto do botão) */
 function talInner(){const a=f.d.talentos||[];
- return`<nav class="ctabs" role="tablist">${TALN.map((n,i)=>`<button type="button" role="tab" data-ti="${i}" onclick="talTab(${i})" title="${esc(a[i]||n)}"><span class="tn">${esc(a[i]||n)}</span></button>`).join('')}</nav>`}
+ return`<nav class="ctabs" role="tablist">${TALN.map((n,i)=>`<button type="button" role="tab" aria-selected="${i===TALA}" class="${i===TALA?'on':''}" data-tl="${i}" onclick="talTab(${i})" title="${esc(a[i]||n)}"><span class="tn">${esc(a[i]||n)}</span></button>`).join('')}</nav><div class="talp" id="talp">${talPanel()}</div>`}
 function talHtml(){return talOn()?`<section class="tal" id="tal">${talInner()}</section>`:''}
-function talDraw(){const e=document.getElementById('tal');if(e&&talOn())e.innerHTML=talInner();talBody()}
-async function talTab(i){if(!talOn())return;const a=f.d.talentos||[];if(!ed&&!a[i])return;   /* espaço vazio: nada a mostrar na visualização */
- const m=talModal();TALA=i;TALS=TALC?2:1;talBody();if(!m.open)m.showModal();
- const d=await dbJson('talentos.json');   /* lê o talentos.json a cada clique (o dbJson já renova o cache por minuto) */
+function talDraw(){const e=document.getElementById('tal');if(e&&talOn())e.innerHTML=talInner()}
+async function talTab(i){if(!talOn())return;TALA=TALA===i?-1:i;TALS=TALC?2:1;talDraw();if(TALA<0)return;
+ const d=await dbJson('talentos.json');   /* lê o talentos.json a cada abertura (o dbJson já renova o cache por minuto) */
  if(d){TALC=talList(d);TALS=2}else TALS=TALC?2:3;
- if(TALA===i)talBody();if(talOn())talDraw()}
+ if(talOn())talDraw()}
 function talSet(i,v){const a=Array.isArray(f.d.talentos)?f.d.talentos:(f.d.talentos=[]);while(a.length<5)a.push('');
  if(v){const t=(TALC||[]).find(x=>nk(x.nome)===nk(v)),fl=t?talFalta(t,a.filter((m,j)=>m&&j!==i)):[];
   if(fl.length){toast('Requisito não cumprido: '+fl.join(', '),4000);talDraw();return}}
