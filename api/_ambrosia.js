@@ -10,14 +10,19 @@
 //   POST { action:'ambrosia_aviso_apagar', nome, senha, id }              ADM/MOD
 //   POST { action:'ambrosia_matricula_status', nome, senha, slug, status, obs? }  ADM/MOD
 //   POST { action:'ambrosia_matricula_apagar', nome, senha, slug }        só ADM/chefe
+//   POST { action:'ambrosia_equipe_salvar', nome, senha, membro:{id?,nome,cargo,npc?} }  ADM/MOD  (npc = slug no NPCdex)
+//   POST { action:'ambrosia_equipe_mover', nome, senha, id, dir:-1|1 }    ADM/MOD
+//   POST { action:'ambrosia_equipe_importar', nome, senha, itens:[{nome,cargo,npc?}] }   ADM/MOD, só com a equipe vazia
+//   POST { action:'ambrosia_equipe_apagar', nome, senha, id }             só ADM/chefe
 // Cada matrícula, inscrição ou cancelamento é UM commit (como nas fichas): o arquivo do aluno e o índice são lidos de dentro
 // do commit (`parent`), então pedidos simultâneos de alunos diferentes não se atropelam.
 // Arquivos: data/ambrosia/aulas.json, avisos.json, index.json (resumo dos alunos) e alunos/<slug>.json.
 const { readFile, commit } = require('./_gh');
 const ST = require('./_staff');
 const SITE = 'ambrosiacademy';   // nome do site na lista kp_staff (mods[SITE])
-const P = { aulas: 'data/ambrosia/aulas.json', avisos: 'data/ambrosia/avisos.json', idx: 'data/ambrosia/index.json', aluno: s => `data/ambrosia/alunos/${s}.json` };
+const P = { aulas: 'data/ambrosia/aulas.json', avisos: 'data/ambrosia/avisos.json', equipe: 'data/ambrosia/equipe.json', idx: 'data/ambrosia/index.json', aluno: s => `data/ambrosia/alunos/${s}.json` };
 const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
+const SLUG_NPC = /^[\w-]{1,80}$/;   // slug do NPC no NPCdex
 const MODS = ['Matrícula Regular', 'Matrícula Parcial', 'Matrícula Temporária', 'Matrícula Livre', 'Matrícula em Cursos'];
 const CURSOS = ['Batalha e Estratégia', 'Ecologia dos Biomas', 'Criação e Cuidados', 'Treinamento de Campo', 'Exploração', 'Agricultura e Botânica', 'Ciências Pokémon', 'Tecnologia', 'Culinária', 'Outro (informar à secretaria)'];
 const FMTS = ['Presencial', 'Remoto', 'Externo (campo)', 'Híbrido'];
@@ -44,8 +49,8 @@ const ordena = l => l.sort((x, y) => String(x.nome).localeCompare(String(y.nome)
 
 async function lista(res) {
   res.setHeader('Cache-Control', 'no-store');
-  const [aulas, avisos, alunos] = await Promise.all([lerJ(P.aulas), lerJ(P.avisos), lerJ(P.idx)]);
-  return res.status(200).json({ aulas: arr(aulas), avisos: arr(avisos), alunos: arr(alunos) });
+  const [aulas, avisos, alunos, equipe] = await Promise.all([lerJ(P.aulas), lerJ(P.avisos), lerJ(P.idx), lerJ(P.equipe)]);
+  return res.status(200).json({ aulas: arr(aulas), avisos: arr(avisos), alunos: arr(alunos), equipe: arr(equipe) });
 }
 
 // um commit por pedido: lê o aluno e o índice dentro do commit, aplica `fn` e grava os dois juntos.
@@ -183,6 +188,55 @@ async function acaoStaff(action, b, res) {
       if (!l.some(x => x && x.id === id)) throw erro(404, 'Aviso não encontrado.');
       return [{ path: P.avisos, content: JSON.stringify(l.filter(x => x && x.id !== id)) }];
     }, `ambrosia: apagar aviso ${id}`);
+    return res.json({ ok: true });
+  }
+
+  // ---- equipe da escola (a página Equipe usa esta lista; `npc` liga o membro à ficha no NPCdex) ----
+  if (action === 'ambrosia_equipe_salvar') {
+    const m = b.membro || {}, nome = txt(m.nome, 80), cargo = txt(m.cargo, 160), npc = txt(m.npc, 80);
+    if (!nome) throw erro(400, 'Informe o nome do membro da equipe.');
+    if (npc && !SLUG_NPC.test(npc)) throw erro(400, 'Vínculo com o NPCdex inválido.');
+    let id = null;
+    await commit(async parent => {
+      const l = arr(await lerJ(P.equipe, parent)), i = m.id ? l.findIndex(x => x && x.id === m.id) : -1;
+      if (m.id && i < 0) throw erro(404, 'Membro não encontrado.');
+      if (i >= 0) { l[i] = { ...l[i], nome, cargo, npc, por: eu.nome, atualizado_em: agora }; id = l[i].id; }
+      else { id = nid('e'); l.push({ id, nome, cargo, npc, criado: agora, por: eu.nome }); }
+      return [{ path: P.equipe, content: JSON.stringify(l) }];
+    }, `ambrosia: equipe ${nome}`);
+    return res.json({ ok: true, id });
+  }
+
+  if (action === 'ambrosia_equipe_mover') {
+    const id = txt(b.id, 40), dir = Number(b.dir) < 0 ? -1 : 1;
+    await commit(async parent => {
+      const l = arr(await lerJ(P.equipe, parent)), i = l.findIndex(x => x && x.id === id), j = i + dir;
+      if (i < 0) throw erro(404, 'Membro não encontrado.');
+      if (j < 0 || j >= l.length) return [];
+      [l[i], l[j]] = [l[j], l[i]];
+      return [{ path: P.equipe, content: JSON.stringify(l) }];
+    }, `ambrosia: ordem da equipe`);
+    return res.json({ ok: true });
+  }
+
+  if (action === 'ambrosia_equipe_importar') {
+    const itens = arr(b.itens).slice(0, 60).map(x => ({ nome: txt(x && x.nome, 80), cargo: txt(x && x.cargo, 160), npc: SLUG_NPC.test(txt(x && x.npc, 80)) ? txt(x.npc, 80) : '' })).filter(x => x.nome);
+    if (!itens.length) throw erro(400, 'Nada para importar.');
+    await commit(async parent => {
+      if (arr(await lerJ(P.equipe, parent)).length) throw erro(409, 'A equipe já tem membros.');
+      return [{ path: P.equipe, content: JSON.stringify(itens.map((x, i) => ({ id: nid('e') + i, ...x, criado: agora, por: eu.nome }))) }];
+    }, `ambrosia: importar equipe`);
+    return res.json({ ok: true });
+  }
+
+  if (action === 'ambrosia_equipe_apagar') {
+    if (!eu.adm) throw erro(403, 'Só ADM remove membros da equipe.');
+    const id = txt(b.id, 40);
+    await commit(async parent => {
+      const l = arr(await lerJ(P.equipe, parent));
+      if (!l.some(x => x && x.id === id)) throw erro(404, 'Membro não encontrado.');
+      return [{ path: P.equipe, content: JSON.stringify(l.filter(x => x && x.id !== id)) }];
+    }, `ambrosia: remover da equipe ${id}`);
     return res.json({ ok: true });
   }
 
