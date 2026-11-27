@@ -610,6 +610,16 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{d
 }
 
 /* Economista: preço riscado + aviso do selo */
+.bfl{position:fixed;right:14px;bottom:14px;z-index:60;pointer-events:none;display:flex;align-items:center;gap:8px;padding:8px 14px 8px 10px;border-radius:12px;background:linear-gradient(145deg,#0b0b0b,#2b2b2b);border:1.5px solid #8c8c8c;box-shadow:0 6px 18px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.08);color:#f2f2f2;font-family:var(--font-title,serif);animation:bflf 3.2s ease-in-out infinite}
+.bfl-t{font-weight:800;font-size:11px;line-height:1.05;letter-spacing:.14em;text-align:center}
+.bfl-p{font-weight:900;font-size:24px;line-height:1;color:#ff3b3b;text-shadow:0 0 12px rgba(255,59,59,.45)}
+.bfl-c{display:block;font:700 9.5px/1 var(--font-body,sans-serif);letter-spacing:.04em;color:#bdbdbd;margin-top:3px}
+.bfl-w{display:flex;flex-direction:column}
+@keyframes bflf{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@media (prefers-reduced-motion:reduce){.bfl{animation:none}}
+@media (max-width:600px){.bfl{right:8px;bottom:8px;padding:6px 10px 6px 8px}.bfl-p{font-size:20px}}
+html.bf .sh-c{--sb:#111!important;--sm:#555!important;--sa:#9a9a9a!important}
+html.bf .sh-ban{filter:grayscale(1)}
 .eco-o{font-weight:600;opacity:.55;font-size:.8em;margin-left:4px}
 .eco-n{font:600 11.5px/1.4 var(--fb,inherit);color:var(--mu,#666);text-align:justify;margin:2px 2px 8px}
 
@@ -638,6 +648,8 @@ body.catalogo .pmcart,body.catalogo #pmc,body.catalogo #pmo,body.catalogo .pcf{d
 </nav>
 <div class="nav-overlay" id="nav-overlay" onclick="closeSidenavMobile()"></div>
 <div id="app"></div><div class="toast" id="tst"></div>
+<div class="bfl" id="bfl" role="img" aria-label="Black Friday: 40% de desconto em todas as lojas"><span class="bfl-t">BLACK<br>FRIDAY</span><span class="bfl-w"><span class="bfl-p">−40%</span><span class="bfl-c" id="bfc"></span></span></div>
+<script>(function(){var E=Date.parse('2026-11-28T00:00:00-03:00'),el=document.getElementById('bfl'),c=document.getElementById('bfc'),iv;function z(n){return String(n).padStart(2,'0')}if(E>Date.now())document.documentElement.classList.add('bf');function t(){var ms=E-Date.now();if(ms<=0){el.remove();document.documentElement.classList.remove('bf');clearInterval(iv);return}c.textContent='termina em '+z(Math.floor(ms/36e5))+':'+z(Math.floor(ms%36e5/6e4))+':'+z(Math.floor(ms%6e4/1e3))}iv=setInterval(t,1000);t()})()</script>
 <dialog id="qm" onclick="if(event.target===this)this.close()"><div class="mtl">Quem está acessando a loja?</div><div class="mu" style="text-align:center;margin:-8px 0 12px">Escolha a ficha que vai comprar e vender.</div><input class="in" id="qq" type="search" autocomplete="off" placeholder="Buscar ficha..." style="display:none" oninput="drawQm()"><div class="qg" id="qg" onclick="qmClick(event)"></div><div class="mb" id="qmb"></div></dialog>
 <dialog id="avm"><div class="avh"><span class="avi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></span><div><small id="avl"></small><h3 id="avt"></h3></div><button type="button" class="avx" onclick="avm.close()" aria-label="Fechar">✕</button></div><div class="avb" id="avx2"></div><div class="ava"><button type="button" class="btn p" onclick="avm.close()" autofocus>Entendi</button></div></dialog>
 <dialog id="cfm" onclick="if(event.target===this)this.close('no')"><form method="dialog"><div class="cfh"><h3>Confirmar transação</h3><p id="cfp"></p></div><div class="cfb" id="cfl"></div><div class="cft" id="cft"></div><div class="cfa"><button type="submit" class="btn" value="no">Cancelar</button><button type="submit" class="btn p" value="ok" autofocus>Confirmar</button></div></form></dialog>
@@ -754,10 +766,13 @@ const TEMAS_SAZ={
 const EST_MES={1:'primavera',2:'verao',3:'outono',4:'inverno',5:'primavera',6:'verao',7:'outono',8:'inverno',9:'primavera',10:'verao',11:'outono',12:'inverno'};
 const TEMA_LOJA={brand:'#1a3a5c',brandMid:'#2563a8',accent:'#e8a020'};
 /* dentro da loja vale só a cor da própria loja (ou o azul padrão), nunca a da estação */
-function aplicaTemaLoja(t){const c={...TEMA_LOJA,...(t||{})},r=document.documentElement.style;
+/* Black Friday: −40% em todas as lojas até a meia-noite de 27/11/2026 (Brasília); tema preto/cinza enquanto durar */
+const BF_PCT=40,BF_END=Date.parse('2026-11-28T00:00:00-03:00'),bfOn=()=>Date.now()<BF_END;
+const BF_TEMA={brand:'#111111',brandMid:'#3a3a3a',accent:'#8c8c8c',bg:'#808080',surface:'#ffffff',text:'#1a1f2e'};
+function aplicaTemaLoja(t){const c={...TEMA_LOJA,...(t||{}),...(bfOn()?{brand:BF_TEMA.brand,brandMid:BF_TEMA.brandMid,accent:BF_TEMA.accent}:{})},r=document.documentElement.style;
  aplicaTema({brand:c.brand,brandMid:c.brandMid,accent:c.accent,bg:'color-mix(in srgb,'+c.brandMid+' 7%,#fff)',surface:'#ffffff',text:'#1a1f2e'});
- r.setProperty('--brand-light','color-mix(in srgb,'+c.brandMid+' 14%,#fff)');r.setProperty('--accent-light','color-mix(in srgb,'+c.accent+' 18%,#fff)')}
-function aplicaTema(t){if(!t)return;const r=document.documentElement.style;[['--brand','brand'],['--brand-mid','brandMid'],['--accent','accent'],['--bg','bg'],['--surface','surface'],['--text','text']].forEach(([v,k])=>{if(t[k])r.setProperty(v,t[k])})}
+ r.setProperty('--brand-light','color-mix(in srgb,'+c.brandMid+' 14%,#fff)');r.setProperty('--accent-light','color-mix(in srgb,'+c.accent+' 18%,#fff)');if(bfOn())r.setProperty('--bg','color-mix(in srgb,#3a3a3a 9%,#fff)')}
+function aplicaTema(t){if(!t)return;if(bfOn())t={...t,...BF_TEMA};const r=document.documentElement.style;[['--brand','brand'],['--brand-mid','brandMid'],['--accent','accent'],['--bg','bg'],['--surface','surface'],['--text','text']].forEach(([v,k])=>{if(t[k])r.setProperty(v,t[k])})}
 const ESTP=(async()=>{
  try{aplicaTema(JSON.parse(localStorage.getItem('kp_tema')))}catch{}
  const IU='https://ucbkodkjlbatttiuqjtv.supabase.co',IK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmtvZGtqbGJhdHR0aXVxanR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NjExODcsImV4cCI6MjA5MzMzNzE4N30.a65MSk7m4DvgTw2pHXhaqMOOEpjTB_wPsXJUfvOGiG4';
@@ -850,10 +865,11 @@ function ecUnify(inv){if(!Array.isArray(inv))return inv;
  return inv}
 const temEco=f=>!!f&&Array.isArray(f.d?.talentos)&&f.d.talentos.some(n=>nk(n).startsWith('economista'));
 const ecoLoja=()=>(LJ?.slug||SL)==='pokemart'&&!LJ?.moeda_item;
-const ecoOn=()=>ecoLoja()&&!ECOOFF&&temEco(F);
-const ecoUn=it=>ecoOn()&&it?Math.floor(+it.price*ECO_PCT/100):0;   /* desconto por unidade */
+const ecoOn=()=>ecoLoja()&&!ECOOFF&&temEco(F)&&!bfOn();   /* na Black Friday o desconto de 40% vale no lugar do Economista (não acumulam) */
+const dscPct=()=>bfOn()?BF_PCT:ECO_PCT,dscLbl=()=>bfOn()?'Black Friday −'+BF_PCT+'%':'Economista −'+ECO_PCT+'%';
+const ecoUn=it=>(bfOn()||ecoOn())&&it?Math.floor(+it.price*dscPct()/100):0;   /* desconto por unidade */
 function ecoTog(){ECOOFF=!ECOOFF;drawList();drawSum()}
-const ecoBanner=()=>ecoLoja()&&temEco(F)?`<div class="pmk"><span>Talento Economista · −${ECO_PCT}%</span><span class="pmkb"><button type="button" class="vchc${ecoOn()?' on':''}" onclick="ecoTog()">${ecoOn()?'Desconto aplicado ✕':'Aplicar desconto'}</button></span></div><div class="eco-n">${ecoOn()?'Itens comprados com o desconto ficam selados e não podem ser revendidos.':'Sem o desconto, o item entra na Bag normalmente e pode ser revendido.'}</div>`:'';
+const ecoBanner=()=>bfOn()?`<div class="pmk"><span>Black Friday · −${BF_PCT}%</span></div><div class="eco-n">Desconto aplicado automaticamente em todas as compras até a meia-noite. Não acumula com o Economista.</div>`:ecoLoja()&&temEco(F)?`<div class="pmk"><span>Talento Economista · −${ECO_PCT}%</span><span class="pmkb"><button type="button" class="vchc${ecoOn()?' on':''}" onclick="ecoTog()">${ecoOn()?'Desconto aplicado ✕':'Aplicar desconto'}</button></span></div><div class="eco-n">${ecoOn()?'Itens comprados com o desconto ficam selados e não podem ser revendidos.':'Sem o desconto, o item entra na Bag normalmente e pode ser revendido.'}</div>`:'';
 const ecoSelados=()=>{const l=bag().filter(e=>ecN(e)>0);return l.length?`<div class="pmcd" style="grid-column:1/-1"><span><b>Selados (Economista):</b> ${l.map(e=>esc(e.nome)+' ×'+ecN(e)).join(', ')}. Não podem ser revendidos.</span></div>`:''};
 /* coloca na Bag: slot normal ou slot selado; o selado nasce logo depois do original (e o original, se vier depois, nasce logo antes do selado) */
 function invAdd(inv,it,q,eco){if(!(q>0))return;const k=nk(it.name),i=inv.findIndex(x=>x&&nk(x.nome)===k&&!x.vinculado&&!x.desconto);
@@ -1760,7 +1776,7 @@ function drawSum(){
  $('pmc').innerHTML=`<div class="pmch"><span>Carrinho${un?` (${un})`:''}</span><button type="button" onclick="toggleCart(false)" aria-label="Fechar">✕</button></div>
  <div class="pmcb">${n?(bl?'<h4>Compras</h4>'+bl:'')+(sl&&temVender()?'<h4>Vendas</h4>'+sl:''):'<div class="lt">Seu carrinho está vazio.</div>'}</div>
  <div class="pmcf">${nb?ecoBanner()+cupBanner()+`<div class="pmcp"><input class="in" id="cpi" placeholder="Cupom de desconto" autocomplete="off" value="${CUP?esc(CUP.codigo):''}"${CUP?' disabled':''} onkeydown="if(event.key==='Enter')aplicaCupom()">${CUP?'<button type="button" class="btn s" onclick="tiraCupom()">Remover</button>':'<button type="button" class="btn s" onclick="aplicaCupom()">Aplicar</button>'}</div><div class="le2" id="cpe"></div>`:''}
- <div class="pmr"><span>Compras</span><b>${fm(t.c)}</b></div>${t.vd?`<div class="pmr"><span>TM Voucher</span><b class="pos">−${fm(t.vd)}</b></div>`:''}${t.ed?`<div class="pmr"><span>Economista −${ECO_PCT}%</span><b class="pos">−${fm(t.ed)}</b></div>`:''}${t.d?`<div class="pmr"><span>${esc(cupLbl())}</span><b class="pos">−${fm(t.d)}</b></div>`:''}${temVender()?`<div class="pmr"><span>Vendas</span><b class="pos">+${fm(t.v)}</b></div>`:''}<div class="pmr"><span>Saldo atual</span><b>${F?fm(saldo()):'—'}</b></div>
+ <div class="pmr"><span>Compras</span><b>${fm(t.c)}</b></div>${t.vd?`<div class="pmr"><span>TM Voucher</span><b class="pos">−${fm(t.vd)}</b></div>`:''}${t.ed?`<div class="pmr"><span>${dscLbl()}</span><b class="pos">−${fm(t.ed)}</b></div>`:''}${t.d?`<div class="pmr"><span>${esc(cupLbl())}</span><b class="pos">−${fm(t.d)}</b></div>`:''}${temVender()?`<div class="pmr"><span>Vendas</span><b class="pos">+${fm(t.v)}</b></div>`:''}<div class="pmr"><span>Saldo atual</span><b>${F?fm(saldo()):'—'}</b></div>
  <div class="pmr tot"><span>Saldo final</span><b class="${t.fin<0?'neg':''}">${t.fin<0?'−':''}${fm(t.fin)}</b></div>
  <div class="suma"><button type="button" class="btn s" onclick="limpa()"${n?'':' disabled'}>Limpar</button><button type="button" class="btn p" onclick="finaliza()"${!F||!n||t.fin<0||busy?' disabled':''}>Finalizar</button></div></div>`}
 function limpa(){CB={};CS={};CUP=null;VCH={};drawList();drawSum()}
@@ -1870,7 +1886,7 @@ function confirmaTx(t){return new Promise(res=>{
  $('cfl').innerHTML=Object.entries(CB).map(([k,q])=>row('b',k,q)).join('')+Object.entries(CS).map(([k,q])=>row('s',k,q)).join('');
  $('cfp').textContent=F?.nome?'Ficha: '+F.nome:'';
  const r=(l,v,c='')=>`<div class="cfr ${c}"><span>${l}</span><b>${v}</b></div>`;
- $('cft').innerHTML=r('Saldo atual',fm(saldo()))+(t.c?r('Compras','−'+fm(t.c)):'')+(t.vd?r('TM Voucher','+'+fm(t.vd)):'')+(t.ed?r('Economista −'+ECO_PCT+'%','+'+fm(t.ed)):'')+(t.d&&CUP?r(esc(cupLbl()),'+'+fm(t.d)):'')+(t.v?r('Vendas','+'+fm(t.v)):'')+r('Saldo final',fm(t.fin),'fin')+(t.ed?'<div class="eco-n" style="margin-top:8px">Os itens comprados com o desconto do Economista serão selados e não poderão ser revendidos.</div>':'');
+ $('cft').innerHTML=r('Saldo atual',fm(saldo()))+(t.c?r('Compras','−'+fm(t.c)):'')+(t.vd?r('TM Voucher','+'+fm(t.vd)):'')+(t.ed?r(dscLbl(),'+'+fm(t.ed)):'')+(t.d&&CUP?r(esc(cupLbl()),'+'+fm(t.d)):'')+(t.v?r('Vendas','+'+fm(t.v)):'')+r('Saldo final',fm(t.fin),'fin')+(t.ed&&!bfOn()?'<div class="eco-n" style="margin-top:8px">Os itens comprados com o desconto do Economista serão selados e não poderão ser revendidos.</div>':'');
  d.returnValue='';d.addEventListener('close',()=>res(d.returnValue==='ok'),{once:true});d.showModal()})}
 
 /* transação: relê a ficha, aplica compras/vendas e salva de uma vez */
@@ -1896,8 +1912,8 @@ async function finaliza(){
    if(cur+en-q>0)inv[i].qtd=cur+en-q;else inv.splice(i,1);ganho+=sellUnit(it)*q}
   let ed=0;
   for(const[k,q]of Object.entries(CB)){const it=ITM.get(k);if(!isMart(it))throw new Error('Item indisponível em '+LJ.nome+': '+k);
-   const vm=Math.min(VCH[k]||0,q),qe=eco?q-vm:0,qs=eco&&!isTM(it)?qe:0;   /* qe: unidades com desconto; qs: as que ganham o selo (TM não precisa) */
-   invAdd(inv,it,q-qs,false);invAdd(inv,it,qs,true);gasto+=+it.price*q;ed+=Math.floor(+it.price*ECO_PCT/100)*qe}
+   const vm=Math.min(VCH[k]||0,q),qe=(eco||bfOn())?q-vm:0,qs=eco&&!isTM(it)?qe:0;   /* qe: unidades com desconto; qs: as que ganham o selo (TM não precisa) */
+   invAdd(inv,it,q-qs,false);invAdd(inv,it,qs,true);gasto+=+it.price*q;ed+=Math.floor(+it.price*dscPct()/100)*qe}
   let vd=0,vn=0;for(const[k,u]of Object.entries(VCH)){const it=ITM.get(k),m=Math.min(u,CB[k]||0);if(it&&m>0){vd+=+it.price*m;vn+=m}}
   if(vn>0){let r=vn;for(let i=0;i<inv.length&&r>0;i++){const x=inv[i];if(!x||nk(x.nome)!=='tmvoucher')continue;const q=parseInt(x.qtd)||1,m=Math.min(q,r);r-=m;if(q-m>0)x.qtd=q-m;else{inv.splice(i,1);i--}}if(r>0)throw new Error('O TM Voucher não está mais na Bag.');gasto-=vd}
   gasto-=ed;const dsc=cupDesc(gasto);gasto-=dsc;
