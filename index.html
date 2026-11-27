@@ -406,6 +406,8 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:non
 .hist-header{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .hist-del-btn{background:#fde8e8;color:var(--red);border:1px solid #f0c0c0;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap}
 .hist-del-btn:hover{background:#f8c8c8}
+.hist-moves-btn{display:inline-flex;align-items:center;gap:5px;background:var(--brand-light);color:var(--brand-mid);border:1px solid var(--border2);border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap}
+.hist-moves-btn:hover{filter:brightness(.95)}
 .hist-body{padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .hist-poke{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:16px 10px 14px;background:var(--surface);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:0 2px 8px rgba(20,30,50,.05);transition:all .2s}
 .hist-lvl{position:absolute;top:8px;right:8px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;background:color-mix(in srgb,var(--brand-mid) 14%,#fff);color:var(--brand);border:1px solid color-mix(in srgb,var(--brand-mid) 38%,#fff);letter-spacing:.3px;line-height:1.3}
@@ -15664,6 +15666,7 @@ function renderHistorico(){
         <div class="hist-acts">
           <span style="font-size:11px;color:var(--muted);white-space:nowrap">${e.hora} · ${e.data}</span>
           <button type="button" class="hist-img-btn ico" onclick="gerarImagemRolagem('${e.id}')" title="Compartilhar rolagem" aria-label="Compartilhar rolagem">${SVG_COMPARTILHAR}</button>
+          ${(ehAdm&&!_semRolarGolpes()&&pokes.some(pk=>pk&&pk.nome!=='???'&&pk.nivel!=null&&!(Array.isArray(pk.moves)&&pk.moves.length)))?`<button type="button" class="hist-moves-btn" onclick="rolarGolpesEntrada('${e.id}')" title="Sorteia os golpes só dos Pokémon desta rolagem que saíram sem golpes (os que já têm golpes não mudam)">${SVG_PERGAMINHO} Rolar golpes</button>`:''}
           ${podeExcluirRolagemEncontro?`<button class="hist-del-btn" onclick="excluirRolagemEncontro('${e.id}')">Excluir</button>`:''}
         </div>
       </div>
@@ -16100,15 +16103,23 @@ function _semRolarGolpes(){
   const n=String(playerLogado?.nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toLowerCase();
   return n==='lucas'||n==='jef';
 }
+const _golpesEmAndamento=new Set();   // trava contra duplo clique enquanto a rolagem está sendo salva
 async function rolarGolpesEntrada(id){
   if(_semRolarGolpes()) return;
   const e=historico.find(x=>String(x.id)===String(id)); if(!e) return;
+  if(_golpesEmAndamento.has(String(e.id))) return;
+  _golpesEmAndamento.add(String(e.id));
+  try{ await _rolarGolpesEntradaRun(e); } finally{ _golpesEmAndamento.delete(String(e.id)); }
+}
+async function _rolarGolpesEntradaRun(e){
+  // Relê a rolagem do banco antes de sortear: se outro aparelho/aba já rolou os golpes, não sorteia de novo (só uma vez).
+  try{ const r=await sb(`historico?id=eq.${e.id}&select=pokes`); if(r&&r[0]&&Array.isArray(r[0].pokes)) e.pokes=r[0].pokes; }catch(_){}
   const pokes=Array.isArray(e.pokes)?e.pokes:[], feitos=[];
   pokes.forEach(pk=>{
     if(!pk||pk.nome==='???'||pk.nivel==null||(Array.isArray(pk.moves)&&pk.moves.length)) return;
     if(pkSortearMoves(pk)) feitos.push(pk);
   });
-  if(!feitos.length){ imgToast('Nenhum Pokémon com golpes para rolar'); return; }
+  if(!feitos.length){ imgToast('Nenhum Pokémon com golpes para rolar'); renderHistorico(); return; }
   try{ await dbPatch('historico',`id=eq.${e.id}`,{pokes}); }
   catch(err){ feitos.forEach(pk=>{ delete pk.moves; delete pk.movesEgg; }); imgToast('Erro ao salvar os golpes'); return; }
   renderHistorico(); if(loaded.rolagens) renderRolagens();
