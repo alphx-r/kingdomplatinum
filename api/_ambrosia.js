@@ -22,6 +22,15 @@ const MODS = ['Matrícula Regular', 'Matrícula Parcial', 'Matrícula Temporári
 const CURSOS = ['Batalha e Estratégia', 'Ecologia dos Biomas', 'Criação e Cuidados', 'Treinamento de Campo', 'Exploração', 'Agricultura e Botânica', 'Ciências Pokémon', 'Tecnologia', 'Culinária', 'Outro (informar à secretaria)'];
 const FMTS = ['Presencial', 'Remoto', 'Externo (campo)', 'Híbrido'];
 const STATUS = ['pendente', 'aprovada', 'recusada'];
+// Regular, Parcial e Livre: departamento fixo "Todos" (veem todas as aulas). Temporária e em Cursos: só o departamento escolhido.
+const MODS_TODOS = ['Matrícula Regular', 'Matrícula Parcial', 'Matrícula Livre'];
+const MODS_DEPTO = ['Matrícula Temporária', 'Matrícula em Cursos'];
+const nrm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+// departamento a que a matrícula dá acesso; null = todos (também quando é "Outro", que a secretaria ainda vai definir)
+function deptoDe(m) {
+  const c = txt(m && m.curso, 80);
+  return m && MODS_DEPTO.includes(m.mod) && c && !/^outro\b/i.test(c) ? c : null;
+}
 
 const erro = (status, msg) => Object.assign(new Error(msg), { status });
 const arr = x => Array.isArray(x) ? x : [];
@@ -66,7 +75,8 @@ async function acaoAluno(action, b, res, donoOk) {
   if (!SLUG.test(slug)) throw erro(400, 'Slug inválido.');
   const f0 = await donoOk(b.token, slug);
   if (action === 'ambrosia_matricular') {
-    const mod = escolha(b.mod, MODS, 'Modalidade'), curso = escolha(b.curso, CURSOS, 'Curso'), fmt = escolha(b.fmt, FMTS, 'Formato');
+    const mod = escolha(b.mod, MODS, 'Modalidade'), fmt = escolha(b.fmt, FMTS, 'Formato');
+    const curso = MODS_TODOS.includes(mod) ? 'Todos' : escolha(b.curso, CURSOS, 'Curso');
     const duracao = mod === 'Matrícula Temporária' ? txt(b.duracao, 60) : '', inicial = txt(b.inicial, 60);
     const r = await mexerAluno(slug, f0, async a => {
       if (a.matricula && a.matricula.status !== 'recusada') return { mudou: false, repetida: true, status: a.matricula.status };
@@ -82,6 +92,8 @@ async function acaoAluno(action, b, res, donoOk) {
       if (!a.matricula || a.matricula.status !== 'aprovada') throw erro(403, 'A matrícula ainda não foi aprovada.');
       const aula = arr(await lerJ(P.aulas, parent)).find(x => x && x.id === id);
       if (!aula || !aula.pub) throw erro(404, 'Aula não encontrada.');
+      const depto = deptoDe(a.matricula);
+      if (depto && nrm(aula.curso) !== nrm(depto)) throw erro(403, 'Esta aula não é do seu departamento (' + depto + ').');
       if (a.inscricoes.some(i => i.aula_id === id)) return { mudou: false, repetida: true };
       if (aula.vagas > 0) {
         const n = arr(await lerJ(P.idx, parent)).filter(x => x && x.slug !== slug && arr(x.inscricoes).includes(id)).length;
