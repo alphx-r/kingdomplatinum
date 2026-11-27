@@ -11,6 +11,7 @@ const { carregaEvo, diffFicha, entradas, eventosItens, mudancaHist } = require('
 const T = require('./_torneios');   // torneios (arquivo com "_" não conta como função na Vercel)
 const ST = require('./_staff');     // lista de acesso (chefe/ADM/MOD) — config.kp_staff
 const NP = require('./_npcs');       // NPCs do npcdex em JSON (data/npcs/...)
+const AM = require('./_ambrosia');   // Ambrosia Academy: aulas, avisos, matrículas e inscrições em JSON (data/ambrosia/...)
 const BR = require('./_berries');    // berries do RPG em JSON (data/berries.json)
 const PV = require('./_provas');     // Provas de Valor (página editável) em JSON (data/provasdevalor.json)
 // Uma função só (plano Hobby da Vercel: máx. 12 funções):
@@ -321,6 +322,15 @@ async function atribuir(b, res) {
   return res.json({ ok: true, slug, player_id: pid, player: nomePlayer, atualizado_em: saida.atualizado_em, supabase_linhas: Array.isArray(linhas) ? linhas.length : 0 });
 }
 
+// confere token/permissão do player na ficha (mesma regra de 'consumir'/'capturar') e devolve a ficha com o d atual
+async function donoOk(token, slug) {
+  const t0 = await readFile(`data/fichas/${slug}.json`);
+  if (t0 == null) throw Object.assign(new Error('Ficha não encontrada.'), { status: 404 });
+  const f0 = JSON.parse(t0), d = await dAtual(f0);
+  await sbRpc('ficha_salvar', { p_token: token, p_slug: slug, p_nome: f0.nome, p_foto: f0.foto ?? null, p_banner: f0.banner ?? null, p_d: d });
+  return { ...f0, d };
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'GET') {
     try {
@@ -335,6 +345,7 @@ module.exports = async (req, res) => {
         return res.status(200).send(t || '[]');
       }
       if (q.npcmigrar) { res.setHeader('Cache-Control', 'no-store'); return await NP.migrar(q, res); }
+      if (q.ambrosia) return await AM.lista(res);
       if (q.berries) return await BR.obter(res);
       if (q.provas) return await PV.obter(res);
       if (q.npcs) return await NP.lista(res);
@@ -364,6 +375,7 @@ module.exports = async (req, res) => {
     if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
     if (/^berries_/.test(action)) return await BR.acao(action, b, res);   // ADM edita as berries com nome+senha do player
     if (/^provas_/.test(action)) return await PV.acao(action, b, res);   // ADM edita as Provas de Valor com nome+senha do player
+    if (/^ambrosia_/.test(action)) return await AM.acao(action, b, res, donoOk);   // aluno usa o token da ficha; ADM/MOD usam nome+senha
     if (/^npc_/.test(action)) return await NP.acao(action, b, res);   // ADM edita NPC com nome+senha do player
     if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
     if (!token || typeof token !== 'string') return res.status(401).json({ error: 'Sessão ausente.' });
