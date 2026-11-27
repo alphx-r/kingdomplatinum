@@ -962,6 +962,7 @@ html,body{min-height:100%;font-family:var(--font-body);color:var(--text);backgro
     <div class="adm-actions">
       <button class="btn btn-outline" id="btn-sync-pk" onclick="pkjSincronizarClick()" title="Traz para o ADM o que outros admins já commitaram, sem commitar nada. Suas alterações pendentes são preservadas.">🔄 Sincronizar</button>
       <button class="btn btn-outline" id="btn-migrar-links" onclick="kpMigrarLinksSprites()" title="Troca todos os links de foto que ainda apontam para o repositório antigo (kingdomplatinum) pelo novo (kpfichas_db), para as fotos que já foram copiadas. Só altera no ADM; depois é preciso commitar o pokemon.json.">🖼️ Atualizar links das fotos</button>
+      <button class="btn btn-outline" id="btn-limpar-vazios" onclick="pkLimparSemMovesSemFoto()" title="Remove do ADM todos os Pokémon que não têm nenhum golpe (nível, TM, Egg, Tutor) e não têm foto. Só altera em memória (entra em Edições); quem grava no GitHub é o botão Commit pokemon.json.">🧹 Limpar sem moves e sem foto</button>
       <button class="btn btn-outline" id="btn-manual-backup" onclick="runManualBackup()" title="Sincroniza com o GitHub e depois grava (pokemon.json) todas as alterações feitas no ADM. O commit só acontece quando você clica aqui — nada é commitado automaticamente.">📤 Commit pokemon.json</button>
     </div>
   </div>
@@ -2241,7 +2242,7 @@ async function pkjGravar(force) {
     catch (e) { pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '', 'warn'); throw e; }   // cancelou nos conflitos: nada muda
     const rows = res.rows;
     rows.forEach(kpFixSprites);
-    if (rows.length < remote.length - 25) { PKJ.dirty = true; throw new Error(`Segurança: o resultado teria ${rows.length} Pokémon, mas o pokemon.json no GitHub tem ${remote.length}. Recarregue a página antes de gravar para não apagar dados.`); }
+    if (rows.length < remote.length - 25 - (PKJ.apagadosIntencionais || 0)) { PKJ.dirty = true; throw new Error(`Segurança: o resultado teria ${rows.length} Pokémon, mas o pokemon.json no GitHub tem ${remote.length}. Recarregue a página antes de gravar para não apagar dados.`); }
     pkjAplicarNaMemoria(rows);
     PKJ.base = snapRemoto; PKJ.count = remote.length;   // já estou em dia com este remoto: se o commit falhar ou repetir, só o que EU mudei conta
     const baseNova = pkjSnapshot(rows);
@@ -2252,6 +2253,7 @@ async function pkjGravar(force) {
       const body = await kpCommitPokemonJson(rows, hashRemoto);
       PKJ.preCommit = snapRemoto; PKJ.lastCommitAt = Date.now();   // como o GitHub estava ANTES deste commit (detecta cache velho depois)
       PKJ.base = baseNova; PKJ.count = rows.length;       // o que foi commitado vira a nova base
+      PKJ.apagadosIntencionais = 0;                       // limpeza em massa já foi commitada
       pkjGuardarUltimoCommit(rows);                      // cópia interna do que acabou de ir pro GitHub
       pkjDraftSalvar(true);                              // nada pendente → apaga o rascunho local (ou guarda só o que sobrou)
       pkjStatus(PKJ.dirty ? '⏳ Alteração não commitada' : '✓ Commit feito no pokemon.json', PKJ.dirty ? 'warn' : 'ok', PKJ.dirty);
@@ -7396,6 +7398,38 @@ async function deletePkModal() {
     closeModal('edit-pokemon-modal');
     toast('🗑 Deletado do pokemon.json!', 'ok');
   } catch(e) { toast('Erro ao deletar: ' + e.message, 'err'); }
+}
+
+/* Limpeza em massa: remove Pokémon SEM nenhum golpe (moves_level/tm/egg/tutor) e SEM foto (sprite).
+   Só altera o pokemon.json em memória (entra em Edições); quem commita é o botão "Commit pokemon.json". */
+function pkTemLista(v) { return Array.isArray(v) ? v.length > 0 : !!(v && typeof v === 'object' && Object.keys(v).length); }
+function pkVazio(p) {
+  if (!p) return false;
+  const semMoves = !['moves_level', 'moves_tm', 'moves_egg', 'moves_tutor'].some(k => pkTemLista(p[k]));
+  const semFoto = !String(p.sprite || '').trim();
+  return semMoves && semFoto;
+}
+async function pkLimparSemMovesSemFoto() {
+  try { pkjCheck(); } catch (e) { toast(e.message, 'err'); return; }
+  const alvos = Object.values(S.pk.dbMap || {}).filter(pkVazio);
+  if (!alvos.length) { toast('Nenhum Pokémon sem moves e sem foto.', 'ok'); return; }
+  const nome = p => p.name || p.nome || p.id;
+  const comLocal = alvos.filter(p => pkTemLista(p.encontros_local)).length;
+  const lista = alvos.slice(0, 15).map(nome).join(', ') + (alvos.length > 15 ? ` … e mais ${alvos.length - 15}` : '');
+  const msg = `⚠️ Remover ${alvos.length} Pokémon sem nenhum golpe e sem foto?\n\n${lista}\n\n`
+    + (comLocal ? `${comLocal} deles têm Locais de encontro cadastrados, que também serão perdidos (eles deixam de aparecer no rolador).\n\n` : '')
+    + 'Nada vai para o GitHub agora: a remoção entra em Edições e só é gravada ao clicar em "Commit pokemon.json".';
+  if (!await kpConfirm(msg, { title: 'Limpar sem moves e sem foto', okLabel: `Remover ${alvos.length}` })) return;
+  const ids = new Set(alvos.map(p => String(p.id)));
+  ids.forEach(id => { delete S.pk.dbMap[id]; });
+  PKJ.apagadosIntencionais = (PKJ.apagadosIntencionais || 0) + ids.size;   // a trava anti-perda não pode barrar esta remoção proposital
+  pkjSujo();
+  S.pk.all = S.pk.all.filter(p => !ids.has(String(p.id)));
+  S.pk.filtered = (S.pk.filtered || []).filter(p => !ids.has(String(p.id)));
+  if (typeof rpgResync === 'function') rpgResync();
+  applyPkFilter();
+  updatePkStats();
+  toast(`🧹 ${ids.size} Pokémon removidos (pendente de commit)`, 'ok');
 }
 
 function updatePkStats() {
