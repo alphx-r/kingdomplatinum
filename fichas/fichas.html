@@ -469,7 +469,7 @@ dialog#exm{width:min(420px,94vw);text-align:left}.exs{font:600 12px var(--fb);co
 /* Talentos (5 abas sob Ranking/Dinheiro/Reputação/PV; o clique abre um popup) */
 .tal{margin:-4px 0 14px;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;overflow:hidden}.tal .ctabs{margin:0;border-bottom:0;padding:0}.tal .ctabs{min-height:40px}.tal .ctabs button{flex:1 1 0;min-width:0;text-align:center;padding:10px 8px;margin-bottom:0;border-bottom-color:transparent}.tal .ctabs .tn{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tal .ctabs button.on{background:var(--pri);color:var(--on-pri,#fff)}.tal .ctabs button.on:hover{color:var(--on-pri,#fff)}.talwarn{margin:0;padding:9px 14px;background:#fdecea;color:#a12622;border-top:1px solid #f3c1bd;font:700 12.5px/1.45 var(--fb)}.tal .ctabs button.bad{color:#c0392b}.tal .ctabs button.bad.on{background:#c0392b;color:#fff}.talp:not(:empty){padding:14px;border-top:1px solid var(--bd)}.talx{font:500 12.5px/1.55 var(--fb);color:var(--tx)}.talx b{font-weight:800;font-size:11.5px}.talmsg{color:var(--mu);font:600 13px var(--fb);text-align:center;padding:6px 0}.tals{margin-bottom:10px}.tals .in{width:100%}
-@media(max-width:700px){.tal .ctabs button{padding:10px 4px;font-size:12px}}
+@media(max-width:700px){.tal .ctabs{position:relative;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}.tal .ctabs button{flex:0 0 auto;min-width:112px;max-width:62vw;padding:10px 14px;font-size:13px;scroll-snap-align:start}}
 .cqg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.cqpg{max-height:320px;overflow-y:auto;padding:2px;margin-bottom:4px}.cqgp{display:none}.cqgp.on{display:block}.cqgp>.cqgh{display:none;color:var(--pri);font-size:11px;margin:12px 0 6px}.cqsearching .cqgp{display:block}.cqsearching .cqgp>.cqgh{display:block}.cqsearching .cqgp:first-child>.cqgh{margin-top:2px}.cqsearching .cqsub{display:none}.cqsearching .cqgp[hidden]{display:none}.cqhd{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px}.cqhd .cqsub{margin:0;flex:1 1 auto;min-width:0}.cqhd .cqx{margin:0;flex:0 1 300px;min-width:200px;margin-left:auto}.cqhd .cqsub button{padding:7px 14px;font-size:12px}
 .cqt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px 8px;border:1.5px solid var(--bd);border-radius:8px;background:var(--sf);cursor:pointer;font-family:var(--fb);color:var(--tx);text-align:center;position:relative;transition:border-color .15s,transform .15s}.cqt[hidden]{display:none}.cqt:hover{border-color:var(--pri);transform:translateY(-1px)}
 .cqt b{font:700 11.5px/1.2 var(--fb);overflow-wrap:anywhere}.cqt small{font:600 10.5px var(--fb);color:var(--mu)}
@@ -1512,12 +1512,15 @@ function bxLoad(){if(BXL)return;BXL=1;ITL().then(m=>{if(!m)return;const L=[...m.
  if(mi>0&&mi!==BX_MINI){BX_MINI=mi;ch=true}if(up>0&&up!==BX_UP){BX_UP=up;ch=true}
  const sm=A?.sprite||'',su=B?.sprite||'';if(sm!==BXSM||su!==BXSU){BXSM=sm;BXSU=su;ch=true}
  if(ch&&f)render()}).catch(()=>{})}
+/* Talento Expansão: cada Pokémon Lv 80+ (time e box) abre +1 slot na box */
+const talExp=()=>(get('d.talentos')||[]).some(n=>String(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().startsWith('expansao'));
+const bxExp=()=>talExp()?[...(get('d.time')||[]),...(get('d.box')||[])].filter(x=>x&&x.nome&&(lvNum(x.level)||0)>=80).length:0;
 const BX=(slot,strip)=>{bxLoad();let a=get('d.box');if(!Array.isArray(a)){a=[];set('d.box',a)}
  const mi=Math.max(0,parseInt(get('d.box_mini'))||0),up=Math.max(0,parseInt(get('d.box_up'))||0);
  let last=-1;a.forEach((x,i)=>{if(x&&x.nome)last=i});
- const tot=Math.min(BX_MAX,Math.max(BX_BASE+mi*BX_MINI+up*BX_UP,last+1));while(a.length<tot)a.push({});
+ const ex=bxExp(),tot=Math.min(BX_MAX,Math.max(BX_BASE+mi*BX_MINI+up*BX_UP+ex,last+1));while(a.length<tot)a.push({});
  const im=u=>u?`<img class="bxs" src="${esc(u)}" alt="">`:'';
- const info='';BXCNT=a.slice(0,tot).filter(x=>x&&x.nome).length+'/'+tot;
+ const info=talExp()?`<span class="bxc" title="Talento Expansão: +1 slot para cada Pokémon Lv 80 ou mais">Expansão <b>+${ex}</b></span>`:'';BXCNT=a.slice(0,tot).filter(x=>x&&x.nome).length+'/'+tot;
  const ctr=ed?`<div style="display:flex;justify-content:center;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px dashed var(--bd)"><label style="display:flex;align-items:center;gap:8px">${im(BXSM)}<span class="fl">Mini Slot Upgrade <em style="font-style:normal;opacity:.7">(+${BX_MINI})</em></span><input type="number" min="0" class="in" style="width:64px" data-k="d.box_mini" value="${mi}" oninput="S(this)" onchange="render()"></label><label style="display:flex;align-items:center;gap:8px">${im(BXSU)}<span class="fl">Slot Upgrade <em style="font-style:normal;opacity:.7">(+${BX_UP})</em></span><input type="number" min="0" class="in" style="width:64px" data-k="d.box_up" value="${up}" oninput="S(this)" onchange="render()"></label>${info}</div>`
  :`<div style="display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--bd)"><span class="bxc">${im(BXSM)}Mini Slot Upgrade <b>×${mi}</b></span><span class="bxc">${im(BXSU)}Slot Upgrade <b>×${up}</b></span>${info}</div><div class="bxq"><input type="search" id="bxs" class="in" placeholder="Buscar" value="${esc(BXQ)}" oninput="bxSearch(this.value)" autocomplete="off" autocapitalize="off" spellcheck="false"></div>`;
  const gr=[];for(let g=0;g<tot;g+=6)gr.push(a.slice(g,Math.min(g+6,tot)).map((x,k)=>[x,g+k]));
@@ -1641,7 +1644,11 @@ function talWarn(){if(!ed||!talOn())return;const p=talPend();if(!p.length){talDr
 {const _sv=salvar;salvar=async function(){const p=talOn()&&ed?talPend():[];
  if(p.length){TALA=p[0].i;talDraw();kpAsk('Corrija os talentos antes de salvar',p.map(x=>'• '+x.nome+' exige '+x.falta.join(', ')).join('\n')+'\n\nEscolha outro talento ou adicione o requisito em outro espaço.','Corrigir');return}
  return _sv.apply(this,arguments)}}
-function talDraw(){const e=document.getElementById('tal');if(e&&talOn())e.innerHTML=talInner()}
+function talDraw(){const e=document.getElementById('tal');if(!e||!talOn())return;
+ const n0=e.querySelector('.ctabs'),sl=n0?n0.scrollLeft:0;   /* mantém a rolagem lateral das abas ao trocar de talento (mobile) */
+ e.innerHTML=talInner();
+ const n=e.querySelector('.ctabs'),b=n&&n.querySelector('button.on');if(!n)return;n.scrollLeft=sl;
+ if(b){const l=b.offsetLeft,r=l+b.offsetWidth;if(l<n.scrollLeft)n.scrollLeft=Math.max(0,l-8);else if(r>n.scrollLeft+n.clientWidth)n.scrollLeft=r-n.clientWidth+8}}
 async function talTab(i){if(!talOn())return;TALA=TALA===i?-1:i;TALS=TALC?2:1;talDraw();if(TALA<0)return;
  const d=await dbJson('talentos.json');   /* lê o talentos.json a cada abertura (o dbJson já renova o cache por minuto) */
  if(d){TALC=talList(d);TALS=2}else TALS=TALC?2:3;
