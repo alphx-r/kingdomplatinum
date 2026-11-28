@@ -1275,7 +1275,7 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
         <label>Formato<select id="fa-fmt"></select></label>
         <label>Vagas (0 = ∞)<input id="fa-vagas" type="number" min="0" inputmode="numeric"></label>
         <label>Local ou link<input id="fa-local" autocomplete="off" placeholder="Sala, rota de campo ou https://…"></label>
-        <label>Ênfase ou dinâmica do professor<input id="fa-enfase" autocomplete="off" placeholder="Ex.: foco em prática de campo (opcional)"></label>
+        <label>Ênfase da aula<input id="fa-enfase" autocomplete="off" placeholder="Ex.: foco em prática de campo (opcional)"></label>
         <label>Descrição<textarea id="fa-desc" rows="2"></textarea></label>
         <label class="chk"><input type="checkbox" id="fa-pub" checked>Publicada (visível aos alunos)</label>
         <div class="row"><button class="btn" type="submit">Salvar aula</button><button class="btn out" type="button" id="fa-cancel" hidden>Cancelar edição</button></div>
@@ -1301,8 +1301,9 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
         <label>Vincular ao NPCdex<select id="fe-npc"><option value="">Sem vínculo</option></select></label>
         <label>Nome<input id="fe-nome" autocomplete="off" placeholder="Ex.: Profª. Helena Auren"></label>
         <label>Cargo ou função<input id="fe-cargo" autocomplete="off" placeholder="Ex.: Diretora e professora de Criação e Cuidados"></label>
+        <label>Dinâmica do professor<input id="fe-dinamica" autocomplete="off" placeholder="Ex.: aulas práticas, em pequenos grupos (opcional)"></label>
         <fieldset class="fe-deps" id="fe-deps"><legend>Departamentos em que leciona</legend><p class="meta hint">Um professor pode estar em mais de um departamento, e um departamento pode ter vários professores.</p></fieldset>
-        <fieldset class="fe-deps" id="fe-disc"><legend>Disciplinas que leciona</legend><p class="meta hint">Cadastre aqui as disciplinas do professor. Na aula, escolher a disciplina já sugere o professor (e vice-versa).</p><div class="fe-disc-add"><input id="fe-disc-in" autocomplete="off" placeholder="Ex.: Introdução a Botânica"><button class="btn sm out" type="button" id="fe-disc-add">Adicionar</button></div><div class="fe-chips" id="fe-disc-chips"></div></fieldset>
+        <fieldset class="fe-deps" id="fe-disc"><legend>Disciplinas que leciona</legend><p class="meta hint">Cadastre aqui as disciplinas do professor.</p><div class="fe-disc-add"><input id="fe-disc-in" autocomplete="off" placeholder="Ex.: Introdução a Botânica"><button class="btn sm out" type="button" id="fe-disc-add">Adicionar</button></div><div class="fe-chips" id="fe-disc-chips"></div></fieldset>
         <div class="row"><button class="btn" type="submit">Salvar membro</button><button class="btn out" type="button" id="fe-cancel" hidden>Cancelar edição</button></div>
       </form>
       <div class="lista" id="le"></div>
@@ -1964,7 +1965,7 @@ window.AMB_DOC=(function(){
       var dl=document.createElement('dl');
       function linha(rot,l){if(!l.length)return;var dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=rot;dd.textContent=l.join(' · ');dl.appendChild(dt);dl.appendChild(dd);}
       if(cargo)linha('Cargo',[cargo]);
-      linha('Departamento(s)',info.deps.length?info.deps:['—']);linha(info.cursos.length>1?'Cursos':'Curso',info.cursos);linha('Disciplina(s)',info.disc.length?info.disc:['—']);
+      linha('Departamento(s)',info.deps.length?info.deps:['—']);linha(info.cursos.length>1?'Cursos':'Curso',info.cursos);linha('Disciplina(s)',info.disc.length?info.disc:['—']);if(f._m&&f._m.dinamica)linha('Dinâmica',[String(f._m.dinamica)]);
       if(dl.children.length)mais.appendChild(dl);
       if(!cargo&&!dl.children.length){var q=document.createElement('p');q.textContent='Sem mais informações por enquanto.';mais.appendChild(q);}
       if(url){var a=document.createElement('a');a.className='btn out eq-ficha';a.href=url;a.textContent='Abrir ficha';mais.appendChild(a);}
@@ -2743,7 +2744,7 @@ window.AMB_DOC=(function(){
     edE=m;discEd=discsDe(m).slice();chipsDisc();
     npcLista().then(function(){
       opcoesNpc($('fe-npc'));
-      $('fe-npc').value=m.npc||'';$('fe-nome').value=m.nome||'';$('fe-cargo').value=m.cargo||'';
+      $('fe-npc').value=m.npc||'';$('fe-nome').value=m.nome||'';$('fe-cargo').value=m.cargo||'';$('fe-dinamica').value=m.dinamica||'';
       var dd=deptosDe(m);Array.prototype.forEach.call(document.querySelectorAll('#fe-deps input'),function(c){c.checked=dd.indexOf(c.value)>=0;});
       $('fe').classList.add('aberto');$('fe-h').textContent='Editar membro da equipe';$('fe-cancel').hidden=false;$('fe').scrollIntoView({behavior:'smooth',block:'start'});
     });
@@ -2753,7 +2754,7 @@ window.AMB_DOC=(function(){
     var nome=$('fe-nome').value.trim();
     if(!nome){msg('Informe o nome do membro da equipe.');return;}
     if($('fe-disc-in').value.trim())addDisc();
-    var d={nome:nome,cargo:$('fe-cargo').value.trim(),npc:$('fe-npc').value,disciplinas:discEd.slice(),departamentos:Array.prototype.filter.call(document.querySelectorAll('#fe-deps input'),function(c){return c.checked;}).map(function(c){return c.value;})};
+    var d={nome:nome,cargo:$('fe-cargo').value.trim(),dinamica:$('fe-dinamica').value.trim(),npc:$('fe-npc').value,disciplinas:discEd.slice(),departamentos:Array.prototype.filter.call(document.querySelectorAll('#fe-deps input'),function(c){return c.checked;}).map(function(c){return c.value;})};
     if(trava($('fe')))return;msg('Salvando…');
     staff('ambrosia_equipe_salvar',{membro:edE?Object.assign({id:edE.id},d):d})
       .then(function(){limparMembro();msg('Membro salvo.');return carregar();}).then(desenharAdmin).catch(function(e){falha($('adm-msg'),e);}).then(function(){trava($('fe'),true);});
@@ -2791,7 +2792,7 @@ window.AMB_DOC=(function(){
       if(ehAdm())k.push(h('button',{c:'btn sm out',type:'button',t:'Remover',onclick:function(){if(confirm('Remover “'+m.nome+'” da equipe?'))acao(staff('ambrosia_equipe_apagar',{id:m.id}));}}));
       var lig=n?h('a',{c:'meta',href:'/datadex/npcdex/'+encodeURIComponent(m.npc),target:'_blank',rel:'noopener',t:'NPCdex: '+n.nome})
         :h('span',{c:'meta',t:m.npc?(npcs&&npcs.length?'Vínculo “'+m.npc+'” não encontrado no NPCdex.':'Vínculo com o NPCdex: '+m.npc):'Sem vínculo com o NPCdex'});
-      box.appendChild(h('div',{c:'card'},[h('div',{c:'eq-top'},[av,h('h4',{t:m.nome})]),m.cargo?h('span',{c:'meta',t:m.cargo}):null,deptosDe(m).length?h('span',{c:'meta',t:(deptosDe(m).length>1?'Departamentos: ':'Departamento: ')+deptosDe(m).join(' · ')}):null,discsDe(m).length?h('span',{c:'meta',t:'Disciplina(s): '+discsDe(m).join(' · ')}):null,lig,h('div',{c:'row'},k)]));
+      box.appendChild(h('div',{c:'card'},[h('div',{c:'eq-top'},[av,h('h4',{t:m.nome})]),m.cargo?h('span',{c:'meta',t:m.cargo}):null,deptosDe(m).length?h('span',{c:'meta',t:(deptosDe(m).length>1?'Departamentos: ':'Departamento: ')+deptosDe(m).join(' · ')}):null,discsDe(m).length?h('span',{c:'meta',t:'Disciplina(s): '+discsDe(m).join(' · ')}):null,m.dinamica?h('span',{c:'meta',t:'Dinâmica: '+m.dinamica}):null,lig,h('div',{c:'row'},k)]));
     });
   }
 
