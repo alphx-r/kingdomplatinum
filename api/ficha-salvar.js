@@ -345,6 +345,7 @@ module.exports = async (req, res) => {
         return res.status(200).send(t || '[]');
       }
       if (q.npcmigrar) { res.setHeader('Cache-Control', 'no-store'); return await NP.migrar(q, res); }
+      if (q.cursos) return await AM.cursos(res);
       if (q.ambrosia) return await AM.lista(res);
       if (q.berries) return await BR.obter(res);
       if (q.provas) return await PV.obter(res);
