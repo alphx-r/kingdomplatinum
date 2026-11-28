@@ -6668,6 +6668,8 @@ function movesetAddRow(listId, type, data = {}) {
   }
   movesetWireRowDrag(row);
   list.appendChild(row);
+  const lvlInp = row.querySelector('.mv-lvl');
+  if (lvlInp) lvlInp.addEventListener('change', () => movesetEvoToTop(list));
 }
 
 // Habilita arrastar a linha SÓ a partir da alcinha (⠿) — o resto da linha
@@ -6743,7 +6745,7 @@ function movesetReadList(listId, type) {
     return [...list.querySelectorAll('.tm-checklist input[type=checkbox]:checked')]
       .map(cb => ({ move: moveToSlug(cb.value) })).filter(m => m.move);
   }
-  return [...list.querySelectorAll('.moveset-row')].map(row => {
+  const out = [...list.querySelectorAll('.moveset-row')].map(row => {
     const inp = row.querySelector('.mv-name-input'); const move = inp ? moveToSlug(inp.value.trim()) : '';
     if (!move) return null;
     if (type === 'level') {
@@ -6752,6 +6754,18 @@ function movesetReadList(listId, type) {
     }
     return { move };
   }).filter(Boolean);
+  // golpes "Evo" sempre no topo (ordem estável: o resto fica como estava)
+  return type === 'level' ? out.filter(m => m.evo).concat(out.filter(m => !m.evo)) : out;
+}
+
+// Move para o topo da lista de nível as linhas cujo nível é "Evo" (ordem estável).
+function movesetEvoToTop(list) {
+  if (!list) return;
+  const rows = [...list.querySelectorAll(':scope > .moveset-row')];
+  const isEvo = r => movesetParseLevel(r.querySelector('.mv-lvl')?.value).evo;
+  const ordered = rows.filter(isEvo).concat(rows.filter(r => !isEvo(r)));
+  if (ordered.every((r, i) => r === rows[i])) return;
+  ordered.forEach(r => list.appendChild(r));
 }
 
 // Popula uma lista com dados salvos
@@ -6766,7 +6780,11 @@ function movesetPopulateList(listId, type, items = []) {
   // (com aviso no console) em vez de travar a lista inteira (e o resto do
   // modal, já que essa função roda em sequência com outras ao abrir o
   // editor). Item null/undefined é pulado sem nem tentar criar linha vazia.
-  const arr = Array.isArray(items) ? items : [];
+  let arr = Array.isArray(items) ? items : [];
+  if (type === 'level') {
+    const ehEvo = it => !!(it && typeof it === 'object' && (it.evo === true || /^\s*evo/i.test(String(it.level ?? it.lvl ?? ''))));
+    arr = arr.filter(ehEvo).concat(arr.filter(it => !ehEvo(it)));
+  }
   arr.forEach(item => {
     if (item == null) return;
     // Pula item sem nome de move resolvível (ex: {} sobrando de uma
@@ -6870,6 +6888,7 @@ function movesetImportBulk(listId, type, bulkId) {
     const slug = moveToSlug(line) || line.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     movesetAddRow(listId, type, evo ? { move: slug, level: 0, evo: true } : { move: slug, level });
   });
+  if (type === 'level') movesetEvoToTop(document.getElementById(listId));
   ta.value = '';
   area.classList.remove('open');
 }
