@@ -2,8 +2,9 @@
 // (arquivo com "_" não conta como função na Vercel; é chamado pelo ficha-salvar.js)
 //   GET  /api/ficha-salvar?ambrosia=1   -> { aulas, avisos, alunos }
 //   GET  /api/ficha-salvar?cursos=1     -> data/ambrosia/cursos.json (leitura direta da API do GitHub, sem cache do raw)
-//   POST { action:'ambrosia_matricular', token, slug, mod, curso, fmt, duracao?, inicial? }   aluno (token da ficha)
+//   POST { action:'ambrosia_matricular', token, slug, mod, curso, fmt, duracao?, inicial? }   aluno (token da ficha; vale também após recusa ou desligamento)
 //   POST { action:'ambrosia_inscrever',  token, slug, aula_id }                              aluno
+//   POST { action:'ambrosia_desligar',   token, slug, motivo? }                              aluno (encerra a própria matrícula: status 'desligada')
 //   POST { action:'ambrosia_cancelar',   token, slug, aula_id }                              aluno
 //   POST { action:'ambrosia_aula_salvar', nome, senha, aula:{id?,...} }   ADM/MOD
 //   POST { action:'ambrosia_aula_apagar', nome, senha, id }               só ADM/chefe
@@ -28,7 +29,7 @@ const SLUG_NPC = /^[\w-]{1,80}$/;   // slug do NPC no NPCdex
 const MODS = ['Matrícula Regular', 'Matrícula Parcial', 'Matrícula Temporária', 'Matrícula Livre', 'Matrícula em Cursos'];
 const CURSOS = ['Batalha e Estratégia', 'Ecologia dos Biomas', 'Criação e Cuidados', 'Treinamento de Campo', 'Exploração', 'Agricultura e Botânica', 'Ciências Pokémon', 'Tecnologia', 'Culinária', 'Outro (informar à secretaria)'];
 const FMTS = ['Presencial', 'Remoto', 'Externo (campo)', 'Híbrido'];
-const STATUS = ['pendente', 'aprovada', 'recusada'];
+const STATUS = ['pendente', 'aprovada', 'recusada', 'desligada'];
 // Regular, Parcial e Livre: departamento fixo "Todos" (veem todas as aulas). Temporária e em Cursos: só o departamento escolhido.
 const MODS_TODOS = ['Matrícula Regular', 'Matrícula Parcial', 'Matrícula Livre'];
 const MODS_DEPTO = ['Matrícula Temporária', 'Matrícula em Cursos'];
@@ -98,11 +99,25 @@ async function acaoAluno(action, b, res, donoOk) {
     const curso = MODS_TODOS.includes(mod) ? 'Todos' : escolha(b.curso, CURSOS, 'Curso');
     const duracao = mod === 'Matrícula Temporária' ? txt(b.duracao, 60) : '', inicial = txt(b.inicial, 60);
     const r = await mexerAluno(slug, f0, async a => {
-      if (a.matricula && a.matricula.status !== 'recusada') return { mudou: false, repetida: true, status: a.matricula.status };
+      // recusada ou desligada pode pedir matrícula de novo; a anterior vai para o histórico
+      if (a.matricula && !['recusada', 'desligada'].includes(a.matricula.status)) return { mudou: false, repetida: true, status: a.matricula.status };
+      if (a.matricula && a.matricula.status === 'desligada') a.historico = [...arr(a.historico), a.matricula];
       a.matricula = { status: 'pendente', mod, curso, fmt, duracao, inicial, obs: '', criado: new Date().toISOString() };
       return { mudou: true, status: 'pendente' };
     }, `ambrosia: matrícula (${slug})`);
     return res.json({ ok: true, repetida: !!r.repetida, status: r.status });
+  }
+  if (action === 'ambrosia_desligar') {
+    const motivo = txt(b.motivo, 300);
+    const r = await mexerAluno(slug, f0, async (a, parent) => {
+      if (!a.matricula || a.matricula.status !== 'aprovada') throw erro(409, 'Só é possível se desligar com a matrícula aprovada.');
+      // libera as vagas: some só com as inscrições em aulas que ainda não aconteceram (o histórico das passadas fica)
+      const aulas = arr(await lerJ(P.aulas, parent)), agora = Date.now();
+      a.inscricoes = a.inscricoes.filter(i => { const au = aulas.find(x => x && x.id === i.aula_id); return au && new Date(au.data).getTime() < agora; });
+      a.matricula = { ...a.matricula, status: 'desligada', desligado: new Date().toISOString(), motivo };
+      return { mudou: true };
+    }, `ambrosia: desligamento (${slug})`);
+    return res.json({ ok: true, status: 'desligada' });
   }
   const id = txt(b.aula_id, 40);
   if (!id) throw erro(400, 'Aula inválida.');
@@ -291,7 +306,9 @@ async function acaoStaff(action, b, res) {
     const status = escolha(b.status, STATUS, 'Status'), obs = txt(b.obs, 300);
     await mexerAluno(slug, null, async a => {
       if (!a.matricula) throw erro(404, 'Este aluno não tem matrícula.');
-      a.matricula = { ...a.matricula, status, obs, analisadoPor: eu.nome, analisadoEm: agora };
+      const { desligado, motivo, ...resto } = a.matricula;   // reativar/aprovar limpa os dados do desligamento
+      a.matricula = { ...resto, status, obs, analisadoPor: eu.nome, analisadoEm: agora };
+      if (status === 'desligada') { a.matricula.desligado = desligado || agora; if (motivo) a.matricula.motivo = motivo; }
       return { mudou: true };
     }, `ambrosia: matrícula ${status} (${slug})`);
     return res.json({ ok: true });
@@ -309,7 +326,7 @@ async function acaoStaff(action, b, res) {
 }
 
 async function acao(action, b, res, donoOk) {
-  if (['ambrosia_matricular', 'ambrosia_inscrever', 'ambrosia_cancelar'].includes(action)) return acaoAluno(action, b, res, donoOk);
+  if (['ambrosia_matricular', 'ambrosia_inscrever', 'ambrosia_cancelar', 'ambrosia_desligar'].includes(action)) return acaoAluno(action, b, res, donoOk);
   return acaoStaff(action, b, res);
 }
 module.exports = { lista, cursos, acao };
