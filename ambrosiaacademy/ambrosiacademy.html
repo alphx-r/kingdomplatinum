@@ -1256,12 +1256,13 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
           <button class="tab pt-nb" role="tab" data-t="avisos" data-i="bell">Avisos</button>
           <button class="tab pt-nb" role="tab" data-t="equipe" data-i="team">Equipe</button>
           <button class="tab pt-nb" role="tab" data-t="cursos" data-i="curso">Cursos</button>
+          <button class="tab pt-nb" role="tab" data-t="docs" data-i="doc">Documentos</button>
           <button class="tab pt-nb" role="tab" data-t="galeria" data-i="img">Galeria</button>
         </nav>
       </aside>
       <div class="pt-main">
         <section class="pt-banner">
-          <div><small id="adm-tipo"></small><h2>Administração</h2><p>Gerencie aulas, matrículas, avisos, equipe, cursos e galeria da Ambrosia Academy.</p></div>
+          <div><small id="adm-tipo"></small><h2>Administração</h2><p>Gerencie aulas, matrículas, avisos, equipe, cursos, documentos e galeria da Ambrosia Academy.</p></div>
           <svg class="pt-crest" viewBox="0 0 100 116" aria-hidden="true"><use href="#brasao"/></svg>
         </section>
         <p class="meta" id="adm-msg" role="status"></p>
@@ -1307,6 +1308,23 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
         <div class="row"><button class="btn" type="submit">Salvar membro</button><button class="btn out" type="button" id="fe-cancel" hidden>Cancelar edição</button></div>
       </form>
       <div class="lista" id="le"></div>
+    </div>
+    <div id="adm-docs" hidden>
+      <form id="fd" novalidate onsubmit="return false"><h3 style="margin:0;grid-column:1/-1">Documento de matrícula</h3>
+        <label style="grid-column:1/-1">Personagem<input id="fd-nome" list="fd-lista" autocomplete="off" placeholder="Digite para buscar qualquer ficha, ou escreva um nome livre"><datalist id="fd-lista"></datalist></label>
+        <label>Player<input id="fd-player" autocomplete="off"></label>
+        <label>Classe<input id="fd-classe" autocomplete="off"></label>
+        <label>Modalidade<select id="fd-mod"></select></label>
+        <label>Formato de aula<select id="fd-fmt"></select></label>
+        <label>Departamento ou curso<select id="fd-curso"></select></label>
+        <label>Pokémon inicial<input id="fd-inicial" autocomplete="off" placeholder="Ex.: Bulbasaur ou À receber"></label>
+        <label id="fd-dur-l">Duração da estadia<input id="fd-duracao" autocomplete="off" placeholder="Ex.: 3 semanas"></label>
+        <label>Situação<select id="fd-sit"><option value="">Aguardando confirmação da secretaria</option><option value="ok">Matrícula aprovada pela secretaria</option></select></label>
+        <label>Foto (opcional)<input id="fd-foto" type="file" accept="image/*"></label>
+        <label class="chk"><input type="checkbox" id="fd-ass" checked>Com assinaturas</label>
+      </form>
+      <div class="doc" style="margin-top:16px"><canvas id="fd-cv" width="1200" height="850" role="img" aria-label="Prévia do documento de matrícula"></canvas>
+        <div class="row"><button class="btn" type="button" id="fd-png">Baixar PNG</button><button class="btn out" type="button" id="fd-pdf">Baixar PDF</button><span class="meta" id="fd-aviso" role="status"></span></div></div>
     </div>
     <div id="adm-galeria" hidden>
       <form id="fg" novalidate><h3 style="margin:0">Imagens da escola</h3>
@@ -1449,8 +1467,18 @@ window.AMB_DOC=(function(){
     var temp=d.mod==='Matrícula Temporária';
     campo(temp?'Duração da estadia':'Data de emissão',temp?d.duracao:dataJogo(),cx+360,595,330);
     texto(g,d.situacao||'Situação: aguardando confirmação da secretaria',cx,710,cw,22,ITAL,d.situacaoCor||'#27396a');
-    g.strokeStyle='#14213d';g.lineWidth=1.5;g.beginPath();g.moveTo(760,772);g.lineTo(1120,772);g.stroke();
-    g.textAlign='center';texto(g,'Secretária',940,798,360,20,SERIF,'#5b6272');
+    if(d.assinado){   /* com assinaturas: secretária e diretor lado a lado */
+      var ly=772;
+      [[assin,842,160,'Secretária'],[assinDir,1037,175,'Diretor']].forEach(function(a){
+        var im=a[0],c0=a[1],lg=a[2];
+        if(ok(im)){var hh=im.naturalHeight*lg/im.naturalWidth;if(hh>52){lg=lg*52/hh;hh=52;}g.drawImage(im,c0-lg/2,ly-4-hh,lg,hh);}
+        g.strokeStyle='#14213d';g.lineWidth=1.5;g.beginPath();g.moveTo(c0-82,ly);g.lineTo(c0+82,ly);g.stroke();
+        g.textAlign='center';texto(g,a[3],c0,ly+26,164,20,SERIF,'#5b6272');
+      });
+    }else{
+      g.strokeStyle='#14213d';g.lineWidth=1.5;g.beginPath();g.moveTo(760,772);g.lineTo(1120,772);g.stroke();
+      g.textAlign='center';texto(g,'Secretária',940,798,360,20,SERIF,'#5b6272');
+    }
     texto(g,'“Doce é o saber que se colhe com paciência.”',360,790,600,22,ITAL,'#a8802a');
     g.textAlign='left';
   }
@@ -1819,6 +1847,7 @@ window.AMB_DOC=(function(){
     txt(x+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF\n');
     return new Blob(partes,{type:'application/pdf'});
   }
+  window.AMB_PDF=pdfDe;
   $('baixar-pdf').addEventListener('click',function(){
     if(!completo())return;
     try{
@@ -2596,8 +2625,114 @@ window.AMB_DOC=(function(){
     carregar().then(desenharAdmin).catch(function(e){falha($('adm-msg'),e);}).then(function(){AmbBoot.fim();});
   }
   function abas(){
-    ['aulas','matriculas','avisos','equipe','cursos','galeria'].forEach(function(t){$('adm-'+t).hidden=t!==tab;});
+    ['aulas','matriculas','avisos','equipe','cursos','docs','galeria'].forEach(function(t){$('adm-'+t).hidden=t!==tab;});if(tab==='docs')docsAdm();
     Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){b.setAttribute('aria-selected',String(b.dataset.t===tab));});
+  }
+
+  /* ---------- Documentos: matrícula de qualquer personagem, com ou sem assinaturas ---------- */
+  var FD={ini:false,fichas:null,slug:'',foto:null,fotoPos:null,fotoUp:false,ped:0};
+  function fdDados(){
+    var ok=$('fd-sit').value==='ok';
+    return {nome:$('fd-nome').value.trim(),player:$('fd-player').value.trim(),classe:$('fd-classe').value.trim(),mod:$('fd-mod').value,fmt:$('fd-fmt').value,curso:$('fd-curso').value,inicial:$('fd-inicial').value.trim(),duracao:$('fd-duracao').value.trim(),
+      foto:FD.foto,fotoPos:FD.fotoPos,assinado:$('fd-ass').checked,
+      situacao:ok?'Situação: matrícula aprovada pela secretaria':'Situação: aguardando confirmação da secretaria',situacaoCor:ok?'#2e6b3a':'#27396a'};
+  }
+  function fdDesenhar(){
+    if(!window.AMB_DOC)return;
+    $('fd-dur-l').hidden=$('fd-mod').value!=='Matrícula Temporária';
+    AMB_DOC.matricula($('fd-cv').getContext('2d'),fdDados());
+    $('fd-cv').setAttribute('aria-label','Documento de matrícula de '+($('fd-nome').value.trim()||'personagem não informado'));
+  }
+  function fdFoto(src,n){
+    if(!src){FD.foto=null;fdDesenhar();return;}
+    var m=String(src).match(/#kp-pos=(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$/),url=m?String(src).slice(0,m.index):String(src),im=new Image();
+    if(!/^data:/.test(url))im.crossOrigin='anonymous';
+    im.onload=function(){if(n!==FD.ped||FD.fotoUp)return;FD.foto=im;FD.fotoPos=m?[parseFloat(m[1]),parseFloat(m[2])]:null;fdDesenhar();};
+    im.onerror=function(){if(n===FD.ped)$('fd-aviso').textContent='Não foi possível carregar a foto da ficha; o documento sai sem foto.';};
+    im.src=url;
+  }
+  function fdAchar(){
+    var t=nrm($('fd-nome').value).replace(/\s+/g,' ');
+    if(!t||!FD.fichas)return null;
+    var l=FD.fichas.filter(function(x){return nrm(x.nome).replace(/\s+/g,' ')===t;});
+    return l[0]||null;
+  }
+  function fdAplicar(e){
+    var n=++FD.ped;FD.slug=e.slug||'';FD.foto=null;FD.fotoPos=null;FD.fotoUp=false;$('fd-foto').value='';
+    $('fd-aviso').textContent='';
+    $('fd-nome').value=e.nome;$('fd-player').value=e._player||e.player||'';$('fd-classe').value=e.classe||'';
+    var mat=e.slug?matDe(e.slug):null;
+    if(mat){
+      if(mat.mod)$('fd-mod').value=mat.mod;if(mat.fmt)$('fd-fmt').value=mat.fmt;
+      var c=escopo(mat).curso;if(Array.prototype.some.call($('fd-curso').options,function(o){return o.value===c;}))$('fd-curso').value=c;
+      $('fd-inicial').value=mat.inicial||'';$('fd-duracao').value=mat.duracao||'';
+      if(mat.player)$('fd-player').value=mat.player;
+      $('fd-sit').value=mat.status==='aprovada'?'ok':'';
+    }
+    fdDesenhar();
+    if(!e.slug){fdFoto(e.foto,n);return;}
+    fetch('/api/ficha-salvar?slug='+encodeURIComponent(e.slug)+'&_='+Date.now(),{cache:'no-store'})
+      .then(function(r){if(!r.ok)throw 0;return r.json();}).catch(function(){return null;})
+      .then(function(j){
+        if(n!==FD.ped)return;
+        if(j){
+          if(j.d&&j.d.classe)$('fd-classe').value=j.d.classe;
+          if(!$('fd-inicial').value.trim()&&window.AMB_DOC){var r=AMB_DOC.pokes(j);if(r){var p=r.filter(function(x){return x.ini;})[0]||r[0];$('fd-inicial').value=p?p.n:AMB_DOC.A_RECEBER;}}
+          fdDesenhar();
+        }
+        fdFoto((j&&j.foto)||e.foto,n);
+      });
+  }
+  function fdCarregar(){
+    if(FD.fichas)return;
+    FD.fichas=[];
+    Promise.all([
+      fetch('/api/ficha-salvar?lista=1&_='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}),
+      npcLista()
+    ]).then(function(res){
+      var v={},l=[];
+      (Array.isArray(res[0])?res[0]:[]).forEach(function(e){if(e&&e.slug&&e.slug!=='playerzero'&&e.desativada!==true&&e.desativada!=='true'&&!v[e.slug]){v[e.slug]=1;l.push(e);}});
+      (res[1]||[]).forEach(function(n){if(n&&n.slug&&n.ativo!==false&&!v[n.slug]){v[n.slug]=1;l.push({slug:n.slug,nome:n.nome,classe:n.classe||'',foto:n.foto,player:'NPC'});}});
+      l.sort(function(a,b){return String(a.nome).localeCompare(String(b.nome),'pt-BR');});
+      FD.fichas=l;
+      var dl=$('fd-lista');dl.textContent='';
+      l.forEach(function(e){dl.appendChild(h('option',{value:e.nome,label:e.player||e._player||''}));});
+      if(fdAchar())fdAplicar(fdAchar());
+    });
+  }
+  function fdBaixar(pdf){
+    var av=$('fd-aviso'),nome=$('fd-nome').value.trim();
+    if(!nome){av.textContent='Escolha ou escreva o nome do personagem.';return;}
+    var base='matricula-'+(nrm(nome).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'ambrosia')+($('fd-ass').checked?'':'-sem-assinatura');
+    function salvar(b,ext){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=base+'.'+ext;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href);},1000);av.textContent='Documento baixado.';}
+    try{
+      if(pdf){if(!window.AMB_PDF){av.textContent='PDF indisponível agora. Baixe o PNG.';return;}salvar(AMB_PDF($('fd-cv')),'pdf');}
+      else $('fd-cv').toBlob(function(b){if(!b){av.textContent='Não foi possível gerar o arquivo agora.';return;}salvar(b,'png');});
+    }catch(_){av.textContent='Não foi possível gerar o arquivo agora.';}
+  }
+  function docsAdm(){
+    if(!FD.ini){
+      FD.ini=true;
+      $('fd-mod').innerHTML=$('mod').innerHTML;$('fd-fmt').innerHTML=$('fmt').innerHTML;
+      $('fd-curso').innerHTML='<option>Todos</option>'+$('curso').innerHTML;
+      (function(o){if(o)o.remove();})($('fd-curso').querySelector('option[data-todos]'));
+      $('fd-mod').addEventListener('change',function(){
+        var cs=$('fd-curso'),curto=/^Matrícula (Regular|Parcial|Livre)$/.test(this.value);
+        if(curto)cs.value='Todos';else if(cs.value==='Todos'&&cs.options.length>1)cs.selectedIndex=1;
+        fdDesenhar();
+      });
+      ['fd-player','fd-classe','fd-inicial','fd-duracao'].forEach(function(id){$(id).addEventListener('input',fdDesenhar);});
+      ['fd-fmt','fd-curso','fd-sit','fd-ass'].forEach(function(id){$(id).addEventListener('change',fdDesenhar);});
+      $('fd-nome').addEventListener('input',function(){var e=fdAchar();if(e&&e.slug!==FD.slug)fdAplicar(e);else{if(!e)FD.slug='';fdDesenhar();}});
+      $('fd-foto').addEventListener('change',function(){
+        var f=this.files&&this.files[0];if(!f)return;
+        var rd=new FileReader();rd.onload=function(){var im=new Image();im.onload=function(){FD.foto=im;FD.fotoPos=null;FD.fotoUp=true;fdDesenhar();};im.src=rd.result;};rd.readAsDataURL(f);
+      });
+      $('fd-png').addEventListener('click',function(){fdBaixar(false);});$('fd-pdf').addEventListener('click',function(){fdBaixar(true);});
+      if(window.AMB_DOC)AMB_DOC.aoCarregar(fdDesenhar);
+      if(document.fonts)Promise.all([document.fonts.load('700 20px Cinzel'),document.fonts.load("20px 'EB Garamond'")]).then(fdDesenhar,function(){});
+    }
+    fdCarregar();fdDesenhar();
   }
   function desenharAdmin(){
     opcoesProf();opcoesDisc();
