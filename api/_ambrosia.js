@@ -1,6 +1,7 @@
 // api/_ambrosia.js — Ambrosia Academy (aulas, avisos, matrículas e inscrições) em JSON no GitHub, no mesmo molde das fichas.
 // (arquivo com "_" não conta como função na Vercel; é chamado pelo ficha-salvar.js)
 //   GET  /api/ficha-salvar?ambrosia=1   -> { aulas, avisos, alunos }
+//   GET  /api/ficha-salvar?cursos=1     -> data/ambrosia/cursos.json (leitura direta da API do GitHub, sem cache do raw)
 //   POST { action:'ambrosia_matricular', token, slug, mod, curso, fmt, duracao?, inicial? }   aluno (token da ficha)
 //   POST { action:'ambrosia_inscrever',  token, slug, aula_id }                              aluno
 //   POST { action:'ambrosia_cancelar',   token, slug, aula_id }                              aluno
@@ -14,13 +15,14 @@
 //   POST { action:'ambrosia_equipe_mover', nome, senha, id, dir:-1|1 }    ADM/MOD
 //   POST { action:'ambrosia_equipe_importar', nome, senha, itens:[{nome,cargo,npc?}] }   ADM/MOD, só com a equipe vazia
 //   POST { action:'ambrosia_equipe_apagar', nome, senha, id }             só ADM/chefe
+//   POST { action:'ambrosia_cursos_salvar', nome, senha, cursos:{duracao_padrao,cursos:[...]} }  ADM/MOD (remover curso: só ADM/chefe)
 // Cada matrícula, inscrição ou cancelamento é UM commit (como nas fichas): o arquivo do aluno e o índice são lidos de dentro
 // do commit (`parent`), então pedidos simultâneos de alunos diferentes não se atropelam.
 // Arquivos: data/ambrosia/aulas.json, avisos.json, index.json (resumo dos alunos) e alunos/<slug>.json.
 const { readFile, commit } = require('./_gh');
 const ST = require('./_staff');
 const SITE = 'ambrosiacademy';   // nome do site na lista kp_staff (mods[SITE])
-const P = { aulas: 'data/ambrosia/aulas.json', avisos: 'data/ambrosia/avisos.json', equipe: 'data/ambrosia/equipe.json', idx: 'data/ambrosia/index.json', aluno: s => `data/ambrosia/alunos/${s}.json` };
+const P = { aulas: 'data/ambrosia/aulas.json', avisos: 'data/ambrosia/avisos.json', equipe: 'data/ambrosia/equipe.json', cursos: 'data/ambrosia/cursos.json', idx: 'data/ambrosia/index.json', aluno: s => `data/ambrosia/alunos/${s}.json` };
 const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
 const SLUG_NPC = /^[\w-]{1,80}$/;   // slug do NPC no NPCdex
 const MODS = ['Matrícula Regular', 'Matrícula Parcial', 'Matrícula Temporária', 'Matrícula Livre', 'Matrícula em Cursos'];
@@ -51,6 +53,18 @@ async function lista(res) {
   res.setHeader('Cache-Control', 'no-store');
   const [aulas, avisos, alunos, equipe] = await Promise.all([lerJ(P.aulas), lerJ(P.avisos), lerJ(P.idx), lerJ(P.equipe)]);
   return res.status(200).json({ aulas: arr(aulas), avisos: arr(avisos), alunos: arr(alunos), equipe: arr(equipe) });
+}
+
+// ---- cursos independentes (data/ambrosia/cursos.json) ----
+// Cada curso tem um `id`. Arquivos antigos não têm: o id vem do nome (estável) e passa a ser gravado no 1º salvamento.
+const ICONES = ['bussola', 'planta', 'fossil', 'ball', 'chef', 'livro'];
+const idCurso = c => (c && c.id) ? String(c.id) : 'c-' + nrm(c && c.nome).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const comIds = l => arr(l).filter(c => c && typeof c === 'object' && txt(c.nome, 80)).map(c => ({ ...c, id: idCurso(c) }));
+async function cursos(res) {
+  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15');
+  const j = await lerJ(P.cursos);
+  if (!j || typeof j !== 'object') return res.status(404).json({ error: 'cursos.json não encontrado.' });
+  return res.status(200).json({ ...j, cursos: comIds(j.cursos) });
 }
 
 // um commit por pedido: lê o aluno e o índice dentro do commit, aplica `fn` e grava os dois juntos.
@@ -240,6 +254,36 @@ async function acaoStaff(action, b, res) {
     return res.json({ ok: true });
   }
 
+  if (action === 'ambrosia_cursos_salvar') {
+    const c = b.cursos;
+    if (!c || typeof c !== 'object' || !Array.isArray(c.cursos)) throw erro(400, 'Lista de cursos inválida.');
+    if (c.cursos.length > 60) throw erro(400, 'Cursos demais (máximo 60).');
+    const nomes = new Set(), ids = new Set(), novos = [];
+    for (const x of c.cursos) {
+      if (!x || typeof x !== 'object') continue;
+      const nome = txt(x.nome, 80);
+      if (!nome) throw erro(400, 'Todo curso precisa de nome.');
+      if (nomes.has(nrm(nome))) throw erro(400, `Já existe um curso chamado “${nome}”.`);
+      nomes.add(nrm(nome));
+      let id = x.id ? txt(x.id, 60) : nid('c');
+      if (ids.has(id)) id = nid('c');
+      ids.add(id);
+      const extra = {};   // campos que o site ainda não conhece não se perdem
+      for (const [k, v] of Object.entries(x)) if (!['__proto__', 'constructor', 'prototype'].includes(k) && ['string', 'number', 'boolean'].includes(typeof v)) extra[k] = typeof v === 'string' ? v.slice(0, 300) : v;
+      novos.push({ ...extra, id, nome, departamento: txt(x.departamento, 80), professor: txt(x.professor, 80) || 'A definir', duracao: txt(x.duracao, 60),
+        icone: ICONES.includes(x.icone) ? x.icone : 'livro', descricao: txtL(x.descricao, 1500), ativo: x.ativo !== false });
+    }
+    await commit(async parent => {
+      const atual = (await lerJ(P.cursos, parent)) || {};
+      if (!eu.adm && comIds(atual.cursos).some(v => !ids.has(v.id))) throw erro(403, 'Só ADM remove cursos.');
+      const out = { ...atual, duracao_padrao: txt(c.duracao_padrao, 60) || txt(atual.duracao_padrao, 60) || '12 semanas', cursos: novos };
+      const novoTxt = JSON.stringify(out, null, 2) + '\n';
+      if (await readFile(P.cursos, parent) === novoTxt) return [];
+      return [{ path: P.cursos, content: novoTxt }];
+    }, 'ambrosia: cursos');
+    return res.json({ ok: true, cursos: novos.map(x => ({ id: x.id, nome: x.nome })) });
+  }
+
   const slug = String(b.slug || '');
   if (!SLUG.test(slug)) throw erro(400, 'Slug inválido.');
 
@@ -268,4 +312,4 @@ async function acao(action, b, res, donoOk) {
   if (['ambrosia_matricular', 'ambrosia_inscrever', 'ambrosia_cancelar'].includes(action)) return acaoAluno(action, b, res, donoOk);
   return acaoStaff(action, b, res);
 }
-module.exports = { lista, acao };
+module.exports = { lista, cursos, acao };
