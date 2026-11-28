@@ -1,10 +1,10 @@
 // api/_galeria.js — Galeria da escola (Ambrosia Academy), em JSON no kpfichas_db
-//   data/ambrosia/galeria.json          -> { imagens: [ { id, src, legenda, criado } ] }  (a ordem do array é a ordem do carrossel)
+//   data/ambrosia/galeria.json          -> { imagens: [ { id, src, nome, legenda, criado } ] }  (a ordem do array é a ordem do carrossel)
 //   data/ambrosia/galeria/<id>.jpg|png|webp
 // Arquivo com "_" não conta como função na Vercel (plano Hobby: máx. 12).
 //   GET  /api/ficha-salvar?galeria=1                                   -> { imagens: [...] }
-//   POST { action:'ambrosia_galeria_salvar',  nome, senha, imagem:{ legenda, dados:'data:image/jpeg;base64,...' } }  -> nova imagem (1 commit)
-//   POST { action:'ambrosia_galeria_salvar',  nome, senha, imagem:{ id, legenda } }                                  -> só edita a legenda
+//   POST { action:'ambrosia_galeria_salvar',  nome, senha, imagem:{ nome, legenda, dados:'data:image/jpeg;base64,...' } }  -> nova imagem (1 commit)
+//   POST { action:'ambrosia_galeria_salvar',  nome, senha, imagem:{ id, nome, legenda } }                            -> só edita nome e descrição
 //   POST { action:'ambrosia_galeria_apagar',  nome, senha, id }
 //   POST { action:'ambrosia_galeria_ordenar', nome, senha, ids:[...] }
 // Acesso: ADM/chefe e MOD do site (nome+senha do player, papel em config.kp_staff) — a mesma conferência do _ambrosia.js.
@@ -17,10 +17,11 @@ const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${R
 const IDX = 'data/ambrosia/galeria.json';
 const DIR = 'data/ambrosia/galeria';
 const MAX_IMG = 3 * 1024 * 1024;   // corpo da requisição na Vercel = 4,5 MB (base64 pesa ~33% a mais)
-const MAX_ITENS = 40;
+const MAX_ITENS = 10;
 
 const erro = (status, msg) => Object.assign(new Error(msg), { status });
-const limpaLegenda = v => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
+const limpaLegenda = v => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 400);
+const limpaNome = v => limpaLegenda(v).slice(0, 60);
 // ADM/MOD: nome + senha do player, papel lido de config.kp_staff (mods[SITE])
 async function quemE(b) {
   const nome = String(b.admin_nome || b.nome || ''), senha = String(b.admin_senha || b.senha || '');
@@ -37,7 +38,7 @@ function parseIdx(t) {
   let j = null; try { j = t ? JSON.parse(t) : null; } catch { j = null; }
   const l = Array.isArray(j) ? j : (j && Array.isArray(j.imagens) ? j.imagens : []);
   return l.filter(x => x && typeof x === 'object' && x.src).map(x => ({
-    id: String(x.id || ''), src: String(x.src), legenda: limpaLegenda(x.legenda), criado: x.criado || undefined,
+    id: String(x.id || ''), src: String(x.src), nome: limpaNome(x.nome), legenda: limpaLegenda(x.legenda), criado: x.criado || undefined,
   }));
 }
 const serializa = l => JSON.stringify({ imagens: l });
@@ -68,21 +69,21 @@ async function acao(action, b, res) {   // a conferência é sempre a daqui; um 
       const im = b.imagem && typeof b.imagem === 'object' ? b.imagem : null;
       if (!im) throw erro(400, 'Envie a imagem.');
       const legenda = limpaLegenda(im.legenda);
-      if (im.id) {   // só edita a legenda
+      if (im.id) {   // só edita nome e descrição
         if (!idOk(im.id)) throw erro(400, 'Imagem inválida.');
         let ed = null;
         await commit(async parent => {
           const l = parseIdx(await readFile(IDX, parent));
           const x = l.find(e => e.id === im.id);
           if (!x) throw erro(404, 'Imagem não encontrada.');
-          x.legenda = legenda; ed = { ...x };
+          x.legenda = legenda; if (im.nome !== undefined) x.nome = limpaNome(im.nome); ed = { ...x };
           return [{ path: IDX, content: serializa(l) }];
-        }, 'ambrosia: galeria (legenda)');
+        }, 'ambrosia: galeria (texto)');
         return res.json({ ok: true, imagem: ed });
       }
       const { buf, ext } = parseImg(im.dados);
       const id = Date.now().toString(36) + '-' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 8);
-      const path = `${DIR}/${id}.${ext}`, novo = { id, src: `${IMG_BASE}/${path}`, legenda, criado: new Date().toISOString() };
+      const path = `${DIR}/${id}.${ext}`, novo = { id, src: `${IMG_BASE}/${path}`, nome: limpaNome(im.nome), legenda, criado: new Date().toISOString() };
       await commit(async parent => {
         const l = parseIdx(await readFile(IDX, parent));
         if (l.length >= MAX_ITENS) throw erro(400, `A galeria já tem o máximo de ${MAX_ITENS} imagens. Apague alguma antes.`);
