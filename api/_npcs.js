@@ -145,7 +145,9 @@ const sprUrls = n => { const o = [], it = x => { if (x && typeof x.img === 'stri
   (Array.isArray(n.time) ? n.time : []).forEach(it);
   if (n.pokemon_ghs && typeof n.pokemon_ghs === 'object') Object.values(n.pokemon_ghs).forEach(v => Array.isArray(v) && v.forEach(it));
   return o; };
-const urlsEmUso = n => [n.foto, n.banner, ...gymLista(n.gym_imagem), ...sprUrls(n)].filter(u => typeof u === 'string');
+// a posição da foto vai colada na URL (#kp-pos=X,Y); sem tirar esse sufixo, o arquivo em uso parecia órfão e era apagado
+const semSufixo = u => u.replace(/#.*$/, '');
+const urlsEmUso = n => [n.foto, n.banner, ...gymLista(n.gym_imagem), ...sprUrls(n)].filter(u => typeof u === 'string').map(semSufixo);
 const doDir = (existentes, emUso, manter) => existentes.filter(f => {
   const kind = f.name.split('-')[0];
   return ['foto', 'banner', 'gym', 'pk'].includes(kind) && !manter.has(f.path) && !emUso.some(u => u.endsWith('/' + f.path));
