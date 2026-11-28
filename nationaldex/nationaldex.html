@@ -1075,15 +1075,26 @@ function applyPokemonForm(pkKey,idx){
 // truthy e não tem .length, então a tabela de moves trata como lista vazia
 // e o TM de formas alternativas nunca aparece, mesmo com dados salvos certos
 // no banco — foi o caso do "(N) Squirtle").
+// Nível de um golpe por nível: número, ou "Evo" (level:"Evo" / evo:true) = aprendido ao evoluir.
+// "Evo" aparece antes de qualquer nível na lista.
+function mvNivel(m){
+  const bruto = m ? (m.lvl ?? m.level ?? 0) : 0;
+  const evo = !!(m && m.evo === true) || /^\s*evo/i.test(String(bruto));
+  const n = parseInt(bruto);
+  return { lvl: Number.isFinite(n) ? n : 0, evo };
+}
+function mvOrdenaNivel(a,b){ return (b.evo?1:0)-(a.evo?1:0) || a.lvl-b.lvl; }
+function mvNivelTxt(m){ return m.evo ? 'Evo' : (m.lvl>0 ? m.lvl : '—'); }
 async function formAltMoves(f){
   const norm=(arr,withLvl)=>(arr||[]).map(m=>{
     if(!m) return null;
     if(typeof m==='string') return withLvl?{name:m,lvl:0}:{name:m};
     const nm=m.name||m.move;
     if(!nm) return null;
-    return withLvl?{name:nm,lvl:m.lvl??m.level??0}:{name:nm};
+    if(withLvl){ const nv=mvNivel(m); return {name:nm,lvl:nv.lvl,evo:nv.evo}; }
+    return {name:nm};
   }).filter(Boolean);
-  const level=norm(f.moves_level,true).sort((a,b)=>a.lvl-b.lvl);
+  const level=norm(f.moves_level,true).sort(mvOrdenaNivel);
   return {
     level,
     tm:await restrictToTmList(norm(f.moves_tm,false)),
@@ -2903,7 +2914,7 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
           return`<div style="border-bottom:1px solid var(--border)">
             <div onclick="toggleMoveDesc(this)" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--surface)">
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:700;color:${nameColor};margin-bottom:4px">${showLvl?`<span style="color:var(--brand-mid);font-family:var(--font-title);font-weight:800;margin-right:6px">Nv. ${m.lvl>0?m.lvl:'—'}</span>`:''}${tmMode&&tmLabel(mn)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(mn)}</span>`:''}${titleCase(mn)}</div>
+                <div style="font-size:13px;font-weight:700;color:${nameColor};margin-bottom:4px">${showLvl?`<span style="color:var(--brand-mid);font-family:var(--font-title);font-weight:800;margin-right:6px">${m.evo?'Evo':'Nv. '+(m.lvl>0?m.lvl:'—')}</span>`:''}${tmMode&&tmLabel(mn)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(mn)}</span>`:''}${titleCase(mn)}</div>
                 <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                   ${typePill}
                   <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
@@ -2949,7 +2960,7 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
         const nameStyle=isEarly?`font-weight:800;color:${earlyColor}`:'';
         const nameStyleFinal=`text-align:center;white-space:nowrap;font-weight:700;color:var(--text)`;
         return`<tr class="move-row" onclick="toggleMoveDesc(this)" style="cursor:pointer">
-          ${showLvl?`<td class="lvl-cell">${m.lvl>0?m.lvl:'—'}</td>`:''}
+          ${showLvl?`<td class="lvl-cell">${mvNivelTxt(m)}</td>`:''}
           <td class="move-name" style="${nameStyleFinal}">${tmMode&&tmLabel(mn)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(mn)}</span>`:''}${titleCase(mn)}</td>
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
@@ -2986,7 +2997,7 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
   }
 
   if(!regionalMovesLoaded){
-    if(p.moves_level) levelMoves=p.moves_level.map(m=>typeof m==='string'?{name:m,lvl:0}:{name:m.name||m.move||m,lvl:m.lvl||m.level||0});
+    if(p.moves_level) levelMoves=p.moves_level.map(m=>{ if(typeof m==='string') return {name:m,lvl:0}; const nv=mvNivel(m); return {name:m.name||m.move||m,lvl:nv.lvl,evo:nv.evo}; });
     if(p.moves_tm) tmMoves=p.moves_tm.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
     if(p.moves_egg) eggMoves=p.moves_egg.map(m=>typeof m==='string'?{name:m}:{name:m.name||m.move||m});
     // fallback: unified moves array
@@ -2996,11 +3007,11 @@ async function renderRpgDetail(p, container, navToken, initialFormIdx){
         const method=(nm.method||nm.learn_method||'level-up').toLowerCase();
         if(method==='machine') tmMoves.push({name:nm.name});
         else if(method==='egg') eggMoves.push({name:nm.name});
-        else levelMoves.push({name:nm.name,lvl:nm.lvl||nm.level||0});
+        else { const nv=mvNivel(nm); levelMoves.push({name:nm.name,lvl:nv.lvl,evo:nv.evo}); }
       });
     }
   }
-  levelMoves.sort((a,b)=>a.lvl-b.lvl);
+  levelMoves.sort(mvOrdenaNivel);
   tmMoves=await restrictToTmList(tmMoves);
   // Se o usuário já navegou pra outro Pokémon enquanto os fetches acima
   // (apiPoke/apiSpecies/evolução) rodavam, aborta antes de escrever no DOM.
@@ -3579,7 +3590,7 @@ async function renderDetail(p,s,container,navToken){
           <div style="border-bottom:1px solid var(--border)">
             <div onclick="toggleMoveDesc(this)" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--surface)">
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:${nameFw};color:${nameColor};margin-bottom:4px">${showLvl?`<span style="color:var(--brand-mid);font-family:var(--font-title);font-weight:800;margin-right:6px">Nv. ${m.lvl>0?m.lvl:'—'}</span>`:''}${tmMode&&tmLabel(m.name)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(m.name)}</span>`:''}${titleCase(m.name)}</div>
+                <div style="font-size:13px;font-weight:${nameFw};color:${nameColor};margin-bottom:4px">${showLvl?`<span style="color:var(--brand-mid);font-family:var(--font-title);font-weight:800;margin-right:6px">${m.evo?'Evo':'Nv. '+(m.lvl>0?m.lvl:'—')}</span>`:''}${tmMode&&tmLabel(m.name)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(m.name)}</span>`:''}${titleCase(m.name)}</div>
                 <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                   ${typePill}
                   <span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span>
@@ -3628,7 +3639,7 @@ async function renderDetail(p,s,container,navToken){
         const isEarly=showLvl&&(m.lvl===0||m.lvl<=5);
         const nameStyle=isEarly?`font-weight:800;color:${earlyColor}`:'';
         return`<tr class="move-row" onclick="toggleMoveDesc(this)" style="cursor:pointer">
-          ${showLvl?`<td class="lvl-cell">${m.lvl>0?m.lvl:'—'}</td>`:''}
+          ${showLvl?`<td class="lvl-cell">${mvNivelTxt(m)}</td>`:''}
           <td class="move-name" style="text-align:center;white-space:nowrap;font-weight:700;color:var(--text)">${tmMode&&tmLabel(m.name)?`<span style="color:var(--muted);font-weight:800;margin-right:5px">${tmLabel(m.name)}</span>`:''}${titleCase(m.name)}</td>
           <td style="text-align:center">${typePill}</td>
           <td style="text-align:center"><span style="background:${catColor};color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px">${catLabel}</span></td>
