@@ -8092,16 +8092,24 @@ function pkEvoDepth(p){
   }
   return depth;
 }
-// Ranking mínimo do personagem para este Pokémon poder ser encontrado:
-// forma base (depth 0) = sempre disponível; 2º estágio (depth 1) = ranking 2+;
-// estágio final (depth 2+) = ranking 3+.
-function pkRankingNecessario(p){
-  if(p._rankingNecessario!==undefined) return p._rankingNecessario;
-  const depth = pkEvoDepth(p);
-  if(depth<=0) return 0;
-  if(depth===1) return 2;
-  return 3;
+// Nível mínimo para uma espécie evoluída aparecer: o maior nível das evoluções POR NÍVEL do caminho
+// que leva até ela (ex.: Butterfree "Lv 10" → só aparece do Lv. 10 em diante). Evolução por pedra,
+// troca, amizade etc. não define nível mínimo. Forma base ou sem dado de evolução = 0.
+function pkNivelMinimoEvo(p){
+  const chain = p && p.evolucoes;
+  if(!Array.isArray(chain) || chain.length<2) return 0;
+  let idx = chain.findIndex(e=>String(e.id)===String(p.id));
+  if(idx===-1) return 0;
+  let min=0, guard=0;
+  while(idx>=0 && chain[idx] && chain[idx].from && guard<10){
+    const req = pkNivelDeEvolucao(chain[idx].method);
+    if(req!==null && req>min) min=req;
+    idx = chain[idx].from-1; guard++;
+  }
+  return min;
 }
+// O ranking do personagem NÃO influencia mais a aparição de Pokémon: qualquer estágio da linha
+// evolutiva cadastrado no Local/Bioma pode ser sorteado (o nível segue só as provas de valor).
 // Ranking: vale o da ficha (d.ranking, calculado pelos Pontos de Ranking). Só se a ficha não for
 // encontrada é que cai no cadastro legado (tabela "personagens"), enquanto ela ainda existir.
 let _rankFichas = {};   // nome normalizado -> ranking (1..5)
@@ -9669,16 +9677,14 @@ function renderTbodyBiomas(){
         <td><button class="btn btn-danger btn-sm" onclick="removerBioma('${b.id}','${b.nome}')">Remover</button></td>
       </tr>`).join('');
 }
-// Jogadores só veem Locais que tenham ao menos 1 Pokémon disponível (cadastro + ranking do personagem + estação).
+// Jogadores só veem Locais que tenham ao menos 1 Pokémon disponível (cadastro + estação).
 // ADM vê todos. Sem dados carregados, não filtra (evita lista vazia por engano).
 function locaisComPokemonNomes(){
   const todos=locaisEncontroNomes();
   try{
     if(admLogado||typeof pokemonDB==='undefined'||!pokemonDB.length) return todos;
-    const pers=(document.getElementById('personagem')?.value||'').trim();
-    const rk=getPersonagemRanking(pers);
     const units=getEncounterUnitsCompletos(pokemonDB);
-    const ok=todos.filter(n=>units.some(p=>pkRegrasNoBioma(p,n).length&&pkRankingNecessario(p)<=rk&&(!p.estacao||p.estacao===estacaoAtiva)));
+    const ok=todos.filter(n=>units.some(p=>pkRegrasNoBioma(p,n).length&&(!p.estacao||p.estacao===estacaoAtiva)));
     return ok.length?ok:todos;
   }catch(e){ return todos; }
 }
@@ -13716,7 +13722,6 @@ function pkAltFormUnits(p){
       emoji:p.emoji||'❓', genero:p.genero,
       estacao:p.estacao||null, estacao_boost:p.estacao_boost||null,
       biomas:f.biomas||[],
-      _rankingNecessario:pkRankingNecessario(p),
       _isAltForm:true, _baseId:p.id, _altIndex:i,
       _semSpriteProprio:!(f.sprite && String(f.sprite).trim())   // herda o sprite da base só p/ uso interno (admin); não vale como foto própria
     };
@@ -13784,12 +13789,12 @@ function pkRaridadeSazonal(r, comp){
 }
 function pkPesoSazonal(comp){ return comp==='mais_ativo'?2:(comp==='menos_ativo'?0.5:1); }
 // Monta os pools por raridade já aplicando o comportamento da estação ativa.
-function pkMontarPoolsSazonais(units, bioma, rankingAtivo, estacao){
+function pkMontarPoolsSazonais(units, bioma, estacao, nivelMax){   // nivelMax (opcional): descarta evoluídos cujo nível mínimo passa do máximo do personagem
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={}, usedIds={};
   raridades.forEach(r=>{ pools[r]=[]; usedIds[r]=new Set(); });
   for(const p of units){
-    if(pkRankingNecessario(p)>rankingAtivo) continue;
+    if(nivelMax!=null && pkNivelMinimoEvo(p)>nivelMax) continue;
     const comp=pkComportamentoSazonal(p,estacao);
     if(comp==='ausencia') continue;
     for(const r of raridades){
@@ -14129,7 +14134,7 @@ async function provasDeValorDoPersonagem(nome, forcar){
      amizade, item, "Level up" (sem número) etc. NÃO evoluem na rolagem;
    • evolui em cadeia o quanto o nível permitir (Charmander Lv 40 → Charizard);
    • se mais de uma evolução por nível estiver liberada, sorteia entre elas;
-   • não depende do ranking do personagem (isso só filtra quem entra no pool);
+   • não depende do ranking do personagem (o ranking não influencia mais a aparição);
    • Pokémon forçados pelo ADM (pk._forcado) e formas alternativas ficam como estão.
 ══════════════════════════════════════════ */
 // "Lv 16" | "lvl 16" | "Level 16" | "16" → 16; qualquer outra coisa → null
@@ -14224,12 +14229,15 @@ function pkNomeMove(m){   // "quick-attack" → "Quick Attack"
   return String(m||'').split('-').filter(Boolean).map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
 }
 function pkListaMoves(arr){   // aceita {move,level} / {name} / string; descarta lixo
+  // "Evo" (level:"Evo" ou evo:true) = golpe aprendido necessariamente ao evoluir → {evo:true}
   return (Array.isArray(arr) ? arr : []).map(it => {
     if(it == null) return null;
-    if(typeof it === 'string') return {move: it, level: 0};
+    if(typeof it === 'string') return {move: it, level: 0, evo: false};
     const move = it.move || it.name || it.nome || it.n;
     if(!move) return null;
-    const level = parseInt(it.level ?? it.nivel ?? 0); return {move: String(move), level: Number.isFinite(level) ? level : 0};
+    const bruto = it.level ?? it.nivel ?? 0;
+    const evo = it.evo === true || /^\s*evo/i.test(String(bruto));
+    const level = parseInt(bruto); return {move: String(move), level: Number.isFinite(level) ? level : 0, evo};
   }).filter(Boolean);
 }
 function pkDadosMoveset(nome){
@@ -14258,9 +14266,13 @@ function pkSortearMoves(pk){
     const d = pkDadosMoveset(pk.nome);
     if(!d) return false;
     const vistos = new Set();
-    const porNivel = pkListaMoves(d.moves_level).filter(m => m.level <= pk.nivel && !vistos.has(m.move) && vistos.add(m.move)).map(m => m.move);
+    const lista = pkListaMoves(d.moves_level);
+    // "Evo": o Pokémon sorteado já é a espécie evoluída, então esses golpes ele necessariamente aprendeu → entram sempre
+    const evoMoves = lista.filter(m => m.evo && !vistos.has(m.move) && vistos.add(m.move)).map(m => m.move);
+    const porNivel = lista.filter(m => !m.evo && m.level <= pk.nivel && !vistos.has(m.move) && vistos.add(m.move)).map(m => m.move);
     const regra = pkRegraMoves(pk.nivel);
-    let escolhidos = pkSortearAmostra(porNivel, regra.nivel);
+    const fixos = evoMoves.slice(0, regra.nivel);
+    let escolhidos = fixos.concat(pkSortearAmostra(porNivel, regra.nivel - fixos.length));
     let egg = [];
     if(regra.egg){
       const ovos = [...new Set(pkListaMoves(d.moves_egg).map(m => m.move))].filter(m => !escolhidos.includes(m));
@@ -14438,6 +14450,12 @@ function pkToggleMoves(btn){
 // Sorteia o nível de cada Pokémon entre 1 e o máximo do personagem e, se o nível
 // já alcança a evolução por nível da espécie, devolve o Pokémon já evoluído.
 // Nunca lança erro.
+// Nível máximo do personagem (provas de valor) para filtrar o pool; null = níveis desligados, sem filtro.
+async function pkNivelMaxParaPool(personagem, ignorarFlag){
+  if(!ignorarFlag && !niveisAtivo()) return null;
+  try{ const v = await provasDeValorDoPersonagem(personagem); return v ? v.nivelMax : NIVEL_BASE_MAX; }
+  catch(e){ return NIVEL_BASE_MAX; }
+}
 async function aplicarNiveisAosPokes(pokes, personagem){
   try{
     const v = await provasDeValorDoPersonagem(personagem);
@@ -14445,7 +14463,10 @@ async function aplicarNiveisAosPokes(pokes, personagem){
     (pokes||[]).forEach(pk=>{
       if(pk && pk.nome!=='???'){
         if(pk.saz==='reproducao'){ pk.nivel = 1 + Math.floor(Math.random()*5); pkSortearMoves(pk); return; } // filhote: Lv. 1–5
-        pk.nivel = NIVEL_MIN + Math.floor(Math.random()*(max-NIVEL_MIN+1));
+        // espécie evoluída só aparece a partir do nível em que evolui (ex.: Butterfree → Lv. 10+)
+        const regBase = pokemonDB.find(p=>(p.name||p.nome)===pk.nome);
+        const piso = Math.max(NIVEL_MIN, regBase ? pkNivelMinimoEvo(regBase) : 0), teto = Math.max(max, piso);
+        pk.nivel = piso + Math.floor(Math.random()*(teto-piso+1));
         pkAplicarEvolucaoPorNivel(pk);
         pkSortearMoves(pk);   // golpes já sorteados conforme o nível (depois da evolução, para vir da espécie certa)
       }
@@ -14495,7 +14516,7 @@ async function atualizarContadorNiveis(selId, boxId, forcar){
    ██ ENCONTRO LOCAIS — RÉPLICA do rolador de Pokémon (rolarEncontro) lendo por
    LOCAL em vez de bioma. Só ADM (permissão "locenc"). Usa as MESMAS funções do
    rolador oficial — getEncounterUnits, pkInfoNoBioma/pkTemBioma,
-   pickFromPoolCascade, pkRankingNecessario, buildCardHtml — porque o campo
+   pickFromPoolCascade, buildCardHtml — porque o campo
    `biomas` de cada Pokémon já guarda {nome, raridade, condicao}; a única
    mudança é que `nome` aponta pra um Local (tabela `locais`).
    Diferenças propositais em relação ao oficial (é ferramenta de teste):
@@ -14627,12 +14648,12 @@ async function locEncRolar() {
   const motivoExtras = (document.getElementById('locenc-motivo-extras')?.value || '').trim();
   const total = nEncontrar;
 
-  // Pools por raridade para este LOCAL (filtro de estação e de estágio de evolução
-  // conforme o ranking do personagem — igual ao rolador oficial)
-  const rankingAtivo = getPersonagemRanking(personagem);
+  // Pools por raridade para este LOCAL (filtro de estação — igual ao rolador oficial;
+  // o ranking do personagem não filtra mais nenhum estágio de evolução)
   const raridades = ['comum', 'incomum', 'raro', 'rarissimo'];
   const encounterUnits = getEncounterUnitsCompletos(pokemonDB);
-  const { pools, usedIds } = pkMontarPoolsSazonais(encounterUnits, local, rankingAtivo, estacaoAtiva);
+  const nivelMaxPool = await pkNivelMaxParaPool(personagem, true);   // esta tela sempre sorteia nível
+  const { pools, usedIds } = pkMontarPoolsSazonais(encounterUnits, local, estacaoAtiva, nivelMaxPool);
   const boostedPools = pools; // o comportamento sazonal já está aplicado nos pools
 
   // Resumo do cadastro (diagnóstico do ADM): quantos Pokémon têm este Local e quantos
@@ -14917,12 +14938,10 @@ setInterval(()=>{ if(_honeyStateCarregado && typeof carregarHoneyState==='functi
 
 // Diagnóstico de um Local: por que o pool pode estar vazio (usado para travar rolagens que sairiam todas "???").
 function pkDiagnosticoLocal(local, personagem){
-  const rk=getPersonagemRanking(personagem);
   const units=getEncounterUnitsCompletos(pokemonDB);
   const noLocal=units.filter(p=>pkRegrasNoBioma(p,local).length);
-  const porRanking=noLocal.filter(p=>pkRankingNecessario(p)<=rk);
-  const disp=porRanking.filter(p=>!p.estacao||p.estacao===estacaoAtiva);
-  return {local,ranking:rk,estacao:estacaoAtiva,listaDoLocal:!!ENC_LOCAL_TAB[local],noLocal:noLocal.length,aposRanking:porRanking.length,disponiveis:disp.length};
+  const disp=noLocal.filter(p=>!p.estacao||p.estacao===estacaoAtiva);
+  return {local,estacao:estacaoAtiva,listaDoLocal:!!ENC_LOCAL_TAB[local],noLocal:noLocal.length,disponiveis:disp.length};
 }
 // ══════════════════════════════════════
 // PENALIDADES TEMPORÁRIAS DE ROLAGEM
@@ -15033,8 +15052,8 @@ async function rolarEncontro(){
     if(!dg.disponiveis){
       console.warn('[rolagem vazia]', dg);
       alert(`Nenhum Pokémon disponível em "${bioma}" para ${personagem}.\n\n`
-        + `Cadastrados no local: ${dg.noLocal}\nApós filtro de ranking (${dg.ranking}): ${dg.aposRanking}\nApós filtro de estação (${dg.estacao||'nenhuma'}): ${dg.disponiveis}\n\n`
-        + `Nada foi rolado nem consumido. Este local não tem Pokémon na lista cadastrada (ou nenhum liberado para o ranking/estação). Avise o ADM.`);
+        + `Cadastrados no local: ${dg.noLocal}\nApós filtro de estação (${dg.estacao||'nenhuma'}): ${dg.disponiveis}\n\n`
+        + `Nada foi rolado nem consumido. Este local não tem Pokémon na lista cadastrada (ou nenhum liberado para a estação). Avise o ADM.`);
       return;
     } }
 
@@ -15043,13 +15062,13 @@ async function rolarEncontro(){
       && !await consumirBonusDaFicha(personagem, honeyMarcadoAgora, shinyCharmMarcadoAgora)) return;
 
   // Monta os pools por raridade para este bioma (aplica filtro de estação
-  // e de estágio de evolução conforme o ranking do personagem)
-  const rankingAtivo = getPersonagemRanking(personagem);
+  // (o ranking não filtra mais estágios de evolução)
   const raridades=['comum','incomum','raro','rarissimo'];
   // Inclui formas alternativas (ex: Oricorio Estilo Pom-Pom) que tenham
   // bioma próprio cadastrado — elas entram como unidades independentes.
   const encounterUnits = getEncounterUnitsCompletos(pokemonDB);
-  const { pools, usedIds } = pkMontarPoolsSazonais(encounterUnits, bioma, rankingAtivo, estacaoAtiva);
+  const nivelMaxPool = await pkNivelMaxParaPool(personagem);
+  const { pools, usedIds } = pkMontarPoolsSazonais(encounterUnits, bioma, estacaoAtiva, nivelMaxPool);
   const boostedPools = pools; // o comportamento sazonal já está aplicado nos pools
 
   // Verifica se há resultado forçado para este personagem
@@ -15497,17 +15516,16 @@ async function rerollarPokeFalho(entryId, pkIdx, btnEl){
     const bioma=entry.bioma;
     await garantirEncontrosLocal(bioma);
     const personagem=entry.personagem;
-    const rankingAtivo=getPersonagemRanking(personagem);
     const raridades=['comum','incomum','raro','rarissimo'];
     const encounterUnits=getEncounterUnitsCompletos(pokemonDB);
-    const { pools, usedIds } = pkMontarPoolsSazonais(encounterUnits, bioma, rankingAtivo, estacaoAtiva);
+    const { pools, usedIds } = pkMontarPoolsSazonais(encounterUnits, bioma, estacaoAtiva);
     const boostedPools = pools;
     function rollRarity(){const r=Math.ceil(Math.random()*100);if(r<=2)return 'rarissimo';if(r<=13)return 'raro';if(r<=51)return 'incomum';return 'comum';}
     const rarity=rollRarity();
     const poolsAtivos=estacaoAtiva?boostedPools:pools;
     const novo=pickFromPoolCascade(poolsAtivos,usedIds,rarity,bioma);
     if(!novo||novo.nome==='???'){
-      alert(`O bioma "${bioma}" continua sem nenhum Pokémon disponível para ${personagem}. Verifique o cadastro do bioma (raridade/estação/ranking) antes de tentar de novo.`);
+      alert(`O bioma "${bioma}" continua sem nenhum Pokémon disponível para ${personagem}. Verifique o cadastro do bioma (raridade/estação) antes de tentar de novo.`);
       return;
     }
     await carregarPenalidadesRoll();
@@ -19440,10 +19458,9 @@ async function rolarEncontroEvento(){
   const total = 3 + adicionais;
   const raridades=['comum','incomum','raro','rarissimo'];
   const pools={}, usedIds={};
-  const rankingAtivoEvento = getPersonagemRanking(personagem);
   const encounterUnitsEvento = getEncounterUnitsCompletos(pokemonDB);
   for(const r of raridades){
-    pools[r]=encounterUnitsEvento.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r&&pkRankingNecessario(p)<=rankingAtivoEvento; });
+    pools[r]=encounterUnitsEvento.filter(p=>{ const info=pkInfoNoBioma(p,bioma,r); return info&&info.raridade===r; });
     usedIds[r]=new Set();
   }
   function rollRarity(){ const r=Math.ceil(Math.random()*100); if(r<=2)return 'rarissimo'; if(r<=13)return 'raro'; if(r<=51)return 'incomum'; return 'comum'; }
