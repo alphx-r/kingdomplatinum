@@ -7,9 +7,11 @@
 //   POST { action:'ambrosia_galeria_salvar',  nome, senha, imagem:{ id, legenda } }                                  -> só edita a legenda
 //   POST { action:'ambrosia_galeria_apagar',  nome, senha, id }
 //   POST { action:'ambrosia_galeria_ordenar', nome, senha, ids:[...] }
-// `autorizar(b)` é a conferência de ADM/MOD (nome+senha do player): deve lançar erro (com .status) se não puder salvar.
+// Acesso: ADM/chefe e MOD do site (nome+senha do player, papel em config.kp_staff) — a mesma conferência do _ambrosia.js.
 const crypto = require('crypto');
 const { REPO, BRANCH, readFile, commit } = require('./_gh');
+const ST = require('./_staff');
+const SITE = 'ambrosiacademy';   // nome do site na lista kp_staff (mods[SITE]) — o mesmo do _ambrosia.js
 
 const IMG_BASE = (process.env.IMG_BASE || `https://raw.githubusercontent.com/${REPO}/${BRANCH}`).replace(/\/$/, '');
 const IDX = 'data/ambrosia/galeria.json';
@@ -19,6 +21,16 @@ const MAX_ITENS = 40;
 
 const erro = (status, msg) => Object.assign(new Error(msg), { status });
 const limpaLegenda = v => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
+// ADM/MOD: nome + senha do player, papel lido de config.kp_staff (mods[SITE])
+async function quemE(b) {
+  const nome = String(b.admin_nome || b.nome || ''), senha = String(b.admin_senha || b.senha || '');
+  if (!nome || !senha) throw erro(401, 'Informe o nome e a senha do player.');
+  const eu = await ST.verificarPlayer(nome, senha);
+  if (!eu) throw erro(403, 'Nome ou senha incorretos.');
+  const p = ST.papel(await ST.lerStaff(), eu.nome, SITE);
+  if (p !== 'chefe' && p !== 'admin' && p !== 'mod') throw erro(403, 'Acesso restrito a ADM e MOD.');
+  return { nome: eu.nome, adm: p === 'chefe' || p === 'admin' };
+}
 const idOk = v => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,59}$/.test(v);
 
 function parseIdx(t) {
@@ -48,10 +60,9 @@ async function lista(res) {
   return res.status(200).json({ imagens: parseIdx(t) });
 }
 
-async function acao(action, b, res, autorizar) {
+async function acao(action, b, res) {   // a conferência é sempre a daqui; um 4º argumento é ignorado
   try {
-    if (typeof autorizar !== 'function') throw erro(500, 'Galeria sem conferência de acesso configurada.');
-    await autorizar(b);   // ADM/MOD (nome+senha do player); lança erro se não puder
+    await quemE(b);   // ADM/MOD (nome+senha do player); lança erro se não puder
 
     if (action === 'ambrosia_galeria_salvar') {
       const im = b.imagem && typeof b.imagem === 'object' ? b.imagem : null;
