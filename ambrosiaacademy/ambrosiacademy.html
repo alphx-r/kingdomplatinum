@@ -223,6 +223,10 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
 .fe-deps{grid-column:1/-1;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;display:grid;gap:6px 18px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
 .fe-deps legend{padding:0 6px;font:700 12px 'Cinzel',serif;letter-spacing:.05em}
 .fe-deps .hint{grid-column:1/-1;margin:0}
+.fe-disc-add{grid-column:1/-1;display:flex;gap:8px}.fe-disc-add input{flex:1;min-width:0}
+.fe-chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+.fe-chips span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 12px;font-size:14px}
+.fe-chips button{border:0;background:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:0 4px}
 .fc-profs{grid-column:1/-1;display:grid;gap:8px}
 .fc-prow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px;align-items:center}
 @media(max-width:620px){.fc-prow{grid-template-columns:minmax(0,1fr)}}
@@ -1264,7 +1268,7 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
     <div id="adm-aulas">
       <form id="fa" novalidate><h3 id="fa-h" role="button" tabindex="0" style="margin:0">Nova aula</h3>
         <label>Título da aula<input id="fa-titulo" autocomplete="off" placeholder="Ex.: Plantio de Berry"></label>
-        <label>Disciplina<input id="fa-disc" list="fa-disc-l" autocomplete="off" placeholder="Ex.: Introdução a Botânica (a aula pertence a ela)"><datalist id="fa-disc-l"></datalist></label>
+        <label>Disciplina<select id="fa-disc"></select></label>
         <label>Departamento ou curso<select id="fa-curso"></select></label>
         <label>Professor (da equipe)<select id="fa-prof"></select></label>
         <label>Data e hora<input id="fa-data" type="datetime-local"></label>
@@ -1298,6 +1302,7 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
         <label>Nome<input id="fe-nome" autocomplete="off" placeholder="Ex.: Profª. Helena Auren"></label>
         <label>Cargo ou função<input id="fe-cargo" autocomplete="off" placeholder="Ex.: Diretora e professora de Criação e Cuidados"></label>
         <fieldset class="fe-deps" id="fe-deps"><legend>Departamentos em que leciona</legend><p class="meta hint">Um professor pode estar em mais de um departamento, e um departamento pode ter vários professores.</p></fieldset>
+        <fieldset class="fe-deps" id="fe-disc"><legend>Disciplinas que leciona</legend><p class="meta hint">Cadastre aqui as disciplinas do professor. Na aula, escolher a disciplina já sugere o professor (e vice-versa).</p><div class="fe-disc-add"><input id="fe-disc-in" autocomplete="off" placeholder="Ex.: Introdução a Botânica"><button class="btn sm out" type="button" id="fe-disc-add">Adicionar</button></div><div class="fe-chips" id="fe-disc-chips"></div></fieldset>
         <div class="row"><button class="btn" type="submit">Salvar membro</button><button class="btn out" type="button" id="fe-cancel" hidden>Cancelar edição</button></div>
       </form>
       <div class="lista" id="le"></div>
@@ -1917,6 +1922,8 @@ window.AMB_DOC=(function(){
     var k=nrm(nome),r={deps:[],cursos:[],disc:[]};
     if(!k)return r;
     function add(l,v){v=String(v||'').trim();if(v&&l.indexOf(v)<0)l.push(v);}
+    /* disciplinas cadastradas no professor (Administração > Equipe) */
+    ((m&&Array.isArray(m.disciplinas))?m.disciplinas:[]).forEach(function(d){add(r.disc,d);});
     /* departamentos marcados na Administração (um professor pode estar em vários) */
     ((m&&Array.isArray(m.departamentos))?m.departamentos:[]).forEach(function(d){add(r.deps,depDe(d)||d);});
     aulas.forEach(function(a){
@@ -2576,10 +2583,10 @@ window.AMB_DOC=(function(){
     $('fc-dep').innerHTML=($('curso').querySelector('optgroup')||{innerHTML:''}).innerHTML;
     (function(){var fs=$('fe-deps'),g=$('curso').querySelector('optgroup');
       if(g)Array.prototype.forEach.call(g.querySelectorAll('option'),function(o){var t=o.textContent.trim();fs.appendChild(h('label',{c:'chk'},[h('input',{type:'checkbox',name:'fe-dep',value:t}),document.createTextNode(t)]));});})();
-    $('fe-cancel').addEventListener('click',limparMembro);
+    $('fe-cancel').addEventListener('click',limparMembro);$('fe-disc-add').addEventListener('click',addDisc);$('fe-disc-in').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addDisc();}});
     $('fe-npc').addEventListener('change',function(){var n=npcPorSlug(this.value);if(!n)return;if(!$('fe-nome').value.trim())$('fe-nome').value=n.nome;if(!$('fe-cargo').value.trim())$('fe-cargo').value=npcDesc(n);});
     npcLista().then(function(){opcoesNpc($('fe-npc'));desenharEquipe();});
-    $('fa-curso').addEventListener('change',function(){opcoesProf();});$('fa-cancel').addEventListener('click',limparAula);$('fv-cancel').addEventListener('click',limparAviso);
+    $('fa-curso').addEventListener('change',function(){opcoesProf();});$('fa-prof').addEventListener('change',aoMudarProf);$('fa-disc').addEventListener('change',aoMudarDisc);$('fa-cancel').addEventListener('click',limparAula);$('fv-cancel').addEventListener('click',limparAviso);
     $('m-filtro').addEventListener('change',desenharMat);
     $('m-abas').addEventListener('click',function(e){var bt=e.target.closest('button');if(!bt)return;$('m-filtro').value=bt.getAttribute('data-f');Array.prototype.forEach.call(this.children,function(x){x.setAttribute('aria-selected',String(x===bt));});desenharMat();});
     abas();
@@ -2592,7 +2599,7 @@ window.AMB_DOC=(function(){
     Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){b.setAttribute('aria-selected',String(b.dataset.t===tab));});
   }
   function desenharAdmin(){
-    opcoesProf();
+    opcoesProf();opcoesDisc();
     desenharAulas();desenharMat();desenharAvisos();desenharEquipe();desenharCursos();desenharGaleria();
     var n=DB.matriculas.filter(function(m){return m.status==='pendente';}).length;
     $('tab-mat').textContent='Matrículas'+(n?' ('+n+')':'');
@@ -2611,10 +2618,28 @@ window.AMB_DOC=(function(){
     var c=((CURS&&CURS.cursos)||[]).filter(function(x){return x&&String(x.nome||'').trim()===v;})[0];
     return c&&c.departamento?String(c.departamento).trim():'';
   }
+  function discsDe(m){return (m&&Array.isArray(m.disciplinas)?m.disciplinas:[]).map(function(d){return String(d||'').trim();}).filter(Boolean);}
+  function membroPor(n){return (DB.equipe||[]).filter(function(x){return String(x&&x.nome||'').trim()===n;})[0];}
+  function todasDisc(){var v={},l=[];(DB.equipe||[]).forEach(function(m){discsDe(m).forEach(function(d){if(!v[d]){v[d]=1;l.push(d);}});});return l.sort(function(a,b){return a.localeCompare(b,'pt-BR');});}
+  function profsDe(d){return nomesStaff().filter(function(n){return discsDe(membroPor(n)).indexOf(d)>=0;});}
+  /* disciplina: lista as do professor escolhido (ou todas); o professor, por sua vez, é filtrado pela disciplina */
+  function opcoesDisc(extra){
+    var sel=$('fa-disc'),atual=extra!==undefined?extra:sel.value,pf=$('fa-prof').value.trim(),todas=todasDisc(),l=todas,dp=pf?discsDe(membroPor(pf)):[];
+    if(dp.length)l=dp;
+    sel.textContent='';
+    sel.appendChild(h('option',{value:'',t:todas.length?'— Escolha a disciplina —':'— Cadastre disciplinas na equipe —'}));
+    l.forEach(function(d){sel.appendChild(h('option',{value:d,t:d}));});
+    if(atual&&l.indexOf(atual)<0)sel.appendChild(h('option',{value:atual,t:atual}));
+    sel.value=atual||'';
+  }
+  function aoMudarProf(){var pf=$('fa-prof').value.trim(),dp=pf?discsDe(membroPor(pf)):[],cur=$('fa-disc').value;opcoesDisc(dp.length===1?dp[0]:(dp.length&&dp.indexOf(cur)<0?'':cur));}
+  function aoMudarDisc(){var d=$('fa-disc').value,ps=d?profsDe(d):[],cur=$('fa-prof').value.trim();opcoesProf(ps.length===1?ps[0]:(ps.length&&ps.indexOf(cur)<0?'':cur));}
   function deptosDe(m){return (m&&Array.isArray(m.departamentos)?m.departamentos:[]).map(function(d){return String(d||'').trim();}).filter(Boolean);}
   function opcoesProf(extra){
     var sel=$('fa-prof'),atual=extra!==undefined?extra:sel.value,l=nomesStaff();
-    var dls=$('fc-staff');if(dls){dls.textContent='';l.forEach(function(n){dls.appendChild(h('option',{value:n}));});}
+    var dsc=$('fa-disc')?$('fa-disc').value:'',ps=dsc?profsDe(dsc):[];
+    if(ps.length)l=l.filter(function(n){return ps.indexOf(n)>=0||n===atual;});
+    var dls=$('fc-staff');if(dls){dls.textContent='';nomesStaff().forEach(function(n){dls.appendChild(h('option',{value:n}));});}
     sel.textContent='';
     sel.appendChild(h('option',{value:'',t:l.length?'— Escolha um membro da equipe —':'— Cadastre a equipe antes —'}));
     /* quem leciona no departamento escolhido aparece primeiro; os demais da equipe continuam disponíveis */
@@ -2629,9 +2654,9 @@ window.AMB_DOC=(function(){
     if(atual&&l.indexOf(atual)<0)sel.appendChild(h('option',{value:atual,t:atual+' (fora da equipe — troque)'}));
     sel.value=atual||'';
   }
-  function limparAula(){edA=null;$('fa').reset();opcoesProf('');$('fa').classList.remove('aberto');$('fa-h').textContent='Nova aula';$('fa-cancel').hidden=true;}
+  function limparAula(){edA=null;$('fa').reset();opcoesProf('');opcoesDisc('');$('fa').classList.remove('aberto');$('fa-h').textContent='Nova aula';$('fa-cancel').hidden=true;}
   function editarAula(a){
-    edA=a;$('fa-titulo').value=a.titulo||'';$('fa-disc').value=a.disciplina||'';$('fa-curso').value=a.curso||'';opcoesProf(a.prof||'');$('fa-data').value=dtLocal(a.data);
+    edA=a;$('fa-titulo').value=a.titulo||'';$('fa-curso').value=a.curso||'';opcoesProf(a.prof||'');opcoesDisc(a.disciplina||'');opcoesProf(a.prof||'');$('fa-data').value=dtLocal(a.data);
     $('fa-fmt').value=a.fmt||'';$('fa-enfase').value=a.enfase||'';$('fa-local').value=a.local||'';$('fa-vagas').value=a.vagas||'';$('fa-desc').value=a.desc||'';$('fa-pub').checked=!!a.pub;
     $('fa').classList.add('aberto');$('fa-h').textContent='Editar aula';$('fa-cancel').hidden=false;$('fa').scrollIntoView({behavior:'smooth',block:'start'});
   }
@@ -2641,13 +2666,12 @@ window.AMB_DOC=(function(){
     if(!t||!dt){msg('Preencha o título e a data e hora da aula.');return;}
     var pf=$('fa-prof').value.trim();
     if(pf&&nomesStaff().indexOf(pf)<0){msg('O professor precisa estar cadastrado na equipe (staff). Escolha um membro da lista.');return;}
-    var d={titulo:t,disciplina:$('fa-disc').value.trim(),curso:$('fa-curso').value,prof:$('fa-prof').value.trim(),data:new Date(dt).toISOString(),fmt:$('fa-fmt').value,local:$('fa-local').value.trim(),vagas:parseInt($('fa-vagas').value,10)||0,enfase:$('fa-enfase').value.trim(),desc:$('fa-desc').value.trim(),pub:$('fa-pub').checked};
+    var d={titulo:t,disciplina:$('fa-disc').value,curso:$('fa-curso').value,prof:$('fa-prof').value.trim(),data:new Date(dt).toISOString(),fmt:$('fa-fmt').value,local:$('fa-local').value.trim(),vagas:parseInt($('fa-vagas').value,10)||0,enfase:$('fa-enfase').value.trim(),desc:$('fa-desc').value.trim(),pub:$('fa-pub').checked};
     if(trava($('fa')))return;msg('Salvando…');
     staff('ambrosia_aula_salvar',{aula:edA?Object.assign({id:edA.id},d):d}).then(function(){limparAula();msg('Aula salva.');return carregar();}).then(desenharAdmin).catch(function(e){falha($('adm-msg'),e);}).then(function(){trava($('fa'),true);});
   }
   function desenharAulas(){
     var box=$('la');box.textContent='';
-    var dl=$('fa-disc-l');if(dl){dl.textContent='';var vd={};DB.aulas.forEach(function(a){var v=String(a&&a.disciplina||'').trim();if(v&&!vd[v]){vd[v]=1;dl.appendChild(h('option',{value:v}));}});}
     var l=DB.aulas.slice().sort(function(a,b){return new Date(b.data)-new Date(a.data);});
     if(!l.length)vazio(box,'Nenhuma aula lançada ainda.');
     l.forEach(function(a){
@@ -2711,9 +2735,12 @@ window.AMB_DOC=(function(){
     if(atual&&!l.some(function(n){return n.slug===atual;}))sel.appendChild(h('option',{value:atual,t:atual+' (não encontrado)'}));
     sel.value=atual;
   }
-  function limparMembro(){edE=null;$('fe').reset();$('fe').classList.remove('aberto');$('fe-h').textContent='Novo membro da equipe';$('fe-cancel').hidden=true;}
+  var discEd=[];
+  function chipsDisc(){var b=$('fe-disc-chips');b.textContent='';discEd.forEach(function(d,i){var x=h('button',{type:'button',t:'×','aria-label':'Remover '+d});x.addEventListener('click',function(){discEd.splice(i,1);chipsDisc();});b.appendChild(h('span',{},[document.createTextNode(d),x]));});}
+  function addDisc(){var inp=$('fe-disc-in'),v=inp.value.trim();if(v&&discEd.indexOf(v)<0)discEd.push(v);inp.value='';chipsDisc();inp.focus();}
+  function limparMembro(){discEd=[];chipsDisc();edE=null;$('fe').reset();$('fe').classList.remove('aberto');$('fe-h').textContent='Novo membro da equipe';$('fe-cancel').hidden=true;}
   function editarMembro(m){
-    edE=m;
+    edE=m;discEd=discsDe(m).slice();chipsDisc();
     npcLista().then(function(){
       opcoesNpc($('fe-npc'));
       $('fe-npc').value=m.npc||'';$('fe-nome').value=m.nome||'';$('fe-cargo').value=m.cargo||'';
@@ -2725,7 +2752,8 @@ window.AMB_DOC=(function(){
     ev.preventDefault();
     var nome=$('fe-nome').value.trim();
     if(!nome){msg('Informe o nome do membro da equipe.');return;}
-    var d={nome:nome,cargo:$('fe-cargo').value.trim(),npc:$('fe-npc').value,departamentos:Array.prototype.filter.call(document.querySelectorAll('#fe-deps input'),function(c){return c.checked;}).map(function(c){return c.value;})};
+    if($('fe-disc-in').value.trim())addDisc();
+    var d={nome:nome,cargo:$('fe-cargo').value.trim(),npc:$('fe-npc').value,disciplinas:discEd.slice(),departamentos:Array.prototype.filter.call(document.querySelectorAll('#fe-deps input'),function(c){return c.checked;}).map(function(c){return c.value;})};
     if(trava($('fe')))return;msg('Salvando…');
     staff('ambrosia_equipe_salvar',{membro:edE?Object.assign({id:edE.id},d):d})
       .then(function(){limparMembro();msg('Membro salvo.');return carregar();}).then(desenharAdmin).catch(function(e){falha($('adm-msg'),e);}).then(function(){trava($('fe'),true);});
@@ -2763,7 +2791,7 @@ window.AMB_DOC=(function(){
       if(ehAdm())k.push(h('button',{c:'btn sm out',type:'button',t:'Remover',onclick:function(){if(confirm('Remover “'+m.nome+'” da equipe?'))acao(staff('ambrosia_equipe_apagar',{id:m.id}));}}));
       var lig=n?h('a',{c:'meta',href:'/datadex/npcdex/'+encodeURIComponent(m.npc),target:'_blank',rel:'noopener',t:'NPCdex: '+n.nome})
         :h('span',{c:'meta',t:m.npc?(npcs&&npcs.length?'Vínculo “'+m.npc+'” não encontrado no NPCdex.':'Vínculo com o NPCdex: '+m.npc):'Sem vínculo com o NPCdex'});
-      box.appendChild(h('div',{c:'card'},[h('div',{c:'eq-top'},[av,h('h4',{t:m.nome})]),m.cargo?h('span',{c:'meta',t:m.cargo}):null,deptosDe(m).length?h('span',{c:'meta',t:(deptosDe(m).length>1?'Departamentos: ':'Departamento: ')+deptosDe(m).join(' · ')}):null,lig,h('div',{c:'row'},k)]));
+      box.appendChild(h('div',{c:'card'},[h('div',{c:'eq-top'},[av,h('h4',{t:m.nome})]),m.cargo?h('span',{c:'meta',t:m.cargo}):null,deptosDe(m).length?h('span',{c:'meta',t:(deptosDe(m).length>1?'Departamentos: ':'Departamento: ')+deptosDe(m).join(' · ')}):null,discsDe(m).length?h('span',{c:'meta',t:'Disciplina(s): '+discsDe(m).join(' · ')}):null,lig,h('div',{c:'row'},k)]));
     });
   }
 

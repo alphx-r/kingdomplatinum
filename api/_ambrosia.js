@@ -223,14 +223,16 @@ async function acaoStaff(action, b, res) {
   // ---- equipe da escola (a página Equipe usa esta lista; `npc` liga o membro à ficha no NPCdex) ----
   if (action === 'ambrosia_equipe_salvar') {
     const m = b.membro || {}, nome = txt(m.nome, 80), cargo = txt(m.cargo, 160), npc = txt(m.npc, 80);
+    const lista = (v, n) => [...new Set(arr(v).map(x => txt(x, 80)).filter(Boolean))].slice(0, n);
+    const departamentos = lista(m.departamentos, 12), disciplinas = lista(m.disciplinas, 30);
     if (!nome) throw erro(400, 'Informe o nome do membro da equipe.');
     if (npc && !SLUG_NPC.test(npc)) throw erro(400, 'Vínculo com o NPCdex inválido.');
     let id = null;
     await commit(async parent => {
       const l = arr(await lerJ(P.equipe, parent)), i = m.id ? l.findIndex(x => x && x.id === m.id) : -1;
       if (m.id && i < 0) throw erro(404, 'Membro não encontrado.');
-      if (i >= 0) { l[i] = { ...l[i], nome, cargo, npc, por: eu.nome, atualizado_em: agora }; id = l[i].id; }
-      else { id = nid('e'); l.push({ id, nome, cargo, npc, criado: agora, por: eu.nome }); }
+      if (i >= 0) { l[i] = { ...l[i], nome, cargo, npc, departamentos, disciplinas, por: eu.nome, atualizado_em: agora }; id = l[i].id; }
+      else { id = nid('e'); l.push({ id, nome, cargo, npc, departamentos, disciplinas, criado: agora, por: eu.nome }); }
       return [{ path: P.equipe, content: JSON.stringify(l) }];
     }, `ambrosia: equipe ${nome}`);
     return res.json({ ok: true, id });
