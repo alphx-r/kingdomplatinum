@@ -164,7 +164,7 @@ async function acaoStaff(action, b, res) {
   if (action === 'ambrosia_aula_salvar') {
     const a = b.aula || {}, data = new Date(a.data), titulo = txt(a.titulo, 120);
     if (!titulo || isNaN(data)) throw erro(400, 'Informe o título e a data da aula.');
-    const d = { titulo, curso: txt(a.curso, 80), prof: txt(a.prof, 80), data: data.toISOString(), fmt: txt(a.fmt, 40), local: txt(a.local, 200),
+    const d = { titulo, disciplina: txt(a.disciplina, 80), curso: txt(a.curso, 80), prof: txt(a.prof, 80), data: data.toISOString(), fmt: txt(a.fmt, 40), local: txt(a.local, 200), enfase: txt(a.enfase, 160),
       vagas: Math.max(0, Math.min(999, parseInt(a.vagas, 10) || 0)), desc: txtL(a.desc, 1500), pub: !!a.pub };
     let id = null;
     await commit(async parent => {

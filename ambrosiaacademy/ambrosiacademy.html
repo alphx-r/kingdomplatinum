@@ -1263,7 +1263,8 @@ dialog#gal-zoom .gz-cap h3:empty,dialog#gal-zoom .gz-cap p:empty{display:none}
         <p class="meta" id="adm-msg" role="status"></p>
     <div id="adm-aulas">
       <form id="fa" novalidate><h3 id="fa-h" role="button" tabindex="0" style="margin:0">Nova aula</h3>
-        <label>Título<input id="fa-titulo" autocomplete="off"></label>
+        <label>Título da aula<input id="fa-titulo" autocomplete="off" placeholder="Ex.: Plantio de Berry"></label>
+        <label>Disciplina<input id="fa-disc" list="fa-disc-l" autocomplete="off" placeholder="Ex.: Introdução a Botânica (a aula pertence a ela)"><datalist id="fa-disc-l"></datalist></label>
         <label>Departamento ou curso<select id="fa-curso"></select></label>
         <label>Professor (da equipe)<select id="fa-prof"></select></label>
         <label>Data e hora<input id="fa-data" type="datetime-local"></label>
@@ -1926,7 +1927,8 @@ window.AMB_DOC=(function(){
         var cc=cursosL.filter(function(x){return x&&String(x.nome||'').trim()===c;})[0];
         if(cc){add(r.cursos,cc.nome);if(cc.departamento)add(r.deps,depDe(cc.departamento)||cc.departamento);}
       }
-      add(r.disc,a.titulo);
+      /* disciplina é um campo próprio da aula (não o título da aula) */
+      add(r.disc,a.disciplina);
     });
     cursosL.forEach(function(c){
       if(c&&c.ativo!==false&&profsC(c).some(function(n){return nrm(n)===k;})){add(r.cursos,c.nome);if(c.departamento)add(r.deps,depDe(c.departamento)||c.departamento);}
@@ -1955,7 +1957,7 @@ window.AMB_DOC=(function(){
       var dl=document.createElement('dl');
       function linha(rot,l){if(!l.length)return;var dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=rot;dd.textContent=l.join(' · ');dl.appendChild(dt);dl.appendChild(dd);}
       if(cargo)linha('Cargo',[cargo]);
-      linha('Departamento(s)',info.deps.length?info.deps:['—']);linha(info.cursos.length>1?'Cursos':'Curso',info.cursos);linha('Disciplina(s)',info.disc);
+      linha('Departamento(s)',info.deps.length?info.deps:['—']);linha(info.cursos.length>1?'Cursos':'Curso',info.cursos);linha('Disciplina(s)',info.disc.length?info.disc:['—']);
       if(dl.children.length)mais.appendChild(dl);
       if(!cargo&&!dl.children.length){var q=document.createElement('p');q.textContent='Sem mais informações por enquanto.';mais.appendChild(q);}
       if(url){var a=document.createElement('a');a.className='btn out eq-ficha';a.href=url;a.textContent='Abrir ficha';mais.appendChild(a);}
@@ -2080,7 +2082,7 @@ window.AMB_DOC=(function(){
     var link=/^https?:\/\//i.test(a.local||'');
     return h('div',{c:'card'},[
       h('h4',{t:a.titulo}),
-      h('span',{c:'meta',t:[a.curso,a.prof,quando(a.data),a.fmt,link?'':a.local].filter(Boolean).join(' · ')}),
+      h('span',{c:'meta',t:[a.disciplina,a.curso,a.prof,quando(a.data),a.fmt,link?'':a.local].filter(Boolean).join(' · ')}),
       link?h('a',{href:a.local,target:'_blank',rel:'noopener',t:'Abrir link da aula'}):null,
       a.enfase?h('span',{c:'meta',t:'Ênfase: '+a.enfase}):null,
       a.desc?h('span',{t:a.desc,style:'white-space:pre-wrap'}):null,
@@ -2451,7 +2453,7 @@ window.AMB_DOC=(function(){
       var quando=e.d.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})+' · '+e.d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
       var li=function(k,v){return v?h('li',{},[h('span',{t:k+': '}),h('b',{t:v})]):null;};
       dlg.appendChild(h('div',{c:'pt-dlg-h'},[ilustra(a.curso),h('h3',{t:a.titulo})]));
-      dlg.appendChild(h('ul',{},[li('Quando',quando),li('Departamento',a.curso),li('Instrutor',a.prof),li('Ênfase',a.enfase),li('Formato',a.fmt),li('Local',e.link?'':a.local),li('Vagas',a.vagas>0?e.n+'/'+a.vagas:e.n+' inscritos')]));
+      dlg.appendChild(h('ul',{},[li('Quando',quando),li('Disciplina',a.disciplina),li('Departamento',a.curso),li('Instrutor',a.prof),li('Ênfase',a.enfase),li('Formato',a.fmt),li('Local',e.link?'':a.local),li('Vagas',a.vagas>0?e.n+'/'+a.vagas:e.n+' inscritos')]));
       if(a.desc)dlg.appendChild(h('p',{t:a.desc}));
       var fechar=function(){dlg.close();},fb=h('button',{c:'btn sm out',type:'button',t:'Fechar'});
       fb.addEventListener('click',fechar);
@@ -2629,7 +2631,7 @@ window.AMB_DOC=(function(){
   }
   function limparAula(){edA=null;$('fa').reset();opcoesProf('');$('fa').classList.remove('aberto');$('fa-h').textContent='Nova aula';$('fa-cancel').hidden=true;}
   function editarAula(a){
-    edA=a;$('fa-titulo').value=a.titulo||'';$('fa-curso').value=a.curso||'';opcoesProf(a.prof||'');$('fa-data').value=dtLocal(a.data);
+    edA=a;$('fa-titulo').value=a.titulo||'';$('fa-disc').value=a.disciplina||'';$('fa-curso').value=a.curso||'';opcoesProf(a.prof||'');$('fa-data').value=dtLocal(a.data);
     $('fa-fmt').value=a.fmt||'';$('fa-enfase').value=a.enfase||'';$('fa-local').value=a.local||'';$('fa-vagas').value=a.vagas||'';$('fa-desc').value=a.desc||'';$('fa-pub').checked=!!a.pub;
     $('fa').classList.add('aberto');$('fa-h').textContent='Editar aula';$('fa-cancel').hidden=false;$('fa').scrollIntoView({behavior:'smooth',block:'start'});
   }
@@ -2639,12 +2641,13 @@ window.AMB_DOC=(function(){
     if(!t||!dt){msg('Preencha o título e a data e hora da aula.');return;}
     var pf=$('fa-prof').value.trim();
     if(pf&&nomesStaff().indexOf(pf)<0){msg('O professor precisa estar cadastrado na equipe (staff). Escolha um membro da lista.');return;}
-    var d={titulo:t,curso:$('fa-curso').value,prof:$('fa-prof').value.trim(),data:new Date(dt).toISOString(),fmt:$('fa-fmt').value,local:$('fa-local').value.trim(),vagas:parseInt($('fa-vagas').value,10)||0,enfase:$('fa-enfase').value.trim(),desc:$('fa-desc').value.trim(),pub:$('fa-pub').checked};
+    var d={titulo:t,disciplina:$('fa-disc').value.trim(),curso:$('fa-curso').value,prof:$('fa-prof').value.trim(),data:new Date(dt).toISOString(),fmt:$('fa-fmt').value,local:$('fa-local').value.trim(),vagas:parseInt($('fa-vagas').value,10)||0,enfase:$('fa-enfase').value.trim(),desc:$('fa-desc').value.trim(),pub:$('fa-pub').checked};
     if(trava($('fa')))return;msg('Salvando…');
     staff('ambrosia_aula_salvar',{aula:edA?Object.assign({id:edA.id},d):d}).then(function(){limparAula();msg('Aula salva.');return carregar();}).then(desenharAdmin).catch(function(e){falha($('adm-msg'),e);}).then(function(){trava($('fa'),true);});
   }
   function desenharAulas(){
     var box=$('la');box.textContent='';
+    var dl=$('fa-disc-l');if(dl){dl.textContent='';var vd={};DB.aulas.forEach(function(a){var v=String(a&&a.disciplina||'').trim();if(v&&!vd[v]){vd[v]=1;dl.appendChild(h('option',{value:v}));}});}
     var l=DB.aulas.slice().sort(function(a,b){return new Date(b.data)-new Date(a.data);});
     if(!l.length)vazio(box,'Nenhuma aula lançada ainda.');
     l.forEach(function(a){
