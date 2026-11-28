@@ -6515,6 +6515,13 @@ function movesetBuildSelect(value = '') {
 //    de verdade se perde — foi exatamente o bug relatado.
 //  - null/undefined/objeto sem nome resolvível → retorna null (item
 //    realmente vazio/corrompido, não deve virar linha nenhuma)
+// Nível de um golpe por nível: número, ou "Evo" = aprendido necessariamente ao evoluir.
+// Guardado como { level: 0, evo: true } (quem só lê "level" continua enxergando um número).
+function movesetParseLevel(v) {
+  const txt = String(v ?? '').trim();
+  if (/^evo/i.test(txt)) return { level: 0, evo: true };
+  return { level: parseInt(txt) || 0, evo: false };
+}
 function movesetNormalizeItem(data) {
   if (data == null) return null;
   if (typeof data === 'string') {
@@ -6524,8 +6531,8 @@ function movesetNormalizeItem(data) {
   if (typeof data === 'object') {
     const move = (data.move || data.name || '').toString().trim();
     if (!move) return null;
-    const level = parseInt(data.level ?? data.lvl ?? 0) || 0;
-    return { move, level };
+    const lv = movesetParseLevel(data.evo === true ? 'Evo' : (data.level ?? data.lvl ?? 0));
+    return lv.evo ? { move, level: 0, evo: true } : { move, level: lv.level };
   }
   return null;
 }
@@ -6647,7 +6654,7 @@ function movesetAddRow(listId, type, data = {}) {
   const dragHandle = `<span class="mv-drag-handle" title="Arrastar para reordenar">⠿</span>`;
   const comboHtml = `<div class="cb-wrap mv-name"><input class="cb-input mv-name-input" list="dl-move" autocomplete="off" placeholder="— Move —" value="${dispVal}" data-raw="${rawVal}"><span class="cb-arrow">▾</span></div>`;
   const levelHtml = type === 'level'
-    ? `<input type="number" class="mv-lvl" min="0" max="100" placeholder="Nv" title="Nível" value="${data.level ?? ''}">`
+    ? `<input type="text" class="mv-lvl" inputmode="numeric" maxlength="4" placeholder="Nv" title="Nível, ou Evo (aprendido ao evoluir)" value="${data.evo ? 'Evo' : (data.level ?? '')}">`
     : '';
   const delBtn = `<button type="button" class="mv-del" onclick="this.closest('.moveset-row').remove()" title="Remover">✕</button>`;
 
@@ -6740,8 +6747,8 @@ function movesetReadList(listId, type) {
     const inp = row.querySelector('.mv-name-input'); const move = inp ? moveToSlug(inp.value.trim()) : '';
     if (!move) return null;
     if (type === 'level') {
-      const level = parseInt(row.querySelector('.mv-lvl')?.value) || 0;
-      return { move, level };
+      const lv = movesetParseLevel(row.querySelector('.mv-lvl')?.value);
+      return lv.evo ? { move, level: 0, evo: true } : { move, level: lv.level };
     }
     return { move };
   }).filter(Boolean);
@@ -6802,7 +6809,7 @@ async function movesetCopyList(listId, btnEl) {
     const nome = ni?.tagName === 'SELECT' ? (ni.selectedOptions[0]?.dataset.name || '') : ni?.value.trim();
     if (!nome) return '';
     const lv = row.querySelector('.mv-lvl');
-    return lv ? `${nome} ${parseInt(lv.value) || 0}` : nome;   // Por Nível: "Gust 1"
+    return lv ? `${nome} ${movesetParseLevel(lv.value).evo ? 'Evo' : (parseInt(lv.value) || 0)}` : nome;   // Por Nível: "Gust 1"
   }).filter(Boolean);
   if (!nomes.length) {
     if (btnEl) {
@@ -6849,15 +6856,19 @@ function movesetImportBulk(listId, type, bulkId) {
   const lines = ta.value.split('\n').map(l => l.trim()).filter(Boolean);
   if (!lines.length) { area.classList.remove('open'); return; }
   lines.forEach(line => {
-    let level = 0;
+    let level = 0, evo = false;
     if (type === 'level') {
-      const m = line.match(/^(\d+)\s*[-–:,]?\s*(.+)$/) || line.match(/^(.+?)\s*[-–:,]?\s*(\d+)$/);
-      if (m) { if (/^\d+$/.test(m[1])) { level = parseInt(m[1]); line = m[2].trim(); } else { line = m[1].trim(); level = parseInt(m[2]); } }
+      const me = line.match(/^evo\b\s*[-–:,]?\s*(.+)$/i) || line.match(/^(.+?)\s*[-–:,]?\s*\bevo$/i);
+      if (me) { evo = true; line = me[1].trim(); }
+      else {
+        const m = line.match(/^(\d+)\s*[-–:,]?\s*(.+)$/) || line.match(/^(.+?)\s*[-–:,]?\s*(\d+)$/);
+        if (m) { if (/^\d+$/.test(m[1])) { level = parseInt(m[1]); line = m[2].trim(); } else { line = m[1].trim(); level = parseInt(m[2]); } }
+      }
     }
     if (type === 'tm') line = line.replace(/^(?:TM\s*)?\d{1,3}\s*[-–:.]\s*/i, '');
     // Aceita nome display ("Flamethrower") ou slug ("flamethrower", "fire-blast")
     const slug = moveToSlug(line) || line.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    movesetAddRow(listId, type, { move: slug, level });
+    movesetAddRow(listId, type, evo ? { move: slug, level: 0, evo: true } : { move: slug, level });
   });
   ta.value = '';
   area.classList.remove('open');
