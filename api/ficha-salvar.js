@@ -332,12 +332,6 @@ async function donoOk(token, slug) {
   return { ...f0, d };
 }
 
-// Conferência de ADM/MOD para a galeria. FALTA LIGAR à mesma checagem que o _ambrosia.js usa nas outras ações do /adm
-// (nome+senha do player + lista kp_staff). Enquanto isso, recusa tudo (nunca grava sem conferir).
-async function autorizarGaleria(b) {
-  throw Object.assign(new Error('Galeria: a conferência de ADM/MOD ainda não foi ligada no servidor (api/ficha-salvar.js → autorizarGaleria).'), { status: 501 });
-}
-
 module.exports = async (req, res) => {
   if (req.method === 'GET') {
     try {
@@ -384,7 +378,7 @@ module.exports = async (req, res) => {
     if (action === 'atribuir') return await atribuir(b, res);   // usa nome+senha do ADM, não o token das fichas
     if (/^berries_/.test(action)) return await BR.acao(action, b, res);   // ADM edita as berries com nome+senha do player
     if (/^provas_/.test(action)) return await PV.acao(action, b, res);   // ADM edita as Provas de Valor com nome+senha do player
-    if (/^ambrosia_galeria_/.test(action)) return await GA.acao(action, b, res, autorizarGaleria);   // ADM/MOD com nome+senha do player
+    if (/^ambrosia_galeria_/.test(action)) return await GA.acao(action, b, res);   // ADM/MOD com nome+senha do player
     if (/^ambrosia_/.test(action)) return await AM.acao(action, b, res, donoOk);   // aluno usa o token da ficha; ADM/MOD usam nome+senha
     if (/^npc_/.test(action)) return await NP.acao(action, b, res);   // ADM edita NPC com nome+senha do player
     if (/^torneio_/.test(action)) return await T.acao(action, b, res, sbRpc);   // ADM usa nome+senha; player usa o token da ficha
